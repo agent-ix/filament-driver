@@ -1,0 +1,149 @@
+name: Release
+
+# Builds the prebuilt driver CLI for four targets, smokes the packaged binary,
+# and (only when publishing) creates the GitHub Release with checksums.
+#
+# Triggers: a version tag `vX.Y.Z` publishes; manual dispatch builds and
+# uploads workflow artifacts and publishes only if `publish` is set.
+# Cargo.toml's version must equal the tag; the smoke step checks the packaged
+# binary's `--version` against it.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Create the GitHub Release. Leave false for a dry run (build, package, smoke only). Needs a vX.Y.Z tag on the ref."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The one place that names the shipped binary. The rename program changes
+  # these two lines (and nothing else in this file).
+  BINARY: quire
+  CARGO_PACKAGE: quire-cli
+  # Cargo profile the binary is built with (its output dir is target/<profile>).
+  CARGO_PROFILE: release
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    # A hung step otherwise blocks for GitHub's 6-hour default.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds on 22.04 so the binary links glibc 2.35 and runs on
+          # Ubuntu 22.04+ and default WSL; a 24.04 build needs glibc 2.39.
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Reads rust-toolchain.toml, the single toolchain pin.
+      - name: Install the pinned Rust toolchain
+        shell: bash
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Build
+        shell: bash
+        run: cargo build --locked --profile "$CARGO_PROFILE" -p "$CARGO_PACKAGE" --bin "$BINARY"
+
+      - name: Package the one permitted archive member
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r --arg p "$CARGO_PACKAGE" '.packages[] | select(.name == $p) | .version')"
+          NAME="${BINARY}-v${VERSION}-${TARGET}.tar.gz"
+          mkdir -p release
+          tar -C "target/${CARGO_PROFILE}" -czf "release/$NAME" "$BINARY"
+          test -f "release/$NAME"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Smoke the packaged executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-smoke
+          tar -C release-smoke -xzf "release/$NAME"
+          test "$(find release-smoke -type f | wc -l | tr -d ' ')" = 1
+          OUTPUT="$("./release-smoke/$BINARY" --version)"
+          echo "$OUTPUT"
+          # Whole-word match against the Cargo version.
+          printf '%s' "$OUTPUT" | grep -qw -- "$VERSION"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.BINARY }}-${{ matrix.target }}
+          path: release/
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Check the tag matches the packaged version
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for f in release/*.tar.gz; do
+            case "$f" in
+              "release/${BINARY}-${TAG}-"*) ;;
+              *) echo "::error::$f does not carry tag $TAG; bump Cargo.toml before tagging" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Write checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum -- *.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create the GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; skipping creation."
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "${BINARY} ${TAG}" --generate-notes release/*
+          fi
