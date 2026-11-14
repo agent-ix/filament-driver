@@ -62,7 +62,7 @@ and FR-005-AC-20 through FR-005-AC-22.
    Linked and becomes `Process(identity)` when Process. The driver does not
    construct that kind or infer it from identity. The Linked-origin half of
    FR-005-AC-1 is tested in `src/registry.rs`. Process-origin plugin hello
-   registration through the `quire-cli` process-provider adapter remains
+   registration through the `fsl-cli` process-provider adapter remains
    planned.
 
 11. Verify the Kani output's terminal is the one produced by CG's
@@ -99,7 +99,7 @@ and FR-005-AC-20 through FR-005-AC-22.
     for `DecidedRunRefusal` and the driver adds none. FR-005-AC-22.
 
 Test location: `src/registry.rs`, `src/drive.rs`, `src/provider.rs`,
-`quire-cli/src/backend_provider.rs`, `quire-cli/src/process_provider.rs`, and
+`fsl-cli/src/backend_provider.rs`, `fsl-cli/src/process_provider.rs`, and
 `tests/drive.rs`; full routed
 invocation and process-provider terminal integration remain planned.
 

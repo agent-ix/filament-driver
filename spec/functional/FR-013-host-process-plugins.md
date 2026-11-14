@@ -18,7 +18,7 @@ The `quire-plugin-host` package SHALL implement the process boundary required
 by QSL ADR-029 PL-1 through PL-7. It SHALL expose a session that starts a
 named executable, reads and returns its `hello` manifest before accepting any
 provider request, permits zero or more validated requests, and shuts down the
-same process. The `quire-cli` process-provider adapter SHALL perform manifest
+same process. The `fsl-cli` process-provider adapter SHALL perform manifest
 admission and typed result validation through callbacks supplied to the host.
 This requirement specifies the host component; [FR-006](./FR-006-host-provider-plugins.md)
 specifies the driver-owned process-provider seam and settlement composition.
@@ -29,7 +29,7 @@ specifies the driver-owned process-provider seam and settlement composition.
   caller-selected frame, session-byte and stderr-retention limits, and the
   caller's inherited environment and working directory.
 - Manifest-admission and typed result-validation callbacks supplied by the
-  `quire-cli` process-provider adapter.
+  `fsl-cli` process-provider adapter.
 - Zero or more provider requests, each with its request identity, package
   bytes, negotiated items, cancellation, deadline, and cancellation-grace
   limit.
@@ -55,7 +55,7 @@ specifies the driver-owned process-provider seam and settlement composition.
   request frame.
 - When admission succeeds, the session SHALL accept zero or more requests and
   correlate each response to its request identity, validate each result
-  through the `quire-cli` adapter's callback, and preserve the validated typed
+  through the `fsl-cli` adapter's callback, and preserve the validated typed
   result unchanged.
 - Each frame SHALL use the QSL PL-3 length-prefixed JCS wire format.
 - The host SHALL enforce the per-frame limit before allocation and the shared
@@ -101,7 +101,7 @@ specifies the driver-owned process-provider seam and settlement composition.
 - The process host SHALL remain a separate package.
 - The `quire-driver` package SHALL NOT have a normal or build dependency on
   `quire-plugin-host`.
-- The `quire-cli` package SHALL compose the host implementation with the
+- The `fsl-cli` package SHALL compose the host implementation with the
   driver's process-provider seam, as specified by FR-014.
 - The process host SHALL NOT implement QSL manifest hashing, cache results, or
   map CG process backend variants; those responsibilities remain with their
@@ -125,7 +125,7 @@ specifies the driver-owned process-provider seam and settlement composition.
 | FR-013-AC-7 | Truncated, malformed, non-canonical, oversized, unexpected, and wrongly correlated frames produce their specific typed failures without allocation above configured limits. | Test |
 | FR-013-AC-9 | Stderr beyond the session retention limit is drained but not retained; stderr is available on failures, and reader/writer workers are joined within one second after termination begins. | Test |
 | FR-013-AC-10 | After stdout closes while the child remains alive, process-exit waiting does not busy-wait; EOF before a response preserves an available child exit status. | Test |
-| FR-013-AC-11 | The host uses QSL ADR-029 PL-1 through PL-7 without defining a local wire or manifest-digest format; `quire-driver` excludes the host crate, and `quire-cli` has a direct host dependency and composes it with the driver's seam. | Test (TC-005, TC-028) and analysis |
+| FR-013-AC-11 | The host uses QSL ADR-029 PL-1 through PL-7 without defining a local wire or manifest-digest format; `quire-driver` excludes the host crate, and `fsl-cli` has a direct host dependency and composes it with the driver's seam. | Test (TC-005, TC-028) and analysis |
 | FR-013-AC-12 | On a clean Cargo cache, the repository `make test` target fetches every locked platform dependency before running the offline TC-005 dependency metadata check, and the check passes. | Test (TC-027) |
 | FR-013-AC-13 | The host test suite reports an actionable prerequisite failure naming the missing fixture runtime and its installation instructions. | Test (TC-027) |
 | FR-013-AC-14 | When the IR-674 follow-up selects and implements a supported Windows process-tree cleanup mechanism, the host assigns the plugin process tree to a kill-on-close Job Object before plugin code executes; closing the owning job handle terminates remaining job members. | Deferred to IR-674; not implemented or verified by this PR; native Windows evidence required |

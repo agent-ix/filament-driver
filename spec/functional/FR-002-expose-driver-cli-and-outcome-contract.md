@@ -63,7 +63,7 @@ the fallback when that function returns reserved value `5`.
 
 ## Behavior
 
-- The `quire` binary SHALL be provided by the `quire-cli` workspace package;
+- The `quire` binary SHALL be provided by the `fsl-cli` workspace package;
   the QSL workspace supplies no competing user binary. The `quire-driver`
   library SHALL NOT compose the downstream `quire-cache` package. FR-014
   specifies the separate CLI package boundary.
@@ -128,13 +128,13 @@ the fallback when that function returns reserved value `5`.
   identify any default text-output restriction for executable verbs.
 - When root help is written successfully, the CLI SHALL return QSL's success
   exit result and write no stderr output.
-- When the user invokes `quire --version`, the CLI SHALL report the semantic
-  version declared by the `quire-cli` Cargo package.
-- When `quire-cli` runs its built-binary version-agreement check, it SHALL
+- When the user invokes `fsl --version`, the CLI SHALL report the semantic
+  version declared by the `fsl-cli` Cargo package.
+- When `fsl-cli` runs its built-binary version-agreement check, it SHALL
   compare `CARGO_PKG_VERSION` with the version reported by the built
-  `quire --version` command through
+  `fsl --version` command through
   `ix_cli_kit::version::Agreement::command`.
-- The CLI SHALL keep its argument parser in the `quire-cli` package.
+- The CLI SHALL keep its argument parser in the `fsl-cli` package.
 - The CLI SHALL read only input paths named by its arguments and read no
   unnamed configuration file.
 
@@ -152,8 +152,8 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-8 | When the CLI writes results and diagnostics, it uses ix-cli-kit's `streams` module for stream discipline. | Test (TC-009, TC-018) |
 | FR-002-AC-9 | When the CLI writes machine-mode outcomes, it uses ix-cli-kit's `json` module for canonical JSON encoding. | Test (TC-009, TC-018) |
 | FR-002-AC-10 | When the CLI resolves configuration values, it uses ix-cli-kit's `config` module. | Test (TC-009) |
-| FR-002-AC-11 | When invoked with `--version`, the CLI reports the semantic version declared by the `quire-cli` Cargo package. | Test (TC-009) |
-| FR-002-AC-12 | The `quire-cli` built-binary version-agreement check uses `ix_cli_kit::version::Agreement::command` to compare `CARGO_PKG_VERSION` with the output of the built `quire --version` command and requires agreement. | Test (TC-009) |
+| FR-002-AC-11 | When invoked with `--version`, the CLI reports the semantic version declared by the `fsl-cli` Cargo package. | Test (TC-009) |
+| FR-002-AC-12 | The `fsl-cli` built-binary version-agreement check uses `ix_cli_kit::version::Agreement::command` to compare `CARGO_PKG_VERSION` with the output of the built `fsl --version` command and requires agreement. | Test (TC-009) |
 | FR-002-AC-13 | When text rendering is unavailable for parse, check, compile or run, the CLI returns the operation-specific QSL `UnimplementedCapability` result, writes no stdout, and does not execute the requested lifecycle operation. | Test (TC-009) |
 | FR-002-AC-14 | For a `BrokenPipe` while writing or flushing primary stdout, the process status equals the completed operation's QSL category exit result and stderr is empty, including for a refused operation with nonempty diagnostics when stdout is writable. No output-failure category is selected and no `OutputFailure` diagnostic is emitted. | Test |
 | FR-002-AC-15 | If writing or flushing primary stdout returns an I/O error other than `BrokenPipe`, the process exits with QSL's `Category::InternalFailure` exit result. The criterion makes no assertion that stdout is empty or complete. | Test (TC-018) |

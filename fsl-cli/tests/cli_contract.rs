@@ -23,7 +23,7 @@ use quire_semantic_value::catalog::Category;
 #[path = "common/requests.rs"]
 mod requests;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_quire");
+const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
 const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
 const INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -188,7 +188,7 @@ fn check_does_not_read_an_unnamed_config_from_the_working_directory() {
         .expect("system clock is after the Unix epoch")
         .as_nanos();
     let directory = std::env::temp_dir().join(format!(
-        "quire-cli-no-implicit-config-{}-{unique}",
+        "fsl-cli-no-implicit-config-{}-{unique}",
         std::process::id()
     ));
     std::fs::create_dir(&directory).expect("create isolated working directory");
@@ -436,7 +436,7 @@ fn version_command_reports_the_quire_cli_package_version() {
     let output = Command::new(QUIRE)
         .arg("--version")
         .output()
-        .expect("run quire --version");
+        .expect("run fsl --version");
     assert_eq!(
         output.status.code(),
         Some(i32::from(Category::Success.exit_code()))
@@ -461,7 +461,7 @@ fn root_help_selectors_print_the_same_informative_help_without_an_operation() {
         assert!(output.stderr.is_empty(), "arguments: {arguments:?}");
         let help = std::str::from_utf8(&output.stdout).expect("help is UTF-8");
         for required in [
-            "Usage: quire <command>",
+            "Usage: fsl <command>",
             "--format text|json|dot",
             "dot is accepted only for inspect",
             "--version, -V",
@@ -550,7 +550,7 @@ fn informative_help_does_not_replace_invalid_command_or_format_refusals() {
 fn built_binary_version_agrees_with_cargo_package_version() {
     let agreement = Agreement::new()
         .surface("CARGO_PKG_VERSION", env!("CARGO_PKG_VERSION"))
-        .command("quire --version", Path::new(QUIRE), &["--version"]);
+        .command("fsl --version", Path::new(QUIRE), &["--version"]);
     let result = agreement.check();
     assert!(result.is_ok(), "version agreement failed: {result:?}");
 }

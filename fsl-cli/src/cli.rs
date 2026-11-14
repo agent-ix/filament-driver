@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Parser and command handlers for the user-facing `quire` binary.
+//! Parser and command handlers for the user-facing `fsl` binary.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -110,9 +110,9 @@ fn help_exit_code() -> ExitCode {
     }
 
     let mut help = String::from(concat!(
-        "Usage: quire <command> [arguments] [--format text|json|dot]\n",
-        "       quire --help|-h|help\n",
-        "       quire --version|-V\n\n",
+        "Usage: fsl <command> [arguments] [--format text|json|dot]\n",
+        "       fsl --help|-h|help\n",
+        "       fsl --version|-V\n\n",
         "Commands:\n",
     ));
     for verb in Verb::ALL {
@@ -446,7 +446,7 @@ impl SourceOptions {
     fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
         let usage = || {
             format!(
-                "usage: quire {} <authority> <identity> <file> [--format json|text]",
+                "usage: fsl {} <authority> <identity> <file> [--format json|text]",
                 verb.name()
             )
         };
@@ -497,7 +497,7 @@ impl CompileOptions {
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err("usage: quire compile <request-file> [--format json|text]".to_owned());
+            return Err("usage: fsl compile <request-file> [--format json|text]".to_owned());
         };
         Ok(Self {
             path: PathBuf::from(*path),
@@ -524,7 +524,7 @@ impl CheckOptions {
             index += 1;
         }
         if positionals.len() != 1 {
-            return Err("usage: quire check <source-path> [--format json|text]".to_owned());
+            return Err("usage: fsl check <source-path> [--format json|text]".to_owned());
         }
         Ok(Self {
             path: positionals.remove(0),
@@ -533,7 +533,7 @@ impl CheckOptions {
 }
 
 impl RunOptions {
-    const USAGE: &str = "usage: quire run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>] [--format json|text]";
+    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>] [--format json|text]";
 
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
@@ -1791,7 +1791,7 @@ mod configured_run_tests {
             .expect("system time is after the Unix epoch")
             .as_nanos();
         let directory = TempDir(std::env::temp_dir().join(format!(
-            "quire-cli-configured-run-{}-{unique}",
+            "fsl-cli-configured-run-{}-{unique}",
             std::process::id()
         )));
         std::fs::create_dir(&directory.0).expect("create temporary test directory");
@@ -1963,7 +1963,7 @@ mod configured_run_tests {
             .expect("system time is after the Unix epoch")
             .as_nanos();
         let directory = TempDir(std::env::temp_dir().join(format!(
-            "quire-cli-configured-duplicate-{}-{unique}",
+            "fsl-cli-configured-duplicate-{}-{unique}",
             std::process::id()
         )));
         std::fs::create_dir(&directory.0).expect("create temporary test directory");

@@ -21,8 +21,8 @@ relationships:
 ## Description
 
 The driver repository SHALL provide its user-facing `quire` executable from a
-workspace package named `quire-cli`, separate from the `quire-driver` library
-package. The `quire-cli` package SHALL own the binary argument parser, CLI
+workspace package named `fsl-cli`, separate from the `quire-driver` library
+package. The `fsl-cli` package SHALL own the binary argument parser, CLI
 tests and their fixtures. It SHALL compose the driver library, downstream
 cache, and process-provider adapter using `quire-plugin-host`.
 
@@ -34,29 +34,29 @@ cache, and process-provider adapter using `quire-plugin-host`.
 
 ## Outputs
 
-- A workspace package named `quire-cli` that provides the `quire` executable.
-- The binary argument parser and CLI tests/fixtures owned by `quire-cli`.
+- A workspace package named `fsl-cli` that provides the `quire` executable.
+- The binary argument parser and CLI tests/fixtures owned by `fsl-cli`.
 - A Cargo dependency graph in which the CLI composes the driver, cache and
   ix-cli-kit.
-- A Cargo dependency graph in which `quire-cli` composes the plugin host while
+- A Cargo dependency graph in which `fsl-cli` composes the plugin host while
   the `quire-driver` dependency closure excludes both the host and ix-cli-kit.
 
 ## Behavior
 
 - The driver repository's Cargo workspace SHALL include a separate
-  `quire-cli` package.
-- Exactly one workspace package, `quire-cli`, SHALL provide the `quire` binary
+  `fsl-cli` package.
+- Exactly one workspace package, `fsl-cli`, SHALL provide the `quire` binary
   target.
-- `quire-cli` SHALL have direct normal dependencies on `quire-driver`,
+- `fsl-cli` SHALL have direct normal dependencies on `quire-driver`,
   `quire-cache`, `quire-plugin-host` and `ix-cli-kit`.
-- The `ix-cli-kit` Git dependency in `quire-cli/Cargo.toml` SHALL specify
+- The `ix-cli-kit` Git dependency in `fsl-cli/Cargo.toml` SHALL specify
   `branch = "main"`; the consumer's `Cargo.lock` SHALL record the resolved
   commit, with no `rev` field in the dependency declaration.
-- The workspace root SHALL list `quire-cli` in `default-members`.
-- The `quire-cli` package SHALL own the argument parser in
-  `quire-cli/src/cli.rs`, with the binary entry point in
-  `quire-cli/src/main.rs`.
-- The `quire-cli` composition in `quire-cli/src/cli.rs` SHALL own the
+- The workspace root SHALL list `fsl-cli` in `default-members`.
+- The `fsl-cli` package SHALL own the argument parser in
+  `fsl-cli/src/cli.rs`, with the binary entry point in
+  `fsl-cli/src/main.rs`.
+- The `fsl-cli` composition in `fsl-cli/src/cli.rs` SHALL own the
   process-provider configuration input passed into FR-006 composition. The
   `run` command SHALL accept `--provider-config <path>` and use the named file
   as the sole caller-input source for process providers, including each
@@ -66,18 +66,18 @@ cache, and process-provider adapter using `quire-plugin-host`.
   search a default location or read this configuration from ambient environment
   state.
 - CLI contract and binary process-boundary tests and their fixtures SHALL
-  reside in the `quire-cli` package.
+  reside in the `fsl-cli` package.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-014-AC-1 | Exactly one workspace package, `quire-cli`, provides the `quire` binary target. | Test (TC-028) |
-| FR-014-AC-2 | `quire-cli` has direct normal dependency edges to `quire-driver`, `quire-cache`, `quire-plugin-host` and `ix-cli-kit`; the `quire-driver` closure has no normal or build edge to `quire-plugin-host` or `ix-cli-kit`. | Test (TC-005, TC-028) |
-| FR-014-AC-3 | The workspace root lists `quire-cli` in `default-members`. | Test (TC-005) |
-| FR-014-AC-4 | CLI contract and binary process-boundary tests and their fixtures reside in the `quire-cli` package. | Test (TC-009, TC-018, TC-028) |
-| FR-014-AC-5 | The CLI parser definition resides in `quire-cli/src/cli.rs`, and the binary entry point is in `quire-cli/src/main.rs`; the `quire-driver` package's `src/lib.rs` does not export a `cli` module. | Test (TC-028) |
-| FR-014-AC-6 | The `quire run` command accepts `--provider-config <path>` as its sole process-provider configuration source, including the required per-provider `deadline_ms` defined by FR-006; omitting the option registers no process providers and applies no implicit provider deadline or default/ambient configuration. | Test (TC-028) |
+| FR-014-AC-1 | Exactly one workspace package, `fsl-cli`, provides the `quire` binary target. | Test (TC-028) |
+| FR-014-AC-2 | `fsl-cli` has direct normal dependency edges to `quire-driver`, `quire-cache`, `quire-plugin-host` and `ix-cli-kit`; the `quire-driver` closure has no normal or build edge to `quire-plugin-host` or `ix-cli-kit`. | Test (TC-005, TC-028) |
+| FR-014-AC-3 | The workspace root lists `fsl-cli` in `default-members`. | Test (TC-005) |
+| FR-014-AC-4 | CLI contract and binary process-boundary tests and their fixtures reside in the `fsl-cli` package. | Test (TC-009, TC-018, TC-028) |
+| FR-014-AC-5 | The CLI parser definition resides in `fsl-cli/src/cli.rs`, and the binary entry point is in `fsl-cli/src/main.rs`; the `quire-driver` package's `src/lib.rs` does not export a `cli` module. | Test (TC-028) |
+| FR-014-AC-6 | The `fsl run` command accepts `--provider-config <path>` as its sole process-provider configuration source, including the required per-provider `deadline_ms` defined by FR-006; omitting the option registers no process providers and applies no implicit provider deadline or default/ambient configuration. | Test (TC-028) |
 
 ## Dependencies
 

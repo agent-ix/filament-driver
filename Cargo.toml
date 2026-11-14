@@ -1,17 +1,17 @@
 [package]
 name = "quire-driver"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.98.1"
 description = "Orchestrating driver: calls QSL (compile, emit, route) and CG (negotiate) across repositories (ADR-011 T-13)."
 authors = ["Agent IX <agent@agent-ix.dev>"]
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/agent-ix/quire-driver"
+repository = "https://github.com/agent-ix/filament-driver"
 publish = false
 
 [workspace]
-members = ["quire-cache", "quire-cli", "quire-plugin-host"]
-default-members = [".", "quire-cache", "quire-cli", "quire-plugin-host"]
+members = ["quire-cache", "fsl-cli", "quire-plugin-host"]
+default-members = [".", "quire-cache", "fsl-cli", "quire-plugin-host"]
 resolver = "2"
 
 [workspace.lints.rust]

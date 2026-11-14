@@ -137,7 +137,7 @@ pub(crate) fn run<T: Send + 'static>(
             let listener_context = context.clone();
             let (ready_tx, ready_rx) = mpsc::sync_channel(1);
             std::thread::Builder::new()
-                .name("quire-cli-signal-listener".to_owned())
+                .name("fsl-cli-signal-listener".to_owned())
                 .spawn(move || {
                     let mut signals = match Signals::new([SIGINT, SIGTERM]) {
                         Ok(signals) => {
@@ -162,7 +162,7 @@ pub(crate) fn run<T: Send + 'static>(
     let worker_context = context.clone();
     let (sender, receiver) = mpsc::sync_channel(1);
     std::thread::Builder::new()
-        .name("quire-cli-operation".to_owned())
+        .name("fsl-cli-operation".to_owned())
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
             let result = catch_unwind(AssertUnwindSafe(|| operation(worker_context)));
@@ -383,8 +383,8 @@ mod tests {
         }
 
         for mode in ["active", "idle", "post-session"] {
-            let marker = std::env::temp_dir()
-                .join(format!("quire-cli-signal-{}-{mode}", std::process::id()));
+            let marker =
+                std::env::temp_dir().join(format!("fsl-cli-signal-{}-{mode}", std::process::id()));
             let trigger = marker.with_extension("trigger");
             let cleaned = marker.with_extension("cleaned");
             let outcome = marker.with_extension("outcome");

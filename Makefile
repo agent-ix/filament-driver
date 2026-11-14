@@ -35,7 +35,7 @@ fmt-check:
 
 .PHONY: lint
 lint:
-	$(CARGO) clippy --all-targets --features quire-cli/tc018-test-adapter -- -D warnings
+	$(CARGO) clippy --all-targets --features fsl-cli/tc018-test-adapter -- -D warnings
 
 .PHONY: test
 test:
@@ -44,7 +44,7 @@ test:
 	@set -eu; \
 	run_tc018_test() { \
 		name="$$1"; \
-		output="$$($(CARGO) test --features tc018-test-adapter -p quire-cli --test binary_process "$$name" -- --exact 2>&1)" || { \
+		output="$$($(CARGO) test --features tc018-test-adapter -p fsl-cli --test binary_process "$$name" -- --exact 2>&1)" || { \
 			printf '%s\n' "$$output"; exit 1; \
 		}; \
 		printf '%s\n' "$$output"; \

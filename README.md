@@ -3,7 +3,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 [![Quire](https://img.shields.io/badge/Quire-Specification%20Language-1F6FEB)](https://github.com/agent-ix/quire-spec-language)
 
-quire-driver is the `quire` command-line tool and the Rust library behind it.
+quire-driver is the `fsl` command-line tool and the Rust library behind it.
 It runs a QSL specification from source to result.
 
 It reads the source, has QSL check and package the rule, passes the checked
@@ -13,34 +13,34 @@ generators.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-  <img alt="The quire command takes QSL source through parse, check and compile to a checked package, and its run verb evaluates a function to an outcome with an exit code. The driver library also reads the package back, routes it, negotiates with backends and generates code. The prove and generate commands and their verdict are planned." src="docs/images/hero-light.svg">
+  <img alt="The fsl command takes QSL source through parse, check and compile to a checked package, and its run verb evaluates a function to an outcome with an exit code. The driver library also reads the package back, routes it, negotiates with backends and generates code. The prove and generate commands and their verdict are planned." src="docs/images/hero-light.svg">
 </picture>
 
 ## Getting started
 
-Download a prebuilt `quire` binary from the [latest release](https://github.com/agent-ix/quire-driver/releases/latest)
+Download a prebuilt `fsl` binary from the [latest release](https://github.com/agent-ix/filament-driver/releases/latest)
 (Linux x86_64 and aarch64, macOS arm64 and x86_64). Each release carries a
 `SHA256SUMS.txt`. Or build from source: `rust-toolchain.toml` pins Rust 1.98.1,
-which `rustup` installs on first use. Install the `quire` binary using the
+which `rustup` installs on first use. Install the `fsl` binary using the
 repository's locked dependencies:
 
 ```
-cargo install --git https://github.com/agent-ix/quire-driver --locked quire-cli
+cargo install --git https://github.com/agent-ix/filament-driver --locked fsl-cli
 ```
 
 To install from a local checkout instead:
 
 ```
-git clone https://github.com/agent-ix/quire-driver
-cd quire-driver
-cargo install --path quire-cli --locked
+git clone https://github.com/agent-ix/filament-driver
+cd filament-driver
+cargo install --path fsl-cli --locked
 ```
 
-Check the install with `quire --version`.
+Check the install with `fsl --version`.
 
 ## Commands
 
-The binary is built from the `quire-cli` package. Its verbs follow the QSL
+The binary is built from the `fsl-cli` package. Its verbs follow the QSL
 command-line design:
 
 | Verb | State | What it does |
@@ -52,8 +52,8 @@ command-line design:
 `parse` and `format` take two logical source labels followed by the file path:
 
 ```sh
-quire parse example.org requirements source.qsl --format json
-quire format example.org requirements source.qsl
+fsl parse example.org requirements source.qsl --format json
+fsl format example.org requirements source.qsl
 ```
 
 The labels identify the source; the file path is its physical location.
@@ -93,10 +93,10 @@ logical names independent of the physical file path:
 Run the request; the command exits with code 0:
 
 ```
-quire run yes.json --format json
+fsl run yes.json --format json
 ```
 
-`quire compile` likewise takes a `native-compile/1` request file. Run intake
+`fsl compile` likewise takes a `native-compile/1` request file. Run intake
 accepts `--request-bytes` and `--dependent-bytes`; compile uses fixed ceilings.
 
 ## Library
@@ -122,7 +122,7 @@ generation, and the driver is the one place that joins them.
 The registry of backends is a value the caller builds from provider manifests
 and passes in.
 
-`execute` is the smaller entry point behind `quire run`: it compiles one
+`execute` is the smaller entry point behind `fsl run`: it compiles one
 source and calls one function on the selected engine, returning QSL's typed
 outcome unchanged.
 
@@ -131,7 +131,7 @@ outcome unchanged.
 | Crate | Role |
 | --- | --- |
 | `quire-driver` (root) | The library: `drive`, `execute`, the registry, limits and the cache interface. Depends on QSL and the code generator. |
-| `quire-cli` | The `quire` binary: argument parsing and the command handlers. Depends on the driver and the cache. |
+| `fsl-cli` | The `fsl` binary: argument parsing and the command handlers. Depends on the driver and the cache. |
 | `quire-plugin-host` | The process boundary for out-of-process backend providers: framing, wire types and lifecycle for the `quire.plugin-wire/v1` protocol. |
 | `quire-cache` | A content-addressed on-disk cache that implements the driver's cache interface. |
 

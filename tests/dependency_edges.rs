@@ -227,7 +227,7 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
     );
 
     assert_eq!(graph.ids_named("quire-driver").len(), 1);
-    let cli = graph.ids_named("quire-cli");
+    let cli = graph.ids_named("fsl-cli");
     assert_eq!(cli.len(), 1, "one CLI package");
     let cli_direct: BTreeSet<&str> = graph.deps_of(cli[0]).map(|p| p.name.as_str()).collect();
     for required in [
@@ -239,12 +239,12 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
     ] {
         assert!(
             cli_direct.contains(required),
-            "quire-cli must directly depend on {required}"
+            "fsl-cli must directly depend on {required}"
         );
     }
     assert!(
         graph.workspace_default_members.contains(cli[0]),
-        "quire-cli is a workspace default member"
+        "fsl-cli is a workspace default member"
     );
     let cache = graph.ids_named("quire-cache");
     if !cache.is_empty() {

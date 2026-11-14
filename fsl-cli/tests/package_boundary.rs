@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-014 (TC-028): keep the CLI executable and its frontend-owned files in
-//! the separate `quire-cli` workspace package.
+//! the separate `fsl-cli` workspace package.
 #![allow(
     clippy::expect_used,
     clippy::panic,
@@ -39,7 +39,7 @@ fn has_parser_definition(source: &str) -> bool {
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("quire-cli has a workspace root")
+        .expect("fsl-cli has a workspace root")
         .to_path_buf()
 }
 
@@ -82,9 +82,9 @@ fn cargo_target_and_dependencies_belong_to_quire_cli() {
     let packages = metadata["packages"].as_array().expect("workspace packages");
     let cli_packages: Vec<&Value> = packages
         .iter()
-        .filter(|package| package["name"] == "quire-cli")
+        .filter(|package| package["name"] == "fsl-cli")
         .collect();
-    assert_eq!(cli_packages.len(), 1, "one quire-cli workspace package");
+    assert_eq!(cli_packages.len(), 1, "one fsl-cli workspace package");
     let cli = cli_packages[0];
     let default_features = cli["features"]["default"]
         .as_array()
@@ -105,7 +105,7 @@ fn cargo_target_and_dependencies_belong_to_quire_cli() {
                 .expect("package targets")
                 .iter()
                 .filter(move |target| {
-                    target["name"] == "quire"
+                    target["name"] == "fsl"
                         && target["kind"]
                             .as_array()
                             .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
@@ -113,8 +113,8 @@ fn cargo_target_and_dependencies_belong_to_quire_cli() {
                 .map(move |target| (package, target))
         })
         .collect();
-    assert_eq!(quire_targets.len(), 1, "one Cargo binary named quire");
-    assert_eq!(quire_targets[0].0["name"], "quire-cli");
+    assert_eq!(quire_targets.len(), 1, "one Cargo binary named fsl");
+    assert_eq!(quire_targets[0].0["name"], "fsl-cli");
 
     let dependencies = direct_normal_dependencies(cli);
     assert!(dependencies.contains("quire-driver"));
@@ -125,7 +125,7 @@ fn cargo_target_and_dependencies_belong_to_quire_cli() {
 }
 
 /// Trace: FR-014-AC-4, FR-014-AC-5, the parser, binary entry point, CLI tests and
-/// fixtures are owned by quire-cli, and the library exports no CLI module.
+/// fixtures are owned by fsl-cli, and the library exports no CLI module.
 #[test]
 fn parser_and_cli_tests_live_in_the_cli_package() {
     let root = workspace_root();
@@ -147,7 +147,7 @@ fn parser_and_cli_tests_live_in_the_cli_package() {
     for relative in ["tests/cli_contract.rs", "tests/binary_process.rs"] {
         assert!(
             cli_root.join(relative).is_file(),
-            "missing quire-cli/{relative}"
+            "missing fsl-cli/{relative}"
         );
         assert!(
             !root.join(relative).exists(),
@@ -157,7 +157,7 @@ fn parser_and_cli_tests_live_in_the_cli_package() {
     let fixture = "tests/fixtures/ir608-run.qsl";
     assert!(
         cli_root.join(fixture).is_file(),
-        "missing quire-cli/{fixture}"
+        "missing fsl-cli/{fixture}"
     );
     assert!(
         !root.join(fixture).exists(),

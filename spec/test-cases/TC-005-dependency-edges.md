@@ -34,10 +34,10 @@ FR-014-AC-2 and FR-014-AC-3.
    Identify `quire-cache` and inspect its direct dependency edges. Existing
    `tests/dependency_edges.rs` coverage verifies the driver/cache boundary and
    host-free driver closure.
-3. Inspect the direct normal dependency edges from `quire-cli` and confirm it
+3. Inspect the direct normal dependency edges from `fsl-cli` and confirm it
    depends on `quire-plugin-host` and `ix-cli-kit`; confirm the driver closure
    remains host-free and kit-free. The CLI-to-host edge is already asserted by
-   `tests/dependency_edges.rs` and `quire-cli/tests/package_boundary.rs`.
+   `tests/dependency_edges.rs` and `fsl-cli/tests/package_boundary.rs`.
 4. Confirm the authorised direct runtime edge and traverse RT's complete
    normal/build closure. It must contain no QSL-source package, IR/model,
    driver or codegen backedge. This dependency direction check alone is not
@@ -75,8 +75,8 @@ Test: `tests/dependency_edges.rs`, `tc_005_driver_edges_match_the_adr_011_allow_
 - If the workspace has a `quire-cache` package, it is separate from
   `quire-driver` and depends on the driver-owned interface. No transitive
   normal/build path leads from `quire-driver` to `quire-cache`.
-- The `workspace_default_members` array includes `quire-cli`.
-- When the workspace contains `quire-cli`, the graph includes its driver
+- The `workspace_default_members` array includes `fsl-cli`.
+- When the workspace contains `fsl-cli`, the graph includes its driver
   interface and cache edges, plus direct normal edges to `quire-plugin-host`
   and `ix-cli-kit`. The direct CLI-to-host edge is already asserted by the
   current dependency test together with the CLI-to-kit edge. `ix-cli-kit`

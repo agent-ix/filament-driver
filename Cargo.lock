@@ -499,6 +499,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "fsl-cli"
+version = "0.1.2"
+dependencies = [
+ "base64 0.23.1",
+ "ix-cli-kit",
+ "ix-trace-rs",
+ "libc",
+ "qsl-command",
+ "qsl-cst",
+ "qsl-foundation",
+ "qsl-package",
+ "qsl-replay",
+ "qsl-route",
+ "qsl-semantics",
+ "quire-cache",
+ "quire-canonical",
+ "quire-contract-codegen",
+ "quire-contract-model",
+ "quire-driver",
+ "quire-exact",
+ "quire-plugin-host",
+ "quire-semantic-value",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "signal-hook",
+ "thiserror",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1506,37 +1537,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quire-cli"
-version = "0.1.1"
-dependencies = [
- "base64 0.23.1",
- "ix-cli-kit",
- "ix-trace-rs",
- "libc",
- "qsl-command",
- "qsl-cst",
- "qsl-foundation",
- "qsl-package",
- "qsl-replay",
- "qsl-route",
- "qsl-semantics",
- "quire-cache",
- "quire-canonical",
- "quire-contract-codegen",
- "quire-contract-model",
- "quire-driver",
- "quire-exact",
- "quire-plugin-host",
- "quire-semantic-value",
- "regex",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "signal-hook",
- "thiserror",
-]
-
-[[package]]
 name = "quire-contract-codegen"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-contract-codegen?branch=main#b4788a0d6e4ae7e5db00b45c551b323bcc8cbea7"
@@ -1610,7 +1610,7 @@ dependencies = [
 
 [[package]]
 name = "quire-driver"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ix-trace-rs",
  "qsl-analyze",

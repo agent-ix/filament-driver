@@ -28,8 +28,8 @@ concurrency:
 env:
   # The one place that names the shipped binary. The rename program changes
   # these two lines (and nothing else in this file).
-  BINARY: quire
-  CARGO_PACKAGE: quire-cli
+  BINARY: fsl
+  CARGO_PACKAGE: fsl-cli
   # Cargo profile the binary is built with (see [profile.dist] in Cargo.toml).
   CARGO_PROFILE: dist
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"

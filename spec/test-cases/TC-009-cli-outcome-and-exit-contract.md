@@ -40,8 +40,8 @@ FR-002-AC-17, plus FR-014-AC-4.
    pipe.
 6. Run from a directory containing an unnamed configuration file and verify
    that the CLI does not read it.
-7. Invoke `quire --version` and verify that it reports the semantic version
-   declared by the `quire-cli` Cargo package. Run
+7. Invoke `fsl --version` and verify that it reports the semantic version
+   declared by the `fsl-cli` Cargo package. Run
    `ix_cli_kit::version::Agreement::command` on the built `quire` executable
    with `--version`, paired with the `CARGO_PKG_VERSION` surface. Require the
    agreement check to pass.
@@ -66,9 +66,9 @@ FR-002-AC-17, plus FR-014-AC-4.
     parser and dispatch surface; verify that these invocations do not read
     source input or dispatch a lifecycle operation.
 
-Test location: `quire-cli/tests/cli_contract.rs`; CLI-specific test fixtures
-reside under `quire-cli/tests/fixtures/`. The parser and command construction
-under test are owned by `quire-cli/src/cli.rs`.
+Test location: `fsl-cli/tests/cli_contract.rs`; CLI-specific test fixtures
+reside under `fsl-cli/tests/fixtures/`. The parser and command construction
+under test are owned by `fsl-cli/src/cli.rs`.
 
 ## Expected Results
 
@@ -83,7 +83,7 @@ under test are owned by `quire-cli/src/cli.rs`.
   QSL categories through the kit's typed `Outcome` values; the driver tests
   only the QSL category outputs, not the kit's entire `u8` surface. The code-5
   behavior is specified by AC-6 and checked at the process boundary.
-- The parser remains owned by `quire-cli`. Stream, JSON, conditional config,
+- The parser remains owned by `fsl-cli`. Stream, JSON, conditional config,
   and version behavior have separate criteria under IR-607. This case verifies
   the stream and JSON module call sites and behavior, plus the package-version
   output and agreement check.
@@ -95,7 +95,7 @@ under test are owned by `quire-cli/src/cli.rs`.
 - Until QSL's typed outcome renderer is available, parse, check, compile and
   run text requests fail closed with their operation-specific typed
   unsupported result; they do not silently succeed with empty stdout.
-- The version output reports the `quire-cli` package semver; the kit's
+- The version output reports the `fsl-cli` package semver; the kit's
   built-binary agreement check compares it with `CARGO_PKG_VERSION` and
   passes.
 - Every root help invocation writes informative help to stdout, exits with

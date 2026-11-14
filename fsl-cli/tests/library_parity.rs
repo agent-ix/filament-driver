@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The `quire` binary and the in-process library path agree for one
+//! The `fsl` binary and the in-process library path agree for one
 //! Value-family source: same disposition, identity, diagnostics and exit code.
 
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ use quire_semantic_value::supplied_stop::SuppliedLimits;
 #[path = "common/requests.rs"]
 mod requests;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_quire");
+const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
 
 const VALUE_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

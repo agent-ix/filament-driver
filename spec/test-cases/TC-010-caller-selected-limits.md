@@ -57,8 +57,8 @@ Scope: FR-003-AC-1 through FR-003-AC-10.
    typed execution wrapper, inspect the returned `LimitExceeded` configured
    bound and `setting()`; then repeat with the limit raised to fit the input.
 
-Test location: `src/limits.rs`, `src/execute.rs`, `quire-cli/src/cli.rs`, and
-`quire-cli/tests/binary_process.rs`.
+Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
+`fsl-cli/tests/binary_process.rs`.
 
 ## Expected Results
 
