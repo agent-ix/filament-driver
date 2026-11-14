@@ -1,0 +1,5 @@
+# Cargo/rustup's own pin. Keep in step with `rust-version` in Cargo.toml and
+# with the language repo's channel.
+[toolchain]
+channel = "1.98.1"
+profile = "minimal"

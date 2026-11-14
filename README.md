@@ -18,8 +18,10 @@ generators.
 
 ## Getting started
 
-quire-driver is built from source. Install a Rust toolchain at least as new as
-the `rust-version` in `Cargo.toml`, then install the `quire` binary using the
+Download a prebuilt `quire` binary from the [latest release](https://github.com/agent-ix/quire-driver/releases/latest)
+(Linux x86_64 and aarch64, macOS arm64 and x86_64). Each release carries a
+`SHA256SUMS.txt`. Or build from source: `rust-toolchain.toml` pins Rust 1.98.1,
+which `rustup` installs on first use. Install the `quire` binary using the
 repository's locked dependencies:
 
 ```
