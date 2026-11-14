@@ -1,6 +1,6 @@
 [package]
 name = "quire-driver"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.98.1"
 description = "Orchestrating driver: calls QSL (compile, emit, route) and CG (negotiate) across repositories (ADR-011 T-13)."
