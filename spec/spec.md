@@ -162,7 +162,7 @@ preparation remains Planned.
   according to QSL ADR-029, not replacement contracts. FR-012 specifies the
   driver repository's cache implementation under that upstream cache policy;
   FR-013 specifies the separate driver-repository plugin host under that
-  upstream plugin contract; FR-014 specifies `quire-cli` composition of the
+  upstream plugin contract; FR-014 specifies `fsl-cli` composition of the
   host and driver-owned process-provider seam.
 - IR checked-package admission semantics, and CG negotiation, claim derivation,
   generation, atomic publication and terminal mapping semantics.
@@ -178,7 +178,7 @@ preparation remains Planned.
 
 The `quire-driver` library sequences QSL, IR and CG calls and builds the
 registry value passed to consumers. FR-014 places the one user-facing Cargo
-`quire` binary in the separate `quire-cli` workspace package. That package
+`quire` binary in the separate `fsl-cli` workspace package. That package
 owns the parser, CLI tests and their fixtures, and is a workspace default
 member. It composes `quire-driver`, `quire-cache` and `quire-plugin-host`; the
 `quire-driver` package remains independent of the cache and host under
@@ -190,7 +190,7 @@ CB-3).
 ## 4. Requirements Architecture
 
 `quire-driver` owns the sequencing across QSL, IR and CG for the checked
-request lifecycle. The `quire-cli` workspace package composes that library
+request lifecycle. The `fsl-cli` workspace package composes that library
 with `quire-cache` and `quire-plugin-host`; the cache and host remain outside
 the driver core's dependency closure under FR-001-AC-11, FR-012-AC-13 and
 FR-013-AC-11.
@@ -199,7 +199,7 @@ scope previously tracked by IR-351. The tables index the discrete normative
 artifacts; they do not replace their criteria. FR-002 through FR-010 specify
 SP-D1 through SP-D9 respectively; FR-012 specifies the downstream cache
 implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies the
-`quire-cli` package boundary and its parser and test ownership.
+`fsl-cli` package boundary and its parser and test ownership.
 
 | ID | Title |
 |---|---|
@@ -275,7 +275,7 @@ AOT and proof execution chain. IR-609 separates driver/cache integration
 TC-020..TC-022). Process-origin backend-kind projection now uses CG's
 origin-aware descriptor conversion and the QSL registry origin; process-provider
 dispatch and settlement remain gated on their routed-request and result APIs.
-The `quire-cli` adapter supplies plugin hello manifests to the QSL registry
+The `fsl-cli` adapter supplies plugin hello manifests to the QSL registry
 builder, which admits them and assigns `Process` origin; the driver passes its
 registry descriptors unchanged to CG negotiation. The driver does not
 construct `BackendKind::Process`. The mapping checklist is: preserve manifest

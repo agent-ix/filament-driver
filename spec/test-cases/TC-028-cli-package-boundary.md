@@ -41,20 +41,20 @@ kill-on-close in this PR.
 ## Test Procedure
 
 1. Run `cargo metadata --locked --offline --format-version 1` and identify the
-   workspace members and package targets for `quire-cli` and `quire-driver`.
-2. Inspect normal dependency edges from `quire-cli`; confirm they include
+   workspace members and package targets for `fsl-cli` and `quire-driver`.
+2. Inspect normal dependency edges from `fsl-cli`; confirm they include
    `quire-driver`, `quire-cache`, `quire-plugin-host` and `ix-cli-kit`. Inspect
    the driver dependency closure and confirm it excludes both
    `quire-plugin-host` and `ix-cli-kit`.
 3. Confirm exactly one workspace package provides the `quire` binary target
-   and that package is `quire-cli`.
+   and that package is `fsl-cli`.
 4. Inspect the package test layout. Confirm CLI contract and binary
-   process-boundary tests and their fixtures are under the `quire-cli` package.
+   process-boundary tests and their fixtures are under the `fsl-cli` package.
 5. Inspect the parser definition and entry point. Confirm the CLI parsing
-   definitions are implemented in `quire-cli/src/cli.rs`, the binary entry
-   point is `quire-cli/src/main.rs`, and the `quire-driver` package's
+   definitions are implemented in `fsl-cli/src/cli.rs`, the binary entry
+   point is `fsl-cli/src/main.rs`, and the `quire-driver` package's
    `src/lib.rs` does not export a `cli` module.
-6. Exercise the production `quire run --provider-config <path>` command with a
+6. Exercise the production `fsl run --provider-config <path>` command with a
    strict JSON file containing at least two entries for distinct fixture
    executables. Each fixture SHALL record its executable identity, exact argv,
    its `deadline_ms`, and hello-ready marker. Give each entry a distinct valid
@@ -74,12 +74,12 @@ kill-on-close in this PR.
    composition test exercises selection with two real fixture providers. Binary
    process tests separately cover the production `--provider-config` entrypoint,
    duplicate-identity refusal and active-request signal cleanup.
-7. Run `quire run` without `--provider-config` and verify no process provider
+7. Run `fsl run` without `--provider-config` and verify no process provider
    is registered or started. An explicit empty `providers` array has the same
    result. Verify the command does not read a default file, environment
    variable, or search path for provider configuration.
-8. For each invalid configuration, run `quire run
-   quire-cli/tests/fixtures/ir608-run.qsl yes --format json
+8. For each invalid configuration, run `fsl run
+   fsl-cli/tests/fixtures/ir608-run.qsl yes --format json
    --provider-config <path>` and verify no provider process starts. Cover a
    missing or unreadable file; malformed JSON; missing or wrongly typed
    required fields; missing, zero, negative, fractional, null, wrongly typed,
@@ -108,7 +108,7 @@ kill-on-close in this PR.
     an invalid hello. For each case, verify negotiation does not start, the
     earlier active session is closed and its process tree exits, and the
     original typed host failure is preserved without replacement.
-11. Inspect the `quire-cli` process-provider adapter wiring. Confirm it receives
+11. Inspect the `fsl-cli` process-provider adapter wiring. Confirm it receives
    the once-admitted descriptor from the host hello admitter, passes it to the
    driver's existing QSL registry without re-admitting it, and builds no
    second registry. Confirm it connects the descriptor to the process-provider
@@ -153,32 +153,32 @@ not cover Windows console control events, an uncatchable host kill on Unix, or
 a plugin descendant that deliberately leaves the host's process group.
 
 Test locations: `tests/dependency_edges.rs` and
-`quire-cli/tests/package_boundary.rs` already assert the CLI-to-host edge.
+`fsl-cli/tests/package_boundary.rs` already assert the CLI-to-host edge.
 The package-boundary test currently asserts
 `!dependencies.contains("ix-cli-kit")`, the opposite of the new CLI-to-kit
 requirement, so its FR-014-AC-2 Trace tag is removed until the IR-607 code slice
 inverts that assertion, verifies the positive CLI-to-kit edge, and asserts the
-driver closure excludes the kit. `quire-cli/tests/binary_process.rs` covers
+driver closure excludes the kit. `fsl-cli/tests/binary_process.rs` covers
 production duplicate-identity refusal and active-request SIGTERM cleanup;
-`quire-cli/src/cli.rs` composition tests cover selected-provider dispatch and
+`fsl-cli/src/cli.rs` composition tests cover selected-provider dispatch and
 typed-result retention. Windows-specific evidence is planned for a native Windows runner; no
 Windows runtime coverage is claimed from the current Ubuntu-only CI. Native
 Linux/macOS runners provide the signal evidence in step 13.
 
 ## Expected Results
 
-- `quire-cli` and `quire-driver` are distinct workspace packages.
-- Only `quire-cli` provides the `quire` binary target.
-- `quire-cli` directly depends on `quire-driver`, `quire-cache`,
+- `fsl-cli` and `quire-driver` are distinct workspace packages.
+- Only `fsl-cli` provides the `quire` binary target.
+- `fsl-cli` directly depends on `quire-driver`, `quire-cache`,
   `quire-plugin-host` and `ix-cli-kit`; the existing tests assert the
   CLI-to-host edge. The IR-607 code slice inverts the existing negative kit
   assertion and verifies that the driver closure has no normal or build
   dependency on the host or ix-cli-kit.
-- The CLI tests and their fixtures have the specified `quire-cli` ownership.
+- The CLI tests and their fixtures have the specified `fsl-cli` ownership.
 - The parser definitions and binary entry point have the specified
-  `quire-cli` locations, and the `quire-driver` package's `src/lib.rs` does
+  `fsl-cli` locations, and the `quire-driver` package's `src/lib.rs` does
   not export a `cli` module.
-- `quire run --provider-config <path>` reads only the named strict JSON file;
+- `fsl run --provider-config <path>` reads only the named strict JSON file;
   malformed/unknown configuration or an invalid `deadline_ms` fails before
   spawn; each configured provider's executable, arguments, limits and
   `deadline_ms` reach the selected process-provider dispatch unchanged; and

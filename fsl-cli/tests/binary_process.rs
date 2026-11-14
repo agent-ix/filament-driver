@@ -37,7 +37,7 @@ mod shared_units;
 #[path = "common/requests.rs"]
 mod requests;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_quire");
+const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
 const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
 
 const RUN_REQUEST: &str = concat!(
@@ -56,7 +56,7 @@ impl TestDirectory {
     fn new(label: &str) -> Self {
         let id = TEST_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed);
         let path =
-            std::env::temp_dir().join(format!("quire-cli-{label}-{}-{id}", std::process::id()));
+            std::env::temp_dir().join(format!("fsl-cli-{label}-{}-{id}", std::process::id()));
         std::fs::create_dir(&path).expect("create isolated test directory");
         Self(path)
     }
@@ -436,7 +436,7 @@ fn provider_config_file_and_schema_errors_emit_one_invalid_request_document() {
         .expect("system clock is after the Unix epoch")
         .as_nanos();
     let directory = std::env::temp_dir().join(format!(
-        "quire-cli-provider-config-{}-{unique}",
+        "fsl-cli-provider-config-{}-{unique}",
         std::process::id()
     ));
     std::fs::create_dir(&directory).expect("create isolated provider config directory");
@@ -526,7 +526,7 @@ fn empty_provider_config_executes_without_starting_a_provider() {
         .expect("system clock is after the Unix epoch")
         .as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "quire-cli-empty-provider-config-{}-{unique}.json",
+        "fsl-cli-empty-provider-config-{}-{unique}.json",
         std::process::id()
     ));
     std::fs::write(&path, r#"{"providers":[]}"#).expect("write empty provider config");
@@ -550,7 +550,7 @@ fn configured_process_normal_exit_shuts_down_active_session() {
         .expect("system clock is after the Unix epoch")
         .as_nanos();
     let directory = std::env::temp_dir().join(format!(
-        "quire-cli-configured-normal-exit-{}-{unique}",
+        "fsl-cli-configured-normal-exit-{}-{unique}",
         std::process::id()
     ));
     std::fs::create_dir(&directory).expect("create isolated normal-exit test directory");
@@ -636,7 +636,7 @@ fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() 
         .expect("system clock is after the Unix epoch")
         .as_nanos();
     let directory = std::env::temp_dir().join(format!(
-        "quire-cli-configured-duplicate-{}-{unique}",
+        "fsl-cli-configured-duplicate-{}-{unique}",
         std::process::id()
     ));
     std::fs::create_dir(&directory).expect("create isolated duplicate test directory");
@@ -753,7 +753,7 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
         .expect("system clock is after the Unix epoch")
         .as_nanos();
     let directory = std::env::temp_dir().join(format!(
-        "quire-cli-configured-signal-{}-{unique}",
+        "fsl-cli-configured-signal-{}-{unique}",
         std::process::id()
     ));
     std::fs::create_dir(&directory).expect("create isolated signal test directory");

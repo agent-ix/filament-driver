@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Process-level checks of the `quire` frontend for `parse`, `format`, `run` and
+//! Process-level checks of the `fsl` frontend for `parse`, `format`, `run` and
 //! `compile`: usage and arity refusals before I/O, invalid invocations, OS
 //! encoding, stream write failures, closed pipes and path independence.
 
@@ -8,7 +8,7 @@ use std::process::{Command, Output, Stdio};
 use ix_trace_rs::trace;
 use quire_semantic_value::catalog::Category;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_quire");
+const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
 const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
 const INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -84,7 +84,7 @@ fn missing_and_extra_operands_are_refused_before_any_file_is_read() {
         assert_refused_quietly(&output, &format!("{arguments:?}"));
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            stderr.starts_with(&format!("usage: quire {verb} ")),
+            stderr.starts_with(&format!("usage: fsl {verb} ")),
             "{arguments:?}: {stderr}"
         );
         assert!(
@@ -137,10 +137,10 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
                     &["parse", "--bogus", MISSING_SOURCE],
                     "unknown parse option `--bogus`",
                 ),
-                (&["parse"], "usage: quire parse "),
+                (&["parse"], "usage: fsl parse "),
                 (
                     &["parse", "issuer", "document", MISSING_SOURCE, "extra"],
-                    "usage: quire parse ",
+                    "usage: fsl parse ",
                 ),
                 (
                     &["parse", MISSING_SOURCE, "--format"],
@@ -159,10 +159,10 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
                     &["format", "--bogus", MISSING_SOURCE],
                     "unknown format option `--bogus`",
                 ),
-                (&["format"], "usage: quire format "),
+                (&["format"], "usage: fsl format "),
                 (
                     &["format", "issuer", "document", MISSING_SOURCE, "extra"],
-                    "usage: quire format ",
+                    "usage: fsl format ",
                 ),
                 (
                     &["format", MISSING_SOURCE, "--format"],
@@ -181,11 +181,8 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
                     &["compile", "--bogus", MISSING_SOURCE],
                     "unknown compile option `--bogus`",
                 ),
-                (&["compile"], "usage: quire compile "),
-                (
-                    &["compile", MISSING_SOURCE, "extra"],
-                    "usage: quire compile ",
-                ),
+                (&["compile"], "usage: fsl compile "),
+                (&["compile", MISSING_SOURCE, "extra"], "usage: fsl compile "),
                 (
                     &["compile", MISSING_SOURCE, "--format"],
                     "--format requires text, json, or dot",
@@ -203,11 +200,8 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
                     &["run", "--bogus", MISSING_SOURCE, "yes"],
                     "unknown run option `--bogus`",
                 ),
-                (&["run"], "usage: quire run "),
-                (
-                    &["run", MISSING_SOURCE, "yes", "extra"],
-                    "usage: quire run ",
-                ),
+                (&["run"], "usage: fsl run "),
+                (&["run", MISSING_SOURCE, "yes", "extra"], "usage: fsl run "),
                 (
                     &["run", MISSING_SOURCE, "--format"],
                     "--format requires text, json, or dot",

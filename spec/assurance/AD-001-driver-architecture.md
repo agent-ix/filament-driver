@@ -90,10 +90,10 @@ criteria.
 ## System Boundary
 
 The driver repository owns the downstream orchestration library and the one
-user-facing Cargo `quire` binary. FR-014 places the binary in the separate
-`quire-cli` workspace package. `quire-cli/src/cli.rs` owns argument parsing;
-`quire-cli/src/main.rs` is the binary entry point. CLI tests and their fixtures
-also belong to `quire-cli`. The CLI composes the driver, cache and separate
+user-facing Cargo `fsl` binary. FR-014 places the binary in the separate
+`fsl-cli` workspace package. `fsl-cli/src/cli.rs` owns argument parsing;
+`fsl-cli/src/main.rs` is the binary entry point. CLI tests and their fixtures
+also belong to `fsl-cli`. The CLI composes the driver, cache and separate
 `quire-plugin-host` package. The binary reads explicitly named inputs, builds
 typed requests, calls the appropriate library operation, and renders its
 typed outcome. `prove` and `generate` are driver operations;
@@ -118,12 +118,12 @@ complete runtime qualification.
 
 QSL ADR-029 also defines the plugin, cache and execution-backend contracts.
 Its CB-3 places the host, cache, AOT adapter and CLI outside the qualified core
-in driver-repository components. The `quire-cli` package is a workspace
+in driver-repository components. The `fsl-cli` package is a workspace
 default member and composes the CLI with `quire-driver`, `quire-cache` and
 `quire-plugin-host`.
 The `quire-driver` package owns the cache interface and SHALL NOT depend on
 the concrete `quire-cache` package. `quire-cache` implements that interface
-as a downstream component; `quire-cli` composes it without adding it to the
+as a downstream component; `fsl-cli` composes it without adding it to the
 `quire-driver` dependency closure.
 FR-006 through FR-008 specify
 dispatch and typed input/result preservation against QSL's PL, CA and EB
@@ -151,9 +151,9 @@ failure ownership across the driver and its upstream libraries.
 | Generation and publication | CG `generate_routed` and CG FR-005 | Supply only routed, relation-bound items and caller contexts; carry generation output and CG-derived claim map without re-derivation | FR-001, FR-010 / TC-006, TC-007, TC-017 |
 | Scalar call-to-generation composition | Driver owns the production join; QSL FR-367 binds the admitted call and exact occurrence; IR FR-049 lowers expression and optional context roots; CG FR-330 accounts for positions | Retain the call and ordered bound operands in a driver sidecar keyed by request index. Pass CG only its admitted package, complete typed positions, routed items and contexts; context roots create no routed claim. Do not pass QSL call/binder types into CG. | FR-001-AC-13..FR-001-AC-16 / TC-006; native receipt qualification remains TC-016 / IR-773 |
 | First-party provider execution | Driver `Provider` trait; QSL ADR-029 PV | Invoke only the selected first-party provider with the current emitted package, its negotiated items, limits and cancellation; preserve typed results | FR-005 / TC-012 |
-| Process-provider seam | Driver-owned process-provider interface; `quire-cli` composition adapter | The host hello admitter returns the once-admitted descriptor; its constructing caller supplies the QSL origin, and the driver registers it with linked manifests through its single QSL registry without re-admission; `quire-cli` builds no second registry; the driver dispatches selected process-provider work and settles validated results without a host-package dependency | FR-005, FR-006 / TC-012, TC-013, TC-028 |
-| Process plugin host | `quire-plugin-host`, composed by `quire-cli`; QSL ADR-029 PL-1..PL-7 | Start hello-first sessions, enforce framing, deadlines and tree cleanup, preserve validated results and typed failures; Windows kill-on-close mechanism is planned under IR-674 and not provided by the merged host | FR-013 / TC-023..TC-028 |
-| CLI plugin lifecycle exit | `quire-cli` process-provider adapter | Close active sessions before normal CLI exit; on Linux/macOS handle SIGINT/SIGTERM through cancellation and cleanup, then restore the default disposition and re-raise the signal; Windows console-control cleanup is not claimed | FR-006 / TC-028 |
+| Process-provider seam | Driver-owned process-provider interface; `fsl-cli` composition adapter | The host hello admitter returns the once-admitted descriptor; its constructing caller supplies the QSL origin, and the driver registers it with linked manifests through its single QSL registry without re-admission; `fsl-cli` builds no second registry; the driver dispatches selected process-provider work and settles validated results without a host-package dependency | FR-005, FR-006 / TC-012, TC-013, TC-028 |
+| Process plugin host | `quire-plugin-host`, composed by `fsl-cli`; QSL ADR-029 PL-1..PL-7 | Start hello-first sessions, enforce framing, deadlines and tree cleanup, preserve validated results and typed failures; Windows kill-on-close mechanism is planned under IR-674 and not provided by the merged host | FR-013 / TC-023..TC-028 |
+| CLI plugin lifecycle exit | `fsl-cli` process-provider adapter | Close active sessions before normal CLI exit; on Linux/macOS handle SIGINT/SIGTERM through cancellation and cleanup, then restore the default disposition and re-raise the signal; Windows console-control cleanup is not claimed | FR-006 / TC-028 |
 | Eligible cache calls | Driver cache interface and QSL ADR-029 CA-1..CA-5 | Supply operation, package and provider identity, typed request and generation options; preserve typed hit/miss results without depending on `quire-cache` | FR-007 / TC-014 |
 | Cache key and storage | `quire-cache`, implementing QSL ADR-029 CA-1..CA-5 | Derive and verify content identity, enforce typed reads, storage policy and caller byte limits | FR-012 / TC-020..TC-022 |
 | AOT execution | QSL ADR-029 EB | Pass the current checked package, selected entries, limits, cancellation and named toolchain to the selected backend; preserve failures without switching engines | FR-008 / TC-015 |
@@ -201,7 +201,7 @@ add library-source intake or expand that baseline contract.
 - QSL, IR and CG do not depend on the driver. The driver library depends on
   their layer/model APIs; downstream components and `quire-cache` may
   consume its cache interface. The `quire-driver` package does not depend on
-  `quire-cache` or `quire-plugin-host`; `quire-cli` composes the driver, cache
+  `quire-cache` or `quire-plugin-host`; `fsl-cli` composes the driver, cache
   and process host. CG's QSL seam remains `qsl-replay`; the driver may call QSL
   layer crates directly (ADR-011 §6.1, FB-11).
 - IR admission and checked types come from `quire-contract-model`, not a
@@ -212,9 +212,9 @@ add library-source intake or expand that baseline contract.
   retains cancellation semantics and cause ownership.
 - FR-001 and TC-005 describe the orchestrator's dependency graph. The frontend
   and non-core components added under ADR-029 CB-3 sit above the driver core.
-  The `quire-cli` package owns its parser, CLI tests and fixtures. The
+  The `fsl-cli` package owns its parser, CLI tests and fixtures. The
   `quire-driver` package's cache-free, host-free closure is defined by
-  FR-001-AC-11, FR-012-AC-13 and FR-013-AC-11; `quire-cli` composes the
+  FR-001-AC-11, FR-012-AC-13 and FR-013-AC-11; `fsl-cli` composes the
   separate cache and process-host implementations.
   An argument parser, terminal renderer, plugin host, cache implementation or
   alternate execution backend does not become
@@ -230,7 +230,7 @@ add library-source intake or expand that baseline contract.
   implementation and evidence remain planned. The current CLI has no config
   reader. The kit's feature-gated `secrets` module is outside the driver's
   adoption scope.
-  The argument parser remains in `quire-cli`; the kit defines no argv parser.
+  The argument parser remains in `fsl-cli`; the kit defines no argv parser.
 - First-party Git dependencies are declared with `branch = "main"`; each
   consumer's `Cargo.lock` records the resolved commit. Dependency manifests
   do not carry a `rev` field or commit identifier.
@@ -298,8 +298,8 @@ The merged FR-002..FR-010 and TC-009..TC-018 specify the planned extension.
 | AOT and execute/replay/terminal-record chain remain planned | IR-610, with CG's terminal-map owner | Run TC-015..TC-016 with paired provider/replay inputs and complete per-item accounting. CG AD-003 is merged (CG PR #214); its merge does not establish terminal-map implementation. |
 | Relation-bound CG input depends on QSL AR2 | QSL-514 / [QSL FR-307](https://github.com/agent-ix/quire-spec-language/blob/main/spec/functional/FR-307-export-the-bindings-each-item-references.md) (bound-item export and per-item refusals) | Run TC-017 in the QSL-owned `quire-integration` test once AR2 is available. |
 | ix-cli-kit serde minimum conflicts with quire-driver's exact serde requirement | PLAT-1154 | Lower the kit's serde minimum before adding the CLI dependency; no driver or upstream serde requirements move in this slice. The IR-607 code slice is blocked until PLAT-1154 merges. |
-| ix-cli-kit adoption is staged; exit pass-through, streams, canonical JSON and package-version agreement are specified, while configuration remains conditional | IR-607 / driver FR-002 | Adopt `exit::caller_exit_code` with no second outcome mapping; use kit streams and JSON for CLI output; implement the `quire-cli` package version surface and verify the built binary with the kit Agreement API. No configuration reader exists; any future reader uses the kit config module. |
-| The npm package `@agent-ix/quire-cli` also ships a `quire` executable; its relationship to the Cargo CLI is unresolved | IR-607 / QSL ADR-029 and FR-002 question | Clarify whether npm and Cargo distribution are the same supported user-facing CLI; FR-014 scopes Cargo workspace ownership only. |
+| ix-cli-kit adoption is staged; exit pass-through, streams, canonical JSON and package-version agreement are specified, while configuration remains conditional | IR-607 / driver FR-002 | Adopt `exit::caller_exit_code` with no second outcome mapping; use kit streams and JSON for CLI output; implement the `fsl-cli` package version surface and verify the built binary with the kit Agreement API. No configuration reader exists; any future reader uses the kit config module. |
+| The npm package `@agent-ix/fsl-cli` also ships a `quire` executable; its relationship to the Cargo CLI is unresolved | IR-607 / QSL ADR-029 and FR-002 question | Clarify whether npm and Cargo distribution are the same supported user-facing CLI; FR-014 scopes Cargo workspace ownership only. |
 | Cross-repository parity can differ despite local tests | IR-528 in `quire-integration` | Collect CLI/library outcome and exit parity, provider/plugin install, cache behavior, AOT parity, QSL binary deletion and the full proof-chain evidence. No G5b pass is claimed here. |
 | Windows Job Object kill-on-close needs safe pre-execution assignment | IR-674 | Request the safe opt-in from `process-wrap`; consume it only after an upstream release exposes the standard-flavor capability. Until then, FR-013-AC-14 remains planned and no Windows kill-on-close implementation or native evidence is claimed. |
 | No supported public macOS process scope has been demonstrated for FR-013 CPU, resident-memory and bounded-cleanup requirements | IR-787 | Prototype a supported mechanism against the native short-lived/reaped-descendant, session-escape, resident-memory and bounded-termination cases. Endpoint Security alone is not evidence of those guarantees. Until the mechanism is demonstrated, retain the host's typed pre-dispatch `Unavailable` behavior; keep the full macOS requirement open. |

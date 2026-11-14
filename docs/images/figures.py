@@ -8,8 +8,8 @@ Regenerate from the repository root with the agent-ix/dev-tools skill:
     python3 <dev-tools>/skills/docs-figures/scripts/render.py docs/images/figures.py
 
 Add --check to confirm the committed SVGs are current. The solid and dashed
-boxes in the hero follow the verbs the `quire` binary handles today
-(quire-cli/src/cli.rs) and the steps `drive` runs (src/drive.rs).
+boxes in the hero follow the verbs the `fsl` binary handles today
+(fsl-cli/src/cli.rs) and the steps `drive` runs (src/drive.rs).
 """
 
 from docs_figures import FONTS, SMALL, TITLE, Figure  # noqa: F401

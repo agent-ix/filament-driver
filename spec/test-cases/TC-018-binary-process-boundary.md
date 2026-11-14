@@ -133,9 +133,9 @@ binary preserves them while using ix-cli-kit's exit, streams and JSON modules.
       QSL FR-287-AC-8 criterion is met across output modes. Do not add an
       empty-write/file-descriptor probe or a new refusal output artifact.
 
-Test location: `quire-cli/tests/binary_process.rs` with its test-only
-operation adapter and fixtures under `quire-cli/tests/fixtures/`; entry-point
-review covers `quire-cli/src/main.rs` and `quire-cli/src/cli.rs`.
+Test location: `fsl-cli/tests/binary_process.rs` with its test-only
+operation adapter and fixtures under `fsl-cli/tests/fixtures/`; entry-point
+review covers `fsl-cli/src/main.rs` and `fsl-cli/src/cli.rs`.
 
 ## Expected Results
 

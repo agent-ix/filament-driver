@@ -14,7 +14,7 @@ relationships:
 
 Verify that the driver passes negotiated process-provider work through its
 process-provider seam and returns typed provider results through its proof
-path; TC-028 verifies the configured `quire-cli` composition with
+path; TC-028 verifies the configured `fsl-cli` composition with
 `quire-plugin-host`. Settlement remains pending the QSL result-mapping APIs.
 
 Scope: FR-005-AC-12 through FR-005-AC-19, FR-006-AC-1 through FR-006-AC-2,
@@ -39,10 +39,10 @@ and FR-006-AC-5 through FR-006-AC-23.
    signal cleanup. These checks do not claim QSL terminal settlement for the
    provider result. Temporal subject proof bounds remain sourced as specified
    in FR-006.
-2. Have the `quire-cli` adapter serialize the request through the typed FR-331
+2. Have the `fsl-cli` adapter serialize the request through the typed FR-331
    adapter. Verify `package`
    contains the emitted package's RFC 8785 bytes as unpadded base64url,
-   the request carries no `package_id`, the `quire-cli`
+   the request carries no `package_id`, the `fsl-cli`
    adapter serializes the supplied manifest snapshot without reconstructing
    it or adding members, and `deadline_ms` equals the validated value in the
    selected provider's configuration entry. Verify bounds appear only at
@@ -51,7 +51,7 @@ and FR-006-AC-5 through FR-006-AC-23.
    `limits` member. QSpec TC-271 owns the CG negotiation checks for QSpec
    FR-290-AC-13. Do not claim a serialized proof-bound
    `kind` until QSL-654 emitter support lands.
-3. Start the explicit fixture executable. Have the `quire-cli` adapter decode
+3. Start the explicit fixture executable. Have the `fsl-cli` adapter decode
    its FR-331 hello DTO without discarding optional fields. Pass its identity,
    advertised labels and domain labels through one QSL descriptor admission
    with caller-supplied `Process` origin, then return the admitted descriptor
@@ -62,7 +62,7 @@ and FR-006-AC-5 through FR-006-AC-23.
    carrier; populate linked-provider carriers from their FR-331 manifests and
    do not synthesize absent optional members. An absent or unknown kind/mode
    reaches QSL and remains its typed `invalid_capability` refusal. Have the
-   `quire-cli` host hello admitter pass domain labels to QSL and verify it returns
+   `fsl-cli` host hello admitter pass domain labels to QSL and verify it returns
    `invalid_capability` with cause `invalid-domains`;
    the driver does not validate domains or construct that refusal. Verify
    descriptor identity, advertised pairs and supplied origin are passed to CG
@@ -86,7 +86,7 @@ and FR-006-AC-5 through FR-006-AC-23.
    replay disagreement payload or replay result. Until that PL-7 amendment
    lands, this case remains planned and defines no driver behavior.
 6. Send a valid plugin response with a `declined` result and a typed code.
-   Verify that the `quire-cli` adapter preserves the decoded result and that
+   Verify that the `fsl-cli` adapter preserves the decoded result and that
    the driver's shared settlement path preserves the code in QSL
    `TerminalValue::Declined { code }`. Send a valid response whose result has
    no current QSL terminal mapping; verify it remains typed and unmapped.
@@ -102,7 +102,7 @@ and FR-006-AC-5 through FR-006-AC-23.
 12. Repeat with a non-canonical spelling of the package. Verify the FR-331
     response marks every routed item failed with code `invalid_runtime_input`
     and cause `invalid-value`.
-13. Verify the `quire-cli` adapter preserves every routed item identity and the
+13. Verify the `fsl-cli` adapter preserves every routed item identity and the
     typed diagnostic from the non-canonical-package response.
 14. Verify the driver's shared settlement path maps each failed routed item to
     QSL `TerminalValue::Failed` and carries the diagnostic separately in QSL
@@ -128,8 +128,8 @@ specifies the proof-bound `kind`; QSL-654 owns the pending QSL emitter support
 for writing it. The test must not synthesize QSL-owned item fields from
 unrelated provider evidence.
 
-Test locations: `quire-cli/src/cli.rs` configured-run composition tests and
-`quire-cli/tests/binary_process.rs` production entrypoint tests. The composition
+Test locations: `fsl-cli/src/cli.rs` configured-run composition tests and
+`fsl-cli/tests/binary_process.rs` production entrypoint tests. The composition
 test exercises hello/admission, request DTO construction, selected-provider
 dispatch and typed result retention; production tests cover strict config,
 duplicate identity, and active-request SIGTERM cleanup. Settlement remains held
@@ -139,7 +139,7 @@ define or infer terminal mappings.
 
 ## Expected Results
 
-- Request fields are serialized by the `quire-cli` adapter from their named
+- Request fields are serialized by the `fsl-cli` adapter from their named
   owners: `package` from
   the `EmittedPackage`; `manifest` from the driver's registered-candidate
   records; `deadline_ms` unchanged from the selected provider's validated
@@ -152,7 +152,7 @@ define or infer terminal mappings.
   registered-candidate record; the adapter does not reconstruct or add
   members.
 - The test fixture supplies all-items-failed responses for package mismatch or
-  non-canonical package spelling. The `quire-cli` adapter decodes those
+  non-canonical package spelling. The `fsl-cli` adapter decodes those
   responses; the driver's shared settlement path maps them to QSL `Failed`
   terminals and attaches typed FR-272 diagnostics separately. It does not
   claim QSL read the request body.

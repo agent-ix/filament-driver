@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.98.1"
 description = "Content-addressed cache boundary for quire-driver provider results."
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/agent-ix/quire-driver"
+repository = "https://github.com/agent-ix/filament-driver"
 publish = false
 
 [dependencies]

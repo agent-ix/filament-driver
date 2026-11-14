@@ -47,11 +47,11 @@ Scope: FR-004-AC-1 through FR-004-AC-10.
    engine. An added direct engine call outside the counted boundary SHALL make
    this test fail; if the seam cannot enforce that property, AC-4 remains
    Partial.
-8. Inspect `src/execute.rs` and `quire-cli/src/cli.rs`: confirm public
+8. Inspect `src/execute.rs` and `fsl-cli/src/cli.rs`: confirm public
    `execute` calls the same private dispatch function with QSL
    `spine::run`, and neither the public API nor CLI, configuration, or
    environment can select the test callback.
-9. Inspect `quire-cli/src/cli.rs`: confirm the CLI invocation exposes no
+9. Inspect `fsl-cli/src/cli.rs`: confirm the CLI invocation exposes no
    object-context input and its run handler explicitly supplies an empty
    `ObjectEnvironment` to the public execution request.
 10. Through the public library execution request, run a function whose result
@@ -66,8 +66,8 @@ Scope: FR-004-AC-1 through FR-004-AC-10.
    no matching key; compare the driver's `Undefined` outcome with direct QSL,
    as specified by QSL FR-090.
 
-Test locations: `src/execute.rs`, `quire-cli/src/cli.rs`, and
-`quire-cli/tests/binary_process.rs`.
+Test locations: `src/execute.rs`, `fsl-cli/src/cli.rs`, and
+`fsl-cli/tests/binary_process.rs`.
 
 ## Expected Results
 

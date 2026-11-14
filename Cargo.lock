@@ -499,6 +499,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "fsl-cli"
+version = "0.1.1"
+dependencies = [
+ "base64 0.23.1",
+ "ix-cli-kit",
+ "ix-trace-rs",
+ "libc",
+ "qsl-command",
+ "qsl-cst",
+ "qsl-foundation",
+ "qsl-package",
+ "qsl-replay",
+ "qsl-route",
+ "qsl-semantics",
+ "quire-cache",
+ "quire-canonical",
+ "quire-contract-codegen",
+ "quire-contract-model",
+ "quire-driver",
+ "quire-exact",
+ "quire-plugin-host",
+ "quire-semantic-value",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "signal-hook",
+ "thiserror",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1502,37 +1533,6 @@ dependencies = [
  "quire-semantic-value",
  "quire-walk",
  "serde",
- "thiserror",
-]
-
-[[package]]
-name = "quire-cli"
-version = "0.1.1"
-dependencies = [
- "base64 0.23.1",
- "ix-cli-kit",
- "ix-trace-rs",
- "libc",
- "qsl-command",
- "qsl-cst",
- "qsl-foundation",
- "qsl-package",
- "qsl-replay",
- "qsl-route",
- "qsl-semantics",
- "quire-cache",
- "quire-canonical",
- "quire-contract-codegen",
- "quire-contract-model",
- "quire-driver",
- "quire-exact",
- "quire-plugin-host",
- "quire-semantic-value",
- "regex",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "signal-hook",
  "thiserror",
 ]
 

@@ -17,7 +17,7 @@ make spec           # quire validate 'spec/**/*.md'
 make ci             # fmt-check + lint + test + deny + docs + spec
 ```
 
-The `quire-cli` tests `signal_is_forwarded_after_active_cleanup_and_defaults_without_a_session`
+The `fsl-cli` tests `signal_is_forwarded_after_active_cleanup_and_defaults_without_a_session`
 and `plugin_session_signals_cancel_and_reap_each_active_lifecycle_stage` need
 normal, unsandboxed cross-process signal and process-group permissions. A
 sandbox failure can report `signal() == None` where SIGTERM/SIGINT was expected,
@@ -38,9 +38,9 @@ src/lib.rs             # quire-driver library root
 quire-plugin-host/     # process-provider transport and lifecycle boundary
 tests/drive.rs         # driver acceptance tests (real QSL and CG calls)
 tests/dependency_edges.rs # driver package-graph assertion
-quire-cli/src/cli.rs   # user-facing command parser and handlers
-quire-cli/src/main.rs  # quire binary entry point
-quire-cli/tests/       # CLI contract and binary process tests
+fsl-cli/src/cli.rs   # user-facing command parser and handlers
+fsl-cli/src/main.rs  # quire binary entry point
+fsl-cli/tests/       # CLI contract and binary process tests
 benches/               # criterion benchmarks (opt-in; add criterion to dev-deps)
 spec/                  # requirements artifacts
 scripts/               # local tooling
@@ -50,7 +50,7 @@ scripts/               # local tooling
 
 The `quire-driver` package depends on the QSL layer crates
 and CG. Do not add a dependency from `quire-driver` to the downstream
-`quire-cache` package. The separate `quire-cli` package depends on the driver
+`quire-cache` package. The separate `fsl-cli` package depends on the driver
 interface and cache package. Do not
 add a dependency on the QSL root crate
 `quire-spec-language`; `tests/dependency_edges.rs` fails if one appears.
