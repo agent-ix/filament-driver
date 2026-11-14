@@ -30,8 +30,8 @@ env:
   # these two lines (and nothing else in this file).
   BINARY: quire
   CARGO_PACKAGE: quire-cli
-  # Cargo profile the binary is built with (its output dir is target/<profile>).
-  CARGO_PROFILE: release
+  # Cargo profile the binary is built with (see [profile.dist] in Cargo.toml).
+  CARGO_PROFILE: dist
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
