@@ -9,7 +9,7 @@
 //! [`drive`] runs one request through these steps, in this order:
 //!
 //! 1. S1 to S4: FSL's typed `parse`, `select` and `check` operations.
-//! 2. E4: FSL's `package` operation emits the `quire.checked-package/v2`
+//! 2. E4: FSL's `package` operation emits the `filament.checked-package/v2`
 //!    bytes ([`Driven::emitted`]).
 //! 3. The `route` candidate step: each item's candidate set. The items are
 //!    not supplied by the caller: they are written from the compiled unit's

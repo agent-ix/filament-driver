@@ -25,7 +25,7 @@ ADR-011 T-13, ADR-012 §7.2):
    compiling a unit's `import`s against caller-supplied library source, so
    any `import` refuses at the intake stage,
    `missing_import`/`missing-selection`.
-2. E4: FSL's `package` operation emits the `quire.checked-package/v2`
+2. E4: FSL's `package` operation emits the `filament.checked-package/v2`
    bytes from the checked unit.
 3. The `route` candidate step for each requested item.
 4. The driver projects each registry descriptor with CG's
