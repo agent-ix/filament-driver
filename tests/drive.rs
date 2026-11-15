@@ -18,25 +18,7 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Duration;
 
-use filament_driver::{
-    build_registry, drive, CompileInput, Driven, DriverFault, DriverRefusal, DriverStage, FslCg,
-    GenerationInput, KaniInput, KaniProvider, OutcomeKind, Provider, ProviderItemFailure,
-    ProviderItemResult, ProviderLimits, ProviderManifest, ProviderRequest,
-    RequirementRecordUnresolvedCause, ScalarExecutionInput, Upstream,
-};
-use ix_trace_rs::trace;
-use qsl_foundation::BackendId;
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{
-    check, default_accounting, package, parse, select, Call as FslCall, CallArgument, CheckedUnit,
-    CompileRefusal, DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits,
-    SpineStage,
-};
-use qsl_replay::DomainKind;
-use qsl_route::routing::Disposition as RouteDisposition;
-use qsl_route::{Candidate, RegistrationCause};
-use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_contract_codegen::{
+use filament_contract_codegen::{
     generate_routed, BackendDescriptor, BackendKind, BackendProviderEnvelope, Candidates, Cause,
     ClaimDisposition, ContractItemSettlement, ContractNegotiationError, ContractRequestPosition,
     DerivedDomain, Disposition, EnvelopeRefusal, GenerationContexts, KaniExecutionEvidence,
@@ -44,12 +26,30 @@ use quire_contract_codegen::{
     ObligationDisposition, ProofCeilings, RequirementRecords, RoutedGeneration,
     RoutedGenerationError, RoutedGenerationItem, UnsupportedObligation,
 };
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedTerm, ContractPackageV1,
 };
-use quire_exact::{Cancel, CancelCause, Integer, Value};
-use quire_semantic_value::catalog::Category;
+use filament_driver::{
+    build_registry, drive, CompileInput, Driven, DriverFault, DriverRefusal, DriverStage, FslCg,
+    GenerationInput, KaniInput, KaniProvider, OutcomeKind, Provider, ProviderItemFailure,
+    ProviderItemResult, ProviderLimits, ProviderManifest, ProviderRequest,
+    RequirementRecordUnresolvedCause, ScalarExecutionInput, Upstream,
+};
+use filament_exact::{Cancel, CancelCause, Integer, Value};
+use filament_semantic_value::catalog::Category;
+use fsl_foundation::BackendId;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{
+    check, default_accounting, package, parse, select, Call as FslCall, CallArgument, CheckedUnit,
+    CompileRefusal, DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits,
+    SpineStage,
+};
+use fsl_replay::DomainKind;
+use fsl_route::routing::Disposition as RouteDisposition;
+use fsl_route::{Candidate, RegistrationCause};
+use fsl_semantics::model::object_environment::ObjectEnvironment;
+use ix_trace_rs::trace;
 
 #[path = "common/units.rs"]
 mod shared_units;
@@ -88,7 +88,7 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
       "identity": "none",
       "shape": "record",
       "members": {},
-      "meaning": "quire.meaning.model.object-type/v1"
+      "meaning": "filament.meaning.model.object-type/v1"
     }
   }],
   "types": [{
@@ -115,7 +115,7 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
 /// A unit with an integer `+` (a `binary` expression) under a range
 /// `conversion` expression. The narrowing `conversion` is not a scalar
 /// operation application (`is_scalar_application` excludes
-/// `quire.op.numeric.narrow` by name) and so is not itself a requirement
+/// `filament.op.numeric.narrow` by name) and so is not itself a requirement
 /// record; only the `+` is. The `+`'s own operands are `x` (owns its
 /// `[0, 9]` bound) and the literal `1`, which
 /// FSL represents as a reference to its own plain-typed `value` node: CG's
@@ -127,9 +127,9 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
 static INT_UNIT: LazyLock<String> =
     LazyLock::new(|| unit("function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }\n"));
 
-/// A unit with an integer `=` (`quire.op.integer.eq`, also a `binary`
+/// A unit with an integer `=` (`filament.op.integer.eq`, also a `binary`
 /// expression): CG's derivation names no operator family for it
-/// (`family_of_identity` has no `quire.op.integer.eq` arm), so it has no
+/// (`family_of_identity` has no `filament.op.integer.eq` arm), so it has no
 /// derivable claim. It also carries an integer unary `-` over its own
 /// bounded parameter (IR-298; see `NEGATE_UNIT`), a sibling CG does derive
 /// a claim for, so a routed run over both shows the unsupported item does
@@ -254,7 +254,7 @@ struct Recorder {
     export_wrong_bound_at: Option<usize>,
     export_wrong_unbound_at: Option<usize>,
     export_short_result: bool,
-    export_keys: RefCell<Vec<qsl_foundation::source::provenance::OccurrenceKey>>,
+    export_keys: RefCell<Vec<fsl_foundation::source::provenance::OccurrenceKey>>,
     calls: RefCell<Vec<Call>>,
     /// When set, the IR read answers this instead of reading.
     read_answer: Option<CheckedPackageDispatchResult>,
@@ -286,7 +286,7 @@ struct Recorder {
     /// the record set built from them, as a driver that put a guard in the
     /// wrong item's context span would.
     tampered_requirements: Option<(
-        Vec<(usize, quire_contract_codegen::RoutedRequirement)>,
+        Vec<(usize, filament_contract_codegen::RoutedRequirement)>,
         RequirementRecords,
     )>,
     /// The routed items, with the requirement the driver bound to each, and
@@ -295,7 +295,7 @@ struct Recorder {
     /// When set, rewrites the package's requirement records before the driver
     /// projects them, so a test can remove or re-key a record (FR-020).
     requirement_rewrite:
-        Option<fn(qsl_semantics::check::RequirementMap) -> qsl_semantics::check::RequirementMap>,
+        Option<fn(fsl_semantics::check::RequirementMap) -> fsl_semantics::check::RequirementMap>,
     generation_records: RefCell<Option<RequirementRecords>>,
 }
 
@@ -327,7 +327,7 @@ impl Recorder {
 }
 
 impl Upstream for Recorder {
-    fn has_abstraction_relation(&self, package: &qsl_package::CheckedPackage) -> bool {
+    fn has_abstraction_relation(&self, package: &fsl_package::CheckedPackage) -> bool {
         !self.export_refused_at.is_empty()
             || self.export_whole_refusal
             || self.export_unknown_at.is_some()
@@ -339,11 +339,11 @@ impl Upstream for Recorder {
     }
     fn export_bindings(
         &self,
-        _package: &qsl_package::CheckedPackage,
-        items: &[qsl_foundation::source::provenance::OccurrenceKey],
+        _package: &fsl_package::CheckedPackage,
+        items: &[fsl_foundation::source::provenance::OccurrenceKey],
     ) -> Result<
-        Vec<Result<qsl_package::BoundItem, qsl_package::ExportRefusal>>,
-        qsl_package::ExportRefusal,
+        Vec<Result<fsl_package::BoundItem, fsl_package::ExportRefusal>>,
+        fsl_package::ExportRefusal,
     > {
         self.calls.borrow_mut().push(Call::ExportBindings);
         *self.export_keys.borrow_mut() = items.to_vec();
@@ -355,17 +355,17 @@ impl Upstream for Recorder {
             .enumerate()
             .map(|(index, item)| {
                 if self.export_unknown_at == Some(index) {
-                    Err(qsl_package::ExportRefusal::UnknownItem { item: item.clone() })
+                    Err(fsl_package::ExportRefusal::UnknownItem { item: item.clone() })
                 } else if self.export_fault_at == Some(index) {
-                    Err(qsl_package::ExportRefusal::Fault(
-                        quire_semantic_value::catalog::InternalFault::new("export", "fixture"),
+                    Err(fsl_package::ExportRefusal::Fault(
+                        filament_semantic_value::catalog::InternalFault::new("export", "fixture"),
                     ))
                 } else if self.export_wrong_unbound_at == Some(index) {
                     Err(fixture_unbound(&items[1]))
                 } else if self.export_refused_at.contains(&index) {
                     Err(fixture_unbound(item))
                 } else {
-                    Ok(qsl_package::BoundItem {
+                    Ok(fsl_package::BoundItem {
                         item: if self.export_wrong_bound_at == Some(index) {
                             items[1].clone()
                         } else {
@@ -387,10 +387,10 @@ impl Upstream for Recorder {
         path: &str,
         bytes: &[u8],
         package_name: &str,
-        packages: &qsl_semantics::model::intake::PackageInput,
+        packages: &fsl_semantics::model::intake::PackageInput,
         limits: SpineLimits,
         cancel: &Cancel,
-    ) -> Result<(CheckedUnit, qsl_replay::spine::AdmittedModels, EmittedUnit), DriverRefusal> {
+    ) -> Result<(CheckedUnit, fsl_replay::spine::AdmittedModels, EmittedUnit), DriverRefusal> {
         self.calls.borrow_mut().push(Call::Compile);
         FslCg.compile(source, path, bytes, package_name, packages, limits, cancel)
     }
@@ -425,7 +425,7 @@ impl Upstream for Recorder {
 
     fn negotiate(
         &self,
-        source: &quire_contract_model::CheckedPackageV2,
+        source: &filament_contract_model::CheckedPackageV2,
         package: &ContractPackageV1,
         positions: &[ContractRequestPosition],
         envelope: &BackendProviderEnvelope,
@@ -479,8 +479,8 @@ impl Upstream for Recorder {
 
     fn requirement_records(
         &self,
-        package: &qsl_package::CheckedPackage,
-    ) -> qsl_semantics::check::RequirementMap {
+        package: &fsl_package::CheckedPackage,
+    ) -> fsl_semantics::check::RequirementMap {
         let records = FslCg.requirement_records(package);
         match self.requirement_rewrite {
             Some(rewrite) => rewrite(records),
@@ -490,9 +490,9 @@ impl Upstream for Recorder {
 
     fn generate(
         &self,
-        source: &quire_contract_model::CheckedPackageV2,
-        package: &quire_contract_model::ContractPackageV1,
-        positions: &[quire_contract_codegen::ContractRequestPosition],
+        source: &filament_contract_model::CheckedPackageV2,
+        package: &filament_contract_model::ContractPackageV1,
+        positions: &[filament_contract_codegen::ContractRequestPosition],
         routed: &[RoutedGenerationItem],
         contexts: &GenerationContexts<'_>,
     ) -> Result<RoutedGeneration, RoutedGenerationError> {
@@ -524,7 +524,7 @@ impl Upstream for Recorder {
                 .collect::<Vec<_>>();
             let kani = contexts
                 .kani
-                .map(|kani| quire_contract_codegen::KaniGenerationContext {
+                .map(|kani| filament_contract_codegen::KaniGenerationContext {
                     requirement_records: records,
                     ..kani
                 });
@@ -541,13 +541,13 @@ impl Upstream for Recorder {
 }
 
 fn fixture_unbound(
-    item: &qsl_foundation::source::provenance::OccurrenceKey,
-) -> qsl_package::ExportRefusal {
-    qsl_package::ExportRefusal::Unbound {
+    item: &fsl_foundation::source::provenance::OccurrenceKey,
+) -> fsl_package::ExportRefusal {
+    fsl_package::ExportRefusal::Unbound {
         item: item.clone(),
-        elements: vec![qsl_package::UnboundElement {
-            key: qsl_semantics::check::AbstractionKey::Population(
-                quire_checked::key::DeclarationKey {
+        elements: vec![fsl_package::UnboundElement {
+            key: fsl_semantics::check::AbstractionKey::Population(
+                filament_checked::key::DeclarationKey {
                     package: "test/ir914".to_owned(),
                     node: "ConfigVersion".to_owned(),
                 },
@@ -570,7 +570,7 @@ fn manifest(identity: &str, kinds: &[&str]) -> ProviderManifest {
     }
 }
 
-fn input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         source: SourceIdentity::new("agent-ix", "driver-test"),
         path: "unit.native",
@@ -582,8 +582,8 @@ fn input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<
     }
 }
 
-fn cancellation_source_and_packages() -> (String, qsl_semantics::model::intake::PackageInput) {
-    let packages = qsl_semantics::model::intake::package_input([CANCEL_MODEL_DOCUMENT.as_bytes()])
+fn cancellation_source_and_packages() -> (String, fsl_semantics::model::intake::PackageInput) {
+    let packages = fsl_semantics::model::intake::package_input([CANCEL_MODEL_DOCUMENT.as_bytes()])
         .expect("the cancellation model document is a package");
     let source = unit(
         "model M = \"driver/cancellation-model\";\n\
@@ -596,7 +596,7 @@ fn cancellation_source_and_packages() -> (String, qsl_semantics::model::intake::
 /// cancellation fixture includes a model so every stage has a charged path.
 fn cancellation_boundaries(
     source_text: &str,
-    packages: &qsl_semantics::model::intake::PackageInput,
+    packages: &fsl_semantics::model::intake::PackageInput,
 ) -> [usize; 4] {
     let observations = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&observations);
@@ -685,56 +685,56 @@ fn cancel_on_charge(
     (cancel, worker, timed_out)
 }
 
-fn int_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn int_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: INT_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn partition_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn partition_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: PARTITION_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn eq_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn eq_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: EQ_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn two_param_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn two_param_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: TWO_PARAM_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn negate_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn negate_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: NEGATE_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn overflow_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn overflow_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: OVERFLOW_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn dead_branch_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn dead_branch_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: DEAD_BRANCH_UNIT.as_bytes(),
         ..input(packages)
     }
 }
 
-fn rr16_input(packages: &qsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
+fn rr16_input(packages: &fsl_semantics::model::intake::PackageInput) -> CompileInput<'_> {
     CompileInput {
         bytes: RR16_UNIT.as_bytes(),
         ..input(packages)
@@ -1014,9 +1014,9 @@ fn proof_ceilings() -> ProofCeilings {
 }
 
 /// The kani backend as `route` returned it, in CG's wire spelling.
-fn kani_candidate(driven: &Driven) -> quire_contract_codegen::Candidate {
+fn kani_candidate(driven: &Driven) -> filament_contract_codegen::Candidate {
     let candidate = &driven.routed[0].candidate;
-    quire_contract_codegen::Candidate {
+    filament_contract_codegen::Candidate {
         identity: candidate.id().as_str().to_owned(),
     }
 }
@@ -1093,7 +1093,7 @@ fn export_partition_withholds_b_and_preserves_a_and_c_indices() {
                 .expect("the excluded ID is admitted")
         )
         .expect("the resolved key serializes"),
-        qsl_foundation::node_wire::node_key_to_json(driven.request_items[1].node())
+        fsl_foundation::node_wire::node_key_to_json(driven.request_items[1].node())
             .expect("the selected FSL key serializes"),
     );
     assert!(matches!(
@@ -1309,7 +1309,7 @@ fn malformed_export_results_stop_at_the_typed_boundary() {
     .expect_err("an export fault refuses the whole run");
     assert!(matches!(
         &refusal,
-        DriverRefusal::BindingsExport(qsl_package::ExportRefusal::Fault(_))
+        DriverRefusal::BindingsExport(fsl_package::ExportRefusal::Fault(_))
     ));
     assert_eq!(refusal.stage(), DriverStage::BindingsExport);
     assert_eq!(refusal.kind(), OutcomeKind::Fault);
@@ -1318,15 +1318,15 @@ fn malformed_export_results_stop_at_the_typed_boundary() {
 fn routed_generation_item(
     request_index: usize,
     node_id: CheckedNodeId,
-    backend: quire_contract_codegen::Candidate,
+    backend: filament_contract_codegen::Candidate,
 ) -> RoutedGenerationItem {
-    let descriptor = quire_contract_codegen::BackendDescriptor {
+    let descriptor = filament_contract_codegen::BackendDescriptor {
         identity: backend.identity.clone(),
         advertised: vec![(
-            quire_contract_codegen::CapabilityKind::ValueValidity,
-            quire_contract_codegen::Mode::Bounded,
+            filament_contract_codegen::CapabilityKind::ValueValidity,
+            filament_contract_codegen::Mode::Bounded,
         )],
-        origin: quire_contract_codegen::ProviderOrigin::Linked,
+        origin: filament_contract_codegen::ProviderOrigin::Linked,
         domains: Some(std::collections::BTreeSet::from([DomainKind::Integer])),
         bounds: None,
     };
@@ -1356,7 +1356,7 @@ fn direct_generation(
             let selection = selection_at(&positions, item.request_index);
             let item = item.with_scalar_selection(&package, selection);
             let key = driven.request_items[item.request_index].occurrence();
-            match map.get_kind(key, qsl_semantics::check::Capability::ValueValidity) {
+            match map.get_kind(key, fsl_semantics::check::Capability::ValueValidity) {
                 Some(record) => item.with_requirement(expected_requirement(driven, key, record)),
                 None => item,
             }
@@ -1444,7 +1444,7 @@ fn tc_002_unknown_backend_refuses_before_negotiation_in_bytewise_order() {
 #[test]
 fn tc_001_tc_006_steps_run_in_order_through_generation() {
     let checked = negate_package().checked().clone();
-    let neg = expression_by_identity(&checked, "quire.op.integer.negate");
+    let neg = expression_by_identity(&checked, "filament.op.integer.negate");
 
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
@@ -1643,7 +1643,7 @@ fn tc_001_caller_emit_ceiling_bounds_e4_and_admits_at_e5() {
 /// Trace: FR-001-AC-7; TC-006 step 11.
 #[test]
 fn tc_006_handoff_passes_domain_package_evidence_unchanged() {
-    let packages = qsl_semantics::model::intake::package_input([CANCEL_MODEL_DOCUMENT.as_bytes()])
+    let packages = fsl_semantics::model::intake::package_input([CANCEL_MODEL_DOCUMENT.as_bytes()])
         .expect("the cancellation model document is a package");
     let recorder = Recorder::default();
     let registry = build_registry(&[]).expect("an empty registry builds");
@@ -1667,7 +1667,7 @@ fn tc_006_handoff_passes_domain_package_evidence_unchanged() {
     expected
         .insert_domain_package_document(identity.as_str(), document.as_slice())
         .expect("the evidence map contains one document per identity");
-    expected.support_feature("quire.value.complete/v1");
+    expected.support_feature("filament.value.complete/v1");
 
     assert_eq!(
         actual, expected,
@@ -1677,7 +1677,7 @@ fn tc_006_handoff_passes_domain_package_evidence_unchanged() {
 
 /// FR-001-AC-5 (TC-004, request `named_backend`): a request that names a
 /// backend the registry does not hold settles `invalid-request`, naming the
-/// backend, for every item -- `qsl_route::Registry::candidates` returns
+/// backend, for every item -- `fsl_route::Registry::candidates` returns
 /// `CandidateOutcome::UnknownBackend` regardless of capability kind. Nothing
 /// settled this way is routed or generated.
 ///
@@ -2003,7 +2003,7 @@ fn foreign_admitted_source_is_refused_by_negotiation_and_generation() {
             DriverRefusal::Generation(RoutedGenerationError::Package(error)) => error,
             other => panic!("expected typed source mismatch, got {other:?}"),
         };
-        let quire_contract_codegen::PackageRequestError::SourceMismatch {
+        let filament_contract_codegen::PackageRequestError::SourceMismatch {
             expected: actual_expected,
             actual,
         } = error
@@ -2097,7 +2097,7 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
         let [ContractRequestPosition::DriverItem {
             node_id,
             result_selection:
-                quire_contract_codegen::ContractDriverResultSelection::OwnResult {
+                filament_contract_codegen::ContractDriverResultSelection::OwnResult {
                     application,
                     conversion: Some(conversion),
                 },
@@ -2112,7 +2112,7 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
         actual_contexts.push((application, conversion));
     }
 
-    let assert_key = |id: &CheckedNodeId, key: &quire_exact::NodeKey| {
+    let assert_key = |id: &CheckedNodeId, key: &filament_exact::NodeKey| {
         assert_eq!(
             serde_json::to_value(
                 driven
@@ -2121,7 +2121,7 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
                     .expect("the occurrence ID is admitted")
             )
             .expect("the resolved key serializes"),
-            qsl_foundation::node_wire::node_key_to_json(key)
+            fsl_foundation::node_wire::node_key_to_json(key)
                 .expect("the selected FSL key serializes")
         );
     };
@@ -2131,13 +2131,13 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
         assert_key(&application.node_id, expected_application.node());
         assert_eq!(
             application.role,
-            quire_contract_model::CheckedOccurrenceRole::Expression
+            filament_contract_model::CheckedOccurrenceRole::Expression
         );
         assert_eq!(application.ordinal, expected_application.origin().ordinal());
         assert_key(&conversion.node_id, expected_conversion.node());
         assert_eq!(
             conversion.role,
-            quire_contract_model::CheckedOccurrenceRole::Expression
+            filament_contract_model::CheckedOccurrenceRole::Expression
         );
         assert_eq!(conversion.ordinal, expected_conversion.origin().ordinal());
     }
@@ -2196,7 +2196,7 @@ fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
     let mut generation = kani_input();
     generation.scalar_execution = Some(ScalarExecutionInput {
         call: &call,
-        replay_limits: qsl_replay::ReplayLimits::default(),
+        replay_limits: fsl_replay::ReplayLimits::default(),
         environment: &environment,
         native: None,
     });
@@ -2230,12 +2230,12 @@ fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
     assert_eq!(second.cancel(), &cancel);
     assert_eq!(first.call().function, "f");
     assert_eq!(second.call().function, "f");
-    assert_eq!(first.replay_limits(), qsl_replay::ReplayLimits::default());
-    assert_eq!(second.replay_limits(), qsl_replay::ReplayLimits::default());
+    assert_eq!(first.replay_limits(), fsl_replay::ReplayLimits::default());
+    assert_eq!(second.replay_limits(), fsl_replay::ReplayLimits::default());
     assert_eq!(first.operands().values(), [3, 1]);
     assert_eq!(second.operands().values(), [3, 1]);
     for (execution, generated) in [first, second].into_iter().zip(&driven.generation().items) {
-        let quire_contract_codegen::KindOutput::Kani {
+        let filament_contract_codegen::KindOutput::Kani {
             harness: Some(harness),
             ..
         } = &generated.output
@@ -2317,7 +2317,7 @@ fn tc_006_no_selected_scalar_item_skips_binding_and_native_execution() {
     let mut generation = kani_input();
     generation.scalar_execution = Some(ScalarExecutionInput {
         call: &call,
-        replay_limits: qsl_replay::ReplayLimits::default(),
+        replay_limits: fsl_replay::ReplayLimits::default(),
         environment: &environment,
         native: None,
     });
@@ -2412,7 +2412,10 @@ fn tc_006_x_plus_1_settles_supported() {
         .as_ref()
         .expect("a supported item carries its harness");
     assert_eq!(harness.identity.node_id, add);
-    assert_eq!(harness.identity.operation_identity, "quire.op.integer.add");
+    assert_eq!(
+        harness.identity.operation_identity,
+        "filament.op.integer.add"
+    );
     // `x` ranges its own `[0, 9]` domain; the literal `1` is held at exactly
     // its own value, not ranged over `1`'s plain scalar type.
     let bounds: Vec<(i64, i64)> = harness
@@ -2473,7 +2476,10 @@ fn tc_006_x_plus_y_settles_supported_with_independent_argument_bounds() {
         .as_ref()
         .expect("a supported item carries its harness");
     assert_eq!(harness.identity.node_id, add);
-    assert_eq!(harness.identity.operation_identity, "quire.op.integer.add");
+    assert_eq!(
+        harness.identity.operation_identity,
+        "filament.op.integer.add"
+    );
     let bounds: Vec<(i64, i64)> = harness
         .identity
         .arguments
@@ -2534,7 +2540,7 @@ fn tc_006_x_plus_100_in_the_return_context_is_refused_at_check() {
 /// so every exact result still lies in `[100, 109]`, disjoint from the
 /// declared `[0, 10]`. No harness is carried for it.
 ///
-/// The guard `>` item is asserted too (SR-013 FND-004): `quire.op.integer.gt`
+/// The guard `>` item is asserted too (SR-013 FND-004): `filament.op.integer.gt`
 /// is IR-confirmed (its operands are `x`, an `Int[0, 9]` reference, and the
 /// literal `20`) but this generator has no Kani harness renderer for any
 /// family but `IntegerArithmetic` (CG's own `OperationNotRendered` doc), so
@@ -2605,7 +2611,7 @@ fn tc_006_x_plus_100_in_a_dead_branch_settles_result_bound_unreachable() {
                 },
                 ..
             }
-        } if operation_identity == "quire.op.integer.add"
+        } if operation_identity == "filament.op.integer.add"
             && reachable_lower == "100"
             && reachable_upper == "109"
     ));
@@ -2619,7 +2625,7 @@ fn tc_006_x_plus_100_in_a_dead_branch_settles_result_bound_unreachable() {
                 },
                 ..
             }
-        } if operation_identity == "quire.op.integer.gt"
+        } if operation_identity == "filament.op.integer.gt"
             && derived_domains == &vec![DerivedDomain::IntegerRange {
                 bound: x_bound,
                 lower: "0".to_owned(),
@@ -2778,7 +2784,7 @@ fn tc_003_route_and_generate_skip_a_negotiation_unsupported_item_by_request_inde
     // Comparing the whole generation output against a direct `generate_routed`
     // call naming the `-` node at request index 1 catches that: it would
     // disagree with whatever CG derives for the `=` node instead.
-    let neg = expression_by_identity(driven.checked(), "quire.op.integer.negate");
+    let neg = expression_by_identity(driven.checked(), "filament.op.integer.negate");
     let backend = kani_candidate(&driven);
     let expected = direct_generation(
         &recorder,
@@ -3050,11 +3056,13 @@ fn tc_004_e5_refusal_is_a_fault() {
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
     let packages = BTreeMap::new();
-    let CheckedPackageDispatchResult::Refused(refusal) = quire_contract_model::read_checked_package(
-        b"not a JSON document",
-        CheckedPackageReadLimits::bounded(),
-        &CheckedPackageEvidence::new(),
-    ) else {
+    let CheckedPackageDispatchResult::Refused(refusal) =
+        filament_contract_model::read_checked_package(
+            b"not a JSON document",
+            CheckedPackageReadLimits::bounded(),
+            &CheckedPackageEvidence::new(),
+        )
+    else {
         panic!("malformed reader bytes must produce a typed refusal");
     };
 
@@ -3116,8 +3124,8 @@ fn tc_006_e5_admits_text_and_rational_units() {
 #[test]
 fn tc_006_typed_form_refusal_preserves_supported_sibling() {
     let checked = eq_package().checked().clone();
-    let eq = expression_by_identity(&checked, "quire.op.integer.eq");
-    let neg = expression_by_identity(&checked, "quire.op.integer.negate");
+    let eq = expression_by_identity(&checked, "filament.op.integer.eq");
+    let neg = expression_by_identity(&checked, "filament.op.integer.negate");
 
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
@@ -3160,7 +3168,7 @@ fn tc_006_typed_form_refusal_preserves_supported_sibling() {
         &driven.settlements[0].backend.as_ref().expect("a lowered item settles").disposition,
         Disposition::Unsupported {
             cause: Cause::KaniFormRefused { form, .. }
-        } if form.operation_identity.as_deref() == Some("quire.op.integer.eq")
+        } if form.operation_identity.as_deref() == Some("filament.op.integer.eq")
     ));
     assert!(matches!(
         driven.settlements[1]
@@ -3303,7 +3311,7 @@ fn current_owner_boundary_raw_slots_resolve_in_each_holding_row() {
                     && first.node_id.path.iter().any(|segment| {
                         matches!(
                             segment,
-                            quire_contract_model::CheckedNodePathSegment::Operand(_)
+                            filament_contract_model::CheckedNodePathSegment::Operand(_)
                         )
                     })
                     && package.structural_key_at(left) != package.structural_key_at(right))
@@ -3371,8 +3379,8 @@ fn drive_unit(recorder: &Recorder, source: &str) -> Result<Driven, DriverRefusal
     )
 }
 
-fn resolve_node(driven: &Driven, key: &quire_exact::NodeKey) -> CheckedNodeId {
-    let wanted = qsl_foundation::node_wire::node_key_to_json(key).expect("the key serializes");
+fn resolve_node(driven: &Driven, key: &filament_exact::NodeKey) -> CheckedNodeId {
+    let wanted = fsl_foundation::node_wire::node_key_to_json(key).expect("the key serializes");
     let checked = driven.checked();
     checked
         .resolved_graph()
@@ -3388,23 +3396,23 @@ fn resolve_node(driven: &Driven, key: &quire_exact::NodeKey) -> CheckedNodeId {
 
 fn expected_occurrence(
     driven: &Driven,
-    key: &qsl_foundation::source::provenance::OccurrenceKey,
-) -> quire_contract_codegen::RequirementOccurrence {
+    key: &fsl_foundation::source::provenance::OccurrenceKey,
+) -> filament_contract_codegen::RequirementOccurrence {
     assert_eq!(key.origin().role().as_str(), "expression");
-    quire_contract_codegen::RequirementOccurrence {
+    filament_contract_codegen::RequirementOccurrence {
         node_id: resolve_node(driven, key.node()),
-        role: quire_contract_model::CheckedOccurrenceRole::Expression,
+        role: filament_contract_model::CheckedOccurrenceRole::Expression,
         ordinal: key.origin().ordinal(),
     }
 }
 
 fn expected_guards(
     driven: &Driven,
-    guards: &[qsl_semantics::check::PathGuard],
-) -> Vec<quire_contract_codegen::RequirementGuard> {
+    guards: &[fsl_semantics::check::PathGuard],
+) -> Vec<filament_contract_codegen::RequirementGuard> {
     guards
         .iter()
-        .map(|guard| quire_contract_codegen::RequirementGuard {
+        .map(|guard| filament_contract_codegen::RequirementGuard {
             occurrence: expected_occurrence(driven, guard.occurrence()),
             holds: guard.holds(),
         })
@@ -3415,8 +3423,8 @@ fn value_validity_records(
     driven: &Driven,
 ) -> Vec<(
     usize,
-    qsl_foundation::source::provenance::OccurrenceKey,
-    qsl_semantics::check::RequirementRecord,
+    fsl_foundation::source::provenance::OccurrenceKey,
+    fsl_semantics::check::RequirementRecord,
 )> {
     driven
         .package()
@@ -3426,7 +3434,7 @@ fn value_validity_records(
         .iter()
         .enumerate()
         .filter(|(_, (_, record))| {
-            record.requirements().kind() == qsl_semantics::check::Capability::ValueValidity
+            record.requirements().kind() == fsl_semantics::check::Capability::ValueValidity
         })
         .map(|(index, (key, record))| (index, key.clone(), record.clone()))
         .collect()
@@ -3435,7 +3443,7 @@ fn value_validity_records(
 fn selection_at(
     positions: &[ContractRequestPosition],
     request_index: usize,
-) -> quire_contract_codegen::ContractDriverResultSelection {
+) -> filament_contract_codegen::ContractDriverResultSelection {
     positions
         .iter()
         .filter(|position| !matches!(position, ContractRequestPosition::ContextRoot { .. }))
@@ -3645,7 +3653,7 @@ fn a_routed_item_without_a_record_refuses_before_generation() {
         requirement_rewrite: Some(|map| {
             map.iter()
                 .filter(|(_, record)| {
-                    record.requirements().kind() != qsl_semantics::check::Capability::ValueValidity
+                    record.requirements().kind() != fsl_semantics::check::Capability::ValueValidity
                 })
                 .map(|(key, record)| (key.clone(), record.clone()))
                 .collect()
@@ -3678,16 +3686,16 @@ fn a_routed_item_without_a_record_refuses_before_generation() {
 }
 
 fn rekey(
-    map: qsl_semantics::check::RequirementMap,
+    map: fsl_semantics::check::RequirementMap,
     new_key: fn(
-        &qsl_foundation::source::provenance::OccurrenceKey,
-    ) -> qsl_foundation::source::provenance::OccurrenceKey,
-) -> qsl_semantics::check::RequirementMap {
+        &fsl_foundation::source::provenance::OccurrenceKey,
+    ) -> fsl_foundation::source::provenance::OccurrenceKey,
+) -> fsl_semantics::check::RequirementMap {
     let mut done = false;
     map.iter()
         .map(|(key, record)| {
             let vv =
-                record.requirements().kind() == qsl_semantics::check::Capability::ValueValidity;
+                record.requirements().kind() == fsl_semantics::check::Capability::ValueValidity;
             if vv && !done {
                 done = true;
                 (new_key(key), record.clone())
@@ -3706,9 +3714,9 @@ fn an_unprojectable_record_refuses_before_negotiation() {
     let unknown_role = Recorder {
         requirement_rewrite: Some(|map| {
             rekey(map, |key| {
-                qsl_foundation::source::provenance::OccurrenceKey::new(
+                fsl_foundation::source::provenance::OccurrenceKey::new(
                     key.node().clone(),
-                    quire_exact::Origin::new(quire_exact::Role::new("nope"), 0),
+                    filament_exact::Origin::new(filament_exact::Role::new("nope"), 0),
                 )
             })
         }),
@@ -3725,10 +3733,10 @@ fn an_unprojectable_record_refuses_before_negotiation() {
     let unknown_node = Recorder {
         requirement_rewrite: Some(|map| {
             rekey(map, |key| {
-                qsl_foundation::source::provenance::OccurrenceKey::new(
-                    quire_exact::NodeKey::new(
+                fsl_foundation::source::provenance::OccurrenceKey::new(
+                    filament_exact::NodeKey::new(
                         "missing".to_owned(),
-                        vec![quire_exact::PathSegment::Text("n".to_owned())],
+                        vec![filament_exact::PathSegment::Text("n".to_owned())],
                         0,
                     )
                     .expect("a fixture key"),
@@ -3772,9 +3780,9 @@ fn an_unprojectable_record_refuses_before_negotiation() {
 #[trace("TC-034", "FR-020-AC-14")]
 fn a_guard_whose_node_the_package_lacks_refuses_before_negotiation() {
     let missing = || {
-        quire_exact::NodeKey::new(
+        filament_exact::NodeKey::new(
             "missing".to_owned(),
-            vec![quire_exact::PathSegment::Text("guard".to_owned())],
+            vec![filament_exact::PathSegment::Text("guard".to_owned())],
             0,
         )
         .expect("a fixture key")
@@ -3784,15 +3792,15 @@ fn a_guard_whose_node_the_package_lacks_refuses_before_negotiation() {
             map.iter()
                 .map(|(key, record)| {
                     let vv = record.requirements().kind()
-                        == qsl_semantics::check::Capability::ValueValidity;
+                        == fsl_semantics::check::Capability::ValueValidity;
                     if !vv {
                         return (key.clone(), record.clone());
                     }
-                    let guard = qsl_semantics::check::PathGuard::new(
-                        qsl_foundation::source::provenance::OccurrenceKey::new(
-                            quire_exact::NodeKey::new(
+                    let guard = fsl_semantics::check::PathGuard::new(
+                        fsl_foundation::source::provenance::OccurrenceKey::new(
+                            filament_exact::NodeKey::new(
                                 "missing".to_owned(),
-                                vec![quire_exact::PathSegment::Text("guard".to_owned())],
+                                vec![filament_exact::PathSegment::Text("guard".to_owned())],
                                 0,
                             )
                             .expect("a fixture key"),
@@ -3841,7 +3849,7 @@ fn a_guard_whose_node_the_package_lacks_refuses_before_negotiation() {
 /// The `test/orders` model document of FSL's switch-transition example: a
 /// `Switch` with an `on` field and `set`/`adjust` operations. A `post` clause
 /// on one of them writes `operation-contract` requirement records.
-const SWITCH_MODEL_DOCUMENT: &str = r#"{"canonicalization":{"algorithm":"rfc8785-v1"},"constructs":[{"construct":{"identity":"none","meaning":"quire.meaning.model.object-type/v1","members":{"identityFields":"required"},"shape":"record"},"kind":{"module":"test/business","name":"thing"},"moduleVersion":"1.0.0"}],"contractVersion":"2.0.0","extensions":[],"occurrences":[],"package":{"identity":"test/orders","mappingVersions":[],"profileVersions":[],"version":"1"},"source":{"dialect":"spec-bundle","identity":"ix://test/orders/spec","version":"1.0.0"},"types":[{"constraints":[],"displayName":"Switch","extensions":[],"fields":[{"defaultKind":"none","identity":"ix://test/orders/Switch/sid","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"sid","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/sid","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/sid"]}},"presence":"required","typeRef":"ix://quire/native/Integer"},{"defaultKind":"none","identity":"ix://test/orders/Switch/on","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"on","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/on","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/on"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"identity":"ix://test/orders/Switch","identityFields":["ix://test/orders/Switch/sid"],"kind":{"module":"test/business","name":"thing"},"operations":[{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/set","name":"set","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/set/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]},{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/adjust","name":"adjust","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/adjust/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]}],"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch"]}},"roles":[],"unknownPolicy":"reject"}]}"#;
+const SWITCH_MODEL_DOCUMENT: &str = r#"{"canonicalization":{"algorithm":"rfc8785-v1"},"constructs":[{"construct":{"identity":"none","meaning":"filament.meaning.model.object-type/v1","members":{"identityFields":"required"},"shape":"record"},"kind":{"module":"test/business","name":"thing"},"moduleVersion":"1.0.0"}],"contractVersion":"2.0.0","extensions":[],"occurrences":[],"package":{"identity":"test/orders","mappingVersions":[],"profileVersions":[],"version":"1"},"source":{"dialect":"spec-bundle","identity":"ix://test/orders/spec","version":"1.0.0"},"types":[{"constraints":[],"displayName":"Switch","extensions":[],"fields":[{"defaultKind":"none","identity":"ix://test/orders/Switch/sid","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"sid","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/sid","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/sid"]}},"presence":"required","typeRef":"ix://filament/native/Integer"},{"defaultKind":"none","identity":"ix://test/orders/Switch/on","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"on","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/on","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/on"]}},"presence":"required","typeRef":"ix://filament/native/Boolean"}],"identity":"ix://test/orders/Switch","identityFields":["ix://test/orders/Switch/sid"],"kind":{"module":"test/business","name":"thing"},"operations":[{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/set","name":"set","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/set/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set/flag"]}},"presence":"required","typeRef":"ix://filament/native/Boolean"}],"post":[],"pre":[]},{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/adjust","name":"adjust","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/adjust/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust/flag"]}},"presence":"required","typeRef":"ix://filament/native/Boolean"}],"post":[],"pre":[]}],"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch"]}},"roles":[],"unknownPolicy":"reject"}]}"#;
 
 /// A unit holding one `value-validity` item and the `operation-contract`
 /// records of a `post` clause over the model's `set` operation.
@@ -3861,7 +3869,7 @@ static MODEL_READING_UNIT: LazyLock<String> = LazyLock::new(|| {
 fn a_bound_operation_contract_item_projects_none_and_raises_no_fault() {
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
-    let packages = qsl_semantics::model::intake::package_input([SWITCH_MODEL_DOCUMENT.as_bytes()])
+    let packages = fsl_semantics::model::intake::package_input([SWITCH_MODEL_DOCUMENT.as_bytes()])
         .expect("the switch model document is a package");
     let recorder = Recorder::default();
     let driven = drive(
@@ -3879,7 +3887,7 @@ fn a_bound_operation_contract_item_projects_none_and_raises_no_fault() {
     let other = driven
         .request_items
         .iter()
-        .position(|item| item.kind() != qsl_semantics::check::Capability::ValueValidity)
+        .position(|item| item.kind() != fsl_semantics::check::Capability::ValueValidity)
         .expect("the post clause writes an operation-contract item");
     let records = value_validity_records(&driven);
     assert!(
@@ -3932,10 +3940,10 @@ fn a_bound_operation_contract_item_projects_none_and_raises_no_fault() {
 #[test]
 #[trace("TC-034", "FR-020-AC-5")]
 fn two_capabilities_at_one_occurrence_project_only_the_value_validity_record() {
-    use qsl_semantics::check::Capability;
+    use fsl_semantics::check::Capability;
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
-    let packages = qsl_semantics::model::intake::package_input([SWITCH_MODEL_DOCUMENT.as_bytes()])
+    let packages = fsl_semantics::model::intake::package_input([SWITCH_MODEL_DOCUMENT.as_bytes()])
         .expect("the switch model document is a package");
     let shared = Recorder {
         requirement_rewrite: Some(|map| {
@@ -3998,16 +4006,16 @@ fn two_capabilities_at_one_occurrence_project_only_the_value_validity_record() {
 
 type VvRecord = (
     usize,
-    qsl_foundation::source::provenance::OccurrenceKey,
-    qsl_semantics::check::RequirementRecord,
+    fsl_foundation::source::provenance::OccurrenceKey,
+    fsl_semantics::check::RequirementRecord,
 );
 
 fn expected_requirement(
     driven: &Driven,
-    key: &qsl_foundation::source::provenance::OccurrenceKey,
-    record: &qsl_semantics::check::RequirementRecord,
-) -> quire_contract_codegen::RoutedRequirement {
-    quire_contract_codegen::RoutedRequirement {
+    key: &fsl_foundation::source::provenance::OccurrenceKey,
+    record: &fsl_semantics::check::RequirementRecord,
+) -> filament_contract_codegen::RoutedRequirement {
+    filament_contract_codegen::RoutedRequirement {
         occurrence: expected_occurrence(driven, key),
         result_bound: resolve_node(driven, &record.result_bound().node()),
         conversion_context: record
@@ -4025,7 +4033,7 @@ fn expected_record_set(driven: &Driven, records: &[VvRecord]) -> RequirementReco
                 let requirement = expected_requirement(driven, key, record);
                 (
                     requirement.occurrence,
-                    quire_contract_codegen::RequirementRecordInput {
+                    filament_contract_codegen::RequirementRecordInput {
                         result_bound: requirement.result_bound,
                         conversion_context: requirement.conversion_context,
                         path_condition: requirement.path_condition,
@@ -4042,8 +4050,8 @@ fn expected_item(
     recorder: &Recorder,
     driven: &Driven,
     request_index: usize,
-    key: &qsl_foundation::source::provenance::OccurrenceKey,
-    record: &qsl_semantics::check::RequirementRecord,
+    key: &fsl_foundation::source::provenance::OccurrenceKey,
+    record: &fsl_semantics::check::RequirementRecord,
 ) -> RoutedGenerationItem {
     let (package, positions) = recorder.generation_input();
     routed_generation_item(
@@ -4072,7 +4080,7 @@ fn the_export_partition_vector_projects_a_and_c_and_not_b() {
                 map.iter()
                     .filter(|(_, record)| {
                         record.requirements().kind()
-                            != qsl_semantics::check::Capability::ValueValidity
+                            != fsl_semantics::check::Capability::ValueValidity
                             || {
                                 seen += 1;
                                 seen != 2
@@ -4134,7 +4142,7 @@ fn a_disagreeing_result_bound_is_cg_s_refusal_returned_unchanged() {
             let vv = map
                 .iter()
                 .filter(|(_, record)| {
-                    record.requirements().kind() == qsl_semantics::check::Capability::ValueValidity
+                    record.requirements().kind() == fsl_semantics::check::Capability::ValueValidity
                 })
                 .map(|(key, record)| (key.clone(), record.clone()))
                 .collect::<Vec<_>>();
@@ -4173,7 +4181,7 @@ fn a_disagreeing_result_bound_is_cg_s_refusal_returned_unchanged() {
     assert!(
         matches!(
             mismatch.as_ref(),
-            quire_contract_codegen::RequirementRecordMismatch::ResultBoundMismatch { item, record, .. }
+            filament_contract_codegen::RequirementRecordMismatch::ResultBoundMismatch { item, record, .. }
                 if item != record
         ),
         "{mismatch:?}"
@@ -4211,7 +4219,7 @@ fn a_guarded_item_generates_a_harness_assuming_its_guard_with_its_occurrence() {
         if requirement.path_condition.is_empty() {
             continue;
         }
-        let Some(quire_contract_codegen::KindOutput::Kani { record, harness }) =
+        let Some(filament_contract_codegen::KindOutput::Kani { record, harness }) =
             output(*request_index)
         else {
             panic!("request {request_index} is routed to Kani");
@@ -4248,7 +4256,7 @@ fn a_guarded_item_generates_a_harness_assuming_its_guard_with_its_occurrence() {
                         ObligationDisposition::Unsupported {
                             reason: UnsupportedObligation::PathGuardNotLowered {
                                 reason:
-                                    quire_contract_codegen::PathGuardRefusal::UnsupportedGuardForm,
+                                    filament_contract_codegen::PathGuardRefusal::UnsupportedGuardForm,
                                 ..
                             }
                         }
@@ -4314,7 +4322,7 @@ fn a_guard_without_a_context_root_is_cg_s_refusal_returned_unchanged() {
             .map(|(_, requirement)| {
                 (
                     requirement.occurrence.clone(),
-                    quire_contract_codegen::RequirementRecordInput {
+                    filament_contract_codegen::RequirementRecordInput {
                         result_bound: requirement.result_bound.clone(),
                         conversion_context: requirement.conversion_context.clone(),
                         path_condition: requirement.path_condition.clone(),
@@ -4345,7 +4353,7 @@ fn a_guard_without_a_context_root_is_cg_s_refusal_returned_unchanged() {
     assert!(
         matches!(
             mismatch.as_ref(),
-            quire_contract_codegen::RequirementRecordMismatch::GuardContextMissing { guard }
+            filament_contract_codegen::RequirementRecordMismatch::GuardContextMissing { guard }
                 if *guard == requirement.path_condition[0].occurrence
         ),
         "{mismatch:?}"

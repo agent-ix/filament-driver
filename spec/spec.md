@@ -133,7 +133,7 @@ operations defined by FSL ADR-029. Driver operations own `prove` and
 `generate`; the remaining lifecycle operations delegate to their typed FSL
 library entries.
 
-FSL owns lifecycle policy and the `quire-outcome/1`, diagnostic, exit-category
+FSL owns lifecycle policy and the `filament-outcome/1`, diagnostic, exit-category
 and operation contracts. The driver preserves those typed outcomes and uses
 FSL's `Category::exit_code` as the sole category-to-process exit mapping.
 FR-002 routes that numeric result through `ix_cli_kit::exit::caller_exit_code`,

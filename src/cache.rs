@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The driver-owned cache boundary (FR-007).
 
-use qsl_foundation::BackendId;
+use fsl_foundation::BackendId;
 
 /// A cache-eligible operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -343,8 +343,8 @@ mod tests {
         }
     }
 
-    fn registry(identity: &str) -> (crate::AdmittedRegistry, qsl_foundation::BackendId) {
-        let backend = qsl_foundation::BackendId::from_wire(identity).expect("valid id");
+    fn registry(identity: &str) -> (crate::AdmittedRegistry, fsl_foundation::BackendId) {
+        let backend = fsl_foundation::BackendId::from_wire(identity).expect("valid id");
         let registry = crate::build_registry(&[crate::ProviderManifest {
             identity: identity.to_owned(),
             advertises: vec![(
@@ -361,7 +361,7 @@ mod tests {
 
     fn request<'a>(
         registry: &'a crate::AdmittedRegistry,
-        backend: &qsl_foundation::BackendId,
+        backend: &fsl_foundation::BackendId,
     ) -> CacheRequest<'a> {
         CacheRequest::new(
             CacheOperation::Prove,
@@ -428,8 +428,8 @@ mod tests {
     /// Unit check that the request builder selects the matching admitted descriptor (FR-007-AC-1).
     #[test]
     fn selecting_each_admitted_backend_uses_its_matching_descriptor() {
-        let first = qsl_foundation::BackendId::from_wire("first").expect("valid id");
-        let second = qsl_foundation::BackendId::from_wire("second").expect("valid id");
+        let first = fsl_foundation::BackendId::from_wire("first").expect("valid id");
+        let second = fsl_foundation::BackendId::from_wire("second").expect("valid id");
         let registry = crate::build_registry(&[
             crate::ProviderManifest {
                 identity: first.as_str().to_owned(),
@@ -478,7 +478,7 @@ mod tests {
     /// Builder check only; provider-dispatch refusal-to-cache integration remains planned (FR-007-AC-6).
     #[test]
     fn cache_request_rejects_backend_outside_admitted_registry() {
-        let backend = qsl_foundation::BackendId::from_wire("kani").expect("valid id");
+        let backend = fsl_foundation::BackendId::from_wire("kani").expect("valid id");
         let registration = crate::build_registry(&[crate::ProviderManifest {
             identity: String::new(),
             advertises: Vec::new(),

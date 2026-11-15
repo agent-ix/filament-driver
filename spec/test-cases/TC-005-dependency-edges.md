@@ -49,7 +49,7 @@ Test: `tests/dependency_edges.rs`, `tc_005_driver_edges_match_the_adr_011_allow_
 
 - The driver's normal and build dependencies are exactly `fsl-analyze`,
   `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`,
-  `filament-exact`, `quire-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`,
+  `filament-exact`, `filament-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`,
   `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`, `serde_json` and `thiserror`. `serde_json` is a
   normal edge for production projection of FR-331's retained optional
   `bounds` member. The direct `filament-semantic-value` normal edge supplies

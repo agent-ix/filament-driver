@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Retained request to FSL-selected frame replay preparation (FR-009).
 
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
-use quire_contract_codegen::{
+use filament_contract_codegen::{
     FrameReplay, FrameReplayError, FrameReplayInputs, SelectedFrameTarget,
 };
-use quire_contract_model::ContractSourceV1;
+use filament_contract_model::ContractSourceV1;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
 
 use crate::{Driven, DriverFault, DriverRefusal};
 
@@ -18,7 +18,7 @@ pub enum FrameReplayFailure {
     Dependencies(DependencyInputRefusal),
     /// FSL refused call-site selection; the complete typed payload is unchanged.
     #[error(transparent)]
-    CallSite(Box<qsl_replay::CallSiteRefusal>),
+    CallSite(Box<fsl_replay::CallSiteRefusal>),
     /// The selected frame is not associated with the retained driver run.
     #[error(transparent)]
     Driver(Box<DriverRefusal>),
@@ -63,7 +63,7 @@ impl Driven {
                 .collect::<Vec<_>>(),
         )
         .map_err(FrameReplayFailure::Dependencies)?;
-        let located = qsl_replay::call_site(
+        let located = fsl_replay::call_site(
             SourceIdentity::new(&inputs.run.source.authority, &inputs.run.source.identity),
             inputs.run.package_name.clone(),
             &inputs.run.source.identity,

@@ -79,7 +79,7 @@ This source defines one function that always returns true:
 
 ```
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function yes using v(): Boolean pure { true }
 ```
 

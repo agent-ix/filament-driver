@@ -4,19 +4,19 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use qsl_foundation::BackendId;
-use qsl_package::EmittedPackage;
-use qsl_replay::{
-    Certification, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, OutcomeWriteError,
-    ProofBasis, RequestIndex, TerminalRecord, TerminalValue,
-};
-use quire_contract_codegen::{
+use filament_contract_codegen::{
     execute_kani_obligation_decided, run_terminal_value, Candidate, DecidedRunRefusal,
     KaniExecutableHarness, KaniExecutionEvidence, KaniExecutionRefusal, KaniExecutionRequest,
     KaniInstallation, KindOutput, ReplaySettlement, RoutedItemOutput, TerminalPairError,
     TractabilityLoadError, TractabilityTable, UnsupportedObligation,
 };
-use quire_exact::{Cancel, CancelCause};
+use filament_exact::{Cancel, CancelCause};
+use fsl_foundation::BackendId;
+use fsl_package::EmittedPackage;
+use fsl_replay::{
+    Certification, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, OutcomeWriteError,
+    ProofBasis, RequestIndex, TerminalRecord, TerminalValue,
+};
 
 use crate::ProviderManifest;
 
@@ -49,7 +49,7 @@ impl<'a> ProviderRequest<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct KaniExecutionLimits<'a> {
     /// Must match the ceilings embedded in the generated harness.
-    pub ceilings: quire_contract_codegen::ProofCeilings,
+    pub ceilings: filament_contract_codegen::ProofCeilings,
     /// The explicitly selected Kani installation.
     pub installation: &'a KaniInstallation,
     /// Directory containing the generated harness source.
@@ -191,9 +191,9 @@ pub enum KaniProviderFailure {
     /// Provider execution limits differ from the ceilings used to generate the harness.
     LimitsMismatch {
         /// Caller-supplied execution limits.
-        supplied: quire_contract_codegen::ProofCeilings,
+        supplied: filament_contract_codegen::ProofCeilings,
         /// Ceilings recorded by the generated harness.
-        generated: quire_contract_codegen::ProofCeilings,
+        generated: filament_contract_codegen::ProofCeilings,
     },
     /// No Kani execution configuration was supplied.
     MissingExecutionLimits,
@@ -235,7 +235,7 @@ impl<T, E> Default for ProviderResults<T, E> {
 pub type KaniProviderResults = ProviderResults<KaniExecutionEvidence, KaniProviderFailure>;
 
 impl ProviderResults<KaniExecutionEvidence, KaniProviderFailure> {
-    /// Serialize these provider items with FSL's canonical `quire-outcome/1`
+    /// Serialize these provider items with FSL's canonical `filament-outcome/1`
     /// document. This covers only the items in `self`; it is not a complete
     /// per-request outcome. Items that require replay or lack execution
     /// evidence remain typed errors; the driver does not invent settlements.
@@ -429,8 +429,8 @@ fn kani_execution_request<'a>(
 }
 
 fn ensure_matching_ceilings(
-    supplied: quire_contract_codegen::ProofCeilings,
-    generated: quire_contract_codegen::ProofCeilings,
+    supplied: filament_contract_codegen::ProofCeilings,
+    generated: filament_contract_codegen::ProofCeilings,
 ) -> Result<(), KaniProviderFailure> {
     if supplied == generated {
         Ok(())
@@ -473,27 +473,27 @@ mod tests {
     use std::sync::LazyLock;
     use std::time::Duration;
 
-    use ix_trace_rs::trace;
-    use qsl_foundation::SourceIdentity;
-    use qsl_replay::spine::SpineLimits;
-    use qsl_replay::statistical::{
+    use filament_contract_codegen::{
+        Candidate, KaniInconclusiveReason, KaniRunOutcome, KaniSolver, MemoryObservation,
+        ProofCeilings, SymbolicArgumentBounds, SymbolicBounds,
+    };
+    use filament_contract_codegen::{
+        KaniExecutableHarness, KaniFailureCause, KaniFailurePhase, KaniNoVerdictDiagnostics,
+        KaniStreamExcerpt, ReplaySettlement,
+    };
+    use filament_exact::{Cancel, CancelCause, Integer, Rational};
+    use fsl_foundation::SourceIdentity;
+    use fsl_replay::spine::SpineLimits;
+    use fsl_replay::statistical::{
         Confidence, Coverage, Decision, StatisticalBasis, StatisticalMethod, StatisticalProvenance,
         StatisticalVerdict, UndecidedCause,
     };
-    use qsl_replay::{
+    use fsl_replay::{
         compile_package, Certification, DependencyInput, IncompleteCause, Operation,
         OutcomeDocument, OutcomeItem, OutcomeStage, ProofBasis, ReplayLimits, StageLimits,
         TerminalValue,
     };
-    use quire_contract_codegen::{
-        Candidate, KaniInconclusiveReason, KaniRunOutcome, KaniSolver, MemoryObservation,
-        ProofCeilings, SymbolicArgumentBounds, SymbolicBounds,
-    };
-    use quire_contract_codegen::{
-        KaniExecutableHarness, KaniFailureCause, KaniFailurePhase, KaniNoVerdictDiagnostics,
-        KaniStreamExcerpt, ReplaySettlement,
-    };
-    use quire_exact::{Cancel, CancelCause, Integer, Rational};
+    use ix_trace_rs::trace;
     use serde_json::Value;
 
     use super::{
@@ -502,14 +502,14 @@ mod tests {
         ProviderRequest, ProviderResults, ProviderTerminalError,
     };
     use crate::{CompileInput, GenerationInput, KaniInput};
-    use quire_contract_codegen::routed_contract_lowering_profile;
-    use quire_contract_codegen::KaniInstallation;
-    use quire_contract_codegen::TractabilityTable;
-    use quire_contract_codegen::{
+    use filament_contract_codegen::routed_contract_lowering_profile;
+    use filament_contract_codegen::KaniInstallation;
+    use filament_contract_codegen::TractabilityTable;
+    use filament_contract_codegen::{
         AdmittedItemAccounting, KaniExecutionEvidence, KindOutput, ObligationDisposition,
         ObligationRecord, ObligationSubject, RoutedItemOutput,
     };
-    use quire_contract_model::{
+    use filament_contract_model::{
         CheckedNodeId, CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2,
         CheckedPackageV2ReadResult,
     };
@@ -517,10 +517,10 @@ mod tests {
     static REAL_ADMISSION: LazyLock<(CheckedNodeId, AdmittedItemAccounting)> =
         LazyLock::new(|| {
             let source = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\";\n\
+            profile v = \"filament.value.complete/v1\";\n\
             function f using v(x: Int[0, 9]): Boolean pure { x + 1 < 10 }\n";
             let compiled = compile_package(
-                qsl_replay::CompileUnit {
+                fsl_replay::CompileUnit {
                     source: SourceIdentity::new("driver-test", "provider.native"),
                     package_name: "provider".to_owned(),
                     path: "provider.native",
@@ -533,7 +533,7 @@ mod tests {
             )
             .expect("FSL compiles provider fixture");
             let mut evidence = CheckedPackageEvidence::new();
-            evidence.support_feature("quire.value.complete/v1");
+            evidence.support_feature("filament.value.complete/v1");
             let checked = match CheckedPackageV2::read(
                 compiled.bytes(),
                 CheckedPackageReadLimits::bounded(),
@@ -732,7 +732,7 @@ mod tests {
     fn routed_item(identity: &str) -> RoutedItemOutput {
         let (checked_node, admitted) = &*REAL_ADMISSION;
         let checked_node = checked_node.clone();
-        let harness_symbol: quire_contract_codegen::HarnessSymbol = "generated_harness"
+        let harness_symbol: filament_contract_codegen::HarnessSymbol = "generated_harness"
             .to_owned()
             .try_into()
             .expect("valid harness symbol");
@@ -768,7 +768,7 @@ mod tests {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"{}\";\n\
              function f using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let registry = crate::build_registry(&[ProviderManifest {
@@ -933,7 +933,7 @@ mod tests {
         };
         assert_eq!(
             harness.identity.integer_representation,
-            quire_contract_codegen::ScalarIntegerRepresentation::General,
+            filament_contract_codegen::ScalarIntegerRepresentation::General,
             "the driver generates the general route"
         );
         let request = ProviderRequest::new(std::slice::from_ref(&item));
@@ -950,7 +950,7 @@ mod tests {
             panic!("expected NotTractable, got {:?}", results.items[0].result);
         };
         assert_eq!(harness_path, &harness.rust.path);
-        let quire_contract_codegen::UnsupportedObligation::V2ClauseNotTractable {
+        let filament_contract_codegen::UnsupportedObligation::V2ClauseNotTractable {
             node_id,
             operation_identity,
             width_bits,
@@ -963,7 +963,7 @@ mod tests {
         assert_eq!(node_id, &harness.identity.node_id);
         assert_eq!(operation_identity, &harness.identity.operation_identity);
         assert_eq!(*width_bits, 4, "Int[0, 9] is 4 bits");
-        assert_eq!(*route, quire_contract_codegen::IntegerRoute::General);
+        assert_eq!(*route, filament_contract_codegen::IntegerRoute::General);
         assert_eq!(
             **row,
             TractabilityTable::shipped_general_route_scalar()
@@ -992,7 +992,7 @@ mod tests {
         };
         assert_eq!(
             harness.identity.integer_representation,
-            quire_contract_codegen::ScalarIntegerRepresentation::Native,
+            filament_contract_codegen::ScalarIntegerRepresentation::Native,
             "the fixture is a genuine native-route harness"
         );
         let request = ProviderRequest::new(std::slice::from_ref(&item));
@@ -1005,7 +1005,7 @@ mod tests {
             matches!(
                 results.items[0].result,
                 Err(KaniProviderFailure::Execution(
-                    quire_contract_codegen::KaniExecutionRefusal::HarnessNotInCrate { .. }
+                    filament_contract_codegen::KaniExecutionRefusal::HarnessNotInCrate { .. }
                 ))
             ),
             "{:?}",
@@ -1186,18 +1186,18 @@ mod tests {
     #[test]
     fn provider_tool_failure_retains_cause_and_item_identity() {
         for failure in [
-            qsl_replay::ToolFailure::Crash,
-            qsl_replay::ToolFailure::FrameLength {
+            fsl_replay::ToolFailure::Crash,
+            fsl_replay::ToolFailure::FrameLength {
                 limit: 1024,
                 value: 1025,
             },
-            qsl_replay::ToolFailure::TotalBytes {
+            fsl_replay::ToolFailure::TotalBytes {
                 limit: 4096,
                 value: 5000,
             },
         ] {
-            let request_index = qsl_replay::RequestIndex::new(7);
-            let backend = qsl_foundation::BackendId::new("kani".to_owned());
+            let request_index = fsl_replay::RequestIndex::new(7);
+            let backend = fsl_foundation::BackendId::new("kani".to_owned());
             let record = ProviderItemResult::<KaniExecutionEvidence, KaniProviderFailure>::terminal_record_for_value(
                 TerminalValue::ToolFailed(failure),
                 request_index,
@@ -1336,9 +1336,9 @@ mod tests {
                 timed_horizon: None,
                 delay_grid_bits: None,
                 max_sample_steps: None,
-                sampler: qsl_foundation::selection::DefinitionRef::new(
+                sampler: fsl_foundation::selection::DefinitionRef::new(
                     "agent-ix",
-                    "quire.simulation.sampler/v1",
+                    "filament.simulation.sampler/v1",
                 )
                 .expect("sampler has a valid identity"),
                 tests: Vec::new(),
@@ -1350,8 +1350,8 @@ mod tests {
         assert!(matches!(
             ProviderItemResult::<KaniExecutionEvidence, KaniProviderFailure>::terminal_record_for_value(
                 TerminalValue::Measured(Box::new(verdict)),
-                qsl_replay::RequestIndex::new(0),
-                qsl_foundation::BackendId::new("agent-ix/provider/kani"),
+                fsl_replay::RequestIndex::new(0),
+                fsl_foundation::BackendId::new("agent-ix/provider/kani"),
             ),
             Err(ProviderTerminalError::UnsupportedTerminalValue)
         ), "a statistical measurement must not produce a Kani terminal");

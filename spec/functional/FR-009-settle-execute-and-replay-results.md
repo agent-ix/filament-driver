@@ -69,11 +69,11 @@ replay context through FSL evaluation and report handling.
 ## Outputs
 
 - One FR-331 terminal record per item in the CG request, written in the
-  `quire-outcome/1` outcome document, when the request reaches per-item
+  `filament-outcome/1` outcome document, when the request reaches per-item
   settlement.
 - For each export-refused item, no terminal record; its refusal stays in
   `Driven`'s per-item refusal member (FR-001), and it does not appear in the
-  `quire-outcome/1` document that holds the records of the items that settled.
+  `filament-outcome/1` document that holds the records of the items that settled.
 - The upstream typed refusal without a per-item terminal record when the
   request is refused before per-item settlement.
 

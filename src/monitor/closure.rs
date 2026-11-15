@@ -6,19 +6,19 @@
 //! limits, pays FSL authority admission, the FSL row adapters and IR's closure
 //! read. Nothing here is an executable program.
 
-use qsl_analyze::monitor_root::{
-    AdmittedPlanAuthority, PlanAuthoritySelection, PlanAuthorityValidationCaps, PlanRoot,
-};
-use qsl_package::{ReadEqualityRows, ReadIdentityRows};
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedOccurrence, CheckedOccurrenceRole, NativeJoinBudget, NativeJoinLocus,
     NativeJoinLocusSource, SelectedModelEnumShapeRow, SelectedMonitorAuthorityRow,
     SelectedMonitorClosureRows, SelectedMonitorTimeSource, SelectedMonitorTypeClosure,
     SelectedSourceCollectionRow, SelectedSourceEnumRow, SelectedSourceRecordRow,
     SelectedSourceTupleRow, SelectedSourceUnionRow,
 };
-use quire_exact::Cancel;
-use quire_observation::authority::progress;
+use filament_exact::Cancel;
+use filament_observation::authority::progress;
+use fsl_analyze::monitor_root::{
+    AdmittedPlanAuthority, PlanAuthoritySelection, PlanAuthorityValidationCaps, PlanRoot,
+};
+use fsl_package::{ReadEqualityRows, ReadIdentityRows};
 
 use super::{MonitorPreparationError as Error, MonitorPreparationLimits};
 
