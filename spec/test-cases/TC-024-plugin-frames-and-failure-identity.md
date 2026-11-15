@@ -3,14 +3,14 @@ id: TC-024
 title: "Enforce plugin framing and preserve typed failures"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-013
+  - target: ix://agent-ix/filament-driver/FR-013
     type: verifies
 ---
 # TC-024: Enforce plugin framing and preserve typed failures
 
 ## Description
 
-Verify the host applies QSL PL-3 frame rules and reports the original protocol,
+Verify the host applies FSL PL-3 frame rules and reports the original protocol,
 plugin, validation, and process failures.
 
 Scope: FR-013-AC-4 and FR-013-AC-7.

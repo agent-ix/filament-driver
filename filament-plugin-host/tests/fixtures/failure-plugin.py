@@ -28,10 +28,10 @@ def write_frame(value):
     sys.stdout.buffer.flush()
 
 
-protocol = "quire.plugin-wire/v1"
+protocol = "filament.plugin-wire/v1"
 mode = sys.argv[1]
 if mode == "wrong-protocol":
-    protocol = "quire.plugin-wire/v0"
+    protocol = "filament.plugin-wire/v0"
 if mode == "thread-tasks":
     for _ in range(4):
         threading.Thread(target=lambda: time.sleep(60), daemon=True).start()

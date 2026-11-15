@@ -27,7 +27,7 @@ pub fn request(source: &str, call: Option<(&str, serde_json::Value)>) -> Request
     let source_path = std::fs::canonicalize(source).expect("existing fixture source");
     let mut request = serde_json::json!({
         "models": [],
-        "program": {"source": {"authority": "quire", "identity": source, "file": source_path, "document":"CliProcess", "formal_revision":1}},
+        "program": {"source": {"authority": "filament", "identity": source, "file": source_path, "document":"CliProcess", "formal_revision":1}},
     });
     let format = if let Some((function, arguments)) = call {
         request["call"] = serde_json::json!({"function": function, "arguments": arguments});
@@ -36,7 +36,8 @@ pub fn request(source: &str, call: Option<(&str, serde_json::Value)>) -> Request
         "native-compile/1"
     };
     let id = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("quire-request-{}-{id}.json", std::process::id()));
+    let path =
+        std::env::temp_dir().join(format!("filament-request-{}-{id}.json", std::process::id()));
     std::fs::write(
         &path,
         serde_json::to_vec(&serde_json::json!({"format": format, "request": request}))

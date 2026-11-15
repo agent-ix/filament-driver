@@ -3,9 +3,9 @@ id: FR-007
 title: "Integrate eligible operations through the cache interface"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-spec-language/ADR-029
+  - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
 ---
 # FR-007: Integrate eligible operations through the cache interface
@@ -15,7 +15,7 @@ relationships:
 When a cache-eligible `prove`, `analyze` or `generate` operation is dispatched,
 the driver SHALL call its required `Cache` interface with a `CacheRequest`
 containing the operation, package identity, canonical typed request, selected
-`BackendId`, and (for `generate`) target and output-affecting options. Eligibility is exactly QSL ADR-029 CA-5: deterministic
+`BackendId`, and (for `generate`) target and output-affecting options. Eligibility is exactly FSL ADR-029 CA-5: deterministic
 terminal values without wall-time fields, plugin results, internal failures,
 cancellation, deadlines or time-limited incomplete results.
 
@@ -42,9 +42,9 @@ cancellation, deadlines or time-limited incomplete results.
   does not invoke the provider.
 - When lookup returns a miss, the driver invokes the selected provider exactly
   once, returns its typed result unchanged, and records that same value.
-- The downstream composition SHALL require a `quire-cache` implementation
-  that depends on the driver interface; `quire-driver` SHALL NOT depend on the
-  concrete `quire-cache` package.
+- The downstream composition SHALL require a `filament-cache` implementation
+  that depends on the driver interface; `filament-driver` SHALL NOT depend on the
+  concrete `filament-cache` package.
 - When constructing `CacheRequest`, the driver SHALL use a provider identity
   from the same admitted registry descriptor; a registry refusal produces no
   cache lookup. Behaviour change: the driver no longer carries a provider manifest digest. A provider upgrade under the same `BackendId` does not invalidate cached results; operators clear the cache when a provider's behaviour changes.
@@ -62,7 +62,7 @@ cancellation, deadlines or time-limited incomplete results.
 
 ## Dependencies
 
-- QSL ADR-029 CA-1 through CA-5 defines cache eligibility and cache semantics;
+- FSL ADR-029 CA-1 through CA-5 defines cache eligibility and cache semantics;
   `BackendId` is identity-only key material; no manifest digest is key material.
 - [FR-012](./FR-012-implement-the-downstream-content-addressed-cache.md)
   defines the downstream cache component that implements the interface.

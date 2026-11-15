@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Production frame preparation with real QSL selection and public CG construction.
+//! Production frame preparation with real FSL selection and public CG construction.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 use std::time::Duration;
 
-use ix_trace_rs::trace;
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
-use qsl_replay::{
+use filament_driver::{
+    build_registry, drive, CompileInput, Driven, FrameReplayFailure, FslCg, GenerationInput,
+};
+use filament_exact::{Cancel, Origin, Role};
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
+use fsl_replay::{
     call_site, ClaimedChange, ClauseName, DocumentRef, Identifier, OperationName, ReplayLimits,
     SelectedObject,
 };
+use ix_trace_rs::trace;
 use quire_contract_codegen::{
     self as cg, FrameReplayInputs, LockedSource, ProvidedDocument, ReplayInputs, SelectedFrameItem,
     WitnessDecodeLimits,
 };
-use quire_driver::{
-    build_registry, drive, CompileInput, Driven, FrameReplayFailure, GenerationInput, QslCg,
-};
-use quire_exact::{Cancel, Origin, Role};
 use serde_json::json;
 
 fn source() -> SourceIdentity {
@@ -39,7 +39,7 @@ struct Fixture {
     domain: Vec<u8>,
     driven: Driven,
     harness: cg::StateFrameIdentity,
-    site: qsl_replay::OperationSite,
+    site: fsl_replay::OperationSite,
     index: usize,
     transcript: String,
 }
@@ -73,25 +73,25 @@ impl Fixture {
             "package": {"identity": "driver/model", "version": "1.0.0", "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [], "constructs": [{"kind": {"module": "driver/model", "name": "entity"},
                 "moduleVersion": "1.0.0", "construct": {"identity": "none", "shape": "record", "members": {},
-                    "meaning": "quire.meaning.model.object-type/v1"}},
+                    "meaning": "filament.meaning.model.object-type/v1"}},
                 {"kind": {"module": "driver/model", "name": "value_type"}, "moduleVersion": "1.0.0",
-                    "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "quire.meaning.model.value-type/v1"}}],
+                    "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.value-type/v1"}}],
             "types": [{"identity": "ix://driver/model/Amount", "displayName": "Amount", "kind": {"module": "driver/model", "name": "value_type"},
                 "roles": [], "origin": origin("ix://driver/model/Amount"), "extensions": [], "unknownPolicy": "reject", "scalar": "integer",
                 "constraints": [
-                    {"identity": "ix://driver/model/Amount/min", "keyword": "min", "operands": {"value": "0"}, "appliesTo": "ix://quire/native/Integer", "diagnosticCode": "bound.min", "origin": origin("ix://driver/model/Amount")},
-                    {"identity": "ix://driver/model/Amount/max", "keyword": "max", "operands": {"value": "10"}, "appliesTo": "ix://quire/native/Integer", "diagnosticCode": "bound.max", "origin": origin("ix://driver/model/Amount")} ]}, ty("Base", json!([]), json!([op("Base")])),
+                    {"identity": "ix://driver/model/Amount/min", "keyword": "min", "operands": {"value": "0"}, "appliesTo": "ix://filament/native/Integer", "diagnosticCode": "bound.min", "origin": origin("ix://driver/model/Amount")},
+                    {"identity": "ix://driver/model/Amount/max", "keyword": "max", "operands": {"value": "10"}, "appliesTo": "ix://filament/native/Integer", "diagnosticCode": "bound.max", "origin": origin("ix://driver/model/Amount")} ]}, ty("Base", json!([]), json!([op("Base")])),
                 ty("Child", json!(["ix://driver/model/Base"]), if redefined {json!([child_op])} else {json!([])})]})
             .to_string().into_bytes();
-        let unit = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"driver/model\";\npost Holds using v on M::Child::touch { self.balance >= pre(self.balance) }\n".to_owned();
+        let unit = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nmodel M = \"driver/model\";\npost Holds using v on M::Child::touch { self.balance >= pre(self.balance) }\n".to_owned();
         let unit = if redefined {
             unit
         } else {
             unit.replace("on M::Child::touch", "on M::Base::touch")
         };
-        let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
+        let packages = fsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
         let driven = drive(
-            &QslCg,
+            &FslCg,
             CompileInput {
                 source: source(),
                 path: "frame",
@@ -127,7 +127,7 @@ impl Fixture {
         )
         .unwrap();
         let package = driven.checked();
-        let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
+        let mut keys = fsl_semantics::check::wire_id::StructuralKeys::default();
         let clause_node = package
             .resolved_graph()
             .nodes
@@ -140,7 +140,7 @@ impl Fixture {
                 keys.key(original).expect("native structural key converts") == clause.site.node
             })
             .map(|(_, node)| &node.node_id)
-            .expect("the original QSL clause selects its admitted document-held node");
+            .expect("the original FSL clause selects its admitted document-held node");
         let harness = cg::generate_state_frame_obligations(
             &cg::StateFrameRequest {
                 ceilings: cg::ProofCeilings {
@@ -155,7 +155,7 @@ impl Fixture {
                 unwind: 2,
             },
             cg::StateFrameRoleIdentities::new(
-                qsl_replay::ObligationIdentity::new(
+                fsl_replay::ObligationIdentity::new(
                     clause.site.node.clone(),
                     None,
                     u32::try_from(clause.site.occurrence.origin().ordinal()).unwrap(),
@@ -299,10 +299,10 @@ fn assert_join_fault(result: Result<cg::FrameReplay, FrameReplayFailure>) {
         panic!("expected driver association fault");
     };
     assert_eq!(error.code(), "runtime_invariant");
-    assert_eq!(error.stage(), quire_driver::DriverStage::Replay);
+    assert_eq!(error.stage(), filament_driver::DriverStage::Replay);
     assert!(matches!(
         *error,
-        quire_driver::DriverRefusal::Fault(quire_driver::DriverFault::FrameReplayAssociation)
+        filament_driver::DriverRefusal::Fault(filament_driver::DriverFault::FrameReplayAssociation)
     ));
 }
 
@@ -342,7 +342,7 @@ fn frame_projection_rejects_missing_changed_and_caller_populated_associations() 
         assert_join_fault(fixture.driven.prepare_frame_replay(inputs));
     }
     for (role, ordinal) in [("claim", 0), ("generated", 1)] {
-        let changed = qsl_replay::OccurrenceKey::new(
+        let changed = fsl_replay::OccurrenceKey::new(
             fixture.site.frame_occurrence.node().clone(),
             Origin::new(Role::new(role), ordinal),
         );
@@ -357,7 +357,7 @@ fn frame_projection_rejects_missing_changed_and_caller_populated_associations() 
 
 #[trace("FR-009-AC-18", "TC-016")]
 #[test]
-fn frame_projection_preserves_qsl_refusal_before_any_join_or_codegen_check() {
+fn frame_projection_preserves_fsl_refusal_before_any_join_or_codegen_check() {
     let fixture = Fixture::new(false);
     let expected = call_site(
         source(),
@@ -377,23 +377,23 @@ fn frame_projection_preserves_qsl_refusal_before_any_join_or_codegen_check() {
         .driven
         .prepare_frame_replay(inputs)
         .err()
-        .expect("QSL refusal")
+        .expect("FSL refusal")
     else {
-        panic!("QSL refusal must precede driver and CG checks");
+        panic!("FSL refusal must precede driver and CG checks");
     };
     assert_eq!(actual.code(), expected.code());
     let (
-        qsl_replay::CallSiteRefusal::UnknownOperation {
+        fsl_replay::CallSiteRefusal::UnknownOperation {
             selection: actual_selection,
             package: actual_package,
         },
-        qsl_replay::CallSiteRefusal::UnknownOperation {
+        fsl_replay::CallSiteRefusal::UnknownOperation {
             selection: expected_selection,
             package: expected_package,
         },
     ) = (*actual, *expected)
     else {
-        panic!("original QSL UnknownOperation payload must survive");
+        panic!("original FSL UnknownOperation payload must survive");
     };
     assert_eq!(actual_selection, expected_selection);
     assert_eq!(actual_package, expected_package);
@@ -438,7 +438,10 @@ fn frame_projection_preserves_native_codegen_failure_and_admitted_package_equali
         .prepare_frame_replay(inputs)
         .err()
         .expect("CG refusal");
-    assert_eq!(error.code(), quire_driver::FrameReplayFailureCode::Codegen);
+    assert_eq!(
+        error.code(),
+        filament_driver::FrameReplayFailureCode::Codegen
+    );
     let FrameReplayFailure::Codegen(cg::FrameReplayError::FieldSetMismatch {
         state_fields,
         granted,
@@ -450,14 +453,14 @@ fn frame_projection_preserves_native_codegen_failure_and_admitted_package_equali
     assert_eq!(state_fields, ["balance", "not-granted-or-checked"]);
     assert!(granted.is_empty());
     assert_eq!(checked, ["balance"]);
-    for code in quire_driver::FrameReplayFailureCode::all() {
+    for code in filament_driver::FrameReplayFailureCode::all() {
         assert_eq!(
-            quire_driver::FrameReplayFailureCode::from_code(code.as_str()),
+            filament_driver::FrameReplayFailureCode::from_code(code.as_str()),
             Some(*code)
         );
     }
     assert_eq!(
-        quire_driver::FrameReplayFailureCode::from_code("unknown"),
+        filament_driver::FrameReplayFailureCode::from_code("unknown"),
         None
     );
 }

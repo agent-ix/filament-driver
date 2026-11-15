@@ -3,7 +3,7 @@ id: TC-030
 title: "Derive exact monitor target and unsupported-operation loci"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-016
+  - target: ix://agent-ix/filament-driver/FR-016
     type: verifies
 ---
 # TC-030: Derive exact monitor target and unsupported-operation loci
@@ -17,7 +17,7 @@ payload merely because an enum can be constructed or displayed.
 
 ## Test Procedure
 
-1. Obtain ordinary checked application nodes through the existing public QSL
+1. Obtain ordinary checked application nodes through the existing public FSL
    compiler and strict IR reader. Obtain a complete valid monitor root with
    a buffer from the public producer/reader path or an existing owner fixture
    consumed by reference. Retain original selectors, structural keys, typed

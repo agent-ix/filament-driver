@@ -3,19 +3,19 @@ id: FR-003
 title: "Apply caller-selected lifecycle limits"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-spec-language/ADR-029
+  - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-277
+  - target: ix://agent-ix/filament-spec-language/FR-277
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-255
+  - target: ix://agent-ix/filament-spec-language/FR-255
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-275
+  - target: ix://agent-ix/filament-spec-language/FR-275
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-300
+  - target: ix://agent-ix/filament-specification/FR-300
     type: depends_on
-  - target: ix://agent-ix/quire-driver/FR-002
+  - target: ix://agent-ix/filament-driver/FR-002
     type: depends_on
 ---
 # FR-003: Apply caller-selected lifecycle limits
@@ -23,19 +23,19 @@ relationships:
 ## Description
 
 When a caller supplies one or more `--limit` options, the driver SHALL use
-QSL's operand parser and typed caller limits to apply those values to the
+FSL's operand parser and typed caller limits to apply those values to the
 selected lifecycle operation. When a caller omits a limit setting, the
-operation SHALL use that setting's published QSL default. Every
-QSL-enforced bound SHALL be caller-configurable through the canonical QSL
+operation SHALL use that setting's published FSL default. Every
+FSL-enforced bound SHALL be caller-configurable through the canonical FSL
 setting interface. The driver
-supports 64-bit hosts. On a 32-bit host, QSL owns its documented bound
+supports 64-bit hosts. On a 32-bit host, FSL owns its documented bound
 application behavior, including any clamp; the driver adds no platform
-overflow rule. When an operation reaches a bound, it SHALL return QSL's typed
+overflow rule. When an operation reaches a bound, it SHALL return FSL's typed
 limit outcome and report no success.
 
 ## Inputs
 
-- Zero or more `--limit` options containing a QSL setting operand and value.
+- Zero or more `--limit` options containing a FSL setting operand and value.
 - The lifecycle operation's published default limits.
 
 ## Outputs
@@ -46,22 +46,22 @@ limit outcome and report no success.
 ## Behavior
 
 - When the CLI receives `--limit` operands, the driver SHALL call
-  `qsl_foundation::setting::parse_operands` to resolve them as QSL
+  `fsl_foundation::setting::parse_operands` to resolve them as FSL
   `SettingName` values.
-- When QSL resolves a stage setting, the driver SHALL check it against the
+- When FSL resolves a stage setting, the driver SHALL check it against the
   selected operation's `SettingLimits::bounds()`.
 - When a resolved stage setting is exposed by those bounds, the driver SHALL
-  apply it with QSL's `CallerLimits::set_bound`.
-- When QSL resolves an accounting setting, the driver SHALL apply it with
-  QSL's `AccountingLimits::set_bound` to the selected `Call.accounting` without
+  apply it with FSL's `CallerLimits::set_bound`.
+- When FSL resolves an accounting setting, the driver SHALL apply it with
+  FSL's `AccountingLimits::set_bound` to the selected `Call.accounting` without
   checking stage bounds.
-- The driver SHALL NOT reimplement QSL's setting-name grammar, duplicate
+- The driver SHALL NOT reimplement FSL's setting-name grammar, duplicate
   detection, value parsing or overflow handling, or add aliases.
-- The driver SHALL use QSL FR-255's accounting setting names
+- The driver SHALL use FSL FR-255's accounting setting names
   `accounting.<counter>` (for example, `accounting.work_units`) through
-  QSL's `parse_operands` name resolution. A bare counter such as
-  `work_units` SHALL retain QSL's unknown-setting refusal.
-- When QSL resolves an accounting setting, the driver SHALL apply it with
+  FSL's `parse_operands` name resolution. A bare counter such as
+  `work_units` SHALL retain FSL's unknown-setting refusal.
+- When FSL resolves an accounting setting, the driver SHALL apply it with
   `AccountingLimits::set_bound` to `Call.accounting` without checking stage
   bounds or adding a driver-defined namespace or aliases.
 - If a resolved stage setting is absent from the selected operation's bounds,
@@ -71,29 +71,29 @@ limit outcome and report no success.
 - The driver SHALL pass the computed limits values to the selected operation.
 - The driver SHALL preserve each explicit caller value when building the
   computed limits values.
-- A reached limit SHALL retain QSL's typed cause, limit kind, configured
+- A reached limit SHALL retain FSL's typed cause, limit kind, configured
   value and field identity in the machine outcome.
-- A limit outcome SHALL retain QSL's incomplete category and use QSL's
+- A limit outcome SHALL retain FSL's incomplete category and use FSL's
   category exit function.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-003-AC-1 | Setting one QSL-resolved `--limit` operand overrides only its exposed bound; omitted settings retain their published defaults, and effective limits passed to the operation equal those values. | Test (TC-010) |
-| FR-003-AC-2 | A setting name not resolved by QSL's operand parser is refused before any stage with code `invalid-request` and names the offending operand. | Test (TC-010) |
-| FR-003-AC-3 | An input that reaches a caller-lowered bound returns typed `LimitExceeded` with the configured value and field name and QSL's incomplete category; the process status equals QSL's category exit function. Raising the same bound to fit the input allows the operation to complete. | Test (TC-010) |
-| FR-003-AC-4 | The driver uses QSL `parse_operands`, checks each resolved stage setting against the selected operation's `SettingLimits::bounds()`, and applies an exposed stage setting with `CallerLimits::set_bound`; accounting settings bypass stage bounds and use `AccountingLimits::set_bound` on `Call.accounting`, and the driver maintains no duplicate grammar, alias table, or name-to-field mapping. | Inspection (TC-010) |
-| FR-003-AC-5 | A stage setting parsed by QSL but absent from the selected operation's `SettingLimits::bounds()` is refused before any stage with code `invalid-request` and a distinct diagnostic naming the setting as unavailable for that operation. | Test (TC-010) |
-| FR-003-AC-6 | Applying an accepted setting through QSL `CallerLimits::set_bound` changes only the matching bound; every other operation limit retains its prior value. | Test and Inspection (TC-010) |
+| FR-003-AC-1 | Setting one FSL-resolved `--limit` operand overrides only its exposed bound; omitted settings retain their published defaults, and effective limits passed to the operation equal those values. | Test (TC-010) |
+| FR-003-AC-2 | A setting name not resolved by FSL's operand parser is refused before any stage with code `invalid-request` and names the offending operand. | Test (TC-010) |
+| FR-003-AC-3 | An input that reaches a caller-lowered bound returns typed `LimitExceeded` with the configured value and field name and FSL's incomplete category; the process status equals FSL's category exit function. Raising the same bound to fit the input allows the operation to complete. | Test (TC-010) |
+| FR-003-AC-4 | The driver uses FSL `parse_operands`, checks each resolved stage setting against the selected operation's `SettingLimits::bounds()`, and applies an exposed stage setting with `CallerLimits::set_bound`; accounting settings bypass stage bounds and use `AccountingLimits::set_bound` on `Call.accounting`, and the driver maintains no duplicate grammar, alias table, or name-to-field mapping. | Inspection (TC-010) |
+| FR-003-AC-5 | A stage setting parsed by FSL but absent from the selected operation's `SettingLimits::bounds()` is refused before any stage with code `invalid-request` and a distinct diagnostic naming the setting as unavailable for that operation. | Test (TC-010) |
+| FR-003-AC-6 | Applying an accepted setting through FSL `CallerLimits::set_bound` changes only the matching bound; every other operation limit retains its prior value. | Test and Inspection (TC-010) |
 | FR-003-AC-7 | A malformed `--limit` operand is refused before any stage with code `invalid-request` and identifies that operand. | Test (TC-010) |
 | FR-003-AC-8 | A duplicate `--limit` setting is refused before any stage with code `invalid-request` and identifies the duplicate setting. | Test (TC-010) |
-| FR-003-AC-9 | The driver accepts QSL FR-255's `accounting.<counter>` setting names through QSL's operand APIs and retains QSL's unknown-setting refusal for a bare counter such as `work_units`, without adding a driver-defined namespace or aliases. | Test (TC-010) |
-| FR-003-AC-10 | When QSL resolves an `accounting.<counter>` setting name, the driver applies its value through QSL `AccountingLimits::set_bound` to `Call.accounting`; the stage `SpineLimits` remain unchanged and the accounting value reaches `spine::run`. | Test (TC-010) |
+| FR-003-AC-9 | The driver accepts FSL FR-255's `accounting.<counter>` setting names through FSL's operand APIs and retains FSL's unknown-setting refusal for a bare counter such as `work_units`, without adding a driver-defined namespace or aliases. | Test (TC-010) |
+| FR-003-AC-10 | When FSL resolves an `accounting.<counter>` setting name, the driver applies its value through FSL `AccountingLimits::set_bound` to `Call.accounting`; the stage `SpineLimits` remain unchanged and the accounting value reaches `spine::run`. | Test (TC-010) |
 
 ## Dependencies
 
-- QSL ADR-029 LC-4, FR-255 and FR-277; QSpec FR-300's caller-supplied
+- FSL ADR-029 LC-4, FR-255 and FR-277; FSpec FR-300's caller-supplied
   limits.
 - [FR-002](FR-002-expose-driver-cli-and-outcome-contract.md) defines the
   command entry point and exit function.

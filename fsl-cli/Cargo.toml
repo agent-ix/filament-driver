@@ -19,22 +19,22 @@ path = "src/main.rs"
 tc018-test-adapter = []
 
 [dependencies]
-quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
+filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", branch = "main" }
 base64 = "=0.23.1"
-qsl-command = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-cst = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-package = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-replay = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-route = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-semantics = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+fsl-cst = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
 ix-cli-kit = { git = "https://github.com/agent-ix/ix-cli-kit", branch = "main" }
 # IR-609 composes the user-facing CLI with its separately bounded cache.
-quire-cache = { path = "../quire-cache" }
-quire-driver = { path = ".." }
-quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
+filament-cache = { path = "../filament-cache" }
+filament-driver = { path = ".." }
+filament-exact = { git = "https://github.com/agent-ix/filament-exact", branch = "main" }
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
-quire-plugin-host = { path = "../quire-plugin-host" }
+filament-plugin-host = { path = "../filament-plugin-host" }
 serde = { version = "=1.0.228", features = ["derive", "rc"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.20"
@@ -46,9 +46,9 @@ signal-hook = "=0.4.6"
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 libc = "=0.2.190"
-quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", branch = "main" }
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
-qsl-semantics = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
+quire-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
+filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", branch = "main" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
 regex = "=1.13.1"
 
 [lints]

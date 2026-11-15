@@ -4,9 +4,10 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use qsl_foundation::BackendId;
-use qsl_package::EmittedPackage;
-use qsl_replay::{
+use filament_exact::{Cancel, CancelCause};
+use fsl_foundation::BackendId;
+use fsl_package::EmittedPackage;
+use fsl_replay::{
     Certification, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, OutcomeWriteError,
     ProofBasis, RequestIndex, TerminalRecord, TerminalValue,
 };
@@ -16,7 +17,6 @@ use quire_contract_codegen::{
     KaniInstallation, KindOutput, ReplaySettlement, RoutedItemOutput, TerminalPairError,
     TractabilityLoadError, TractabilityTable, UnsupportedObligation,
 };
-use quire_exact::{Cancel, CancelCause};
 
 use crate::ProviderManifest;
 
@@ -82,7 +82,7 @@ pub struct ProviderItemResult<T = KaniExecutionEvidence, E = KaniProviderFailure
 
 impl ProviderItemResult<KaniExecutionEvidence, KaniProviderFailure> {
     /// Compose a terminal record for a Kani result through CG's authoritative map. A
-    /// falsification needs QSL replay first.
+    /// falsification needs FSL replay first.
     pub fn terminal_record(&self) -> Result<TerminalRecord, ProviderTerminalError> {
         let value = self.terminal_value_with_settlement(None)?;
         let request_index = RequestIndex::new(self.request_index);
@@ -159,17 +159,17 @@ pub enum ProviderTerminalError {
     /// Kani execution returned a typed refusal instead of evidence.
     #[error("provider execution did not produce evidence")]
     ExecutionDidNotProduceEvidence,
-    /// A falsified Kani result has no terminal record until QSL replay settles it.
-    #[error("a falsified Kani result requires QSL replay before terminal recording")]
+    /// A falsified Kani result has no terminal record until FSL replay settles it.
+    #[error("a falsified Kani result requires FSL replay before terminal recording")]
     ReplayUnavailableForScalarObligation,
-    /// QSL has no backend-bearing constructor for a non-Kani proof basis or
+    /// FSL has no backend-bearing constructor for a non-Kani proof basis or
     /// non-certified proof in this scalar Kani execution path.
-    #[error("Kani proof basis has no backend-bearing QSL constructor")]
+    #[error("Kani proof basis has no backend-bearing FSL constructor")]
     UnsupportedProofBasis,
     /// CG rejected the outcome/settlement pair.
     #[error(transparent)]
     TerminalPair(#[from] TerminalPairError),
-    /// CG produced a value for which QSL has no matching provider constructor.
+    /// CG produced a value for which FSL has no matching provider constructor.
     #[error("CG produced a terminal value not supported by the provider record API")]
     UnsupportedTerminalValue,
 }
@@ -235,7 +235,7 @@ impl<T, E> Default for ProviderResults<T, E> {
 pub type KaniProviderResults = ProviderResults<KaniExecutionEvidence, KaniProviderFailure>;
 
 impl ProviderResults<KaniExecutionEvidence, KaniProviderFailure> {
-    /// Serialize these provider items with QSL's canonical `quire-outcome/1`
+    /// Serialize these provider items with FSL's canonical `filament-outcome/1`
     /// document. This covers only the items in `self`; it is not a complete
     /// per-request outcome. Items that require replay or lack execution
     /// evidence remain typed errors; the driver does not invent settlements.
@@ -260,7 +260,7 @@ pub enum ProviderOutcomeError {
     /// A provider item has no terminal until its replay lifecycle settles.
     #[error(transparent)]
     Terminal(#[from] ProviderTerminalError),
-    /// QSL's canonical outcome serializer failed.
+    /// FSL's canonical outcome serializer failed.
     #[error(transparent)]
     Encode(#[from] OutcomeWriteError),
 }
@@ -289,7 +289,7 @@ pub struct KaniProvider {
 }
 
 impl KaniProvider {
-    /// Build the provider from the manifest it registers with the QSL registry.
+    /// Build the provider from the manifest it registers with the FSL registry.
     #[must_use]
     pub const fn new(manifest: ProviderManifest) -> Self {
         Self { manifest }
@@ -473,18 +473,19 @@ mod tests {
     use std::sync::LazyLock;
     use std::time::Duration;
 
-    use ix_trace_rs::trace;
-    use qsl_foundation::SourceIdentity;
-    use qsl_replay::spine::SpineLimits;
-    use qsl_replay::statistical::{
+    use filament_exact::{Cancel, CancelCause, Integer, Rational};
+    use fsl_foundation::SourceIdentity;
+    use fsl_replay::spine::SpineLimits;
+    use fsl_replay::statistical::{
         Confidence, Coverage, Decision, StatisticalBasis, StatisticalMethod, StatisticalProvenance,
         StatisticalVerdict, UndecidedCause,
     };
-    use qsl_replay::{
+    use fsl_replay::{
         compile_package, Certification, DependencyInput, IncompleteCause, Operation,
         OutcomeDocument, OutcomeItem, OutcomeStage, ProofBasis, ReplayLimits, StageLimits,
         TerminalValue,
     };
+    use ix_trace_rs::trace;
     use quire_contract_codegen::{
         Candidate, KaniInconclusiveReason, KaniRunOutcome, KaniSolver, MemoryObservation,
         ProofCeilings, SymbolicArgumentBounds, SymbolicBounds,
@@ -493,7 +494,6 @@ mod tests {
         KaniExecutableHarness, KaniFailureCause, KaniFailurePhase, KaniNoVerdictDiagnostics,
         KaniStreamExcerpt, ReplaySettlement,
     };
-    use quire_exact::{Cancel, CancelCause, Integer, Rational};
     use serde_json::Value;
 
     use super::{
@@ -502,6 +502,10 @@ mod tests {
         ProviderRequest, ProviderResults, ProviderTerminalError,
     };
     use crate::{CompileInput, GenerationInput, KaniInput};
+    use filament_contract_model::{
+        CheckedNodeId, CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2,
+        CheckedPackageV2ReadResult,
+    };
     use quire_contract_codegen::routed_contract_lowering_profile;
     use quire_contract_codegen::KaniInstallation;
     use quire_contract_codegen::TractabilityTable;
@@ -509,18 +513,14 @@ mod tests {
         AdmittedItemAccounting, KaniExecutionEvidence, KindOutput, ObligationDisposition,
         ObligationRecord, ObligationSubject, RoutedItemOutput,
     };
-    use quire_contract_model::{
-        CheckedNodeId, CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2,
-        CheckedPackageV2ReadResult,
-    };
 
     static REAL_ADMISSION: LazyLock<(CheckedNodeId, AdmittedItemAccounting)> =
         LazyLock::new(|| {
             let source = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\";\n\
+            profile v = \"filament.value.complete/v1\";\n\
             function f using v(x: Int[0, 9]): Boolean pure { x + 1 < 10 }\n";
             let compiled = compile_package(
-                qsl_replay::CompileUnit {
+                fsl_replay::CompileUnit {
                     source: SourceIdentity::new("driver-test", "provider.native"),
                     package_name: "provider".to_owned(),
                     path: "provider.native",
@@ -531,16 +531,16 @@ mod tests {
                 StageLimits::default(),
                 ReplayLimits::default(),
             )
-            .expect("QSL compiles provider fixture");
+            .expect("FSL compiles provider fixture");
             let mut evidence = CheckedPackageEvidence::new();
-            evidence.support_feature("quire.value.complete/v1");
+            evidence.support_feature("filament.value.complete/v1");
             let checked = match CheckedPackageV2::read(
                 compiled.bytes(),
                 CheckedPackageReadLimits::bounded(),
                 &evidence,
             ) {
                 CheckedPackageV2ReadResult::Admitted(package) => *package,
-                other => panic!("IR admits QSL provider fixture: {other:?}"),
+                other => panic!("IR admits FSL provider fixture: {other:?}"),
             };
             let node_id = checked
                 .resolved_graph()
@@ -760,7 +760,7 @@ mod tests {
     }
 
     fn generated_routed_item() -> RoutedItemOutput {
-        generated_routed_item_with(&crate::QslCg)
+        generated_routed_item_with(&crate::FslCg)
     }
 
     fn generated_routed_item_with(upstream: &impl crate::Upstream) -> RoutedItemOutput {
@@ -768,7 +768,7 @@ mod tests {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"{}\";\n\
              function f using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let registry = crate::build_registry(&[ProviderManifest {
@@ -840,7 +840,7 @@ mod tests {
     /// Trace: FR-005-AC-20.
     #[test]
     fn kani_request_forwards_only_the_explicit_home_directory() {
-        const CHILD_MODE: &str = "QUIRE_DRIVER_IR843_HOME_REQUEST_CHILD";
+        const CHILD_MODE: &str = "FILAMENT_DRIVER_IR843_HOME_REQUEST_CHILD";
         if std::env::var_os(CHILD_MODE).is_some() {
             assert_request_home_directory();
             return;
@@ -982,7 +982,7 @@ mod tests {
     #[trace("TC-012", "FR-005-AC-22")]
     #[test]
     fn native_route_scalar_harness_still_reaches_execution() {
-        let item = generated_routed_item_with(&crate::upstream::NativeRouteQslCg);
+        let item = generated_routed_item_with(&crate::upstream::NativeRouteFslCg);
         let KindOutput::Kani {
             harness: Some(harness),
             ..
@@ -1186,18 +1186,18 @@ mod tests {
     #[test]
     fn provider_tool_failure_retains_cause_and_item_identity() {
         for failure in [
-            qsl_replay::ToolFailure::Crash,
-            qsl_replay::ToolFailure::FrameLength {
+            fsl_replay::ToolFailure::Crash,
+            fsl_replay::ToolFailure::FrameLength {
                 limit: 1024,
                 value: 1025,
             },
-            qsl_replay::ToolFailure::TotalBytes {
+            fsl_replay::ToolFailure::TotalBytes {
                 limit: 4096,
                 value: 5000,
             },
         ] {
-            let request_index = qsl_replay::RequestIndex::new(7);
-            let backend = qsl_foundation::BackendId::new("kani".to_owned());
+            let request_index = fsl_replay::RequestIndex::new(7);
+            let backend = fsl_foundation::BackendId::new("kani".to_owned());
             let record = ProviderItemResult::<KaniExecutionEvidence, KaniProviderFailure>::terminal_record_for_value(
                 TerminalValue::ToolFailed(failure),
                 request_index,
@@ -1211,9 +1211,9 @@ mod tests {
         }
     }
 
-    /// Trace: FR-009-AC-4, TC-016; serialize CG's terminal through QSL's outcome API.
+    /// Trace: FR-009-AC-4, TC-016; serialize CG's terminal through FSL's outcome API.
     #[test]
-    fn provider_results_use_qsl_outcome_serializer() {
+    fn provider_results_use_fsl_outcome_serializer() {
         let results = ProviderResults {
             items: vec![result(KaniRunOutcome::Verified)],
         };
@@ -1226,12 +1226,12 @@ mod tests {
             vec![OutcomeItem::from_terminal(&record)],
         )
         .to_bytes()
-        .expect("QSL serializes the typed outcome");
+        .expect("FSL serializes the typed outcome");
 
         assert_eq!(
             results
                 .outcome_bytes()
-                .expect("provider results use QSL serialization"),
+                .expect("provider results use FSL serialization"),
             expected
         );
     }
@@ -1250,7 +1250,7 @@ mod tests {
                 .outcome_bytes()
                 .expect("both provider items have terminals"),
         )
-        .expect("QSL bytes are JSON");
+        .expect("FSL bytes are JSON");
         let items = document["items"].as_array().expect("items is an array");
 
         assert_eq!(items.len(), 2);
@@ -1288,7 +1288,7 @@ mod tests {
             counterexample: "witness".to_owned(),
         })
         .terminal_value_with_settlement(Some(ReplaySettlement::Reproduced))
-        .expect("the original CG evidence and QSL replay settlement reach CG's map");
+        .expect("the original CG evidence and FSL replay settlement reach CG's map");
         assert_eq!(settled, TerminalValue::Refuted);
     }
 
@@ -1310,7 +1310,7 @@ mod tests {
 
     /// Trace: FR-006-AC-15; statistical measurements are not Kani proof terminals.
     #[test]
-    fn measured_qsl_value_remains_unmapped_in_kani_terminal_projection() {
+    fn measured_fsl_value_remains_unmapped_in_kani_terminal_projection() {
         let half = Rational::new(Integer::one(), Integer::from(2_i64))
             .expect("one-half is a valid rational");
         let confidence = Confidence::new(half.clone(), half.clone(), half.clone())
@@ -1336,9 +1336,9 @@ mod tests {
                 timed_horizon: None,
                 delay_grid_bits: None,
                 max_sample_steps: None,
-                sampler: qsl_foundation::selection::DefinitionRef::new(
+                sampler: fsl_foundation::selection::DefinitionRef::new(
                     "agent-ix",
-                    "quire.simulation.sampler/v1",
+                    "filament.simulation.sampler/v1",
                 )
                 .expect("sampler has a valid identity"),
                 tests: Vec::new(),
@@ -1350,8 +1350,8 @@ mod tests {
         assert!(matches!(
             ProviderItemResult::<KaniExecutionEvidence, KaniProviderFailure>::terminal_record_for_value(
                 TerminalValue::Measured(Box::new(verdict)),
-                qsl_replay::RequestIndex::new(0),
-                qsl_foundation::BackendId::new("agent-ix/provider/kani"),
+                fsl_replay::RequestIndex::new(0),
+                fsl_foundation::BackendId::new("agent-ix/provider/kani"),
             ),
             Err(ProviderTerminalError::UnsupportedTerminalValue)
         ), "a statistical measurement must not produce a Kani terminal");

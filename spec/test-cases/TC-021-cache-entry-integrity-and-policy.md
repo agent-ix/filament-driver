@@ -3,7 +3,7 @@ id: TC-021
 title: "Reject invalid cache entries and excluded values"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-012
+  - target: ix://agent-ix/filament-driver/FR-012
     type: verifies
 ---
 # TC-021: Reject invalid cache entries and excluded values

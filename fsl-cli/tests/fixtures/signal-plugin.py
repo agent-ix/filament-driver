@@ -30,7 +30,7 @@ def write_frame(value):
 
 
 mode, ready_path, descendant_path, plugin_path = sys.argv[1:]
-release_path = os.environ["QUIRE_PLUGIN_SIGNAL_RELEASE"]
+release_path = os.environ["FILAMENT_PLUGIN_SIGNAL_RELEASE"]
 
 
 def wait_for_release():
@@ -41,7 +41,7 @@ def wait_for_release():
         raise SystemExit(4)
 
 
-protocol = "quire.plugin-wire/v1"
+protocol = "filament.plugin-wire/v1"
 
 if mode.startswith("hello"):
     open(ready_path, "wb").close()

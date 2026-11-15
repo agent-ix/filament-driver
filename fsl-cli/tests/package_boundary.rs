@@ -77,7 +77,7 @@ fn direct_normal_dependencies(package: &Value) -> BTreeSet<&str> {
 
 /// Trace: FR-014-AC-1, FR-014-AC-2
 #[test]
-fn cargo_target_and_dependencies_belong_to_quire_cli() {
+fn cargo_target_and_dependencies_belong_to_fsl_cli() {
     let metadata = metadata();
     let packages = metadata["packages"].as_array().expect("workspace packages");
     let cli_packages: Vec<&Value> = packages
@@ -97,7 +97,7 @@ fn cargo_target_and_dependencies_belong_to_quire_cli() {
         "TC-018's test-only feature must not be enabled by default"
     );
 
-    let quire_targets: Vec<(&Value, &Value)> = packages
+    let fsl_targets: Vec<(&Value, &Value)> = packages
         .iter()
         .flat_map(|package| {
             package["targets"]
@@ -113,15 +113,15 @@ fn cargo_target_and_dependencies_belong_to_quire_cli() {
                 .map(move |target| (package, target))
         })
         .collect();
-    assert_eq!(quire_targets.len(), 1, "one Cargo binary named fsl");
-    assert_eq!(quire_targets[0].0["name"], "fsl-cli");
+    assert_eq!(fsl_targets.len(), 1, "one Cargo binary named fsl");
+    assert_eq!(fsl_targets[0].0["name"], "fsl-cli");
 
     let dependencies = direct_normal_dependencies(cli);
-    assert!(dependencies.contains("quire-driver"));
-    assert!(dependencies.contains("quire-cache"));
-    assert!(dependencies.contains("quire-plugin-host"));
+    assert!(dependencies.contains("filament-driver"));
+    assert!(dependencies.contains("filament-cache"));
+    assert!(dependencies.contains("filament-plugin-host"));
     assert!(dependencies.contains("ix-cli-kit"));
-    assert!(dependencies.contains("quire-semantic-value"));
+    assert!(dependencies.contains("filament-semantic-value"));
 }
 
 /// Trace: FR-014-AC-4, FR-014-AC-5, the parser, binary entry point, CLI tests and
@@ -151,17 +151,17 @@ fn parser_and_cli_tests_live_in_the_cli_package() {
         );
         assert!(
             !root.join(relative).exists(),
-            "CLI test remains in the quire-driver package: {relative}"
+            "CLI test remains in the filament-driver package: {relative}"
         );
     }
-    let fixture = "tests/fixtures/ir608-run.qsl";
+    let fixture = "tests/fixtures/ir608-run.fsl";
     assert!(
         cli_root.join(fixture).is_file(),
         "missing fsl-cli/{fixture}"
     );
     assert!(
         !root.join(fixture).exists(),
-        "CLI fixture remains in quire-driver"
+        "CLI fixture remains in filament-driver"
     );
 }
 

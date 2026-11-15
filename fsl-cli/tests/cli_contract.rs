@@ -8,30 +8,30 @@
 use std::path::Path;
 use std::process::Command;
 
-use ix_cli_kit::version::Agreement;
-use ix_trace_rs::trace;
-use qsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
-use qsl_foundation::diagnostic::{Code, Staged};
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{
+use filament_exact::Cancel;
+use filament_semantic_value::catalog::Category;
+use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
+use fsl_foundation::diagnostic::{Code, Staged};
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{
     check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
 };
-use qsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
-use quire_exact::Cancel;
-use quire_semantic_value::catalog::Category;
+use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
+use ix_cli_kit::version::Agreement;
+use ix_trace_rs::trace;
 
 #[path = "common/requests.rs"]
 mod requests;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
-const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
+const FSL: &str = env!("CARGO_BIN_EXE_fsl");
+const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
 const INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/parse-invalid.qsl"
+    "/tests/fixtures/parse-invalid.fsl"
 );
 const CHECK_INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/check-invalid.qsl"
+    "/tests/fixtures/check-invalid.fsl"
 );
 
 fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
@@ -49,12 +49,12 @@ fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
     );
     OutcomeDocument::from_parse(&result)
         .to_bytes()
-        .expect("QSL serializes its parse outcome")
+        .expect("FSL serializes its parse outcome")
 }
 
 fn check_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read check fixture");
-    let source = SourceIdentity::new("quire", path);
+    let source = SourceIdentity::new("filament", path);
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let result = parse(
@@ -80,12 +80,12 @@ fn check_outcome_bytes(path: &'static str) -> Vec<u8> {
     });
     OutcomeDocument::from_check(&result)
         .to_bytes()
-        .expect("QSL serializes its check outcome")
+        .expect("FSL serializes its check outcome")
 }
 
 fn package_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read package fixture");
-    let source = SourceIdentity::new("quire", path);
+    let source = SourceIdentity::new("filament", path);
     let limits = SpineLimits::default();
     let dependencies = DependencyInput::default();
     let packages = std::collections::BTreeMap::new();
@@ -114,20 +114,20 @@ fn package_outcome_bytes(path: &'static str) -> Vec<u8> {
     });
     OutcomeDocument::from_package(&result)
         .to_bytes()
-        .expect("QSL serializes its package outcome")
+        .expect("FSL serializes its package outcome")
 }
 
 fn format_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read format fixture");
     let source = SourceIdentity::new("issuer", "document");
-    let limits = qsl_cst::Limits::default();
+    let limits = fsl_cst::Limits::default();
     let cancel = Cancel::new();
-    let result = qsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
+    let result = fsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
         .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
     OutcomeDocument::from_format(&result)
         .to_bytes()
-        .expect("QSL serializes its format outcome")
+        .expect("FSL serializes its format outcome")
 }
 
 fn argument_refusal_bytes(operation: Operation, message: &str) -> Vec<u8> {
@@ -139,10 +139,10 @@ fn argument_refusal_bytes(operation: Operation, message: &str) -> Vec<u8> {
             message,
         )])
         .to_bytes()
-        .expect("QSL serializes the argument refusal")
+        .expect("FSL serializes the argument refusal")
 }
 
-fn assert_qsl_document(cli_stdout: &[u8], qsl_bytes: &[u8]) {
+fn assert_fsl_document(cli_stdout: &[u8], fsl_bytes: &[u8]) {
     assert_eq!(
         cli_stdout.iter().filter(|&&byte| byte == b'\n').count(),
         1,
@@ -153,31 +153,31 @@ fn assert_qsl_document(cli_stdout: &[u8], qsl_bytes: &[u8]) {
         .expect("machine output ends with one line terminator");
     let cli_value: serde_json::Value =
         serde_json::from_slice(cli_document).expect("CLI emits one JSON document");
-    let qsl_value: serde_json::Value =
-        serde_json::from_slice(qsl_bytes).expect("QSL bytes encode one JSON document");
-    assert_eq!(cli_value, qsl_value);
+    let fsl_value: serde_json::Value =
+        serde_json::from_slice(fsl_bytes).expect("FSL bytes encode one JSON document");
+    assert_eq!(cli_value, fsl_value);
 }
 
-/// Trace: IR-607, one QSL exit function for unknown verbs.
+/// Trace: IR-607, one FSL exit function for unknown verbs.
 #[test]
-fn unknown_verb_uses_qsl_refusal_code() {
-    let output = Command::new(QUIRE)
-        .arg("not-a-quire-verb")
+fn unknown_verb_uses_fsl_refusal_code() {
+    let output = Command::new(FSL)
+        .arg("not-an-fsl-verb")
         .output()
         .expect("run unknown command");
     assert_eq!(output.status.code(), Some(20));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; check dispatches through QSL's typed check operation.
+/// Trace: FR-002-AC-1, FR-002-AC-3; check dispatches through FSL's typed check operation.
 #[test]
-fn check_emits_qsl_check_outcome_document() {
-    let output = Command::new(QUIRE)
+fn check_emits_fsl_check_outcome_document() {
+    let output = Command::new(FSL)
         .args(["check", SOURCE, "--format", "json"])
         .output()
         .expect("run check command");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
-    assert_qsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
+    assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
 }
 
 /// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
@@ -202,39 +202,39 @@ fn check_does_not_read_an_unnamed_config_from_the_working_directory() {
 
     // A config reader would reject this malformed file. The command receives
     // its source explicitly and must not inspect ambient working-directory data.
-    std::fs::write(directory.join("quire.toml"), "[malformed\n")
+    std::fs::write(directory.join("fsl.toml"), "[malformed\n")
         .expect("write trap configuration file");
 
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["check", SOURCE, "--format", "json"])
         .current_dir(&directory)
         .output()
         .expect("run check from isolated working directory");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
-    assert_qsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
+    assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; check refusals retain QSL's typed outcome.
+/// Trace: FR-002-AC-1, FR-002-AC-3; check refusals retain FSL's typed outcome.
 #[test]
-fn check_refusal_emits_qsl_diagnostic_cause_and_locus() {
-    let output = Command::new(QUIRE)
+fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
+    let output = Command::new(FSL)
         .args(["check", INVALID_SOURCE, "--format", "json"])
         .output()
         .expect("run check refusal");
     assert_eq!(output.status.code(), Some(20));
     assert_eq!(output.stderr, b"expected `)`\n");
-    assert_qsl_document(&output.stdout, &check_outcome_bytes(INVALID_SOURCE));
+    assert_fsl_document(&output.stdout, &check_outcome_bytes(INVALID_SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; check source I/O failures use QSL's typed code and serializer.
+/// Trace: FR-002-AC-1, FR-002-AC-3; check source I/O failures use FSL's typed code and serializer.
 #[test]
-fn check_missing_source_emits_qsl_io_error_document() {
+fn check_missing_source_emits_fsl_io_error_document() {
     let missing = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/missing-check-source.qsl"
+        "/tests/fixtures/missing-check-source.fsl"
     );
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["check", missing, "--format", "json"])
         .output()
         .expect("run check with a missing source");
@@ -252,50 +252,50 @@ fn check_missing_source_emits_qsl_io_error_document() {
             message,
         )])
         .to_bytes()
-        .expect("QSL serializes the check I/O outcome");
-    assert_qsl_document(&output.stdout, &expected);
+        .expect("FSL serializes the check I/O outcome");
+    assert_fsl_document(&output.stdout, &expected);
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; compile dispatches through QSL's package operation.
+/// Trace: FR-002-AC-1, FR-002-AC-3; compile dispatches through FSL's package operation.
 #[test]
-fn compile_emits_qsl_package_outcome_document() {
+fn compile_emits_fsl_package_outcome_document() {
     let request = requests::request(SOURCE, None);
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["compile", request.as_str(), "--format", "json"])
         .output()
         .expect("run compile command");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
 
-    assert_qsl_document(&output.stdout, &package_outcome_bytes(SOURCE));
+    assert_fsl_document(&output.stdout, &package_outcome_bytes(SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; compile refusals retain QSL's package outcome.
+/// Trace: FR-002-AC-1, FR-002-AC-3; compile refusals retain FSL's package outcome.
 #[test]
-fn compile_refusal_emits_qsl_package_outcome_document() {
+fn compile_refusal_emits_fsl_package_outcome_document() {
     let request = requests::request(INVALID_SOURCE, None);
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["compile", request.as_str(), "--format", "json"])
         .output()
         .expect("run compile refusal");
     assert_eq!(output.status.code(), Some(20));
     assert_eq!(output.stderr, b"expected `)`\n");
-    assert_qsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
+    assert_fsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain QSL's checked outcome.
+/// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
 #[test]
-fn check_semantic_refusal_emits_qsl_check_outcome_document() {
-    let output = Command::new(QUIRE)
+fn check_semantic_refusal_emits_fsl_check_outcome_document() {
+    let output = Command::new(FSL)
         .args(["check", CHECK_INVALID_SOURCE, "--format", "json"])
         .output()
         .expect("run check semantic refusal");
     assert_eq!(output.status.code(), Some(20));
     assert!(!output.stderr.is_empty());
-    assert_qsl_document(&output.stdout, &check_outcome_bytes(CHECK_INVALID_SOURCE));
+    assert_fsl_document(&output.stdout, &check_outcome_bytes(CHECK_INVALID_SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; argument refusals retain the selected QSL operation.
+/// Trace: FR-002-AC-1, FR-002-AC-3; argument refusals retain the selected FSL operation.
 #[test]
 fn implemented_verb_argument_refusals_use_the_selected_operation() {
     let cases = [
@@ -322,7 +322,7 @@ fn implemented_verb_argument_refusals_use_the_selected_operation() {
     ];
 
     for (verb, operation, message) in cases {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args([verb, "--unknown", "--format", "json"])
             .output()
             .expect("run command with an unknown operation option");
@@ -332,27 +332,27 @@ fn implemented_verb_argument_refusals_use_the_selected_operation() {
             format!("{message}\n").as_bytes(),
             "{verb} stderr"
         );
-        assert_qsl_document(&output.stdout, &argument_refusal_bytes(operation, message));
+        assert_fsl_document(&output.stdout, &argument_refusal_bytes(operation, message));
     }
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; parse serializes QSL's typed parse result.
+/// Trace: FR-002-AC-1, FR-002-AC-3; parse serializes FSL's typed parse result.
 #[test]
-fn parse_emits_qsl_parse_outcome_document() {
-    let output = Command::new(QUIRE)
+fn parse_emits_fsl_parse_outcome_document() {
+    let output = Command::new(FSL)
         .args(["parse", "issuer", "document", SOURCE, "--format", "json"])
         .output()
         .expect("run parse command");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
 
-    assert_qsl_document(&output.stdout, &parse_outcome_bytes(SOURCE));
+    assert_fsl_document(&output.stdout, &parse_outcome_bytes(SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; a parse refusal retains QSL's cause and locus.
+/// Trace: FR-002-AC-1, FR-002-AC-3; a parse refusal retains FSL's cause and locus.
 #[test]
-fn parse_refusal_emits_qsl_diagnostic_cause_and_locus() {
-    let output = Command::new(QUIRE)
+fn parse_refusal_emits_fsl_diagnostic_cause_and_locus() {
+    let output = Command::new(FSL)
         .args([
             "parse",
             "issuer",
@@ -366,25 +366,25 @@ fn parse_refusal_emits_qsl_diagnostic_cause_and_locus() {
     assert_eq!(output.status.code(), Some(20));
     assert_eq!(output.stderr, b"expected `)`\n");
 
-    assert_qsl_document(&output.stdout, &parse_outcome_bytes(INVALID_SOURCE));
+    assert_fsl_document(&output.stdout, &parse_outcome_bytes(INVALID_SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; text mode writes QSL's formatted UTF-8 value.
+/// Trace: FR-002-AC-1, FR-002-AC-3; text mode writes FSL's formatted UTF-8 value.
 #[test]
-fn format_writes_qsl_formatted_text_without_editing_the_source() {
+fn format_writes_fsl_formatted_text_without_editing_the_source() {
     let source = std::fs::read(SOURCE).expect("read format fixture");
-    let parsed = qsl_cst::parse_with_cancel(
+    let parsed = fsl_cst::parse_with_cancel(
         SourceIdentity::new("issuer", "document"),
         SOURCE,
         &source,
-        qsl_cst::Limits::default(),
+        fsl_cst::Limits::default(),
         &Cancel::new(),
     )
     .expect("fixture is an admissible parsed source");
     let expected = format_with_limits(&parsed, FormatLimits::default())
         .expect("fixture formats under the default limit");
 
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE])
         .output()
         .expect("run format command");
@@ -397,23 +397,23 @@ fn format_writes_qsl_formatted_text_without_editing_the_source() {
     );
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; format machine output is QSL's typed outcome.
+/// Trace: FR-002-AC-1, FR-002-AC-3; format machine output is FSL's typed outcome.
 #[test]
-fn format_machine_mode_emits_qsl_format_outcome_document() {
-    let output = Command::new(QUIRE)
+fn format_machine_mode_emits_fsl_format_outcome_document() {
+    let output = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE, "--format", "json"])
         .output()
         .expect("run format in machine mode");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
 
-    assert_qsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
+    assert_fsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-3; formatter refusals retain QSL diagnostics.
+/// Trace: FR-002-AC-1, FR-002-AC-3; formatter refusals retain FSL diagnostics.
 #[test]
-fn format_refusal_emits_qsl_diagnostic_cause_and_locus() {
-    let output = Command::new(QUIRE)
+fn format_refusal_emits_fsl_diagnostic_cause_and_locus() {
+    let output = Command::new(FSL)
         .args([
             "format",
             "issuer",
@@ -427,13 +427,13 @@ fn format_refusal_emits_qsl_diagnostic_cause_and_locus() {
     assert_eq!(output.status.code(), Some(20));
     assert_eq!(output.stderr, b"expected `)`\n");
 
-    assert_qsl_document(&output.stdout, &format_outcome_bytes(INVALID_SOURCE));
+    assert_fsl_document(&output.stdout, &format_outcome_bytes(INVALID_SOURCE));
 }
 
 /// Trace: FR-002-AC-11, --version reports the Cargo package semantic version.
 #[test]
-fn version_command_reports_the_quire_cli_package_version() {
-    let output = Command::new(QUIRE)
+fn version_command_reports_the_fsl_cli_package_version() {
+    let output = Command::new(FSL)
         .arg("--version")
         .output()
         .expect("run fsl --version");
@@ -453,7 +453,7 @@ fn version_command_reports_the_quire_cli_package_version() {
 fn root_help_selectors_print_the_same_informative_help_without_an_operation() {
     let mut expected_help = None;
     for arguments in [&[][..], &["--help"][..], &["-h"][..], &["help"][..]] {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(arguments)
             .output()
             .expect("run root help without a source or lifecycle operation");
@@ -479,7 +479,7 @@ fn root_help_selectors_print_the_same_informative_help_without_an_operation() {
 #[trace("TC-009", "FR-002-AC-17")]
 #[test]
 fn root_help_identifies_current_command_availability_and_text_restrictions() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .arg("--help")
         .output()
         .expect("read root help");
@@ -506,7 +506,7 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
         "analyze", "monitor", "prove", "replay", "generate", "inspect", "render",
     ] {
         assert!(command_line(command).contains("unsupported-capability"));
-        let unavailable = Command::new(QUIRE)
+        let unavailable = Command::new(FSL)
             .args([command, "--format", "json"])
             .output()
             .expect("observe the advertised unsupported command");
@@ -530,7 +530,7 @@ fn informative_help_does_not_replace_invalid_command_or_format_refusals() {
             "the `dot` format is available only for `inspect`",
         ),
     ] {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(arguments)
             .output()
             .expect("run an invalid command selection");
@@ -550,7 +550,7 @@ fn informative_help_does_not_replace_invalid_command_or_format_refusals() {
 fn built_binary_version_agrees_with_cargo_package_version() {
     let agreement = Agreement::new()
         .surface("CARGO_PKG_VERSION", env!("CARGO_PKG_VERSION"))
-        .command("fsl --version", Path::new(QUIRE), &["--version"]);
+        .command("fsl --version", Path::new(FSL), &["--version"]);
     let result = agreement.check();
     assert!(result.is_ok(), "version agreement failed: {result:?}");
 }

@@ -3,7 +3,7 @@ id: TC-032
 title: "Admit immutable source-record producer witnesses"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-018
+  - target: ix://agent-ix/filament-driver/FR-018
     type: verifies
 ---
 # TC-032: Admit immutable source-record producer witnesses
@@ -11,14 +11,14 @@ relationships:
 ## Description
 
 Verify the independent [FR-018](../functional/FR-018-admit-source-record-witnesses.md)
-source-record component using authentic ordinary QSL source and native IR joins.
+source-record component using authentic ordinary FSL source and native IR joins.
 No monitor Program, clock, complete closure or cumulative preparation allowance
 is inferred from this component.
 
 ## Test Procedure
 
 1. Parse, check and emit ordinary Point, Tagged and recursive Tree declarations
-   through public QSL lifecycle operations. Tagged includes a nested shared
+   through public FSL lifecycle operations. Tagged includes a nested shared
    Point type, an optional Boolean field and a required Option<Integer> field.
    Tree includes bounded recursive Sequence<Tree> and Option<Tree> fields.
 2. Call the public driver component with the unmodified immutable Emission.
@@ -26,7 +26,7 @@ is inferred from this component.
    source identity/authority, qualified declaration, structural node, opaque
    record key and every ordered member identity/name/presence/type node/value.
 3. Also emit a genuine final PlanRoot containing ordinary source records via
-   public QSL emit_plan_root. Add its original model document through the native
+   public FSL emit_plan_root. Add its original model document through the native
    IR evidence insertion API. Admit its untouched final emission and verify the
    final structural/member type IDs resolve in that exact admitted package.
    Require nonempty producer rows, exact joined/producer count equality and

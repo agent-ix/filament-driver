@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Functional diagnostic derivation from QSL emission and strict IR admission.
+//! Functional diagnostic derivation from FSL emission and strict IR admission.
 
 use std::{path::PathBuf, process::Command, sync::LazyLock};
 
-use ix_trace_rs::trace;
-use qsl_foundation::SourceIdentity;
-use qsl_package::{emit_checked, emit_monitor_plan_over, Emission, MonitorPlanWire, V2ReadLimits};
-use qsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
-use qsl_semantics::{library::LibraryName, model::intake::package_input};
-use quire_contract_model::{
+use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedNodeKind, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedTerm,
 };
-use quire_driver::monitor_refusal::{
+use filament_driver::monitor_refusal::{
     target_mismatch_at, unsupported_at, MonitorLocusErrorCode, TargetPremise,
 };
-use quire_exact::{Cancel, Integer, Rational};
+use filament_exact::{Cancel, Integer, Rational};
+use fsl_foundation::SourceIdentity;
+use fsl_package::{emit_checked, emit_monitor_plan_over, Emission, MonitorPlanWire, V2ReadLimits};
+use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+use fsl_semantics::{library::LibraryName, model::intake::package_input};
+use ix_trace_rs::trace;
 
 // These ordinary functions only supply admitted diagnostic data. They are
 // neither a temporal algorithm nor evidence of monitor preparation/build.
 const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
-profile timed = "quire.temporal.timed/v1";
-profile complete = "quire.temporal.complete/v1";
+profile v = "filament.value.complete/v1";
+profile timed = "filament.temporal.timed/v1";
+profile complete = "filament.temporal.complete/v1";
 model Selected = "agent-ix/config-version";
 dimension Time;
 unit second : Time = rational(1, 1);
@@ -76,7 +76,7 @@ fn model_document() -> Vec<u8> {
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| item["name"] == "qsl-replay")
+        .find(|item| item["name"] == "fsl-replay")
         .unwrap()["manifest_path"]
         .as_str()
         .unwrap();
@@ -207,7 +207,7 @@ fn fixture() -> Fixture {
         V2ReadLimits::bounded(1 << 24),
         limits.package.emit(),
     )
-    .expect("the public QSL writer emits the checked diagnostic root");
+    .expect("the public FSL writer emits the checked diagnostic root");
     let package = admit(&emission, &evidence);
     assert_eq!(package.monitor_plans().len(), 1);
     Fixture { package }
@@ -329,9 +329,9 @@ fn every_target_premise_names_its_actual_admitted_value() {
 fn operations_and_native_child_paths_retain_the_original_terms() {
     let package = &FIXTURE.package;
     for identity in [
-        "quire.op.integer.add",
-        "quire.op.integer.mod",
-        "quire.op.ieee.to_float32",
+        "filament.op.integer.add",
+        "filament.op.integer.mod",
+        "filament.op.ieee.to_float32",
     ] {
         let (node, kind) = operation(package, identity);
         let CheckedTerm::Application {
@@ -342,13 +342,13 @@ fn operations_and_native_child_paths_retain_the_original_terms() {
         else {
             panic!("actual application");
         };
-        if identity == "quire.op.ieee.to_float32" {
+        if identity == "filament.op.ieee.to_float32" {
             assert!(
                 expected.mode().unwrap().is_some(),
                 "the real rounding conversion carries its owner mode"
             );
         }
-        if identity == "quire.op.ieee.to_float32" {
+        if identity == "filament.op.ieee.to_float32" {
             assert!(!expected.law_definitions().unwrap().is_empty());
             assert!(expected.member_declaration().unwrap().is_some());
         }
@@ -449,7 +449,7 @@ fn invalid_indices_occurrences_and_selectors_keep_distinct_typed_failures() {
             MonitorLocusErrorCode::InvalidPremiseIndex
         );
     }
-    let (node, kind) = operation(package, "quire.op.integer.mod");
+    let (node, kind) = operation(package, "filament.op.integer.mod");
     assert_eq!(
         target_mismatch_at(package, node, TargetPremise::Counter, None, None)
             .unwrap_err()
@@ -470,7 +470,7 @@ fn invalid_indices_occurrences_and_selectors_keep_distinct_typed_failures() {
     assert!(
         raw.path.iter().any(|segment| matches!(
             segment,
-            quire_contract_model::CheckedNodePathSegment::Operand(_)
+            filament_contract_model::CheckedNodePathSegment::Operand(_)
         )),
         "the authentic node-held identity contains operand slots"
     );
@@ -538,7 +538,7 @@ fn invalid_indices_occurrences_and_selectors_keep_distinct_typed_failures() {
 fn owned_diagnostics_outlive_the_package_and_occurrence_buffers() {
     let (actual, expected_key, expected_operation, expected_occurrence) = {
         let owned = fixture();
-        let (node, kind) = operation(&owned.package, "quire.op.integer.mod");
+        let (node, kind) = operation(&owned.package, "filament.op.integer.mod");
         let source_node = owned
             .package
             .resolved_graph()
@@ -566,7 +566,7 @@ fn owned_diagnostics_outlive_the_package_and_occurrence_buffers() {
 #[test]
 #[trace("FR-016-AC-9")]
 fn bounded_copy_preserves_actual_resolved_target_axes() {
-    use quire_driver::{monitor::MonitorPreparationLimits, monitor_refusal::copy_monitor_locus};
+    use filament_driver::{monitor::MonitorPreparationLimits, monitor_refusal::copy_monitor_locus};
     let package = &FIXTURE.package;
     let plan = package.monitor_plans().next().unwrap();
     let actual = target_mismatch_at(

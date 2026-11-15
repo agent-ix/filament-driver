@@ -3,26 +3,26 @@
 //! read the selected type closure from one final emission.
 //!
 //! One fresh native join budget, sized from the caller's existing preparation
-//! limits, pays QSL authority admission, the QSL row adapters and IR's closure
+//! limits, pays FSL authority admission, the FSL row adapters and IR's closure
 //! read. Nothing here is an executable program.
 
-use qsl_analyze::monitor_root::{
-    AdmittedPlanAuthority, PlanAuthoritySelection, PlanAuthorityValidationCaps, PlanRoot,
-};
-use qsl_package::{ReadEqualityRows, ReadIdentityRows};
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedOccurrence, CheckedOccurrenceRole, NativeJoinBudget, NativeJoinLocus,
     NativeJoinLocusSource, SelectedModelEnumShapeRow, SelectedMonitorAuthorityRow,
     SelectedMonitorClosureRows, SelectedMonitorTimeSource, SelectedMonitorTypeClosure,
     SelectedSourceCollectionRow, SelectedSourceEnumRow, SelectedSourceRecordRow,
     SelectedSourceTupleRow, SelectedSourceUnionRow,
 };
-use quire_exact::Cancel;
-use quire_observation::authority::progress;
+use filament_exact::Cancel;
+use filament_observation::authority::progress;
+use fsl_analyze::monitor_root::{
+    AdmittedPlanAuthority, PlanAuthoritySelection, PlanAuthorityValidationCaps, PlanRoot,
+};
+use fsl_package::{ReadEqualityRows, ReadIdentityRows};
 
 use super::{MonitorPreparationError as Error, MonitorPreparationLimits};
 
-/// Owned results of the QSL phases (authority, identity rows, row adapters).
+/// Owned results of the FSL phases (authority, identity rows, row adapters).
 ///
 /// The IR closure borrows from these, so it is produced by [`Self::read_closure`]
 /// inside a scope rather than stored next to them.
@@ -56,7 +56,7 @@ fn poll(cancel: &Cancel) -> Result<(), Error> {
 
 /// Admit the plan authority and collect the closure rows (P1, P3, P4).
 ///
-/// The strict read of the root's own final emission happens once, inside QSL's
+/// The strict read of the root's own final emission happens once, inside FSL's
 /// `admit_authority`; the driver makes none of its own.
 pub fn collect_monitor_closure_rows(
     plan_root: PlanRoot,

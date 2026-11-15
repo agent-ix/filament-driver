@@ -29,7 +29,7 @@ def write_frame(value):
     sys.stdout.buffer.flush()
 
 
-protocol = "quire.plugin-wire/v1"
+protocol = "filament.plugin-wire/v1"
 identity = sys.argv[1]
 marker = sys.argv[2]
 capability = sys.argv[3]
@@ -44,8 +44,8 @@ write_frame(
         "id": 0,
         "kind": "hello",
         "body": {
-            "contract_version": "quire.backend-provider/v1",
-            "capability_vocabulary": "quire.capability-kind/v1",
+            "contract_version": "filament.backend-provider/v1",
+            "capability_vocabulary": "filament.capability-kind/v1",
             "manifest": [
                 {
                     "backend": identity,
@@ -103,8 +103,8 @@ while True:
             "id": envelope["id"],
             "kind": "result",
             "body": {
-                "contract_version": "quire.backend-provider/v1",
-                "capability_vocabulary": "quire.capability-kind/v1",
+                "contract_version": "filament.backend-provider/v1",
+                "capability_vocabulary": "filament.capability-kind/v1",
                 "results": [
                     {
                         "request_index": item["request_index"],

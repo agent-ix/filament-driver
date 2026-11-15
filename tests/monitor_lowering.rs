@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real ordinary-source scalar lowering; no monitor Program or runtime construction claim.
 
-use ix_trace_rs::trace;
-use qsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
-use qsl_package::emit_checked;
-use qsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
-use qsl_semantics::model::intake::package_input;
-use quire_contract_model::{
+use filament_contract_model::{
     read_checked_package, CheckedCallableIdentity, CheckedNodeId, CheckedPackageDispatchResult,
     CheckedPackageReadLimits, NativeJoinBudget, SelectedExactIdentities,
 };
-use quire_contract_runtime::monitor::{FunctionId, Operation};
-use quire_driver::monitor::{
+use filament_contract_runtime::monitor::{FunctionId, Operation};
+use filament_driver::monitor::{
     lowering::lower_scalar_functions, MonitorPreparationError, MonitorPreparationLimits,
 };
-use quire_exact::{Cancel, CancelCause, OrderingOperator, ValueType};
+use filament_exact::{Cancel, CancelCause, OrderingOperator, ValueType};
+use fsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
+use fsl_package::emit_checked;
+use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+use fsl_semantics::model::intake::package_input;
+use ix_trace_rs::trace;
 
 /// These native views are acquired in explicit setup, outside any assembly
 /// allowance. No successful callable work receipt or full preparation is claimed.
@@ -22,7 +22,7 @@ use quire_exact::{Cancel, CancelCause, OrderingOperator, ValueType};
 #[test]
 fn actual_source_functions_share_handles_without_sharing_function_identity() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function combineOne using v(a: Integer, b: Integer): Integer pure { a + b }
 function combineTwo using v(a: Integer, b: Integer): Integer pure { a + b }
 "#;
@@ -88,7 +88,7 @@ function combineTwo using v(a: Integer, b: Integer): Integer pure { a + b }
 }
 
 struct Fixture {
-    package: Box<quire_contract_model::CheckedPackageV2>,
+    package: Box<filament_contract_model::CheckedPackageV2>,
     identities: SelectedExactIdentities,
     originals: Vec<CheckedNodeId>,
 }
@@ -134,7 +134,7 @@ fn source_fixture(source: &str, package_name: &str, names: &[&str]) -> Fixture {
         })
         .collect::<Vec<_>>();
     let emission = emit_checked(checked.package(), limits.package.emit())
-        .expect("the real QSL producer emits");
+        .expect("the real FSL producer emits");
     let package = match read_checked_package(
         emission.package().bytes(),
         CheckedPackageReadLimits::bounded(),
@@ -160,7 +160,7 @@ fn source_fixture(source: &str, package_name: &str, names: &[&str]) -> Fixture {
 }
 
 const SCALAR_SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function sumValue using v(a: Integer, b: Integer): Integer pure { a + b }
 function subValue using v(a: Integer, b: Integer): Integer pure { a - b }
 function mulValue using v(a: Integer, b: Integer): Integer pure { a * b }
@@ -202,13 +202,13 @@ fn allowances() -> MonitorPreparationLimits {
 }
 
 fn original_key(
-    package: &quire_contract_model::CheckedPackageV2,
+    package: &filament_contract_model::CheckedPackageV2,
     id: &CheckedNodeId,
-) -> quire_exact::NodeKey {
+) -> filament_exact::NodeKey {
     // This small trusted fixture's expected key uses the existing owner codec;
     // production conversion never serializes a recursive JSON tree.
     let wire = serde_json::to_value(package.structural_key(id).unwrap()).unwrap();
-    qsl_foundation::node_wire::node_key_from_json(&wire).unwrap()
+    fsl_foundation::node_wire::node_key_from_json(&wire).unwrap()
 }
 
 #[trace("FR-017-AC-5", "FR-017-AC-6")]
@@ -381,8 +381,8 @@ fn public_scalar_helper_retains_exact_operations_root_order_and_function_owners(
 }
 
 fn assert_argument(
-    expressions: &[quire_contract_runtime::monitor::Expression],
-    id: quire_contract_runtime::monitor::ExpressionId,
+    expressions: &[filament_contract_runtime::monitor::Expression],
+    id: filament_contract_runtime::monitor::ExpressionId,
     owner: FunctionId,
     position: usize,
 ) {
@@ -395,7 +395,7 @@ fn assert_argument(
 #[test]
 fn excluded_source_forms_stop_at_original_operation_without_partial_tuple() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function modValue using v(a: Integer, b: Integer): Integer pure { a mod b }
 function literalValue using v(): Integer pure { 0 }
 function helperValue using v(a: Integer): Integer pure { a }
@@ -425,7 +425,7 @@ function letValue using v(a: Integer): Integer pure { let x = a in x + a }
             assert!(
                 matches!(
                     fixture.package.term(&callable.body),
-                    Some(quire_contract_model::CheckedTerm::Literal { .. })
+                    Some(filament_contract_model::CheckedTerm::Literal { .. })
                 ),
                 "literalValue reaches its genuine Value literal node"
             );
@@ -455,7 +455,7 @@ function letValue using v(a: Integer): Integer pure { let x = a in x + a }
         );
         assert!(payload.locus.body_path.is_empty());
         assert!(payload.locus.occurrence.is_none());
-        if let Some(quire_contract_model::CheckedTerm::Application { operation, .. }) =
+        if let Some(filament_contract_model::CheckedTerm::Application { operation, .. }) =
             fixture.package.term(&callable.body)
         {
             assert_eq!(payload.operation.as_ref(), Some(operation));
@@ -579,7 +579,7 @@ fn foreign_package_callable_refusal_retains_its_original_payload() {
     let native = fixture.package.source_callable(root, 100_000).unwrap_err();
     assert_eq!(
         native.code,
-        quire_contract_model::CheckedCallableReadErrorCode::UnknownNode
+        filament_contract_model::CheckedCallableReadErrorCode::UnknownNode
     );
     assert_eq!(native.locus, *root);
     let result = lower_scalar_functions(
@@ -599,7 +599,7 @@ fn foreign_package_callable_refusal_retains_its_original_payload() {
 #[test]
 fn admitted_bounded_parameter_is_not_widened_to_supported_integer() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function boundedValue using v(a: Int[0, 9], b: Int[0, 9]): Integer pure { a + b }
 "#;
     let fixture = source_fixture(SOURCE, "agent-ix/scalar-bounded", &["boundedValue"]);
@@ -695,7 +695,7 @@ fn measured_component_storage_includes_native_constructor_reservations() {
 #[test]
 fn heterogeneous_signature_retains_unused_types_and_nonzero_argument_position() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function mixedValue using v(unused: Integer, flag: Boolean, retainedNumber: Integer): Boolean pure { not flag }
 "#;
     let fixture = source_fixture(SOURCE, "agent-ix/scalar-heterogeneous", &["mixedValue"]);

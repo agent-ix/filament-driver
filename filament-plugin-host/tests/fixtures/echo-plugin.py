@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small PL-4 process fixture used by the quire-plugin-host tests."""
+"""Small PL-4 process fixture used by the filament-plugin-host tests."""
 
 import json
 import struct
@@ -24,7 +24,7 @@ def write_frame(value):
     sys.stdout.buffer.flush()
 
 
-protocol = "quire.plugin-wire/v1"
+protocol = "filament.plugin-wire/v1"
 mode = sys.argv[1] if len(sys.argv) > 1 else "echo"
 write_frame(
     {

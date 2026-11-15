@@ -3,11 +3,11 @@
 //! The complete E4
 //! value remains available through admission for bounded diagnostic sources.
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedPackageDispatchResult, CheckedPackageReadLimits, CheckedPackageV2,
 };
 
-use qsl_replay::spine::{admission_evidence, AdmittedModels, CheckedUnit, EmittedUnit};
+use fsl_replay::spine::{admission_evidence, AdmittedModels, CheckedUnit, EmittedUnit};
 
 use crate::{DriverFault, DriverRefusal, Upstream};
 
@@ -17,11 +17,11 @@ pub(crate) fn handoff(
     models: &AdmittedModels,
     checked: &CheckedUnit,
     emitted: &EmittedUnit,
-    imports: qsl_package::V2ReadLimits,
-    emit: qsl_package::EmitLimits,
+    imports: fsl_package::V2ReadLimits,
+    emit: fsl_package::EmitLimits,
 ) -> Result<CheckedPackageV2, DriverRefusal> {
     let evidence = admission_evidence(models, checked, emitted, imports, emit)
-        .map_err(DriverRefusal::QslAdmissionEvidence)?;
+        .map_err(DriverRefusal::FslAdmissionEvidence)?;
     let package =
         match upstream.read_package(emitted, CheckedPackageReadLimits::bounded(), &evidence) {
             CheckedPackageDispatchResult::AdmittedV2(package) => *package,

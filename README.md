@@ -1,19 +1,19 @@
-# quire-driver
+# filament-driver
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
-[![Quire](https://img.shields.io/badge/Quire-Specification%20Language-1F6FEB)](https://github.com/agent-ix/quire-spec-language)
+[![Filament](https://img.shields.io/badge/Filament-Specification%20Language-1F6FEB)](https://github.com/agent-ix/filament-spec-language)
 
-quire-driver is the `fsl` command-line tool and the Rust library behind it.
-It runs a QSL specification from source to result.
+filament-driver is the `fsl` command-line tool and the Rust library behind it.
+It runs a FSL specification from source to result.
 
-It reads the source, has QSL check and package the rule, passes the checked
+It reads the source, has FSL check and package the rule, passes the checked
 package to Contract IR and the code generators, and reports the result with one
-exit code. It is the only component that calls both QSL and the code
+exit code. It is the only component that calls both FSL and the code
 generators.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
-  <img alt="The fsl command takes QSL source through parse, check and compile to a checked package, and its run verb evaluates a function to an outcome with an exit code. The driver library also reads the package back, routes it, negotiates with backends and generates code. The prove and generate commands and their verdict are planned." src="docs/images/hero-light.svg">
+  <img alt="The fsl command takes FSL source through parse, check and compile to a checked package, and its run verb evaluates a function to an outcome with an exit code. The driver library also reads the package back, routes it, negotiates with backends and generates code. The prove and generate commands and their verdict are planned." src="docs/images/hero-light.svg">
 </picture>
 
 ## Getting started
@@ -40,20 +40,20 @@ Check the install with `fsl --version`.
 
 ## Commands
 
-The binary is built from the `fsl-cli` package. Its verbs follow the QSL
+The binary is built from the `fsl-cli` package. Its verbs follow the FSL
 command-line design:
 
 | Verb | State | What it does |
 | --- | --- | --- |
-| `parse`, `check`, `compile`, `run` | works | Run the QSL stage of that name on one source file and print QSL's result document. Use `--format json`. |
-| `format` | works | Print the source in QSL's canonical layout. |
+| `parse`, `check`, `compile`, `run` | works | Run the FSL stage of that name on one source file and print FSL's result document. Use `--format json`. |
+| `format` | works | Print the source in FSL's canonical layout. |
 | `analyze`, `monitor`, `prove`, `replay`, `generate`, `inspect`, `render` | planned | Recognized, and end as `unsupported` (exit 21) until a handler is written. |
 
 `parse` and `format` take two logical source labels followed by the file path:
 
 ```sh
-fsl parse example.org requirements source.qsl --format json
-fsl format example.org requirements source.qsl
+fsl parse example.org requirements source.fsl --format json
+fsl format example.org requirements source.fsl
 ```
 
 The labels identify the source; the file path is its physical location.
@@ -62,7 +62,7 @@ The labels identify the source; the file path is its physical location.
 interpreter is the linked engine, and the other engines are refused before
 anything runs. The command supplies an empty object environment.
 
-Every command ends with QSL's own exit code, passed through unchanged:
+Every command ends with FSL's own exit code, passed through unchanged:
 
 | Exit code | Meaning |
 | --- | --- |
@@ -79,15 +79,15 @@ This source defines one function that always returns true:
 
 ```
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function yes using v(): Boolean pure { true }
 ```
 
-Save it as `yes.qsl`, then save this request as `yes.json`. Source labels are
+Save it as `yes.fsl`, then save this request as `yes.json`. Source labels are
 logical names independent of the physical file path:
 
 ```json
-{"format":"native-run/1","request":{"models":[],"program":{"source":{"file":"yes.qsl","authority":"example","identity":"yes","document":"ExampleYes","formal_revision":1}},"call":{"function":"yes","arguments":[]}}}
+{"format":"native-run/1","request":{"models":[],"program":{"source":{"file":"yes.fsl","authority":"example","identity":"yes","document":"ExampleYes","formal_revision":1}},"call":{"function":"yes","arguments":[]}}}
 ```
 
 Run the request; the command exits with code 0:
@@ -101,14 +101,14 @@ accepts `--request-bytes` and `--dependent-bytes`; compile uses fixed ceilings.
 
 ## Library
 
-The `quire-driver` library crate exposes `drive`, which runs one request
-through the stages below. QSL owns the language and the generators own code
+The `filament-driver` library crate exposes `drive`, which runs one request
+through the stages below. FSL owns the language and the generators own code
 generation, and the driver is the one place that joins them.
 
-1. Parse, select, check and package the source with QSL, sharing one `Cancel`
+1. Parse, select, check and package the source with FSL, sharing one `Cancel`
    handle. The result is the `checked-package/v2` bytes and their identity.
 2. Read those bytes back through Contract IR's reader. The package it admits
-   carries the identity QSL just emitted.
+   carries the identity FSL just emitted.
 3. Write the items to negotiate from the package's own checked requirement
    records, one per record. A unit with no scalar operation application has no
    records, so nothing is routed and nothing is generated.
@@ -123,36 +123,36 @@ The registry of backends is a value the caller builds from provider manifests
 and passes in.
 
 `execute` is the smaller entry point behind `fsl run`: it compiles one
-source and calls one function on the selected engine, returning QSL's typed
+source and calls one function on the selected engine, returning FSL's typed
 outcome unchanged.
 
 ## Crates
 
 | Crate | Role |
 | --- | --- |
-| `quire-driver` (root) | The library: `drive`, `execute`, the registry, limits and the cache interface. Depends on QSL and the code generator. |
+| `filament-driver` (root) | The library: `drive`, `execute`, the registry, limits and the cache interface. Depends on FSL and the code generator. |
 | `fsl-cli` | The `fsl` binary: argument parsing and the command handlers. Depends on the driver and the cache. |
-| `quire-plugin-host` | The process boundary for out-of-process backend providers: framing, wire types and lifecycle for the `quire.plugin-wire/v1` protocol. |
-| `quire-cache` | A content-addressed on-disk cache that implements the driver's cache interface. |
+| `filament-plugin-host` | The process boundary for out-of-process backend providers: framing, wire types and lifecycle for the `filament.plugin-wire/v1` protocol. |
+| `filament-cache` | A content-addressed on-disk cache that implements the driver's cache interface. |
 
 The driver defines the cache interface and the cache implements it, so the
 library never depends on its own cache.
 
-## Quire ecosystem
+## Filament ecosystem
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
-  <img alt="The Quire repositories. The main chain runs from the standard, quire-specification, to the compiler, quire-spec-language, then quire-contract-ir, quire-contract-codegen and quire-contract-runtime. quire-spec-language also feeds quire-protocol, and quire-contract-ir feeds quire-analyze. quire-observation feeds quire-protocol and quire-mltl. Above the chain, quire-driver runs it, quire-integration tests it and quire-verification plans verification. Below it, shared libraries used throughout: quire-eval, quire-exact, quire-semantic-value, quire-walk, quire-canonical and quire-verification-contracts." src="docs/images/ecosystem-light.svg">
+  <img alt="The Filament repositories. The main chain runs from the standard, filament-specification, to the compiler, filament-spec-language, then filament-contract-ir, filament-contract-codegen and filament-contract-runtime. filament-spec-language also feeds filament-protocol, and filament-contract-ir feeds filament-analyze. filament-observation feeds filament-protocol and filament-mltl. Above the chain, filament-driver runs it, filament-integration tests it and filament-verification plans verification. Below it, shared libraries used throughout: filament-eval, filament-exact, filament-semantic-value, filament-walk, quire-canonical and filament-verification-contracts." src="docs/images/ecosystem-light.svg">
 </picture>
 
-quire-driver sits above the main chain and runs it. It
-depends on the QSL layer crates from
-[quire-spec-language](https://github.com/agent-ix/quire-spec-language),
-on [quire-contract-codegen](https://github.com/agent-ix/quire-contract-codegen),
+filament-driver sits above the main chain and runs it. It
+depends on the FSL layer crates from
+[filament-spec-language](https://github.com/agent-ix/filament-spec-language),
+on [filament-contract-codegen](https://github.com/agent-ix/filament-contract-codegen),
 on the model crate of
-[quire-contract-ir](https://github.com/agent-ix/quire-contract-ir), and on
+[filament-contract-ir](https://github.com/agent-ix/filament-contract-ir), and on
 [quire-canonical](https://github.com/agent-ix/quire-canonical) and
-[quire-exact](https://github.com/agent-ix/quire-exact). No QSL, IR or
+[filament-exact](https://github.com/agent-ix/filament-exact). No FSL, IR or
 code-generator crate depends on it. It also uses `ix-cli-kit` for the
 command-line exit and stream conventions.
 

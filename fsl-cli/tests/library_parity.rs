@@ -5,32 +5,32 @@
 use std::collections::BTreeMap;
 use std::process::{Command, Output};
 
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{
+use filament_driver::{
+    execute, ExecutionEngine, ExecutionFailure, ExecutionRequest, ObjectEnvironment,
+};
+use filament_exact::{Cancel, Integer, Value};
+use filament_semantic_value::catalog::Category;
+use filament_semantic_value::supplied_stop::SuppliedLimits;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{
     check, default_accounting, package, parse, select, Call, CallArgument, DependencyInput,
     PackageLimits, ParseRequest, SpineLimits, DEFAULT_WORK_UNITS,
 };
-use qsl_replay::OutcomeDocument;
-use quire_driver::{
-    execute, ExecutionEngine, ExecutionFailure, ExecutionRequest, ObjectEnvironment,
-};
-use quire_exact::{Cancel, Integer, Value};
-use quire_semantic_value::catalog::Category;
-use quire_semantic_value::supplied_stop::SuppliedLimits;
+use fsl_replay::OutcomeDocument;
 
 #[path = "common/requests.rs"]
 mod requests;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
+const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 
 const VALUE_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
     type Digit = Int[0, 9];\n\
     function p using v(x: Digit): Boolean pure { x < 10 }\n\
     function q using v(x: Digit): Boolean pure { x < 5 }\n";
 
 const MALFORMED_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
     function f using v(: Boolean pure { true }\n";
 
 /// Removes its directory when dropped, including after a failed assertion.
@@ -45,10 +45,10 @@ impl Drop for TestDirectory {
 /// Write `contents` to a fresh source file and return its directory guard and path.
 fn source_file(label: &str, contents: &str) -> (TestDirectory, String) {
     let directory = TestDirectory(
-        std::env::temp_dir().join(format!("quire-parity-{label}-{}", std::process::id())),
+        std::env::temp_dir().join(format!("filament-parity-{label}-{}", std::process::id())),
     );
     std::fs::create_dir_all(&directory.0).expect("create source directory");
-    let path = directory.0.join("source.qsl");
+    let path = directory.0.join("source.fsl");
     std::fs::write(&path, contents).expect("write source");
     let path = path.to_str().expect("UTF-8 temp path").to_owned();
     (directory, path)
@@ -67,7 +67,7 @@ fn expected(document: &OutcomeDocument) -> (Vec<u8>, i32) {
 }
 
 fn library_check(path: &str, bytes: &[u8]) -> OutcomeDocument {
-    let source = SourceIdentity::new("quire", path);
+    let source = SourceIdentity::new("filament", path);
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let packages = BTreeMap::new();
@@ -96,7 +96,7 @@ fn library_check(path: &str, bytes: &[u8]) -> OutcomeDocument {
 }
 
 fn library_package(path: &str, bytes: &[u8]) -> OutcomeDocument {
-    let source = SourceIdentity::new("quire", path);
+    let source = SourceIdentity::new("filament", path);
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let packages = BTreeMap::new();
@@ -134,7 +134,7 @@ fn library_execute(
     let packages = BTreeMap::new();
     let dependencies = DependencyInput::default();
     let request = ExecutionRequest {
-        source: SourceIdentity::new("quire", path),
+        source: SourceIdentity::new("filament", path),
         package_name: path,
         path,
         bytes,
@@ -166,13 +166,13 @@ fn digit_argument(x: i64) -> Vec<CallArgument> {
     }]
 }
 
-fn quire(arguments: &[&str]) -> Output {
-    Command::new(QUIRE)
+fn fsl(arguments: &[&str]) -> Output {
+    Command::new(FSL)
         .args(arguments)
         .arg("--format")
         .arg("json")
         .output()
-        .expect("run quire")
+        .expect("run fsl")
 }
 
 fn assert_parity(output: &Output, document: &OutcomeDocument, context: &str) {
@@ -185,7 +185,7 @@ fn assert_parity(output: &Output, document: &OutcomeDocument, context: &str) {
     );
 }
 
-/// Trace: FR-299-AC-1, FR-299-AC-2; `quire check`, `compile` and `run` print
+/// Trace: FR-299-AC-1, FR-299-AC-2; `fsl check`, `compile` and `run` print
 /// the library outcome for the same source, byte for byte, with the library's
 /// exit code, and a repeat run prints equal bytes.
 #[test]
@@ -196,9 +196,9 @@ fn binary_outcomes_equal_the_library_outcomes_for_one_value_source() {
 
     let checked = library_check(&path, bytes);
     assert_eq!(i32::from(checked.category().exit_code()), success);
-    let output = quire(&["check", &path]);
+    let output = fsl(&["check", &path]);
     assert_parity(&output, &checked, "check");
-    assert_eq!(output.stdout, quire(&["check", &path]).stdout);
+    assert_eq!(output.stdout, fsl(&["check", &path]).stdout);
 
     let compile_request = requests::request(&path, None);
     let p_request = requests::request(
@@ -211,25 +211,25 @@ fn binary_outcomes_equal_the_library_outcomes_for_one_value_source() {
     );
     let packaged = library_package(&path, bytes);
     assert_eq!(i32::from(packaged.category().exit_code()), success);
-    let output = quire(&["compile", compile_request.as_str()]);
+    let output = fsl(&["compile", compile_request.as_str()]);
     assert_parity(&output, &packaged, "compile");
     assert_eq!(
         output.stdout,
-        quire(&["compile", compile_request.as_str()]).stdout
+        fsl(&["compile", compile_request.as_str()]).stdout
     );
 
     let executed = library_execute(&path, bytes, "p", digit_argument(3));
     assert_eq!(i32::from(executed.category().exit_code()), success);
-    let output = quire(&["run", p_request.as_str()]);
+    let output = fsl(&["run", p_request.as_str()]);
     assert_parity(&output, &executed, "run p x=3");
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run prints one JSON document");
     assert_eq!(document["result"]["value"]["value"], true);
-    assert_eq!(output.stdout, quire(&["run", p_request.as_str()]).stdout);
+    assert_eq!(output.stdout, fsl(&["run", p_request.as_str()]).stdout);
 
     // The second function of the source takes the same path.
     let executed = library_execute(&path, bytes, "q", digit_argument(7));
-    assert_parity(&quire(&["run", q_request.as_str()]), &executed, "run q x=7");
+    assert_parity(&fsl(&["run", q_request.as_str()]), &executed, "run q x=7");
 }
 
 /// Trace: FR-299-AC-1; a refused source gives the library's refusal document,
@@ -246,14 +246,14 @@ fn binary_refusals_equal_the_library_refusals_for_a_malformed_source() {
         i32::from(checked.category().exit_code()),
         i32::from(Category::Success.exit_code())
     );
-    assert_parity(&quire(&["check", &path]), &checked, "check");
+    assert_parity(&fsl(&["check", &path]), &checked, "check");
     assert_parity(
-        &quire(&["compile", compile_request.as_str()]),
+        &fsl(&["compile", compile_request.as_str()]),
         &library_package(&path, bytes),
         "compile",
     );
     assert_parity(
-        &quire(&["run", run_request.as_str()]),
+        &fsl(&["run", run_request.as_str()]),
         &library_execute(&path, bytes, "f", Vec::new()),
         "run",
     );

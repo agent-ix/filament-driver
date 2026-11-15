@@ -3,29 +3,29 @@ id: FR-001
 title: "Orchestrate compile, backend conversion, negotiation, routing and generation"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-spec-language/ADR-011
+  - target: ix://agent-ix/filament-spec-language/ADR-011
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/ADR-012
+  - target: ix://agent-ix/filament-spec-language/ADR-012
     type: depends_on
-  - target: ix://agent-ix/quire-contract-codegen/FR-019
+  - target: ix://agent-ix/filament-contract-codegen/FR-019
     type: depends_on
 ---
 # FR-001: Orchestrate compile, backend conversion, negotiation, routing and generation
 
 ## Description
 
-The driver SHALL run one request through these steps, in this order (QSL
+The driver SHALL run one request through these steps, in this order (FSL
 ADR-011 T-13, ADR-012 §7.2):
 
-1. S1 to S4 through QSL's typed `parse`, `select` and `check` operations.
+1. S1 to S4 through FSL's typed `parse`, `select` and `check` operations.
    These operations and step 2 share one `Cancel` handle. `check` receives an
    empty `DependencyInput` (ADR-015 D-1): the driver does not yet support
    compiling a unit's `import`s against caller-supplied library source, so
    any `import` refuses at the intake stage,
    `missing_import`/`missing-selection`.
-2. E4: QSL's `package` operation emits the `quire.checked-package/v2`
+2. E4: FSL's `package` operation emits the `filament.checked-package/v2`
    bytes from the checked unit.
 3. The `route` candidate step for each requested item.
 4. The driver projects each registry descriptor with CG's
@@ -41,13 +41,13 @@ ADR-011 T-13, ADR-012 §7.2):
    with its request index, its checked node, its routed backend and its CG
    kind.
 
-After the E5 hand-off and before step 3, the driver calls QSL's layer-4
-bindings export (QSL FR-307) for the requested items and partitions them
+After the E5 hand-off and before step 3, the driver calls FSL's layer-4
+bindings export (FSL FR-307) for the requested items and partitions them
 into bound and refused (FR-010).
 
 Between steps 2 and 3, the E5 hand-off: IR's checked-package reader
 (`read_checked_package`) reads the emitted v2 bytes, and the driver accepts
-the admitted package that E4 emitted. QSL's admission evidence receives the
+the admitted package that E4 emitted. FSL's admission evidence receives the
 same caller-owned `SpineLimits.package.emit()` ceiling used for E4, alongside
 the caller's import-read limits, so dependency-closure emissions remain under
 the request's selected byte ceiling.
@@ -61,28 +61,28 @@ the request's selected byte ceiling.
 - The backend the request names, if any (`named`). The requested items
   themselves are not a caller input: they are written from the compiled
   unit's own checked requirement records
-  (`qsl_package::CheckedPackage::graph().requirements()`, keyed one per
+  (`fsl_package::CheckedPackage::graph().requirements()`, keyed one per
   scalar operation application -- QSL-266), one item per record in
-  occurrence-key order (`qsl_route::request::items_from_requirements`,
+  occurrence-key order (`fsl_route::request::items_from_requirements`,
   FR-075). A unit with no scalar operation application writes no requirement
   record, so the driver routes nothing for it.
 - The generation input: one optional context per CG backend kind. The Kani
   context is the subject path and the unwind bound. The caller
   supplies no claim map: CG derives each routed item's claim from the
   node's own operation and bound (IR-294).
-  Each routed Kani item also carries its QSL requirement record, and the Kani
+  Each routed Kani item also carries its FSL requirement record, and the Kani
   context carries the package's requirement records; FR-020 owns that
   projection and its absent-record and unresolved-record faults.
-- A caller-owned, cloneable QSL `Cancel` handle. The driver passes the same
+- A caller-owned, cloneable FSL `Cancel` handle. The driver passes the same
   handle through `parse`, `select`, `check` and `package`; the caller may
-  cancel it from another thread while a stage runs. QSL owns polling and
+  cancel it from another thread while a stage runs. FSL owns polling and
   returns the typed cancellation failure.
-- For scalar proof generation, the caller's existing typed QSL `Call`, its
+- For scalar proof generation, the caller's existing typed FSL `Call`, its
   `ObjectEnvironment`, and the same caller-owned `Cancel` handle, supplied
   with the compile input as one driver-library operation. This is an internal
   library composition input; it adds no CLI syntax. The driver does not accept
   a second caller-built package for this call.
-- For function proof execution, the selected request’s retained QSL source and
+- For function proof execution, the selected request’s retained FSL source and
   dependency selections, admitted package identity, selected function declaration
   and exact application occurrence, CG generated item and its proving-run
   `KaniObligationIdentity`, and the caller’s and proving run’s decode limits.
@@ -110,7 +110,7 @@ the request's selected byte ceiling.
   holds, and counts toward driver indices, but it is not in the FR-331
   envelope, is not negotiated, routed or generated, and carries no claim.
 - Or one command-level refusal.
-- Or a `DriverRefusal::Cancelled` result carrying the cancelled QSL stage and
+- Or a `DriverRefusal::Cancelled` result carrying the cancelled FSL stage and
   cause.
 - `Driven` retains the checked unit, emitted v2 package bytes, admitted
   package and downstream results. The checked unit retains its root source
@@ -129,10 +129,10 @@ the request's selected byte ceiling.
 - The driver SHALL call `route` only after negotiation, and only with the
   items settled `supported`. When no item settles `supported`, it SHALL
   not call `route`.
-- Types cross between QSL and CG as their wire spellings (QSL ADR-013 T-7).
+- Types cross between FSL and CG as their wire spellings (FSL ADR-013 T-7).
 - For every request item, the driver SHALL project the typed IR tag/form
   from the same admitted checked package, requirement
-  record and node named by that item's QSL record, matched by occurrence key.
+  record and node named by that item's FSL record, matched by occurrence key.
   It SHALL pass the form as CG's typed in-process negotiation input and
   preserve the checked form's typed identity and structure. The driver SHALL
   NOT accept a caller-computed lowerability result or refusal, classify the
@@ -146,24 +146,24 @@ the request's selected byte ceiling.
   A routed item whose node the package does not hold is not a caller
   refusal: it is an internal fault (`runtime_invariant`), reachable only
   through an E4/E5 inconsistency (E4 emitted, or E5 admitted, a graph
-  missing a node QSL's own requirement record names), and the run stops
+  missing a node FSL's own requirement record names), and the run stops
   before CG is called.
 - The driver SHALL call CG generation only after routing, only for routed
   items, and not at all when nothing is routed.
 - For scalar proof generation, the driver library SHALL accept the caller's
-  exact QSL `Call`, `ObjectEnvironment`, and `Cancel` with the compile input
-  as one production composition operation. This operation SHALL use the QSL
+  exact FSL `Call`, `ObjectEnvironment`, and `Cancel` with the compile input
+  as one production composition operation. This operation SHALL use the FSL
   compiled/emitted package and the IR-admitted view of those same emitted
   bytes. It SHALL NOT rebuild a call or package, re-emit a package for
   binding, or admit a second package.
 - For each routed scalar item selected for native proof, the driver SHALL join
-  the QSL `RequirementItem` to the corresponding CG driver item by its
-  `request_index` and exact QSL `OccurrenceKey`. It SHALL call QSL's
+  the FSL `RequirementItem` to the corresponding CG driver item by its
+  `request_index` and exact FSL `OccurrenceKey`. It SHALL call FSL's
   `bind_scalar_operands` with that same request's compiled/emitted package,
   unchanged `Call`, the selected item's exact function/application/occurrence,
-  `ObjectEnvironment`, and `Cancel`. It SHALL retain QSL's typed binding
+  `ObjectEnvironment`, and `Cancel`. It SHALL retain FSL's typed binding
   result and ordered bound operands in a driver-owned per-item context keyed
-  by `request_index`. Operand values SHALL follow QSL's bound operand order,
+  by `request_index`. Operand values SHALL follow FSL's bound operand order,
   which is the corresponding CG `ScalarObligationIdentity.arguments` order;
   operand source and ordinal data remain attached to those values. The
   `ScalarLimits` retained for later native execution SHALL come from that
@@ -177,19 +177,19 @@ the request's selected byte ceiling.
   selects it; an export-refused item contributes an excluded position at its
   driver index that keeps its `node_id` and carries no claim or result
   selection; a direct
-  conversion occurrence selected by that QSL item
+  conversion occurrence selected by that FSL item
   contributes its own `ContextRoot` position. A `ContextRoot` is not a routed
-  item and SHALL create no backend settlement, claim, or output item. A QSL
+  item and SHALL create no backend settlement, claim, or output item. A FSL
   item with no conversion context uses no conversion root; the driver SHALL
   not choose a different context. The position's driver index counts only
   `DriverItem` entries; context roots do not shift request indices. CG
   receives the original E5-admitted `CheckedPackageV2` by reference alongside its
   admitted `ContractPackageV1`, complete position vector, routed items, and generation
   contexts. The driver retains that original source owner and shares it with CG claim
-  forms without reconstructing or deep-copying an admitted package. The QSL `Call` and bound operands
+  forms without reconstructing or deep-copying an admitted package. The FSL `Call` and bound operands
   remain in the driver's per-item context and are not added to CG's API.
 - For each generated function item selected for proof, the driver SHALL retain
-  one execution context keyed by its request index. It SHALL join the QSL
+  one execution context keyed by its request index. It SHALL join the FSL
   selected function declaration and exact application `OccurrenceKey`, the
   source and dependency lock that produced that declaration, the E5-admitted
   package identity, and the CG generated item’s `KaniObligationIdentity` by
@@ -200,7 +200,7 @@ the request's selected byte ceiling.
   caller/proving-run byte and value decode limits apply to playback intake.
   It SHALL NOT reconstruct any identity, source, dependency selection or
   function target from caller text or proof output.
-  A typed refusal from QSL selection, IR admission or CG generation SHALL be
+  A typed refusal from FSL selection, IR admission or CG generation SHALL be
   preserved with its owning stage. If those stages succeed but the driver
   detects a missing, duplicate or mismatched retained association, it SHALL
   return a `runtime_invariant` driver fault before provider execution or replay;
@@ -208,14 +208,14 @@ the request's selected byte ceiling.
 - When no scalar item is selected for routed native proof, the driver SHALL
   skip scalar binding and native execution. It SHALL select no fallback item
   or synthesize a scalar request.
-- When QSL binding reports a missing or ambiguous call/occurrence as a typed
+- When FSL binding reports a missing or ambiguous call/occurrence as a typed
   `RunRefusal` or `BindRefusal`, the driver SHALL preserve that refusal
   unchanged. It SHALL stop the scalar generation composition before native
   execution.
-- The driver SHALL preserve the owning QSL/IR/CG typed refusal when a required
+- The driver SHALL preserve the owning FSL/IR/CG typed refusal when a required
   conversion context is missing or ambiguous.
 - The driver SHALL treat `None` as a valid conversion context only when that
-  exact QSL item has no conversion context; the driver SHALL add no conversion
+  exact FSL item has no conversion context; the driver SHALL add no conversion
   root in that case.
 - When the admitted package, request position, or routed item disagree, the
   driver SHALL preserve the owning IR/CG typed refusal. A driver-detected join
@@ -267,15 +267,15 @@ the request's selected byte ceiling.
   `stage_limit_exceeded` and an IR reader limit are limit refusals. An
   upstream answer that breaks the driver's invariants is an internal fault;
   that includes IR refusing the bytes
-  QSL just emitted, and a routed item naming a node the checked package does
+  FSL just emitted, and a routed item naming a node the checked package does
   not hold.
 - `build_registry` registers every manifest first, then reads
   `Registry::refusals()` once: one duplicate-backend refusal per
   withdrawn identity, not one per conflicting `register` call. Repeating an
   already-conflicting manifest (A, B, then A again) does not add another
   refusal for it.
-- A cancellation failure from any QSL stage propagates as a typed result.
-  QSL owns its category and exit function (ADR-029 CB-4); the driver defines
+- A cancellation failure from any FSL stage propagates as a typed result.
+  FSL owns its category and exit function (ADR-029 CB-4); the driver defines
   no cancellation-specific category or exit mapping.
 - When E5 consumes the E4 `EmittedUnit` source provision, the driver SHALL
   release that E4 provision after hand-off.
@@ -284,33 +284,33 @@ the request's selected byte ceiling.
   and its retained root-source bytes do not exceed
   `SpineLimits.source.source_bytes`.
 - The driver's normal and build dependencies SHALL be exactly
-  `qsl-analyze`, `qsl-foundation`, `qsl-package`, `qsl-replay`, `qsl-route`, `qsl-semantics`,
-  `quire-exact`, `quire-contract-codegen`, `quire-contract-model`, `quire-contract-runtime`,
-  `quire-canonical`, `quire-observation`, `quire-semantic-value`, `serde`, `serde_json` and `thiserror`. The direct
+  `fsl-analyze`, `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`,
+  `filament-exact`, `quire-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`,
+  `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`, `serde_json` and `thiserror`. The direct
   `serde_json` edge is required to project FR-331's optional `bounds` member
   from the retained caller wire into CG's typed descriptor; the driver
   preserves the wire snapshot and does not define a parallel FR-331 schema.
-  The direct `quire-semantic-value` normal edge imports the existing shared
+  The direct `filament-semantic-value` normal edge imports the existing shared
   catalog types (`Category`, `CatalogCode` and `InternalFault`) from their
-  owning crate after catalog ownership moved out of QSL. This inventory
-  follows that owner move; it does not authorize a QSL re-export shim or a
+  owning crate after catalog ownership moved out of FSL. This inventory
+  follows that owner move; it does not authorize a FSL re-export shim or a
   new driver API.
-  The direct `quire-contract-runtime` edge uses its existing `exact` feature
+  The direct `filament-contract-runtime` edge uses its existing `exact` feature
   for the canonical retained program and scalar arenas owned by
   [FR-015](FR-015-prepare-an-admitted-monitor-program.md) and
   [FR-017](FR-017-lower-and-retain-admitted-monitor-programs.md). RT's transitive
-  normal/build closure SHALL contain no QSL package, `quire-contract-model`,
-  `quire-contract-ir`, `quire-driver` or `quire-contract-codegen` backedge.
+  normal/build closure SHALL contain no FSL package, `filament-contract-model`,
+  `filament-contract-ir`, `filament-driver` or `quire-contract-codegen` backedge.
   The cache boundary is specified separately in FR-001-AC-11 and FR-012.
 - The driver's direct development dependencies SHALL be exactly
-  `ix-trace-rs` and `quire-checked`. `qsl-analyze` is a normal edge
+  `ix-trace-rs` and `filament-checked`. `fsl-analyze` is a normal edge
   ([FR-019](FR-019-prepare-the-complete-monitor-program-under-one-budget.md)
-  Dependencies: `PlanRoot` and `AdmittedPlanAuthority`), and `quire-observation`
+  Dependencies: `PlanRoot` and `AdmittedPlanAuthority`), and `filament-observation`
   is a normal edge because FR-019's request carries
-  `quire_observation::authority::progress::View` (quire-observation FR-004,
-  AC-7). The test-only `quire-checked` edge uses
+  `filament_observation::authority::progress::View` (filament-observation FR-004,
+  AC-7). The test-only `filament-checked` edge uses
   the existing `DeclarationKey` plain-value owner after extraction from
-  QSL; it grants no normal/build edge or new driver API. `serde_json`
+  FSL; it grants no normal/build edge or new driver API. `serde_json`
   remains in the normal inventory above and is also used by tests.
 
 
@@ -318,65 +318,65 @@ the request's selected byte ceiling.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-001-AC-1 | The driver's normal and build dependency set matches QSL ADR-011 §6.1 and the specified driver-layer exceptions: it contains exactly `qsl-analyze`, `qsl-foundation`, `qsl-package`, `qsl-replay`, `qsl-route`, `qsl-semantics`, `quire-exact`, `quire-contract-codegen`, `quire-contract-model`, `quire-contract-runtime`, `quire-canonical`, `quire-observation`, `quire-semantic-value`, `serde`, `serde_json` and `thiserror`; `serde_json` is required for production projection of FR-331's retained optional `bounds` member and RT supplies FR-015/FR-017's native retained program/arena types. RT's normal/build closure contains no QSL package, IR/model, driver or codegen backedge. The driver's `quire-contract-model` is the one CG's IR crate depends on, CG's one QSL edge is `qsl-replay`, and the lock holds exactly one `quire-contract-model` package, so the driver's direct edge, CG's IR crate and QSL's `qsl-package` all resolve the same package id. | Test (TC-005) |
+| FR-001-AC-1 | The driver's normal and build dependency set matches FSL ADR-011 §6.1 and the specified driver-layer exceptions: it contains exactly `fsl-analyze`, `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`, `filament-exact`, `quire-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`, `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`, `serde_json` and `thiserror`; `serde_json` is required for production projection of FR-331's retained optional `bounds` member and RT supplies FR-015/FR-017's native retained program/arena types. RT's normal/build closure contains no FSL package, IR/model, driver or codegen backedge. The driver's `filament-contract-model` is the one CG's IR crate depends on, CG's one FSL edge is `fsl-replay`, and the lock holds exactly one `filament-contract-model` package, so the driver's direct edge, CG's IR crate and FSL's `fsl-package` all resolve the same package id. | Test (TC-005) |
 | FR-001-AC-2 | A run whose registry holds a `BackendId` with no CG kind refuses before any negotiation, with `invalid_capability`/`unknown-backend` and the unconverted ids in bytewise order. | Test (TC-002) |
 | FR-001-AC-3 | `route` is called only after negotiation, and only for `supported` items. | Test (TC-003) |
 | FR-001-AC-4 | The steps run in the order of the Description: compile and emit, the E5 read, the candidate step, conversion, negotiation, routing, generation. | Test (TC-001) |
-| FR-001-AC-5 | Each command-level refusal carries its step, catalog code and outcome kind. A `Compile` refusal's code renders `code/cause` when the refusing stage names a cause (e.g. `missing_import`/`missing-selection`), not just the bare code, including QSL's native extension refusal cause. | Test (TC-004, TC-007, TC-008) |
+| FR-001-AC-5 | Each command-level refusal carries its step, catalog code and outcome kind. A `Compile` refusal's code renders `code/cause` when the refusing stage names a cause (e.g. `missing_import`/`missing-selection`), not just the bare code, including FSL's native extension refusal cause. | Test (TC-004, TC-007, TC-008) |
 | FR-001-AC-6 | CG generation is called once, after routing, over the routed items only, each with its request index, its admitted `CheckedNodeId`, its routed backend and its kind; its output is keyed by request index, ascending; a missing kind context refuses the run, and a routed item naming a node the checked package does not hold is an internal fault. | Test (TC-006, TC-007) |
 | FR-001-AC-7 | The E5 read receives every caller-supplied FR-056 domain package document under its supplied identity and bytes unchanged, then admits the emitted v2 bytes; an IR refusal is an internal fault at the hand-off before any backend conversion. | Test (TC-004, TC-006) |
 | FR-001-AC-8 | CG generation's output carries the FR-014 claim map CG derived for the Kani group (IR-294), `Some` whenever one ran; a node whose operation has no derivable claim settles `Unsupported` with `no_derivable_claim` and does not affect its routed siblings' records or harnesses. | Test (TC-006) |
-| FR-001-AC-9 | The same caller-owned `Cancel` handle is passed to QSL `parse`, `select`, `check` and `package`; cancellation returns `DriverRefusal::Cancelled` with QSL's stage and cause, and the driver adds no category or exit mapping. | Test (TC-019) |
+| FR-001-AC-9 | The same caller-owned `Cancel` handle is passed to FSL `parse`, `select`, `check` and `package`; cancellation returns `DriverRefusal::Cancelled` with FSL's stage and cause, and the driver adds no category or exit mapping. | Test (TC-019) |
 | FR-001-AC-10 | E5 receives the E4 `EmittedUnit` source provision; the returned `Driven` contains no `EmittedUnit`, retains the `CheckedUnit` root source for diagnostic loci, retains no library source under the current empty `DependencyInput`, and retains no more root-source bytes than `SpineLimits.source.source_bytes`. | Test (TC-019) |
-| FR-001-AC-11 | The normal/build dependency closure rooted at `quire-driver` contains no `quire-cache` package. | Test (TC-005) |
-| FR-001-AC-12 | For each request item, the driver's CG negotiation input carries the typed IR tag/form projected from the admitted checked requirement and node named by that same item's QSL requirement record; generation preserves that item's exact application occurrence and direct conversion-context occurrence as ordered lowering roots, including when several items share one application node. No caller-computed lowerability/refusal or display/debug-derived form substitutes for the checked form. | Test (TC-006) |
-| FR-001-AC-13 | The driver's internal scalar-generation composition receives the caller's unchanged QSL `Call`, `ObjectEnvironment`, and `Cancel` with the request's compile input. QSL binding and IR admission use the package produced by that same request: the exact emitted bytes are admitted once and are not reconstructed or re-admitted. The generated result remains associated with that call and admitted package in the driver library. | Test (TC-006) |
-| FR-001-AC-14 | For each routed scalar item selected for native proof, the driver joins the QSL item and CG driver item by request index and exact `OccurrenceKey`, then uses QSL `bind_scalar_operands` on that call's package and exact function/application/occurrence. Bound operands remain in QSL order, matching the CG scalar identity's argument order, with their argument source and ordinal; `ScalarLimits` come from the same call's accounting. Two occurrences on one node remain distinct. No positional zip or node-only occurrence selection is permitted. | Test (TC-006) |
-| FR-001-AC-15 | CG receives the original E5-admitted `CheckedPackageV2` by reference alongside its existing admitted `ContractPackageV1`, complete FR-330 position vector, routed items, and generation contexts. The driver retains and shares the original admitted source owner without reconstruction or deep copying. The position vector retains one position per original request item, in driver-index order (a `DriverItem` for each bound item, an excluded position, keeping the item's `node_id` and counted in driver indices, for each export-refused item; excluded positions are absent from the FR-331 envelope), and a separate `ContextRoot` for each selected direct conversion occurrence; context roots create no route, claim, or generated item and do not advance driver indices. The exact QSL call and bound operands remain in a driver-owned sidecar keyed by request index. | Test (TC-006) |
-| FR-001-AC-16 | No selected scalar item means no scalar binding or native execution and no fallback selection. QSL's typed missing/ambiguous call or occurrence refusal is preserved unchanged. A missing/ambiguous required conversion context preserves its owning QSL/IR/CG typed refusal; `None` is valid only when the exact QSL item has no conversion context. An admitted-package/request-position/routed-item mismatch preserves the owning IR/CG typed refusal, or is a driver `runtime_invariant` fault when the driver detects an inconsistent join. Each case stops before native execution or replay and invents no call, occurrence, context root, or operand order. | Test (TC-006) |
+| FR-001-AC-11 | The normal/build dependency closure rooted at `filament-driver` contains no `filament-cache` package. | Test (TC-005) |
+| FR-001-AC-12 | For each request item, the driver's CG negotiation input carries the typed IR tag/form projected from the admitted checked requirement and node named by that same item's FSL requirement record; generation preserves that item's exact application occurrence and direct conversion-context occurrence as ordered lowering roots, including when several items share one application node. No caller-computed lowerability/refusal or display/debug-derived form substitutes for the checked form. | Test (TC-006) |
+| FR-001-AC-13 | The driver's internal scalar-generation composition receives the caller's unchanged FSL `Call`, `ObjectEnvironment`, and `Cancel` with the request's compile input. FSL binding and IR admission use the package produced by that same request: the exact emitted bytes are admitted once and are not reconstructed or re-admitted. The generated result remains associated with that call and admitted package in the driver library. | Test (TC-006) |
+| FR-001-AC-14 | For each routed scalar item selected for native proof, the driver joins the FSL item and CG driver item by request index and exact `OccurrenceKey`, then uses FSL `bind_scalar_operands` on that call's package and exact function/application/occurrence. Bound operands remain in FSL order, matching the CG scalar identity's argument order, with their argument source and ordinal; `ScalarLimits` come from the same call's accounting. Two occurrences on one node remain distinct. No positional zip or node-only occurrence selection is permitted. | Test (TC-006) |
+| FR-001-AC-15 | CG receives the original E5-admitted `CheckedPackageV2` by reference alongside its existing admitted `ContractPackageV1`, complete FR-330 position vector, routed items, and generation contexts. The driver retains and shares the original admitted source owner without reconstruction or deep copying. The position vector retains one position per original request item, in driver-index order (a `DriverItem` for each bound item, an excluded position, keeping the item's `node_id` and counted in driver indices, for each export-refused item; excluded positions are absent from the FR-331 envelope), and a separate `ContextRoot` for each selected direct conversion occurrence; context roots create no route, claim, or generated item and do not advance driver indices. The exact FSL call and bound operands remain in a driver-owned sidecar keyed by request index. | Test (TC-006) |
+| FR-001-AC-16 | No selected scalar item means no scalar binding or native execution and no fallback selection. FSL's typed missing/ambiguous call or occurrence refusal is preserved unchanged. A missing/ambiguous required conversion context preserves its owning FSL/IR/CG typed refusal; `None` is valid only when the exact FSL item has no conversion context. An admitted-package/request-position/routed-item mismatch preserves the owning IR/CG typed refusal, or is a driver `runtime_invariant` fault when the driver detects an inconsistent join. Each case stops before native execution or replay and invents no call, occurrence, context root, or operand order. | Test (TC-006) |
 | FR-001-AC-17 | For the FR-010-AC-4 vector, the run completes, `Driven` holds the settlements of A (driver index 0) and C (driver index 2) and B's refusal, unchanged, with its occurrence key and driver index 1 in the per-item refusal member, and no `DriverRefusal` is returned. | Test (TC-017) |
 | FR-001-AC-18 | When the export refuses every requested item, `Driven` holds no settled item and one refusal in the per-item refusal member for each requested item. | Test (TC-017) |
 | FR-001-AC-19 | An export that fails as a whole refuses the run with the export's typed refusal, and the refusal carries the bindings-export step. | Test (TC-017) |
 | FR-001-AC-20 | An occurrence key the driver built that the export reports as naming no requirement record is a `runtime_invariant` internal fault. | Test (TC-017) |
 | FR-001-AC-21 | When the package declares no abstraction relation, the driver does not call the export, every item goes to CG, and the per-item refusal member is empty. | Test (TC-017) |
 | FR-001-AC-22 | When CG returns `EnvelopeRefusal::ContractPackageReadRefused`, the driver emits an FR-272 refusal diagnostic at `package_read`, retaining the complete CG projection unchanged as typed source data: `code`, `path`, `cause`, `locus`, `contract_version`, `document_pointer`, `expected` and `actual`. The diagnostic carries the same code and cause, has category `refusal`, maps `path` to the FR-274 `json_path` location, and carries `locus` as a `CheckedNodeId` payload when present; every returned code has an FR-271 row. When CG returns `ContractPackageReadIncomplete`, the driver emits `stage_limit_exceeded` at `package_read` with category `incomplete` (numeric category 22) and retains the complete CG projection unchanged (`limit_kind`, `limit`, `consumed`, `path`). The closed map is `Bytes` → `input-bytes-exceeded` / `CheckedPackageReadLimits.bytes`; `Nodes` → `node-count-exceeded` / `CheckedPackageReadLimits.nodes`; `Edges` → `edge-count-exceeded` / `CheckedPackageReadLimits.edges`; `Occurrences` → `occurrence-count-exceeded` / `CheckedPackageReadLimits.occurrences`; `Work` → `work-budget-exceeded` / `CheckedPackageReadLimits.work`. For each mapped case, `bound` is `limit`, `actual` is `consumed`, `kind` is the cause tag, `setting` is the listed limits-argument member, and `path` supplies the FR-274 `json_path` location when present (absent for `Bytes`). Although `CheckedPackageReadLimits` includes `diagnostics`, the ContractPackage reader reports no diagnostics stop. If CG nevertheless returns `Diagnostics`, the driver returns a `runtime_invariant` fault at `package_read` while retaining the CG projection unchanged, with no FR-272 limit diagnostic. An owner catalog acquisition failure is an operational `runtime_invariant` fault, retaining the native IR catalog error or CG catalog path and message unchanged; it is not a malformed-package refusal or a reader-limit diagnostic. No reader variant is converted to the E5 result, and no other `limit_kind` branch is accepted. Registration of these limits under FR-460/FR-461 entry points/defaults is a deferred follow-up under IR-896. | Test (TC-004) |
-| FR-001-AC-23 | Two generated function items that select the same checked node at different application occurrences retain two distinct contexts keyed by their original request indices. Each context contains the QSL-selected function declaration and exact occurrence, its producing source and dependency lock, the same E5-admitted package identity, and the matching CG `KaniObligationIdentity`; CG `ReplayInputs` use those retained source, lock, accounting, stage, domain and replay inputs; playback intake uses the smaller caller/proving-run byte and value decode limits. No identity or source is reconstructed from caller text or proof output. | Planned (TC-016; IR-610 E9 function producer; IR-1121 CG current-V2 function proof producer) |
-| FR-001-AC-24 | A QSL selection, IR admission or CG generation refusal is preserved as that owner’s typed refusal. After all three succeed, a missing, duplicate or mismatched request-index, occurrence, package, declaration or generated-identity association returns a driver `runtime_invariant` fault before provider execution or replay, without selecting another item or fallback context. | Planned (TC-016; IR-610 E9 function producer; IR-1121 CG current-V2 function proof producer) |
-| FR-001-AC-25 | The driver passes the caller's `SpineLimits.package.emit()` to QSL admission evidence at E5, preserving the exact `emit.output_bytes` value used for E4, including a caller-selected value. | Test and Inspection (TC-001) |
+| FR-001-AC-23 | Two generated function items that select the same checked node at different application occurrences retain two distinct contexts keyed by their original request indices. Each context contains the FSL-selected function declaration and exact occurrence, its producing source and dependency lock, the same E5-admitted package identity, and the matching CG `KaniObligationIdentity`; CG `ReplayInputs` use those retained source, lock, accounting, stage, domain and replay inputs; playback intake uses the smaller caller/proving-run byte and value decode limits. No identity or source is reconstructed from caller text or proof output. | Planned (TC-016; IR-610 E9 function producer; IR-1121 CG current-V2 function proof producer) |
+| FR-001-AC-24 | A FSL selection, IR admission or CG generation refusal is preserved as that owner’s typed refusal. After all three succeed, a missing, duplicate or mismatched request-index, occurrence, package, declaration or generated-identity association returns a driver `runtime_invariant` fault before provider execution or replay, without selecting another item or fallback context. | Planned (TC-016; IR-610 E9 function producer; IR-1121 CG current-V2 function proof producer) |
+| FR-001-AC-25 | The driver passes the caller's `SpineLimits.package.emit()` to FSL admission evidence at E5, preserving the exact `emit.output_bytes` value used for E4, including a caller-selected value. | Test and Inspection (TC-001) |
 
 ## Dependencies
 
 - IR-1121 supplies CG’s current-V2 generated function harness and typed proving-run identity. Until it lands, the function context and provider join in AC-23/24 remain Planned; the driver cannot manufacture either value.
-- QSL ADR-011 §2.1, §6.1 driver row, §7.1 and T-13; ADR-012 §7.1 and §7.2.
-- QSL `qsl-replay` (typed spine lifecycle) and `qsl-route` (registry, candidate
+- FSL ADR-011 §2.1, §6.1 driver row, §7.1 and T-13; ADR-012 §7.1 and §7.2.
+- FSL `fsl-replay` (typed spine lifecycle) and `fsl-route` (registry, candidate
   step, routing step).
-- QSL FR-330 owns ContractPackage reader results; QSL FR-271/FR-272 own the
+- FSL FR-330 owns ContractPackage reader results; FSL FR-271/FR-272 own the
   reader code, cause, category and incomplete-limit diagnostic vocabulary.
   FR-460/FR-461 registration for ContractPackage and I2 reader settings is a
   deferred follow-up under IR-896.
 - CG `BackendKind::from_descriptor`,
   `negotiate_backend_provider` and `generate_routed` (CG FR-022,
   FR-330, IR-293, IR-294, IR-298, IR-300, IR-302).
-- QSL FR-367's `bind_scalar_operands` contract for binding the admitted call's
+- FSL FR-367's `bind_scalar_operands` contract for binding the admitted call's
   named values to one exact scalar application occurrence; IR FR-049's
   context-only lowering roots; and CG's typed `ContractRequestPosition`
-  accounting. These APIs retain their owning QSL, IR and CG semantics. The
+  accounting. These APIs retain their owning FSL, IR and CG semantics. The
   driver owns only the request-index/occurrence join and the per-item context.
-- IR `quire-contract-model`: `read_checked_package`, `CheckedPackageV2`,
+- IR `filament-contract-model`: `read_checked_package`, `CheckedPackageV2`,
   `CheckedNodeId`.
-- [CG FR-019](ix://agent-ix/quire-contract-codegen/FR-019) defines the typed
+- [CG FR-019](ix://agent-ix/filament-contract-codegen/FR-019) defines the typed
   IR tag/form negotiation input, refusal ownership and classification order;
-  [CG TC-030](ix://agent-ix/quire-contract-codegen/TC-030) names the implemented
+  [CG TC-030](ix://agent-ix/filament-contract-codegen/TC-030) names the implemented
   and planned form selectors. The driver projects the checked IR value and
   does not implement CG's classifier.
-- QSL ADR-029 LC-3 and CB-4, and QSL FR-276 cancellation semantics.
+- FSL ADR-029 LC-3 and CB-4, and FSL FR-276 cancellation semantics.
 - [FR-020](FR-020-project-requirement-records-into-codegen-input.md) owns the per-occurrence requirement-record projection into CG's generation input.
 
 ## Status
 
 Steps 1 to 7 and the E5 hand-off are implemented. The scalar call-to-routed-
 generation composition in FR-001-AC-13 through FR-001-AC-16 remains planned;
-it is a driver-library boundary, not a CLI extension or a QSL/CG API change.
+it is a driver-library boundary, not a CLI extension or a FSL/CG API change.
 
 The excluded position for an export-refused item depends on a CG change
 (IR-915). Today CG requires (1) the position vector to equal the
@@ -406,11 +406,11 @@ the `bounded_domain` typing it; a `reference` operand whose target is a
 `value` node with a literal body is a literal operand instead, owning no
 bound of its own (constrained to exactly its own value); and the result
 bound is the domain typing the node's result, the one `bounded_domain` a
-narrowing `conversion` alone narrows the node to (QSL's own shape for an
+narrowing `conversion` alone narrows the node to (FSL's own shape for an
 expression in a bounded context: the node's own type is the plain scalar
 type, and the declared bound types a separate `conversion` node that
 consumes it), or the one reachable bound that is nobody's operand. On a
-QSL-emitted package:
+FSL-emitted package:
 
 - A unary operation over one bounded parameter (e.g. `-z` over `z: Int[0,
   9]`) settles `Supported`, ranging its one argument over `z`'s own domain.
@@ -426,14 +426,14 @@ QSL-emitted package:
   settles `Unsupported`/`ResultBoundUnreachable`, naming the reachable and
   declared ranges: no harness is rendered, since no argument assignment
   gives a result a harness could assume. Directly in the return context
-  (e.g. `x + 100` into `Int[0, 10]` over `x: Int[0, 9]`), QSL's own checker
+  (e.g. `x + 100` into `Int[0, 10]` over `x: Int[0, 9]`), FSL's own checker
   proves the identical disjoint-interval fact first and refuses to compile
   the unit at all (`Unproved`/`unproved-range`, at the check stage), so CG
   is never called for that shape. That is one shape, not a general
   guarantee: CG's own reachability computation ignores path conditions
   (below), so the identical refusal is reached whenever the same
-  arithmetic sits behind a branch QSL's checker proves dead -- `if x > 20
-  then x + 100 else 0` compiles, because QSL never discharges a coercion
+  arithmetic sits behind a branch FSL's checker proves dead -- `if x > 20
+  then x + 100 else 0` compiles, because FSL never discharges a coercion
   inside a branch it proves unreachable, and the `+` still settles
   `Unsupported`/`ResultBoundUnreachable` when routed.
 
@@ -449,7 +449,7 @@ Real limits remain, all refusals rather than internal faults:
   narrowed by the guard).
 - **`RequiresBound` is not confined to a plain-`Integer` parameter.** Any
   operand that is neither bounded nor a literal reaches it, including a
-  nested subexpression and a negative literal (QSL emits `-1` as a negate
+  nested subexpression and a negative literal (FSL emits `-1` as a negate
   node, not an inline literal): the outer `+` of `(x + 1) + 1` over
   `Int[0, 9]` into `Int[0, 20]`; both the `*` and the negate of `x * -1`
   over `Int[1, 9]` into `Int[-9, -1]`; and the negate of `-(x + 1)`.
@@ -477,9 +477,9 @@ FR-014 crate the Kani arm generated (`Cargo.toml`, `src/lib.rs` and
 is blocked on IR-301. `Driven::generation` still carries them unchanged for
 a future caller.
 
-`qsl_package::CheckedPackage::graph().requirements()` (#454, QSL-258; keyed
+`fsl_package::CheckedPackage::graph().requirements()` (#454, QSL-258; keyed
 per scalar operation application by QSL-266, #459) is now the sole source
-of the driver's requested items: `qsl_route::request::items_from_requirements`
+of the driver's requested items: `fsl_route::request::items_from_requirements`
 writes one item per record, in occurrence-key order, each already carrying
 the node it names, its capability kind, its extent and its candidate outcome
 against the registry for the backend the request names (if any). The driver

@@ -3,14 +3,14 @@ id: TC-033
 title: "Prepare a monitor program from a plan root under one budget"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-019
+  - target: ix://agent-ix/filament-driver/FR-019
     type: verifies
 ---
 # TC-033: Prepare a monitor program from a plan root under one budget
 
 ## Description
 
-Verify that one genuine QSL plan root, its independent selection and one
+Verify that one genuine FSL plan root, its independent selection and one
 `NativeJoinBudget` yield one runtime Program with an exact `Layout`, or one
 typed first refusal, with every phase charging the same budget.
 
@@ -20,7 +20,7 @@ typed first refusal, with every phase charging the same budget.
    observation progress view. Select the lock, root, clause, subject,
    occurrence, profile, target and time dimension independently, and prepare
    with an ample budget; confirm the driver makes no strict read. Compare every `Layout`
-   field with the IR layout context, the receipt and QSL's and the owner's
+   field with the IR layout context, the receipt and FSL's and the owner's
    values. Drop the plan root, package and request and build twice
    (FR-019-AC-1).
 2. Record the successful totals and, for each phase and resource, the
@@ -45,7 +45,7 @@ typed first refusal, with every phase charging the same budget.
    (FR-019-AC-10).
 
 Tag the tests `#[trace("TC-033", "<criterion id>")]`. Steps 1 to 6 run in
-`quire-integration` with released QSL, IR, observation and RT; a hand-built
+`filament-integration` with released FSL, IR, observation and RT; a hand-built
 plan alone receives no credit.
 
 ## Expected Results
@@ -54,7 +54,7 @@ plan alone receives no credit.
 - Step 2: exact totals succeed; each work and storage one-below run refuses
   in its phase with the first unpaid kind, amount and locus and earlier
   consumption retained.
-- Step 3: each QSL or IR refusal arrives unchanged with its stated category;
+- Step 3: each FSL or IR refusal arrives unchanged with its stated category;
   the second emission refuses `ForeignEmission`.
 - Step 4: the earlier phase wins; cancellation returns `cancelled` with no
   program.

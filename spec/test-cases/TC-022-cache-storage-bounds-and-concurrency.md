@@ -3,7 +3,7 @@ id: TC-022
 title: "Keep cache writes atomic and within the caller's size limit"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-012
+  - target: ix://agent-ix/filament-driver/FR-012
     type: verifies
 ---
 # TC-022: Keep cache writes atomic and within the caller's size limit

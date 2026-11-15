@@ -3,7 +3,7 @@ id: TC-031
 title: "Retain native monitor lowering ownership and operating boundaries"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-017
+  - target: ix://agent-ix/filament-driver/FR-017
     type: verifies
 ---
 # TC-031: Retain native monitor lowering ownership and operating boundaries
@@ -12,7 +12,7 @@ relationships:
 
 Verify [FR-017](../functional/FR-017-lower-and-retain-admitted-monitor-programs.md)
 through native owner facts and RT-native output. Exercise the agreed public
-`quire_driver::monitor::lowering::lower_scalar_functions` helper separately
+`filament_driver::monitor::lowering::lower_scalar_functions` helper separately
 from complete monitor selection, construction and accounting. Its implementation
 shares the private worklist with the full by-value lowerer; no fake full lowerer
 or second plan DTO is introduced by the test harness.
@@ -23,7 +23,7 @@ or second plan DTO is introduced by the test harness.
    bodies and every identity in FR-017's closed initial scalar table: add, sub,
    mul, negate, lt/le/gt/ge, not, and, or. Use parameter references and genuine
    nested supported expression references, with exact plain metadata and native
-   operator/arity/types. Compile/check/emit through public QSL
+   operator/arity/types. Compile/check/emit through public FSL
    and strictly admit the exact bytes through IR. This component setup invokes
    no monitor-plan producer and does not depend on its separate qualification.
    Obtain actual native callable headers, primitive type projections, node

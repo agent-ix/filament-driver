@@ -4,7 +4,7 @@
     "models": [],
     "program": {
       "source": {
-        "file": "ir608-run.qsl",
+        "file": "ir608-run.fsl",
         "authority": "issuer",
         "identity": "document",
         "document": "CliFrontend",

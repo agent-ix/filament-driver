@@ -3,7 +3,7 @@ id: TC-007
 title: "Generation refusals are typed"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-007: Generation refusals are typed

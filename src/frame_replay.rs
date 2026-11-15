@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Retained request to QSL-selected frame replay preparation (FR-009).
+//! Retained request to FSL-selected frame replay preparation (FR-009).
 
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
+use filament_contract_model::ContractSourceV1;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
 use quire_contract_codegen::{
     FrameReplay, FrameReplayError, FrameReplayInputs, SelectedFrameTarget,
 };
-use quire_contract_model::ContractSourceV1;
 
 use crate::{Driven, DriverFault, DriverRefusal};
 
 /// The original owner-specific failure of frame replay preparation.
 #[derive(Debug, thiserror::Error)]
 pub enum FrameReplayFailure {
-    /// QSL refused the supplied dependency selection before call-site selection.
+    /// FSL refused the supplied dependency selection before call-site selection.
     #[error(transparent)]
     Dependencies(DependencyInputRefusal),
-    /// QSL refused call-site selection; the complete typed payload is unchanged.
+    /// FSL refused call-site selection; the complete typed payload is unchanged.
     #[error(transparent)]
-    CallSite(Box<qsl_replay::CallSiteRefusal>),
+    CallSite(Box<fsl_replay::CallSiteRefusal>),
     /// The selected frame is not associated with the retained driver run.
     #[error(transparent)]
     Driver(Box<DriverRefusal>),
@@ -28,10 +28,10 @@ pub enum FrameReplayFailure {
 }
 
 impl Driven {
-    /// Prepares one operation-frame replay using QSL's exact declaring-owner target.
+    /// Prepares one operation-frame replay using FSL's exact declaring-owner target.
     ///
     /// `inputs.selected_target` must be `None`: the driver supplies that value from
-    /// QSL. The selected item must name this run's admitted package and an original
+    /// FSL. The selected item must name this run's admitted package and an original
     /// request's complete occurrence. Public request inventory edits do not change
     /// that retained association. The source, domains and dependencies must reproduce
     /// this run's emitted package. No request item, settlement or terminal is created.
@@ -40,7 +40,7 @@ impl Driven {
     /// through `FrameReplay::replay` under CG's refusal and settlement contracts.
     ///
     /// # Errors
-    /// Returns the unchanged QSL or CG failure, or a driver `runtime_invariant`
+    /// Returns the unchanged FSL or CG failure, or a driver `runtime_invariant`
     /// fault for missing, prepopulated or mismatched selection associations.
     pub fn prepare_frame_replay(
         &self,
@@ -63,7 +63,7 @@ impl Driven {
                 .collect::<Vec<_>>(),
         )
         .map_err(FrameReplayFailure::Dependencies)?;
-        let located = qsl_replay::call_site(
+        let located = fsl_replay::call_site(
             SourceIdentity::new(&inputs.run.source.authority, &inputs.run.source.identity),
             inputs.run.package_name.clone(),
             &inputs.run.source.identity,
@@ -110,9 +110,9 @@ impl Driven {
 /// Stable ownership classification for a frame preparation failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FrameReplayFailureCode {
-    /// QSL dependency admission refused.
+    /// FSL dependency admission refused.
     Dependencies,
-    /// QSL operation selection refused.
+    /// FSL operation selection refused.
     CallSite,
     /// The driver detected a broken retained association.
     RuntimeInvariant,

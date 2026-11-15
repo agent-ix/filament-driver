@@ -205,7 +205,7 @@ mod tests {
         assert!(missing.to_string().contains("could not read"));
 
         let path = std::env::temp_dir().join(format!(
-            "quire-provider-config-{}-{}.json",
+            "filament-provider-config-{}-{}.json",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

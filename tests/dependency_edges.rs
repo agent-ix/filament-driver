@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The driver's dependency edges match its authorised layer inventory,
 //! read from `cargo metadata`'s resolved
-//! graph. QSL packages are identified by their source URL, and normal and
+//! graph. FSL packages are identified by their source URL, and normal and
 //! build edges both count.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -10,10 +10,10 @@ use std::process::Command;
 use ix_trace_rs::trace;
 use serde_json::Value;
 
-/// The source of every package built from the QSL repository.
-const QSL_SOURCE: &str = "git+https://github.com/agent-ix/quire-spec-language";
-/// The QSL root crate, which is not a layer crate (ADR-011 §6.1 crate map).
-const QSL_ROOT: &str = "quire-spec-language";
+/// The source of every package built from the FSL repository.
+const FSL_SOURCE: &str = "git+https://github.com/agent-ix/filament-spec-language";
+/// The FSL root crate, which is not a layer crate (ADR-011 §6.1 crate map).
+const FSL_ROOT: &str = "filament-spec-language";
 
 struct Package {
     name: String,
@@ -21,10 +21,10 @@ struct Package {
 }
 
 impl Package {
-    fn is_qsl(&self) -> bool {
+    fn is_fsl(&self) -> bool {
         self.source
             .as_deref()
-            .is_some_and(|source| source.starts_with(QSL_SOURCE))
+            .is_some_and(|source| source.starts_with(FSL_SOURCE))
     }
 }
 
@@ -162,31 +162,31 @@ impl Graph {
 #[test]
 fn tc_005_driver_edges_match_the_adr_011_allow_list() {
     let graph = Graph::load();
-    assert_eq!(graph.package(&graph.root).name, "quire-driver");
+    assert_eq!(graph.package(&graph.root).name, "filament-driver");
 
-    // §6.1 driver row: QSL layer crates, quire-exact (QSL's caller-owned
+    // §6.1 driver row: FSL layer crates, filament-exact (FSL's caller-owned
     // Cancel API), CG, IR's model crate (E5's reader and `CheckedNodeId`),
-    // RT (retained native program/arena types), QSV (shared catalog owner types), serde, serde_json (FR-331 bounds
+    // RT (retained native program/arena types), FSV (shared catalog owner types), serde, serde_json (FR-331 bounds
     // projection) and thiserror. Never the
-    // QSL root crate.
+    // FSL root crate.
     let direct: BTreeSet<&str> = graph
         .deps_of(&graph.root)
         .map(|p| p.name.as_str())
         .collect();
     let expected: BTreeSet<&str> = [
-        "qsl-analyze",
-        "qsl-foundation",
-        "qsl-package",
-        "qsl-replay",
-        "qsl-route",
-        "qsl-semantics",
-        "quire-exact",
+        "fsl-analyze",
+        "fsl-foundation",
+        "fsl-package",
+        "fsl-replay",
+        "fsl-route",
+        "fsl-semantics",
+        "filament-exact",
         "quire-contract-codegen",
-        "quire-contract-model",
-        "quire-contract-runtime",
+        "filament-contract-model",
+        "filament-contract-runtime",
         "quire-canonical",
-        "quire-observation",
-        "quire-semantic-value",
+        "filament-observation",
+        "filament-semantic-value",
         "serde",
         "serde_json",
         "thiserror",
@@ -198,8 +198,8 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         graph.driver_dev_dependencies,
         [
             "ix-trace-rs".to_owned(),
-            "qsl-semantics".to_owned(),
-            "quire-checked".to_owned()
+            "fsl-semantics".to_owned(),
+            "filament-checked".to_owned()
         ]
         .into_iter()
         .collect()
@@ -207,35 +207,35 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
     assert!(
         graph.reachable_from(&graph.root).iter().all(|id| !matches!(
             graph.package(id).name.as_str(),
-            "quire-cache" | "quire-plugin-host" | "ix-cli-kit"
+            "filament-cache" | "filament-plugin-host" | "ix-cli-kit"
         )),
-        "the quire-driver transitive dependency closure reaches a downstream implementation crate"
+        "the filament-driver transitive dependency closure reaches a downstream implementation crate"
     );
-    let driver_qsl: Vec<&Package> = graph.deps_of(&graph.root).filter(|p| p.is_qsl()).collect();
-    assert_eq!(driver_qsl.len(), 6, "six QSL edges, by source");
-    assert!(driver_qsl.iter().all(|p| p.name != QSL_ROOT));
+    let driver_fsl: Vec<&Package> = graph.deps_of(&graph.root).filter(|p| p.is_fsl()).collect();
+    assert_eq!(driver_fsl.len(), 6, "six FSL edges, by source");
+    assert!(driver_fsl.iter().all(|p| p.name != FSL_ROOT));
 
-    let runtime = graph.ids_named("quire-contract-runtime");
+    let runtime = graph.ids_named("filament-contract-runtime");
     assert_eq!(runtime.len(), 1, "one runtime package");
     assert!(
         graph.reachable_from(runtime[0]).iter().all(|id| {
             let package = graph.package(id);
-            !package.is_qsl() && !matches!(package.name.as_str(),
-                "quire-contract-model" | "quire-contract-ir" | "quire-driver" | "quire-contract-codegen")
+            !package.is_fsl() && !matches!(package.name.as_str(),
+                "filament-contract-model" | "filament-contract-ir" | "filament-driver" | "quire-contract-codegen")
         }),
         "the runtime's normal/build closure reaches an upstream compiler, IR/model or driver package"
     );
 
-    assert_eq!(graph.ids_named("quire-driver").len(), 1);
+    assert_eq!(graph.ids_named("filament-driver").len(), 1);
     let cli = graph.ids_named("fsl-cli");
     assert_eq!(cli.len(), 1, "one CLI package");
     let cli_direct: BTreeSet<&str> = graph.deps_of(cli[0]).map(|p| p.name.as_str()).collect();
     for required in [
-        "quire-driver",
-        "quire-cache",
-        "quire-plugin-host",
+        "filament-driver",
+        "filament-cache",
+        "filament-plugin-host",
         "ix-cli-kit",
-        "quire-semantic-value",
+        "filament-semantic-value",
     ] {
         assert!(
             cli_direct.contains(required),
@@ -246,54 +246,54 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         graph.workspace_default_members.contains(cli[0]),
         "fsl-cli is a workspace default member"
     );
-    let cache = graph.ids_named("quire-cache");
+    let cache = graph.ids_named("filament-cache");
     if !cache.is_empty() {
         assert_eq!(cache.len(), 1, "one downstream cache implementation");
         assert!(
-            graph.deps_of(cache[0]).any(|p| p.name == "quire-driver"),
-            "quire-cache must depend on the driver-owned cache interface"
+            graph.deps_of(cache[0]).any(|p| p.name == "filament-driver"),
+            "filament-cache must depend on the driver-owned cache interface"
         );
     }
 
-    // §7.1 / FB-05: CG's one normal or build edge into QSL is `qsl-replay`.
+    // §7.1 / FB-05: CG's one normal or build edge into FSL is `fsl-replay`.
     let cg = graph.ids_named("quire-contract-codegen");
     assert_eq!(cg.len(), 1, "one CG revision");
-    let cg_qsl: Vec<&Package> = graph.deps_of(cg[0]).filter(|p| p.is_qsl()).collect();
-    let cg_qsl_names: Vec<&str> = cg_qsl.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(cg_qsl_names, ["qsl-replay"]);
+    let cg_fsl: Vec<&Package> = graph.deps_of(cg[0]).filter(|p| p.is_fsl()).collect();
+    let cg_fsl_names: Vec<&str> = cg_fsl.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(cg_fsl_names, ["fsl-replay"]);
 
     // The driver's model crate is the one CG's IR crate re-exports, so a
     // `CheckedPackageV2` the driver reads is the type CG generates from.
     let driver_model: Vec<&String> = graph.deps[&graph.root]
         .iter()
-        .filter(|id| graph.package(id).name == "quire-contract-model")
+        .filter(|id| graph.package(id).name == "filament-contract-model")
         .collect();
     assert_eq!(driver_model.len(), 1);
     let cg_ir: Vec<&String> = graph.deps[cg[0]]
         .iter()
-        .filter(|id| graph.package(id).name == "quire-contract-ir")
+        .filter(|id| graph.package(id).name == "filament-contract-ir")
         .collect();
     assert_eq!(cg_ir.len(), 1, "CG has one IR edge");
     assert!(
         graph.deps[cg_ir[0]].contains(driver_model[0]),
-        "the driver's `quire-contract-model` ({}) is not CG's IR's",
+        "the driver's `filament-contract-model` ({}) is not CG's IR's",
         driver_model[0]
     );
 
-    // One copy of `quire-contract-model` across the whole graph, so the
-    // driver's direct edge, CG's IR crate and QSL's `qsl-package` all resolve
+    // One copy of `filament-contract-model` across the whole graph, so the
+    // driver's direct edge, CG's IR crate and FSL's `fsl-package` all resolve
     // the same package id and no IR type crosses between copies.
     assert_eq!(
-        graph.ids_named("quire-contract-model").len(),
+        graph.ids_named("filament-contract-model").len(),
         1,
-        "one quire-contract-model copy"
+        "one filament-contract-model copy"
     );
-    let qsl_package = graph.ids_named("qsl-package");
-    assert_eq!(qsl_package.len(), 1, "one QSL package emitter");
+    let fsl_package = graph.ids_named("fsl-package");
+    assert_eq!(fsl_package.len(), 1, "one FSL package emitter");
     assert!(
         graph
-            .reachable_from(qsl_package[0])
+            .reachable_from(fsl_package[0])
             .contains(driver_model[0].as_str()),
-        "QSL's package emitter must resolve the same model package as the driver and CG"
+        "FSL's package emitter must resolve the same model package as the driver and CG"
     );
 }

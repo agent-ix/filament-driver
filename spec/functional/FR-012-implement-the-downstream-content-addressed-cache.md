@@ -3,26 +3,26 @@ id: FR-012
 title: "Implement the downstream content-addressed cache"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-driver/FR-007
+  - target: ix://agent-ix/filament-driver/FR-007
     type: references
-  - target: ix://agent-ix/quire-spec-language/ADR-029
+  - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
 ---
 # FR-012: Implement the downstream content-addressed cache
 
 ## Description
 
-The downstream `quire-cache` package SHALL implement the required cache
-interface owned by `quire-driver` and SHALL follow QSL ADR-029 CA-1 through
+The downstream `filament-cache` package SHALL implement the required cache
+interface owned by `filament-driver` and SHALL follow FSL ADR-029 CA-1 through
 CA-5. It is a separate package and SHALL depend on the driver interface; the
-`quire-driver` package SHALL NOT depend on `quire-cache`.
+`filament-driver` package SHALL NOT depend on `filament-cache`.
 
 ## Inputs
 
 - `CacheRequest`: operation (`prove`, `analyze` or `generate`), package
-  identity, canonical typed request, selected `qsl_route::BackendId`, and for
+  identity, canonical typed request, selected `fsl_route::BackendId`, and for
   `generate` the target and output-affecting options.
 - A caller-named storage directory, maximum entry size and total stored-byte
   limit, plus the typed value reader for the requested result.
@@ -35,7 +35,7 @@ CA-5. It is a separate package and SHALL depend on the driver interface; the
 - A typed cache I/O error for operational filesystem failures (for example,
   permission denied or corrupt directory operation); it SHALL NOT be disguised
   as a miss.
-- `CacheStore::Stored`, `CacheStore::NeverStore` for QSL CA-5 exclusions, or
+- `CacheStore::Stored`, `CacheStore::NeverStore` for FSL CA-5 exclusions, or
   `CacheStore::NotStored` when an entry exceeds the per-entry or total-store
   limit. NeverStore/NotStored do not fail the provider operation.
 
@@ -92,11 +92,11 @@ CA-5. It is a separate package and SHALL depend on the driver interface; the
 | FR-012-AC-10 | Atomic rename from a temporary file publishes each entry; direct final-name writes are absent, temporary files count toward capacity, and cleanup removes abandoned temporary files without following symlinks. | Test (TC-022) |
 | FR-012-AC-11 | Concurrent same-key writers leave a valid typed entry, and cross-process eviction treats `NotFound` for an already-removed entry as success. | Test (TC-022) |
 | FR-012-AC-12 | The cache counts every regular file in its caller-named directory, evicts only validated owned entries and owned temporary files, preserves unrelated files, keeps bytes within configured limits, and uses no index or ledger. | Test (TC-022) |
-| FR-012-AC-13 | `quire-cache` is separate from `quire-driver`, depends on its interface, and is absent from the driver's transitive normal/build dependency closure. | Test (TC-005) |
+| FR-012-AC-13 | `filament-cache` is separate from `filament-driver`, depends on its interface, and is absent from the driver's transitive normal/build dependency closure. | Test (TC-005) |
 
 ## Dependencies
 
-- QSL ADR-029 CA-1 through CA-5.
+- FSL ADR-029 CA-1 through CA-5.
 - [FR-007](./FR-007-cache-results-by-content-identity.md) defines the required
   driver-owned interface; this package implements it downstream.
 - [TC-020](../test-cases/TC-020-cache-content-identity.md),

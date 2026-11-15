@@ -3,14 +3,14 @@ id: TC-015
 title: "Invoke AOT with current checked request inputs"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-008
+  - target: ix://agent-ix/filament-driver/FR-008
     type: verifies
 ---
 # TC-015: Invoke AOT with current checked request inputs
 
 ## Description
 
-Verify that the driver dispatches an AOT-selected request to QSL's AOT
+Verify that the driver dispatches an AOT-selected request to FSL's AOT
 backend with the checked package and settings from that request and preserves
 the backend's typed result.
 
@@ -37,5 +37,5 @@ Test location: planned driver/AOT boundary tests.
   executable is unavailable.
 - The driver makes no interpreter or alternate-engine call after either
   failure.
-- AOT/interpreter semantic parity is verified by the QSL ADR-029 EB-5
+- AOT/interpreter semantic parity is verified by the FSL ADR-029 EB-5
   conformance evidence, not re-specified by this driver-boundary test.

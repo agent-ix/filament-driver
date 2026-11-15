@@ -3,15 +3,15 @@ id: FR-017
 title: "Lower and retain one admitted native monitor program"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-015
+  - target: ix://agent-ix/filament-driver/FR-015
     type: depends_on
-  - target: ix://agent-ix/quire-driver/FR-016
+  - target: ix://agent-ix/filament-driver/FR-016
     type: references
-  - target: ix://agent-ix/quire-contract-ir/FR-354
+  - target: ix://agent-ix/filament-contract-ir/FR-354
     type: depends_on
-  - target: ix://agent-ix/quire-contract-ir/FR-357
+  - target: ix://agent-ix/filament-contract-ir/FR-357
     type: depends_on
-  - target: ix://agent-ix/quire-contract-runtime/FR-276
+  - target: ix://agent-ix/filament-contract-runtime/FR-276
     type: references
 ---
 # FR-017: Lower and retain one admitted native monitor program
@@ -33,9 +33,9 @@ The agreed full lowering handoff is:
 ```rust
 pub fn lower_monitor(
     selection: AdmittedMonitorSelection<'_>,
-    budget: &mut quire_contract_model::NativeJoinBudget,
-    cancel: &quire_exact::Cancel,
-) -> Result<std::rc::Rc<quire_contract_runtime::monitor::Program>, MonitorPreparationError>;
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    cancel: &filament_exact::Cancel,
+) -> Result<std::rc::Rc<filament_contract_runtime::monitor::Program>, MonitorPreparationError>;
 ```
 
 The lowerer SHALL consume the existing opaque selection by value. It SHALL
@@ -60,19 +60,19 @@ After success, the program SHALL retain no source/package/request/witness or
 temporary preparation borrow.
 
 The agreed preparer-independent public helper is
-`quire_driver::monitor::lowering::lower_scalar_functions`:
+`filament_driver::monitor::lowering::lower_scalar_functions`:
 
 ```rust
 pub fn lower_scalar_functions(
     package: &CheckedPackageV2,
     roots: &[CheckedNodeId],
     identities: &SelectedExactIdentities,
-    budget: &mut quire_contract_model::NativeJoinBudget,
-    cancel: &quire_exact::Cancel,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    cancel: &filament_exact::Cancel,
 ) -> Result<
-    (Vec<quire_contract_runtime::monitor::FunctionId>,
-     Vec<quire_contract_runtime::monitor::Function>,
-     Vec<quire_contract_runtime::monitor::Expression>),
+    (Vec<filament_contract_runtime::monitor::FunctionId>,
+     Vec<filament_contract_runtime::monitor::Function>,
+     Vec<filament_contract_runtime::monitor::Expression>),
     MonitorPreparationError,
 >;
 ```
@@ -134,7 +134,7 @@ paths retain actual admitted nonapplication terms/reference boundaries under
 
 The standalone helper SHALL accept only ordinary source functions whose native
 projected parameter, result and reached executable types are exactly
-`quire_exact::ValueType::Integer` or `ValueType::Boolean`. Bounded numeric,
+`filament_exact::ValueType::Integer` or `ValueType::Boolean`. Bounded numeric,
 nominal, composite and other types are outside this initial capability.
 Functions SHALL have no context or frame. Their executable bodies may be a
 reference to one of that callable's authenticated ordered parameters, a
@@ -159,17 +159,17 @@ executable nodes or parameters. No broad operator family implies support.
 
 | Native operation identity | Operator / arity | Operand types -> result | Native RT operation |
 | --- | --- | --- | --- |
-| `quire.op.integer.add` | Binary / 2 | Integer, Integer -> Integer | IntegerAdd |
-| `quire.op.integer.sub` | Binary / 2 | Integer, Integer -> Integer | IntegerSubtract |
-| `quire.op.integer.mul` | Binary / 2 | Integer, Integer -> Integer | IntegerMultiply |
-| `quire.op.integer.negate` | Unary / 1 | Integer -> Integer | IntegerNegate |
-| `quire.op.integer.lt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Less |
-| `quire.op.integer.le` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::LessOrEqual |
-| `quire.op.integer.gt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Greater |
-| `quire.op.integer.ge` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::GreaterOrEqual |
-| `quire.op.boolean.not` | Unary / 1 | Boolean -> Boolean | BooleanNot |
-| `quire.op.boolean.and` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanAnd |
-| `quire.op.boolean.or` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanOr |
+| `filament.op.integer.add` | Binary / 2 | Integer, Integer -> Integer | IntegerAdd |
+| `filament.op.integer.sub` | Binary / 2 | Integer, Integer -> Integer | IntegerSubtract |
+| `filament.op.integer.mul` | Binary / 2 | Integer, Integer -> Integer | IntegerMultiply |
+| `filament.op.integer.negate` | Unary / 1 | Integer -> Integer | IntegerNegate |
+| `filament.op.integer.lt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Less |
+| `filament.op.integer.le` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::LessOrEqual |
+| `filament.op.integer.gt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Greater |
+| `filament.op.integer.ge` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::GreaterOrEqual |
+| `filament.op.boolean.not` | Unary / 1 | Boolean -> Boolean | BooleanNot |
+| `filament.op.boolean.and` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanAnd |
+| `filament.op.boolean.or` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanOr |
 
 This is a closed initial set, not an illustrative list. Literal, If, Let,
 ordinary source Call, equality, integer division/remainder/modulo, Boolean
@@ -310,13 +310,13 @@ separate Planned controls. No component observation closes IR-721 AC2.
 - [FR-015](FR-015-prepare-an-admitted-monitor-program.md) owns admission, token
   getters, shared budget/error API, manifest dependencies and orchestration.
 - [FR-016](FR-016-retain-monitor-refusal-loci.md) owns native diagnostic payloads.
-- [IR FR-354](ix://agent-ix/quire-contract-ir/FR-354) owns authentic callable and
+- [IR FR-354](ix://agent-ix/filament-contract-ir/FR-354) owns authentic callable and
   runtime-context reads; selective success-work and authenticated anonymous
   entry reads must be delivered by that owner rather than inferred here.
-- [IR FR-357](ix://agent-ix/quire-contract-ir/FR-357) owns complete generated-source
+- [IR FR-357](ix://agent-ix/filament-contract-ir/FR-357) owns complete generated-source
   closure authority. Existing selected facts alone establish no complete
   nominal environment or admitted order/progress association.
-- [RT FR-276](ix://agent-ix/quire-contract-runtime/FR-276) owns native program
+- [RT FR-276](ix://agent-ix/filament-contract-runtime/FR-276) owns native program
   validation, initialization and execution.
 - [TC-031](../test-cases/TC-031-monitor-native-lowering.md) separates scalar
   component evidence from complete monitor qualification.

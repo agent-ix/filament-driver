@@ -4,7 +4,7 @@
     "models": [],
     "program": {
       "source": {
-        "file": "parse-invalid.qsl",
+        "file": "parse-invalid.fsl",
         "authority": "issuer",
         "identity": "document",
         "document": "CliFrontend",

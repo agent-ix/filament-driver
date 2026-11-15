@@ -3,21 +3,21 @@ id: FR-004
 title: "Select the execution engine without substitution"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-spec-language/ADR-029
+  - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-296
+  - target: ix://agent-ix/filament-spec-language/FR-296
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-279
+  - target: ix://agent-ix/filament-spec-language/FR-279
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-089
+  - target: ix://agent-ix/filament-spec-language/FR-089
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-090
+  - target: ix://agent-ix/filament-spec-language/FR-090
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-306
+  - target: ix://agent-ix/filament-specification/FR-306
     type: depends_on
-  - target: ix://agent-ix/quire-driver/FR-002
+  - target: ix://agent-ix/filament-driver/FR-002
     type: depends_on
 ---
 # FR-004: Select the execution engine without substitution
@@ -30,13 +30,13 @@ For an execution request, the driver SHALL select the engine named by
 before any lifecycle stage when the selected engine is not linked into the
 binary, and SHALL NOT substitute another engine.
 
-The public execution request SHALL carry a caller-owned QSL
+The public execution request SHALL carry a caller-owned FSL
 `ObjectEnvironment`. The selected interpreter SHALL pass that same environment
-unchanged to QSL `spine::run`. The driver SHALL return QSL's actual typed
+unchanged to FSL `spine::run`. The driver SHALL return FSL's actual typed
 execution outcome unchanged when evaluation uses the supplied environment.
-QSL outcomes for absent context depend on the operation: an absent lookup may
-produce `Undefined` under QSL FR-090, while an unresolved population identity
-produces QSL's typed refusal under FR-089. The driver SHALL NOT supply a
+FSL outcomes for absent context depend on the operation: an absent lookup may
+produce `Undefined` under FSL FR-090, while an unresolved population identity
+produces FSL's typed refusal under FR-089. The driver SHALL NOT supply a
 missing value for the public library request or derive context from display
 text or package bytes. Since the current CLI invocation exposes no
 object-context input, its handler SHALL explicitly supply an empty
@@ -45,7 +45,7 @@ object-context input, its handler SHALL explicitly supply an empty
 ## Inputs
 
 - An execution request and optional `--engine` value.
-- The caller-owned typed QSL `ObjectEnvironment` for a public library request;
+- The caller-owned typed FSL `ObjectEnvironment` for a public library request;
   the current CLI supplies an empty environment under its explicit caller
   policy because it exposes no object-context input.
 - The execution engines linked into the binary.
@@ -53,13 +53,13 @@ object-context input, its handler SHALL explicitly supply an empty
 ## Outputs
 
 - The selected engine's typed execution outcome, or a pre-stage refusal.
-- QSL's unchanged typed execution outcome, including its defined `Undefined`
+- FSL's unchanged typed execution outcome, including its defined `Undefined`
   and typed-refusal cases.
 
 ## Behavior
 
 - If a caller supplies a value outside `interpreter`, `aot` and `jit`, then
-  the CLI SHALL reject it as an unknown argument with QSL's refusal category.
+  the CLI SHALL reject it as an unknown argument with FSL's refusal category.
 - If a caller selects a recognized engine not linked into the binary, then
   the CLI SHALL refuse before any stage as unsupported, naming the engine.
 - The driver SHALL invoke only the selected engine, including after a
@@ -72,55 +72,55 @@ object-context input, its handler SHALL explicitly supply an empty
   invocation count alone SHALL NOT establish no substitution unless the test
   boundary observes every reachable engine invocation.
 - When the public `execute` function runs in production, the driver SHALL
-  supply QSL `spine::run` as the engine-invocation callback.
+  supply FSL `spine::run` as the engine-invocation callback.
 - The driver SHALL keep the engine-invocation callback private.
 - The driver public API, CLI, configuration, environment, and production
   defaults SHALL NOT expose selection of an injected callback.
 - The driver execution boundary SHALL require the caller-owned
-  `ObjectEnvironment`; it SHALL pass the same value unchanged to QSL
+  `ObjectEnvironment`; it SHALL pass the same value unchanged to FSL
   `spine::run` for the selected interpreter.
 - The public library request SHALL not synthesize or default its required
   `ObjectEnvironment`. The current CLI handler SHALL explicitly pass an empty
   `ObjectEnvironment` under its caller policy because the CLI exposes no
   object-context input.
-- The driver SHALL preserve QSL's actual typed outcome when an object lookup
-  is absent, including QSL's `Undefined` outcome where FR-090 specifies it.
+- The driver SHALL preserve FSL's actual typed outcome when an object lookup
+  is absent, including FSL's `Undefined` outcome where FR-090 specifies it.
 - If a population argument names an identity with no binding in the supplied
-  environment, the driver SHALL return QSL's existing typed refusal unchanged,
+  environment, the driver SHALL return FSL's existing typed refusal unchanged,
   as specified by FR-089-AC-4.
 - A public library request SHALL NOT default its required environment.
 - The driver SHALL NOT infer object context from display text or package
   bytes.
-- The driver SHALL NOT replace QSL's typed refusal with a different outcome.
+- The driver SHALL NOT replace FSL's typed refusal with a different outcome.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-004-AC-1 | An execution request without `--engine` runs the interpreter and returns its result. | Test (TC-011) |
-| FR-004-AC-2 | A value outside the closed engine set is refused before any stage with QSL's refusal category and names the supplied value. | Test (TC-011) |
-| FR-004-AC-3 | A recognized engine absent from the binary is refused before any stage with category unsupported; no other engine runs, and process status equals QSL's category exit function. | Test (TC-011) |
+| FR-004-AC-2 | A value outside the closed engine set is refused before any stage with FSL's refusal category and names the supplied value. | Test (TC-011) |
+| FR-004-AC-3 | A recognized engine absent from the binary is refused before any stage with category unsupported; no other engine runs, and process status equals FSL's category exit function. | Test (TC-011) |
 | FR-004-AC-4 | When the selected engine returns unsupported or a typed preparation failure, that result is returned and no other engine is invoked. | Test (TC-011) |
-| FR-004-AC-5 | The public execution request carries the caller-owned typed QSL `ObjectEnvironment`, and the selected interpreter passes that same value unchanged to QSL `spine::run`. | Test |
-| FR-004-AC-6 | Given a function whose result depends on object context, a nonempty caller environment produces the QSL result for that context and differs from the result with an empty environment; the public library request derives no context or default. | Test |
-| FR-004-AC-7 | Given a QSL-defined absent object lookup whose QSL result is `Undefined`, the driver returns that `Undefined` outcome unchanged and does not replace it with a refusal or another outcome. | Test |
-| FR-004-AC-8 | Given a population argument whose identity has no binding in the caller-supplied environment, the driver returns QSL's existing typed refusal unchanged, as required by QSL FR-089-AC-4. | Test |
+| FR-004-AC-5 | The public execution request carries the caller-owned typed FSL `ObjectEnvironment`, and the selected interpreter passes that same value unchanged to FSL `spine::run`. | Test |
+| FR-004-AC-6 | Given a function whose result depends on object context, a nonempty caller environment produces the FSL result for that context and differs from the result with an empty environment; the public library request derives no context or default. | Test |
+| FR-004-AC-7 | Given a FSL-defined absent object lookup whose FSL result is `Undefined`, the driver returns that `Undefined` outcome unchanged and does not replace it with a refusal or another outcome. | Test |
+| FR-004-AC-8 | Given a population argument whose identity has no binding in the caller-supplied environment, the driver returns FSL's existing typed refusal unchanged, as required by FSL FR-089-AC-4. | Test |
 | FR-004-AC-9 | The current CLI handler explicitly supplies an empty `ObjectEnvironment` as its caller policy because its invocation surface has no object-context input; public library callers still must supply the required environment themselves. | Inspection (TC-011) |
-| FR-004-AC-10 | The engine-invocation callback is private to the driver implementation; public `execute` supplies QSL `spine::run`, and the public API, CLI, configuration, environment, and production default expose no callback selector. | Inspection |
+| FR-004-AC-10 | The engine-invocation callback is private to the driver implementation; public `execute` supplies FSL `spine::run`, and the public API, CLI, configuration, environment, and production default expose no callback selector. | Inspection |
 
 ## Dependencies
 
-- QSL ADR-029 EB-8 and FR-296; QSpec FR-306.
-- QSL `qsl-semantics::model::object_environment::ObjectEnvironment` is the
-  typed evaluation context. QSL owns its contents and semantics; the driver
+- FSL ADR-029 EB-8 and FR-296; FSpec FR-306.
+- FSL `fsl-semantics::model::object_environment::ObjectEnvironment` is the
+  typed evaluation context. FSL owns its contents and semantics; the driver
   carries the caller's value to the run boundary.
-- QSL FR-089-AC-4 defines typed refusal for an unresolved population identity;
-  QSL FR-090 defines `Undefined` for the absent-lookup mode that requests it.
+- FSL FR-089-AC-4 defines typed refusal for an unresolved population identity;
+  FSL FR-090 defines `Undefined` for the absent-lookup mode that requests it.
 - Full no-substitution evidence for AC-4 requires a second production engine
   or an upstream-supported shared dispatch contract that represents a
   selected engine's typed `Unsupported` result and makes every reachable
   engine invocation observable through one test boundary. The current private
-  callback can return QSL `RunRefusal::UnsupportedResult` with category
+  callback can return FSL `RunRefusal::UnsupportedResult` with category
   `Unsupported`, as well as typed preparation refusals. This is distinct from
   the driver's pre-invocation `ExecutionFailure::UnsupportedEngine` for an
   engine not linked into the binary. A callback-only count cannot observe a

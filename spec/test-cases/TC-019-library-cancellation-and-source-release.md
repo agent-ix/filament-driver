@@ -3,9 +3,9 @@ id: TC-019
 title: "Propagate library cancellation and retain bounded checked-unit source"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-011
+  - target: ix://agent-ix/filament-driver/FR-011
     type: verifies
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-019: Propagate library cancellation and retain bounded checked-unit source
@@ -13,7 +13,7 @@ relationships:
 ## Description
 
 Verify the caller-facing library cancellation API, per-stage propagation,
-QSL-owned result mapping, and the retained source lifetime after E5. This
+FSL-owned result mapping, and the retained source lifetime after E5. This
 case does not exercise process signals or timeouts; those belong to a
 separate CLI adapter.
 
@@ -21,9 +21,9 @@ Scope: FR-001-AC-9 through FR-001-AC-10, FR-011-AC-1 through FR-011-AC-5.
 
 ## Test Procedure
 
-1. In a driver library integration test, create a caller-owned QSL `Cancel`
+1. In a driver library integration test, create a caller-owned FSL `Cancel`
    handle and a test upstream that instruments the handle passed to `parse`,
-   `select`, `check` and `package`. Use the real QSL lifecycle entry points
+   `select`, `check` and `package`. Use the real FSL lifecycle entry points
    and delegate each stage's normal input to them.
 2. For an already-cancelled handle with cause `Requested`, invoke the driver
    operation and require `DriverRefusal::Cancelled` for `SpineStage::Source`
@@ -45,21 +45,21 @@ Scope: FR-001-AC-9 through FR-001-AC-10, FR-011-AC-1 through FR-011-AC-5.
    source and root-source bytes no greater than the request's
    `SpineLimits.source.source_bytes`. Confirm the returned value contains no
    `EmittedUnit` source provision, so the E4 copy is released after E5.
-5. Independently obtain the QSL category for
+5. Independently obtain the FSL category for
    `StageFailure::Cancelled(cause)` and pass it to `Category::exit_code`;
-   require QSL's CB-4 result for `incomplete`. Confirm the driver returns
+   require FSL's CB-4 result for `incomplete`. Confirm the driver returns
    `DriverRefusal::Cancelled { stage, cause }` instead of sending
    `StageFailure::Cancelled(CancelCause)` through the refusal-or-fault
    conversion for an unshared handle. Inspect the binary boundary to confirm
-   it uses QSL `Category::exit_code` without a second mapping. Do not add or
+   it uses FSL `Category::exit_code` without a second mapping. Do not add or
    infer signal/timeout behavior.
 
 ## Expected Results
 
 - The library exposes caller-controlled cancellation and threads one handle
-  through each QSL stage; cancellation returns `DriverRefusal::Cancelled`
+  through each FSL stage; cancellation returns `DriverRefusal::Cancelled`
   with stage and cause, with no partial E4 package.
-- QSL owns the `incomplete` category and its CB-4 exit mapping; the driver
+- FSL owns the `incomplete` category and its CB-4 exit mapping; the driver
   adds no mapping.
 - E5 consumes the E4 source provision before the driver releases it. The
   returned `Driven.package` retains the bounded `CheckedUnit` source; under

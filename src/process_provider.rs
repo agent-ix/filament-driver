@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Driver-owned seam for caller-selected process providers.
 //!
-//! The wire authority is QSpec FR-331
-//! (`agent-ix/quire-specification/spec/objects/interfaces/FR-331-backend-provider-envelope.md`)
-//! and FR-462 (`quire-specification/spec/functional/tooling/FR-462-speak-the-plugin-wire.md`).
+//! The wire authority is FSpec FR-331
+//! (`agent-ix/filament-specification/spec/objects/interfaces/FR-331-backend-provider-envelope.md`)
+//! and FR-462 (`filament-specification/spec/functional/tooling/FR-462-speak-the-plugin-wire.md`).
 //! The seam uses the driver's [`ProviderRequest`] and [`ProviderResults`]; it
 //! does not define a local FR-331 wire schema or depend on the host crate.
 
@@ -11,10 +11,10 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::time::Duration;
 
-use qsl_package::EmittedPackage;
-use qsl_route::request::RequirementItem;
-use qsl_route::BackendDescriptor;
-use quire_exact::Cancel;
+use filament_exact::Cancel;
+use fsl_package::EmittedPackage;
+use fsl_route::request::RequirementItem;
+use fsl_route::BackendDescriptor;
 
 use crate::{ProviderManifest, ProviderRequest, ProviderResults};
 
@@ -44,14 +44,14 @@ pub struct ProcessProviderRequest<'a> {
     pub manifest: &'a [ProviderManifest],
     /// Driver-owned typed request for this provider's negotiated items.
     pub provider_request: ProviderRequest<'a>,
-    /// The exact QSL request items from the `Driven` value, indexed by each
+    /// The exact FSL request items from the `Driven` value, indexed by each
     /// routed generation item's original request index.
-    pub qsl_items: &'a [RequirementItem],
+    pub fsl_items: &'a [RequirementItem],
     /// Caller-owned cancellation handle for this request.
     pub cancel: &'a Cancel,
 }
 
-/// A process provider whose hello has already been admitted by QSL.
+/// A process provider whose hello has already been admitted by FSL.
 ///
 /// `invoke` sends each request over this same session; implementations must
 /// not restart the process, send another hello, or admit its descriptor again.
@@ -67,7 +67,7 @@ pub trait ProcessProviderSession {
     /// captured stderr and the process exit status when available.
     type Diagnostics;
 
-    /// The descriptor returned by the one QSL admission of the hello manifest.
+    /// The descriptor returned by the one FSL admission of the hello manifest.
     fn descriptor(&self) -> &BackendDescriptor;
 
     /// The lossless driver-owned FR-331 manifest retained at admission.

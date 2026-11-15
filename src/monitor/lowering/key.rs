@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Iterative conversion of original structural fields through the native key constructor.
 
-use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
-use quire_exact::{NodeKey, NodeKeyConstructionError, PathSegment};
+use filament_contract_model::{CheckedNodeId, CheckedNodePathSegment};
+use filament_exact::{NodeKey, NodeKeyConstructionError, PathSegment};
 
 use super::{storage, Budget, Error};
 
@@ -108,7 +108,7 @@ pub(super) fn own_key(source: &CheckedNodeId, budget: &mut Budget<'_>) -> Result
 mod tests {
     use super::*;
     use crate::monitor::MonitorPreparationLimits;
-    use quire_exact::Cancel;
+    use filament_exact::Cancel;
 
     #[ix_trace_rs::trace("FR-016-AC-10", "FR-016-AC-11")]
     #[test]

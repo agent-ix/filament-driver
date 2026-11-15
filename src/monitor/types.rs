@@ -4,9 +4,9 @@
 
 use std::collections::BTreeMap;
 
-use quire_contract_model::{CheckedRational, SelectedMonitorTypeClosure};
-use quire_exact::{Cancel, Integer, NodeKey, Rational};
-use quire_semantic_value::{
+use filament_contract_model::{CheckedRational, SelectedMonitorTypeClosure};
+use filament_exact::{Cancel, Integer, NodeKey, Rational};
+use filament_semantic_value::{
     declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
         TypeEnvironmentLimits, UnionMemberDeclaration,

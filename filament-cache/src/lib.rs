@@ -8,20 +8,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-#[cfg(test)]
-use qsl_foundation::BackendId;
-use quire_canonical::{sha256_with_domain, to_vec, Limits, Sha256Digest};
-use quire_driver::{
+use filament_driver::{
     Cache, CacheEligibility, CacheFault, CacheLookup, CacheOperation, CacheRequest,
     CacheValueCodec, CacheWriteOutcome,
 };
+#[cfg(test)]
+use fsl_foundation::BackendId;
+use quire_canonical::{sha256_with_domain, to_vec, Limits, Sha256Digest};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
-/// QSL ADR-029 CA-2 / QSpec FR-201 cache-key identity domain.
-const CACHE_KEY_DOMAIN: &[u8] = b"quire.cache-key/v1";
+/// FSL ADR-029 CA-2 / FSpec FR-201 cache-key identity domain.
+const CACHE_KEY_DOMAIN: &[u8] = b"filament.cache-key/v1";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const STALE_TEMPORARY_AGE: Duration = Duration::from_secs(24 * 60 * 60);
@@ -118,16 +118,20 @@ impl<T> CacheValueCodec<T> for CanonicalJsonCodec
 where
     T: Serialize + DeserializeOwned,
 {
-    fn encode(&self, value: &T, max_bytes: u64) -> Result<Vec<u8>, quire_driver::CacheCodecError> {
+    fn encode(
+        &self,
+        value: &T,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, filament_driver::CacheCodecError> {
         let json = serde_json::to_value(value)
-            .map_err(|error| Box::new(error) as quire_driver::CacheCodecError)?;
+            .map_err(|error| Box::new(error) as filament_driver::CacheCodecError)?;
         to_vec(&json, Limits::new(max_bytes))
-            .map_err(|error| Box::new(error) as quire_driver::CacheCodecError)
+            .map_err(|error| Box::new(error) as filament_driver::CacheCodecError)
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<T, quire_driver::CacheCodecError> {
+    fn decode(&self, bytes: &[u8]) -> Result<T, filament_driver::CacheCodecError> {
         serde_json::from_slice(bytes)
-            .map_err(|error| Box::new(error) as quire_driver::CacheCodecError)
+            .map_err(|error| Box::new(error) as filament_driver::CacheCodecError)
     }
 }
 
@@ -613,7 +617,7 @@ pub enum CacheError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quire_driver::CacheExclusion;
+    use filament_driver::CacheExclusion;
     use serde::de::DeserializeOwned;
     use std::ops::Deref;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -655,7 +659,7 @@ mod tests {
     ) -> CacheKey {
         let request_bytes = serde_json::to_vec(request).expect("request encodes");
         let target_bytes = target.map(|value| serde_json::to_vec(value).expect("target encodes"));
-        let registry = quire_driver::build_registry(&[quire_driver::ProviderManifest {
+        let registry = filament_driver::build_registry(&[filament_driver::ProviderManifest {
             identity: backend.as_str().to_owned(),
             advertises: vec![(
                 Some("value-validity".to_owned()),
@@ -694,7 +698,7 @@ mod tests {
     }
 
     fn admitted_request<'a>(
-        registry: &'a quire_driver::AdmittedRegistry,
+        registry: &'a filament_driver::AdmittedRegistry,
         backend: &BackendId,
         request: &'a [u8],
     ) -> CacheRequest<'a> {
@@ -716,7 +720,7 @@ mod tests {
             .as_nanos();
         let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let path = std::env::temp_dir().join(format!(
-            "quire-cache-test-{}-{nonce}-{sequence}",
+            "filament-cache-test-{}-{nonce}-{sequence}",
             std::process::id()
         ));
         fs::create_dir_all(&path).expect("temporary test directory is created");
@@ -745,7 +749,7 @@ mod tests {
     #[test]
     fn directory_cache_uses_the_driver_request_and_typed_reader() {
         let backend = BackendId::from_wire("agent-ix/provider/test").expect("backend is valid");
-        let registry = quire_driver::build_registry(&[quire_driver::ProviderManifest {
+        let registry = filament_driver::build_registry(&[filament_driver::ProviderManifest {
             identity: backend.as_str().to_owned(),
             advertises: vec![(
                 Some("value-validity".to_owned()),
@@ -917,7 +921,7 @@ mod tests {
         let directory = temporary_directory();
         let store = DirectoryCache::new(&directory, 2048, 4096);
         let backend = BackendId::from_wire("agent-ix/provider/test").expect("backend is valid");
-        let registry = quire_driver::build_registry(&[quire_driver::ProviderManifest {
+        let registry = filament_driver::build_registry(&[filament_driver::ProviderManifest {
             identity: backend.as_str().to_owned(),
             advertises: vec![(
                 Some("value-validity".to_owned()),
@@ -967,7 +971,7 @@ mod tests {
         for (index, reason) in exclusions.into_iter().enumerate() {
             let excluded_bytes = format!(r#"{{"items":[],"work_limit":{}}}"#, 21 + index);
             let excluded_registry =
-                quire_driver::build_registry(&[quire_driver::ProviderManifest {
+                filament_driver::build_registry(&[filament_driver::ProviderManifest {
                     identity: backend.as_str().to_owned(),
                     advertises: vec![(
                         Some("value-validity".to_owned()),
@@ -1004,7 +1008,7 @@ mod tests {
     fn result_above_jcs_integer_range_is_not_stored() {
         let directory = temporary_directory();
         let backend = BackendId::from_wire("agent-ix/provider/test").expect("id is valid");
-        let registry = quire_driver::build_registry(&[quire_driver::ProviderManifest {
+        let registry = filament_driver::build_registry(&[filament_driver::ProviderManifest {
             identity: backend.as_str().to_owned(),
             advertises: vec![(
                 Some("value-validity".to_owned()),
@@ -1039,7 +1043,7 @@ mod tests {
         let file = parent.join("not-a-directory");
         fs::write(&file, b"file").expect("file occupies the intended cache path");
         let backend = BackendId::from_wire("agent-ix/provider/test").expect("id is valid");
-        let registry = quire_driver::build_registry(&[quire_driver::ProviderManifest {
+        let registry = filament_driver::build_registry(&[filament_driver::ProviderManifest {
             identity: backend.as_str().to_owned(),
             advertises: vec![(
                 Some("value-validity".to_owned()),
@@ -1154,7 +1158,7 @@ mod tests {
     fn oversized_preimage_misses_and_record_is_not_stored() {
         let directory = temporary_directory();
         let backend = BackendId::from_wire("agent-ix/provider/test").expect("id is valid");
-        let registry = quire_driver::build_registry(&[quire_driver::ProviderManifest {
+        let registry = filament_driver::build_registry(&[filament_driver::ProviderManifest {
             identity: backend.as_str().to_owned(),
             advertises: vec![(
                 Some("value-validity".to_owned()),

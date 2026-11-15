@@ -8,15 +8,15 @@
 
 use std::collections::BTreeMap;
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedBindingNameKind, CheckedNodeId, CheckedOperationMember, CheckedPackageV2, CheckedTerm,
     LiteralKind, SelectedMonitorTypeClosure,
 };
-use quire_contract_runtime::monitor::{
+use filament_contract_runtime::monitor::{
     Entries, Expression, ExpressionId, Function, FunctionId, LocalId, Operation,
 };
-use quire_exact::{Cancel, Integer, MemberId, MemberOwner, ValueType};
-use quire_semantic_value::declaration::CheckedEquality;
+use filament_exact::{Cancel, Integer, MemberId, MemberOwner, ValueType};
+use filament_semantic_value::declaration::CheckedEquality;
 
 use super::{key, operation, Budget, Error, MonitorPreparationLimits};
 use crate::monitor::ClosureFacts;
@@ -201,7 +201,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
     fn graph_node(
         &self,
         node: &CheckedNodeId,
-    ) -> Result<&'a quire_contract_model::CheckedSemanticNodeV2, Error> {
+    ) -> Result<&'a filament_contract_model::CheckedSemanticNodeV2, Error> {
         self.package
             .resolved_graph()
             .nodes
@@ -511,22 +511,22 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         &self,
         node: &CheckedNodeId,
         kind: &LiteralKind,
-        value: &quire_contract_model::CheckedJson,
-    ) -> Result<quire_exact::Value, Error> {
+        value: &filament_contract_model::CheckedJson,
+    ) -> Result<filament_exact::Value, Error> {
         Ok(match kind {
             LiteralKind::Integer => {
                 let text = value
                     .as_str()
                     .or_else(|| value.number_text())
                     .ok_or_else(|| self.invalid(node))?;
-                quire_exact::Value::Integer(
+                filament_exact::Value::Integer(
                     text.parse::<Integer>().map_err(|_| self.invalid(node))?,
                 )
             }
             LiteralKind::Boolean => {
-                quire_exact::Value::Boolean(value.as_bool().ok_or_else(|| self.invalid(node))?)
+                filament_exact::Value::Boolean(value.as_bool().ok_or_else(|| self.invalid(node))?)
             }
-            LiteralKind::String => quire_exact::Value::String(
+            LiteralKind::String => filament_exact::Value::String(
                 value.as_str().ok_or_else(|| self.invalid(node))?.to_owned(),
             ),
             _ => return Err(self.unsupported(node)),
@@ -669,7 +669,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
             .iter()
             .find(|row| &row.structural_node == semantic)
         {
-            // QSL's generated records declare every member required and emit
+            // FSL's generated records declare every member required and emit
             // every member (checked against the genuine plan in
             // `monitor_closure.rs`), so a missing binding is an invariant
             // fault, never an absent optional member.
@@ -739,7 +739,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         &mut self,
         frame: &mut Frame<'a>,
         node: &'a CheckedNodeId,
-        operation: &'a quire_contract_model::CheckedApplicationOperation,
+        operation: &'a filament_contract_model::CheckedApplicationOperation,
         arguments: &'a [CheckedTerm],
         result_type: &'a CheckedNodeId,
     ) -> Result<ExpressionId, Error> {
@@ -751,7 +751,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
             _ => return Err(self.invalid(node)),
         };
         let lowered = match read.identity {
-            "quire.op.function.call" => {
+            "filament.op.function.call" => {
                 let Some((CheckedTerm::Reference { target: callee }, rest)) =
                     arguments.split_first()
                 else {
@@ -764,7 +764,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     arguments: operands,
                 }
             }
-            "quire.op.control.if" => {
+            "filament.op.control.if" => {
                 let [condition, when_true, when_false] =
                     self.operands(frame, node, arguments, 0)?[..]
                 else {
@@ -776,7 +776,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     when_false,
                 }
             }
-            "quire.op.control.let" => {
+            "filament.op.control.let" => {
                 let [binding, CheckedTerm::Reference { target: body }] = arguments else {
                     return Err(self.unsupported(node));
                 };
@@ -798,11 +798,11 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     body,
                 }
             }
-            "quire.op.collection.sequence" => {
+            "filament.op.collection.sequence" => {
                 let elements = self.operands(frame, node, arguments, 0)?;
                 Operation::Sequence { elements }
             }
-            "quire.op.collection.flatten" | "quire.op.collection.size" => {
+            "filament.op.collection.flatten" | "filament.op.collection.size" => {
                 let [value] = self.operands(frame, node, arguments, 0)?[..] else {
                     return Err(self.unsupported(node));
                 };
@@ -812,7 +812,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     Operation::SequenceSize { value }
                 }
             }
-            "quire.op.collection.fold" => {
+            "filament.op.collection.fold" => {
                 let [CheckedTerm::Reference { target: sequence }, binding, CheckedTerm::Reference { target: initial }] =
                     arguments
                 else {
@@ -850,7 +850,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     body,
                 }
             }
-            "quire.op.collection.map" | "quire.op.collection.filter" => {
+            "filament.op.collection.map" | "filament.op.collection.filter" => {
                 let [CheckedTerm::Reference { target: sequence }, binding] = arguments else {
                     return Err(self.unsupported(node));
                 };
@@ -880,7 +880,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     }
                 }
             }
-            "quire.op.record.project" => {
+            "filament.op.record.project" => {
                 let [value] = self.operands(frame, node, arguments, 0)?[..] else {
                     return Err(self.unsupported(node));
                 };
@@ -909,10 +909,10 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     _ => return Err(self.unsupported(node)),
                 }
             }
-            "quire.op.integer.eq"
-            | "quire.op.integer.ne"
-            | "quire.op.boolean.eq"
-            | "quire.op.boolean.ne" => {
+            "filament.op.integer.eq"
+            | "filament.op.integer.ne"
+            | "filament.op.boolean.eq"
+            | "filament.op.boolean.ne" => {
                 let [left, right] = self.operands(frame, node, arguments, 0)?[..] else {
                     return Err(self.unsupported(node));
                 };

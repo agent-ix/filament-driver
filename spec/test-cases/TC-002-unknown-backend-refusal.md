@@ -3,14 +3,14 @@ id: TC-002
 title: "An unknown BackendId refuses the run before negotiation"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-002: An unknown BackendId refuses the run before negotiation
 
 ## Description
 
-Verify the MD-2 refusal (QSL ADR-012 §7.2).
+Verify the MD-2 refusal (FSL ADR-012 §7.2).
 
 Scope: FR-001-AC-2.
 

@@ -3,7 +3,7 @@ id: TC-004
 title: "Command-level refusals are typed"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-004: Command-level refusals are typed
@@ -36,7 +36,7 @@ Scope: FR-001-AC-5 and FR-001-AC-22.
    with another unit's admitted package, then with a refusal.
 8. With `kani` registered for `operation-contract` only, drive the TC-003
    negation unit naming `kani` as the request's backend.
-9. Feed QSL lifecycle `Fault`, `Cancelled` and `Limit` failures to the
+9. Feed FSL lifecycle `Fault`, `Cancelled` and `Limit` failures to the
    driver mapping for `parse`, `select`, `check` and `package`.
 10. At the CG package-reader boundary, return
     `ContractPackageReadRefused` results covering a returned code with a
@@ -53,7 +53,7 @@ and `tc_004_handoff_and_generation_limits_are_limits`, plus
 `routed_generation_invariant_errors_are_generation_faults`;
 `src/upstream.rs`, `lifecycle_faults_retain_details_and_operation_stage`,
 `lifecycle_cancellation_is_an_internal_fault_at_the_operation_stage` and
-`lifecycle_limits_preserve_qsl_payload_cause_and_field_stage`.
+`lifecycle_limits_preserve_fsl_payload_cause_and_field_stage`.
 
 ## Expected Results
 
@@ -81,7 +81,7 @@ and `tc_004_handoff_and_generation_limits_are_limits`, plus
   `resource_exhausted` at generation.
 - Step 9 maps faults and cancellation to `runtime_invariant`, outcome kind
   fault, at the operation's compile stage: source, intake, check or emit.
-  Limits preserve their QSL payload and catalog cause with outcome kind limit.
+  Limits preserve their FSL payload and catalog cause with outcome kind limit.
 - Step 8 settles `unsupported`, naming `kani` in the cause
   (`unsupported-requested-capability`): `kani` is registered but does not
   advertise `value-validity`. Nothing routes.

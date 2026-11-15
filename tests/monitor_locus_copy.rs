@@ -3,15 +3,15 @@
 
 use std::{mem::size_of, sync::Arc};
 
-use ix_trace_rs::trace;
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedNodeId, CheckedNodePathSegment as Segment, CheckedOccurrence, CheckedOccurrenceRole,
 };
-use quire_driver::{
+use filament_driver::{
     monitor::MonitorPreparationLimits,
     monitor_refusal::{copy_monitor_locus, MonitorLocusCopyError},
 };
-use quire_exact::{Cancel, CancelCause};
+use filament_exact::{Cancel, CancelCause};
+use ix_trace_rs::trace;
 
 #[test]
 #[trace("FR-016-AC-9", "FR-016-AC-10")]
