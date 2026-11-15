@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Bind an original FSL subject through its owner's final declaration lookup.
 
-use fsl_package::Emission;
-use fsl_replay::MonitorSubject;
 use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageReadLimits,
 };
 use filament_exact::Cancel;
+use fsl_package::Emission;
+use fsl_replay::MonitorSubject;
 
 use super::{
     budget::Budget, selection, AdmittedMonitorClockSelection, AdmittedMonitorSelection,

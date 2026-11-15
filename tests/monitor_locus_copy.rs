@@ -3,15 +3,15 @@
 
 use std::{mem::size_of, sync::Arc};
 
+use filament_contract_model::{
+    CheckedNodeId, CheckedNodePathSegment as Segment, CheckedOccurrence, CheckedOccurrenceRole,
+};
 use filament_driver::{
     monitor::MonitorPreparationLimits,
     monitor_refusal::{copy_monitor_locus, MonitorLocusCopyError},
 };
-use ix_trace_rs::trace;
-use filament_contract_model::{
-    CheckedNodeId, CheckedNodePathSegment as Segment, CheckedOccurrence, CheckedOccurrenceRole,
-};
 use filament_exact::{Cancel, CancelCause};
+use ix_trace_rs::trace;
 
 #[test]
 #[trace("FR-016-AC-9", "FR-016-AC-10")]

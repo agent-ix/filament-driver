@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Authentic FSL source-record witnesses joined to their own strict IR admission.
 
-use fsl_package::Emission;
 use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageEvidence,
     CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2,
     ExactTypeProjection, ExactTypeProjectionError, NativeJoinBudget, SelectedExactIdentities,
     SelectedSourceRecordMemberRow, SelectedSourceRecordRow,
 };
+use fsl_package::Emission;
 
 use super::request::MonitorPreparationLimits;
 

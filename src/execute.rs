@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The driver's selected FSL execution engine (FR-004).
 
+use filament_exact::Cancel;
+use filament_semantic_value::catalog::Category;
 use fsl_foundation::Code;
 use fsl_foundation::SourceIdentity;
 use fsl_replay::spine::{Call, CallOutcome, DependencyInput, RunRefusal, SpineLimits};
 use fsl_replay::{OutcomeDocument, OutcomeWriteError};
 use fsl_semantics::model::object_environment::ObjectEnvironment;
-use filament_exact::Cancel;
-use filament_semantic_value::catalog::Category;
 
 /// The engine selected for one execution request.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -84,7 +84,7 @@ pub struct ExecutionResult {
 }
 
 impl ExecutionResult {
-    /// Serialize FSL's canonical `quire-outcome/1` document for this call.
+    /// Serialize FSL's canonical `filament-outcome/1` document for this call.
     /// The driver does not define or translate the document shape.
     pub fn outcome_bytes(&self) -> Result<Vec<u8>, OutcomeWriteError> {
         self.document.to_bytes()
@@ -180,6 +180,9 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::LazyLock;
 
+    use filament_exact::{Cancel, CancelCause, Value};
+    use filament_semantic_value::catalog::Category;
+    use filament_semantic_value::object_closure::ObjectClosure;
     use fsl_foundation::Setting;
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::{
@@ -196,14 +199,11 @@ mod tests {
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
-    use filament_exact::{Cancel, CancelCause, Value};
-    use filament_semantic_value::catalog::Category;
-    use filament_semantic_value::object_closure::ObjectClosure;
 
     use super::{execute, ExecutionEngine, ExecutionFailure, ExecutionRequest};
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
+        profile v = \"filament.value.complete/v1\";\n\
         function yes using v(): Boolean pure { true }\n";
 
     fn request(engine: ExecutionEngine, limits: SpineLimits) -> ExecutionRequest<'static> {
@@ -242,8 +242,8 @@ mod tests {
       "occurrences": [],
       "extensions": [],
       "constructs": [
-        {"kind": {"module": "driver/ir608-model", "name": "entity"}, "moduleVersion": "1.0.0", "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "quire.meaning.model.object-type/v1"}},
-        {"kind": {"module": "driver/ir608-model", "name": "population"}, "moduleVersion": "1.0.0", "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "quire.meaning.model.population/v1"}}
+        {"kind": {"module": "driver/ir608-model", "name": "entity"}, "moduleVersion": "1.0.0", "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.object-type/v1"}},
+        {"kind": {"module": "driver/ir608-model", "name": "population"}, "moduleVersion": "1.0.0", "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.population/v1"}}
       ],
       "types": [{"identity": "ix://driver/ir608-model/Thing", "displayName": "Thing", "kind": {"module": "driver/ir608-model", "name": "entity"}, "roles": [], "origin": {"generated": {"generatorIdentity": "ix://driver/ir608/model", "generatorVersion": "1.0.0", "inputIdentities": ["ix://driver/ir608-model/Thing"]}}, "constraints": [], "extensions": [], "unknownPolicy": "reject", "supertypes": [], "fields": [], "operations": []}],
       "populations": [{"identity": "ix://driver/ir608-model/Fleet", "displayName": "Fleet", "kind": {"module": "driver/ir608-model", "name": "population"}, "members": ["ix://driver/ir608-model/Thing"], "extent": "closed", "origin": {"generated": {"generatorIdentity": "ix://driver/ir608-model/Fleet", "generatorVersion": "1.0.0", "inputIdentities": ["ix://driver/ir608-model/Fleet"]}}}]
@@ -264,7 +264,7 @@ mod tests {
         let packages =
             package_input([OBJECT_MODEL_DOCUMENT.as_bytes()]).expect("the fixture is a package");
         let source = "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.model.complete/v1\";\n\
+             profile v = \"filament.model.complete/v1\";\n\
              model M = \"driver/ir608-model\";\n\
              function query_present using v(p: Population<M::Thing>[1], r: M::Thing): M::Thing pure { lookup<M::Thing>(p, r) absent refused }\n\
              function query_absent using v(p: Population<M::Thing>[1], r: M::Thing): M::Thing pure { lookup<M::Thing>(p, r) absent undefined }\n";

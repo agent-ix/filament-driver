@@ -21,7 +21,7 @@ pub fn emitted_package_with_urlsafe_bytes() -> fsl_package::EmittedPackage {
 fn emitted_package_with_source_name(source_name: &str) -> fsl_package::EmittedPackage {
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction f using v(): Boolean pure {{ true }}\n",
-        "quire.value.complete/v1"
+        "filament.value.complete/v1"
     );
     let packages = BTreeMap::new();
     let input = CompileInput {

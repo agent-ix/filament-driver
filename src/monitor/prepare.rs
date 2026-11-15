@@ -4,11 +4,11 @@
 
 use std::rc::Rc;
 
-use fsl_analyze::monitor_root::{PlanAuthoritySelection, PlanAuthorityValidationCaps, PlanRoot};
 use filament_contract_model::CheckedNodeId;
 use filament_contract_runtime::monitor::{Program, ProgramParts};
 use filament_exact::Cancel;
 use filament_observation::authority::progress;
+use fsl_analyze::monitor_root::{PlanAuthoritySelection, PlanAuthorityValidationCaps, PlanRoot};
 
 use super::{
     build_type_environment, collect_monitor_closure_rows, derive_layout, lowering::lower_entries,

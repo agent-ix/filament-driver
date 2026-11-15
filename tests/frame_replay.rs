@@ -5,21 +5,21 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 use std::time::Duration;
 
+use filament_contract_codegen::{
+    self as cg, FrameReplayInputs, LockedSource, ProvidedDocument, ReplayInputs, SelectedFrameItem,
+    WitnessDecodeLimits,
+};
 use filament_driver::{
     build_registry, drive, CompileInput, Driven, FrameReplayFailure, FslCg, GenerationInput,
 };
-use ix_trace_rs::trace;
+use filament_exact::{Cancel, Origin, Role};
 use fsl_foundation::SourceIdentity;
 use fsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
 use fsl_replay::{
     call_site, ClaimedChange, ClauseName, DocumentRef, Identifier, OperationName, ReplayLimits,
     SelectedObject,
 };
-use filament_contract_codegen::{
-    self as cg, FrameReplayInputs, LockedSource, ProvidedDocument, ReplayInputs, SelectedFrameItem,
-    WitnessDecodeLimits,
-};
-use filament_exact::{Cancel, Origin, Role};
+use ix_trace_rs::trace;
 use serde_json::json;
 
 fn source() -> SourceIdentity {
@@ -73,9 +73,9 @@ impl Fixture {
             "package": {"identity": "driver/model", "version": "1.0.0", "mappingVersions": [], "profileVersions": []},
             "occurrences": [], "extensions": [], "constructs": [{"kind": {"module": "driver/model", "name": "entity"},
                 "moduleVersion": "1.0.0", "construct": {"identity": "none", "shape": "record", "members": {},
-                    "meaning": "quire.meaning.model.object-type/v1"}},
+                    "meaning": "filament.meaning.model.object-type/v1"}},
                 {"kind": {"module": "driver/model", "name": "value_type"}, "moduleVersion": "1.0.0",
-                    "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "quire.meaning.model.value-type/v1"}}],
+                    "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.value-type/v1"}}],
             "types": [{"identity": "ix://driver/model/Amount", "displayName": "Amount", "kind": {"module": "driver/model", "name": "value_type"},
                 "roles": [], "origin": origin("ix://driver/model/Amount"), "extensions": [], "unknownPolicy": "reject", "scalar": "integer",
                 "constraints": [
@@ -83,7 +83,7 @@ impl Fixture {
                     {"identity": "ix://driver/model/Amount/max", "keyword": "max", "operands": {"value": "10"}, "appliesTo": "ix://quire/native/Integer", "diagnosticCode": "bound.max", "origin": origin("ix://driver/model/Amount")} ]}, ty("Base", json!([]), json!([op("Base")])),
                 ty("Child", json!(["ix://driver/model/Base"]), if redefined {json!([child_op])} else {json!([])})]})
             .to_string().into_bytes();
-        let unit = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"driver/model\";\npost Holds using v on M::Child::touch { self.balance >= pre(self.balance) }\n".to_owned();
+        let unit = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nmodel M = \"driver/model\";\npost Holds using v on M::Child::touch { self.balance >= pre(self.balance) }\n".to_owned();
         let unit = if redefined {
             unit
         } else {

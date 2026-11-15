@@ -11,13 +11,13 @@ use filament_driver::{
     ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
     ProviderItemResult, ProviderResults, RoutedItemOutput,
 };
+use filament_exact::Cancel;
 use filament_plugin_host::{
     FrameLimits, PluginError, PluginSession, RunLimits, SessionFinished, SessionStart,
 };
 use fsl_replay::CallRequirements;
 use fsl_route::request::RequirementItem;
 use fsl_route::{BackendDescriptor, ProviderOrigin};
-use filament_exact::Cancel;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -482,11 +482,11 @@ mod tests {
         ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession, ProviderItemResult,
         ProviderManifest, ProviderRequest, ProviderResults,
     };
+    use filament_exact::{Cancel, Integer, Value};
     use fsl_foundation::BackendId;
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::{default_accounting, Call, CallArgument, DependencyInput, SpineLimits};
     use fsl_route::{descriptor_from_manifest, BackendDescriptor, Candidate, ProviderOrigin};
-    use filament_exact::{Cancel, Integer, Value};
     use serde::Deserialize;
 
     use super::{project_call_items, HostProcessProvider};
@@ -500,7 +500,7 @@ mod tests {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
              function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let source = SourceIdentity::new("agent-ix", "configured-call");
         let path = "configured-call.native";

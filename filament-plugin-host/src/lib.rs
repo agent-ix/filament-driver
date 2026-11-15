@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use quire_canonical::{to_vec, Limits};
 use filament_exact::{Cancel, CancelCause};
+use quire_canonical::{to_vec, Limits};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

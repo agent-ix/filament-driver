@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real ordinary-source scalar lowering; no monitor Program or runtime construction claim.
 
-use filament_driver::monitor::{
-    lowering::lower_scalar_functions, MonitorPreparationError, MonitorPreparationLimits,
-};
-use ix_trace_rs::trace;
-use fsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
-use fsl_package::emit_checked;
-use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
-use fsl_semantics::model::intake::package_input;
 use filament_contract_model::{
     read_checked_package, CheckedCallableIdentity, CheckedNodeId, CheckedPackageDispatchResult,
     CheckedPackageReadLimits, NativeJoinBudget, SelectedExactIdentities,
 };
 use filament_contract_runtime::monitor::{FunctionId, Operation};
+use filament_driver::monitor::{
+    lowering::lower_scalar_functions, MonitorPreparationError, MonitorPreparationLimits,
+};
 use filament_exact::{Cancel, CancelCause, OrderingOperator, ValueType};
+use fsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
+use fsl_package::emit_checked;
+use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+use fsl_semantics::model::intake::package_input;
+use ix_trace_rs::trace;
 
 /// These native views are acquired in explicit setup, outside any assembly
 /// allowance. No successful callable work receipt or full preparation is claimed.
@@ -22,7 +22,7 @@ use filament_exact::{Cancel, CancelCause, OrderingOperator, ValueType};
 #[test]
 fn actual_source_functions_share_handles_without_sharing_function_identity() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function combineOne using v(a: Integer, b: Integer): Integer pure { a + b }
 function combineTwo using v(a: Integer, b: Integer): Integer pure { a + b }
 "#;
@@ -160,7 +160,7 @@ fn source_fixture(source: &str, package_name: &str, names: &[&str]) -> Fixture {
 }
 
 const SCALAR_SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function sumValue using v(a: Integer, b: Integer): Integer pure { a + b }
 function subValue using v(a: Integer, b: Integer): Integer pure { a - b }
 function mulValue using v(a: Integer, b: Integer): Integer pure { a * b }
@@ -395,7 +395,7 @@ fn assert_argument(
 #[test]
 fn excluded_source_forms_stop_at_original_operation_without_partial_tuple() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function modValue using v(a: Integer, b: Integer): Integer pure { a mod b }
 function literalValue using v(): Integer pure { 0 }
 function helperValue using v(a: Integer): Integer pure { a }
@@ -599,7 +599,7 @@ fn foreign_package_callable_refusal_retains_its_original_payload() {
 #[test]
 fn admitted_bounded_parameter_is_not_widened_to_supported_integer() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function boundedValue using v(a: Int[0, 9], b: Int[0, 9]): Integer pure { a + b }
 "#;
     let fixture = source_fixture(SOURCE, "agent-ix/scalar-bounded", &["boundedValue"]);
@@ -695,7 +695,7 @@ fn measured_component_storage_includes_native_constructor_reservations() {
 #[test]
 fn heterogeneous_signature_retains_unused_types_and_nonzero_argument_position() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 function mixedValue using v(unused: Integer, flag: Boolean, retainedNumber: Integer): Boolean pure { not flag }
 "#;
     let fixture = source_fixture(SOURCE, "agent-ix/scalar-heterogeneous", &["mixedValue"]);

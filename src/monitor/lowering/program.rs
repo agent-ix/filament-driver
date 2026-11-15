@@ -751,7 +751,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
             _ => return Err(self.invalid(node)),
         };
         let lowered = match read.identity {
-            "quire.op.function.call" => {
+            "filament.op.function.call" => {
                 let Some((CheckedTerm::Reference { target: callee }, rest)) =
                     arguments.split_first()
                 else {
@@ -764,7 +764,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     arguments: operands,
                 }
             }
-            "quire.op.control.if" => {
+            "filament.op.control.if" => {
                 let [condition, when_true, when_false] =
                     self.operands(frame, node, arguments, 0)?[..]
                 else {
@@ -776,7 +776,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     when_false,
                 }
             }
-            "quire.op.control.let" => {
+            "filament.op.control.let" => {
                 let [binding, CheckedTerm::Reference { target: body }] = arguments else {
                     return Err(self.unsupported(node));
                 };
@@ -798,11 +798,11 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     body,
                 }
             }
-            "quire.op.collection.sequence" => {
+            "filament.op.collection.sequence" => {
                 let elements = self.operands(frame, node, arguments, 0)?;
                 Operation::Sequence { elements }
             }
-            "quire.op.collection.flatten" | "quire.op.collection.size" => {
+            "filament.op.collection.flatten" | "filament.op.collection.size" => {
                 let [value] = self.operands(frame, node, arguments, 0)?[..] else {
                     return Err(self.unsupported(node));
                 };
@@ -812,7 +812,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     Operation::SequenceSize { value }
                 }
             }
-            "quire.op.collection.fold" => {
+            "filament.op.collection.fold" => {
                 let [CheckedTerm::Reference { target: sequence }, binding, CheckedTerm::Reference { target: initial }] =
                     arguments
                 else {
@@ -850,7 +850,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     body,
                 }
             }
-            "quire.op.collection.map" | "quire.op.collection.filter" => {
+            "filament.op.collection.map" | "filament.op.collection.filter" => {
                 let [CheckedTerm::Reference { target: sequence }, binding] = arguments else {
                     return Err(self.unsupported(node));
                 };
@@ -880,7 +880,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     }
                 }
             }
-            "quire.op.record.project" => {
+            "filament.op.record.project" => {
                 let [value] = self.operands(frame, node, arguments, 0)?[..] else {
                     return Err(self.unsupported(node));
                 };
@@ -909,10 +909,10 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                     _ => return Err(self.unsupported(node)),
                 }
             }
-            "quire.op.integer.eq"
-            | "quire.op.integer.ne"
-            | "quire.op.boolean.eq"
-            | "quire.op.boolean.ne" => {
+            "filament.op.integer.eq"
+            | "filament.op.integer.ne"
+            | "filament.op.boolean.eq"
+            | "filament.op.boolean.ne" => {
                 let [left, right] = self.operands(frame, node, arguments, 0)?[..] else {
                     return Err(self.unsupported(node));
                 };

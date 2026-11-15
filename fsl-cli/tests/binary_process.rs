@@ -18,6 +18,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use filament_driver::{execute, ExecutionEngine, ExecutionRequest, ObjectEnvironment};
+use filament_exact::Cancel;
+use filament_semantic_value::catalog::Category;
+use filament_semantic_value::supplied_stop::SuppliedLimits;
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::SourceIdentity;
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
@@ -26,9 +29,6 @@ use fsl_replay::spine::{
     default_accounting, Call, DependencyInput, SpineLimits, DEFAULT_WORK_UNITS,
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
-use filament_exact::Cancel;
-use filament_semantic_value::catalog::Category;
-use filament_semantic_value::supplied_stop::SuppliedLimits;
 
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 #[path = "../../tests/common/units.rs"]
@@ -562,7 +562,7 @@ fn configured_process_normal_exit_shuts_down_active_session() {
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
          function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
          function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-        "quire.value.complete/v1"
+        "filament.value.complete/v1"
     );
     std::fs::write(&source_path, source).expect("write source fixture");
     let executable = std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
@@ -651,7 +651,7 @@ fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() 
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
          function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
          function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-        "quire.value.complete/v1"
+        "filament.value.complete/v1"
     );
     std::fs::write(&source_path, source).expect("write source fixture");
 
@@ -767,7 +767,7 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
         "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
          function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
          function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-        "quire.value.complete/v1"
+        "filament.value.complete/v1"
     );
     std::fs::write(&source_path, source).expect("write source fixture");
 

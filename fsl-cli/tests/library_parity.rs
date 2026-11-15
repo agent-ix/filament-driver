@@ -8,15 +8,15 @@ use std::process::{Command, Output};
 use filament_driver::{
     execute, ExecutionEngine, ExecutionFailure, ExecutionRequest, ObjectEnvironment,
 };
+use filament_exact::{Cancel, Integer, Value};
+use filament_semantic_value::catalog::Category;
+use filament_semantic_value::supplied_stop::SuppliedLimits;
 use fsl_foundation::SourceIdentity;
 use fsl_replay::spine::{
     check, default_accounting, package, parse, select, Call, CallArgument, DependencyInput,
     PackageLimits, ParseRequest, SpineLimits, DEFAULT_WORK_UNITS,
 };
 use fsl_replay::OutcomeDocument;
-use filament_exact::{Cancel, Integer, Value};
-use filament_semantic_value::catalog::Category;
-use filament_semantic_value::supplied_stop::SuppliedLimits;
 
 #[path = "common/requests.rs"]
 mod requests;
@@ -24,13 +24,13 @@ mod requests;
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 
 const VALUE_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
     type Digit = Int[0, 9];\n\
     function p using v(x: Digit): Boolean pure { x < 10 }\n\
     function q using v(x: Digit): Boolean pure { x < 5 }\n";
 
 const MALFORMED_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
     function f using v(: Boolean pure { true }\n";
 
 /// Removes its directory when dropped, including after a failed assertion.

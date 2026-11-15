@@ -14,8 +14,8 @@ use filament_driver::{
     ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
     ProviderRequest, ProviderResults,
 };
-use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
-use ix_cli_kit::streams::{self, Diagnostics};
+use filament_exact::Cancel;
+use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, PreparedRun, RunLimits};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::Code;
@@ -27,8 +27,8 @@ use fsl_replay::spine::{
 };
 use fsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
-use filament_exact::Cancel;
-use filament_semantic_value::catalog::Category;
+use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
+use ix_cli_kit::streams::{self, Diagnostics};
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
 #[must_use]
@@ -1510,8 +1510,8 @@ mod outcome_tests {
     use std::io;
     use std::process::ExitCode;
 
-    use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
     use filament_semantic_value::catalog::Category;
+    use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 
     use super::{process_exit_code, write_diagnostic, write_result_diagnostics, CommandResult};
 
@@ -1760,11 +1760,11 @@ mod tests {
 mod configured_run_tests {
     use std::path::{Path, PathBuf};
 
+    use filament_exact::{Integer, Value};
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::{
         default_accounting, Call, CallArgument, SpineLimits, DEFAULT_WORK_UNITS,
     };
-    use filament_exact::{Integer, Value};
 
     use super::{run_configured_providers, Code, CommandResult, ConfiguredRunRequest};
 
@@ -1799,7 +1799,7 @@ mod configured_run_tests {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
              function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let path = "configured-run.native";
         let source = SourceIdentity::new("agent-ix", path);
@@ -1971,7 +1971,7 @@ mod configured_run_tests {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
              function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let path = "configured-duplicate.native";
         let source = SourceIdentity::new("agent-ix", path);

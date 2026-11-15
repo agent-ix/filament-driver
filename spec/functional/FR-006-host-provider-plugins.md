@@ -225,7 +225,7 @@ settlement path used for first-party providers.
 - [FR-331](ix://agent-ix/filament-specification/FR-331) owns the
   `filament.backend-provider/v1` envelope; FSpec FR-290-AC-13 owns the PV-4
   domain-kind rule; FSL owns typed terminal values and
-  `quire-outcome/1` serialization.
+  `filament-outcome/1` serialization.
 - QSL-654 specifies the proof-bound `kind` member; FSL emitter support for
   writing it remains pending. FSpec FR-290-AC-13 defines the PV-4 domain-kind
   comparison rule. CG's separate `bounds[].kind` work is

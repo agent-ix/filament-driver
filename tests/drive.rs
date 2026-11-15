@@ -18,24 +18,6 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Duration;
 
-use filament_driver::{
-    build_registry, drive, CompileInput, Driven, DriverFault, DriverRefusal, DriverStage, FslCg,
-    GenerationInput, KaniInput, KaniProvider, OutcomeKind, Provider, ProviderItemFailure,
-    ProviderItemResult, ProviderLimits, ProviderManifest, ProviderRequest,
-    RequirementRecordUnresolvedCause, ScalarExecutionInput, Upstream,
-};
-use ix_trace_rs::trace;
-use fsl_foundation::BackendId;
-use fsl_foundation::SourceIdentity;
-use fsl_replay::spine::{
-    check, default_accounting, package, parse, select, Call as FslCall, CallArgument, CheckedUnit,
-    CompileRefusal, DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits,
-    SpineStage,
-};
-use fsl_replay::DomainKind;
-use fsl_route::routing::Disposition as RouteDisposition;
-use fsl_route::{Candidate, RegistrationCause};
-use fsl_semantics::model::object_environment::ObjectEnvironment;
 use filament_contract_codegen::{
     generate_routed, BackendDescriptor, BackendKind, BackendProviderEnvelope, Candidates, Cause,
     ClaimDisposition, ContractItemSettlement, ContractNegotiationError, ContractRequestPosition,
@@ -48,8 +30,26 @@ use filament_contract_model::{
     CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedTerm, ContractPackageV1,
 };
+use filament_driver::{
+    build_registry, drive, CompileInput, Driven, DriverFault, DriverRefusal, DriverStage, FslCg,
+    GenerationInput, KaniInput, KaniProvider, OutcomeKind, Provider, ProviderItemFailure,
+    ProviderItemResult, ProviderLimits, ProviderManifest, ProviderRequest,
+    RequirementRecordUnresolvedCause, ScalarExecutionInput, Upstream,
+};
 use filament_exact::{Cancel, CancelCause, Integer, Value};
 use filament_semantic_value::catalog::Category;
+use fsl_foundation::BackendId;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{
+    check, default_accounting, package, parse, select, Call as FslCall, CallArgument, CheckedUnit,
+    CompileRefusal, DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits,
+    SpineStage,
+};
+use fsl_replay::DomainKind;
+use fsl_route::routing::Disposition as RouteDisposition;
+use fsl_route::{Candidate, RegistrationCause};
+use fsl_semantics::model::object_environment::ObjectEnvironment;
+use ix_trace_rs::trace;
 
 #[path = "common/units.rs"]
 mod shared_units;
@@ -88,7 +88,7 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
       "identity": "none",
       "shape": "record",
       "members": {},
-      "meaning": "quire.meaning.model.object-type/v1"
+      "meaning": "filament.meaning.model.object-type/v1"
     }
   }],
   "types": [{
@@ -115,7 +115,7 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
 /// A unit with an integer `+` (a `binary` expression) under a range
 /// `conversion` expression. The narrowing `conversion` is not a scalar
 /// operation application (`is_scalar_application` excludes
-/// `quire.op.numeric.narrow` by name) and so is not itself a requirement
+/// `filament.op.numeric.narrow` by name) and so is not itself a requirement
 /// record; only the `+` is. The `+`'s own operands are `x` (owns its
 /// `[0, 9]` bound) and the literal `1`, which
 /// FSL represents as a reference to its own plain-typed `value` node: CG's
@@ -127,9 +127,9 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
 static INT_UNIT: LazyLock<String> =
     LazyLock::new(|| unit("function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }\n"));
 
-/// A unit with an integer `=` (`quire.op.integer.eq`, also a `binary`
+/// A unit with an integer `=` (`filament.op.integer.eq`, also a `binary`
 /// expression): CG's derivation names no operator family for it
-/// (`family_of_identity` has no `quire.op.integer.eq` arm), so it has no
+/// (`family_of_identity` has no `filament.op.integer.eq` arm), so it has no
 /// derivable claim. It also carries an integer unary `-` over its own
 /// bounded parameter (IR-298; see `NEGATE_UNIT`), a sibling CG does derive
 /// a claim for, so a routed run over both shows the unsupported item does
@@ -1444,7 +1444,7 @@ fn tc_002_unknown_backend_refuses_before_negotiation_in_bytewise_order() {
 #[test]
 fn tc_001_tc_006_steps_run_in_order_through_generation() {
     let checked = negate_package().checked().clone();
-    let neg = expression_by_identity(&checked, "quire.op.integer.negate");
+    let neg = expression_by_identity(&checked, "filament.op.integer.negate");
 
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
@@ -1667,7 +1667,7 @@ fn tc_006_handoff_passes_domain_package_evidence_unchanged() {
     expected
         .insert_domain_package_document(identity.as_str(), document.as_slice())
         .expect("the evidence map contains one document per identity");
-    expected.support_feature("quire.value.complete/v1");
+    expected.support_feature("filament.value.complete/v1");
 
     assert_eq!(
         actual, expected,
@@ -2412,7 +2412,7 @@ fn tc_006_x_plus_1_settles_supported() {
         .as_ref()
         .expect("a supported item carries its harness");
     assert_eq!(harness.identity.node_id, add);
-    assert_eq!(harness.identity.operation_identity, "quire.op.integer.add");
+    assert_eq!(harness.identity.operation_identity, "filament.op.integer.add");
     // `x` ranges its own `[0, 9]` domain; the literal `1` is held at exactly
     // its own value, not ranged over `1`'s plain scalar type.
     let bounds: Vec<(i64, i64)> = harness
@@ -2473,7 +2473,7 @@ fn tc_006_x_plus_y_settles_supported_with_independent_argument_bounds() {
         .as_ref()
         .expect("a supported item carries its harness");
     assert_eq!(harness.identity.node_id, add);
-    assert_eq!(harness.identity.operation_identity, "quire.op.integer.add");
+    assert_eq!(harness.identity.operation_identity, "filament.op.integer.add");
     let bounds: Vec<(i64, i64)> = harness
         .identity
         .arguments
@@ -2534,7 +2534,7 @@ fn tc_006_x_plus_100_in_the_return_context_is_refused_at_check() {
 /// so every exact result still lies in `[100, 109]`, disjoint from the
 /// declared `[0, 10]`. No harness is carried for it.
 ///
-/// The guard `>` item is asserted too (SR-013 FND-004): `quire.op.integer.gt`
+/// The guard `>` item is asserted too (SR-013 FND-004): `filament.op.integer.gt`
 /// is IR-confirmed (its operands are `x`, an `Int[0, 9]` reference, and the
 /// literal `20`) but this generator has no Kani harness renderer for any
 /// family but `IntegerArithmetic` (CG's own `OperationNotRendered` doc), so
@@ -2605,7 +2605,7 @@ fn tc_006_x_plus_100_in_a_dead_branch_settles_result_bound_unreachable() {
                 },
                 ..
             }
-        } if operation_identity == "quire.op.integer.add"
+        } if operation_identity == "filament.op.integer.add"
             && reachable_lower == "100"
             && reachable_upper == "109"
     ));
@@ -2619,7 +2619,7 @@ fn tc_006_x_plus_100_in_a_dead_branch_settles_result_bound_unreachable() {
                 },
                 ..
             }
-        } if operation_identity == "quire.op.integer.gt"
+        } if operation_identity == "filament.op.integer.gt"
             && derived_domains == &vec![DerivedDomain::IntegerRange {
                 bound: x_bound,
                 lower: "0".to_owned(),
@@ -2778,7 +2778,7 @@ fn tc_003_route_and_generate_skip_a_negotiation_unsupported_item_by_request_inde
     // Comparing the whole generation output against a direct `generate_routed`
     // call naming the `-` node at request index 1 catches that: it would
     // disagree with whatever CG derives for the `=` node instead.
-    let neg = expression_by_identity(driven.checked(), "quire.op.integer.negate");
+    let neg = expression_by_identity(driven.checked(), "filament.op.integer.negate");
     let backend = kani_candidate(&driven);
     let expected = direct_generation(
         &recorder,
@@ -3050,11 +3050,13 @@ fn tc_004_e5_refusal_is_a_fault() {
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
     let packages = BTreeMap::new();
-    let CheckedPackageDispatchResult::Refused(refusal) = filament_contract_model::read_checked_package(
-        b"not a JSON document",
-        CheckedPackageReadLimits::bounded(),
-        &CheckedPackageEvidence::new(),
-    ) else {
+    let CheckedPackageDispatchResult::Refused(refusal) =
+        filament_contract_model::read_checked_package(
+            b"not a JSON document",
+            CheckedPackageReadLimits::bounded(),
+            &CheckedPackageEvidence::new(),
+        )
+    else {
         panic!("malformed reader bytes must produce a typed refusal");
     };
 
@@ -3116,8 +3118,8 @@ fn tc_006_e5_admits_text_and_rational_units() {
 #[test]
 fn tc_006_typed_form_refusal_preserves_supported_sibling() {
     let checked = eq_package().checked().clone();
-    let eq = expression_by_identity(&checked, "quire.op.integer.eq");
-    let neg = expression_by_identity(&checked, "quire.op.integer.negate");
+    let eq = expression_by_identity(&checked, "filament.op.integer.eq");
+    let neg = expression_by_identity(&checked, "filament.op.integer.negate");
 
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
@@ -3160,7 +3162,7 @@ fn tc_006_typed_form_refusal_preserves_supported_sibling() {
         &driven.settlements[0].backend.as_ref().expect("a lowered item settles").disposition,
         Disposition::Unsupported {
             cause: Cause::KaniFormRefused { form, .. }
-        } if form.operation_identity.as_deref() == Some("quire.op.integer.eq")
+        } if form.operation_identity.as_deref() == Some("filament.op.integer.eq")
     ));
     assert!(matches!(
         driven.settlements[1]
@@ -3841,7 +3843,7 @@ fn a_guard_whose_node_the_package_lacks_refuses_before_negotiation() {
 /// The `test/orders` model document of FSL's switch-transition example: a
 /// `Switch` with an `on` field and `set`/`adjust` operations. A `post` clause
 /// on one of them writes `operation-contract` requirement records.
-const SWITCH_MODEL_DOCUMENT: &str = r#"{"canonicalization":{"algorithm":"rfc8785-v1"},"constructs":[{"construct":{"identity":"none","meaning":"quire.meaning.model.object-type/v1","members":{"identityFields":"required"},"shape":"record"},"kind":{"module":"test/business","name":"thing"},"moduleVersion":"1.0.0"}],"contractVersion":"2.0.0","extensions":[],"occurrences":[],"package":{"identity":"test/orders","mappingVersions":[],"profileVersions":[],"version":"1"},"source":{"dialect":"spec-bundle","identity":"ix://test/orders/spec","version":"1.0.0"},"types":[{"constraints":[],"displayName":"Switch","extensions":[],"fields":[{"defaultKind":"none","identity":"ix://test/orders/Switch/sid","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"sid","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/sid","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/sid"]}},"presence":"required","typeRef":"ix://quire/native/Integer"},{"defaultKind":"none","identity":"ix://test/orders/Switch/on","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"on","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/on","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/on"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"identity":"ix://test/orders/Switch","identityFields":["ix://test/orders/Switch/sid"],"kind":{"module":"test/business","name":"thing"},"operations":[{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/set","name":"set","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/set/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]},{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/adjust","name":"adjust","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/adjust/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]}],"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch"]}},"roles":[],"unknownPolicy":"reject"}]}"#;
+const SWITCH_MODEL_DOCUMENT: &str = r#"{"canonicalization":{"algorithm":"rfc8785-v1"},"constructs":[{"construct":{"identity":"none","meaning":"filament.meaning.model.object-type/v1","members":{"identityFields":"required"},"shape":"record"},"kind":{"module":"test/business","name":"thing"},"moduleVersion":"1.0.0"}],"contractVersion":"2.0.0","extensions":[],"occurrences":[],"package":{"identity":"test/orders","mappingVersions":[],"profileVersions":[],"version":"1"},"source":{"dialect":"spec-bundle","identity":"ix://test/orders/spec","version":"1.0.0"},"types":[{"constraints":[],"displayName":"Switch","extensions":[],"fields":[{"defaultKind":"none","identity":"ix://test/orders/Switch/sid","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"sid","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/sid","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/sid"]}},"presence":"required","typeRef":"ix://quire/native/Integer"},{"defaultKind":"none","identity":"ix://test/orders/Switch/on","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"on","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/on","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/on"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"identity":"ix://test/orders/Switch","identityFields":["ix://test/orders/Switch/sid"],"kind":{"module":"test/business","name":"thing"},"operations":[{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/set","name":"set","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/set/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]},{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/adjust","name":"adjust","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/adjust/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]}],"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch"]}},"roles":[],"unknownPolicy":"reject"}]}"#;
 
 /// A unit holding one `value-validity` item and the `operation-contract`
 /// records of a `post` clause over the model's `set` operation.

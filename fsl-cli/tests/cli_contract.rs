@@ -8,8 +8,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use ix_cli_kit::version::Agreement;
-use ix_trace_rs::trace;
+use filament_exact::Cancel;
+use filament_semantic_value::catalog::Category;
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::{Code, Staged};
 use fsl_foundation::SourceIdentity;
@@ -17,8 +17,8 @@ use fsl_replay::spine::{
     check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
-use filament_exact::Cancel;
-use filament_semantic_value::catalog::Category;
+use ix_cli_kit::version::Agreement;
+use ix_trace_rs::trace;
 
 #[path = "common/requests.rs"]
 mod requests;

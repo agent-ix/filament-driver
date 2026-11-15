@@ -5,6 +5,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use filament_contract_codegen as cg;
+use filament_contract_codegen::{
+    BackendKind, ContractItemSettlement, KaniInstallation, KaniScalarNativeRequest,
+    RoutedGeneration,
+};
+use filament_contract_model::{CheckedNodeId, CheckedPackageV2};
+use filament_exact::Cancel;
 use fsl_foundation::source::provenance::OccurrenceKey;
 use fsl_foundation::{BackendId, SourceIdentity};
 use fsl_package::{EmittedPackage, ExportRefusal};
@@ -16,13 +23,6 @@ use fsl_route::routing::Disposition as RouteDisposition;
 use fsl_route::{Candidate, CandidateOutcome, Mode, Registry};
 use fsl_semantics::check::{Capability, RequirementMap};
 use fsl_semantics::model::object_environment::ObjectEnvironment;
-use filament_contract_codegen as cg;
-use filament_contract_codegen::{
-    BackendKind, ContractItemSettlement, KaniInstallation, KaniScalarNativeRequest,
-    RoutedGeneration,
-};
-use filament_contract_model::{CheckedNodeId, CheckedPackageV2};
-use filament_exact::Cancel;
 
 use crate::handoff::handoff;
 use crate::{
@@ -635,7 +635,9 @@ fn native_limits_match(
 
 /// Project the caller's FSL limits into CG's public request type while retaining
 /// every named counter. CG is adding this type's root re-export on main.
-fn native_scalar_limits(limits: fsl_replay::ScalarLimits) -> filament_contract_codegen::ScalarLimits {
+fn native_scalar_limits(
+    limits: fsl_replay::ScalarLimits,
+) -> filament_contract_codegen::ScalarLimits {
     filament_contract_codegen::ScalarLimits {
         integer_bits: limits.integer_bits,
         decimal_digits: limits.decimal_digits,
@@ -1197,17 +1199,17 @@ mod scalar_receipt_tests {
 #[cfg(test)]
 mod scalar_native_tractability_tests {
     use super::*;
-    use ix_trace_rs::trace;
-    use fsl_replay::spine::{default_accounting, CallArgument};
     use filament_contract_codegen::ProofCeilings;
     use filament_exact::{Integer, Value};
+    use fsl_replay::spine::{default_accounting, CallArgument};
+    use ix_trace_rs::trace;
     use std::num::NonZeroU64;
 
     fn run(upstream: &impl crate::Upstream) -> Result<Driven, DriverRefusal> {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let call = Call {
@@ -1316,9 +1318,9 @@ mod scalar_native_tractability_tests {
 #[cfg(all(test, target_os = "linux"))]
 mod native_receipt_integration_tests {
     use super::*;
-    use fsl_replay::spine::{default_accounting, CallArgument};
     use filament_contract_codegen::{KaniInstallation, ProofCeilings};
     use filament_exact::{Integer, Value};
+    use fsl_replay::spine::{default_accounting, CallArgument};
     use std::io::Write as _;
     use std::num::NonZeroU64;
     use std::path::PathBuf;
@@ -1371,7 +1373,7 @@ mod native_receipt_integration_tests {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function inc using v(x: Int[4, 4]): Int[5, 5] pure {{ x + 1 }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let cancel = Cancel::new();
@@ -1725,10 +1727,10 @@ fn project_descriptor(
 
 #[cfg(test)]
 mod kani_form_projection_tests {
-    use ix_trace_rs::trace;
     use filament_contract_model::CheckedNodeId;
     use filament_exact::NodeKey;
     use filament_exact::PathSegment;
+    use ix_trace_rs::trace;
 
     use super::resolve_checked_node;
     use crate::{DriverFault, DriverRefusal, DriverStage, OutcomeKind};

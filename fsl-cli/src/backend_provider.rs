@@ -13,6 +13,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use filament_driver::Driven;
 use filament_driver::ProviderManifest;
+use filament_semantic_value::catalog::{CatalogCode, Category};
 use fsl_foundation::backend::EmptyBackendIdentity;
 use fsl_foundation::bound::DomainKind;
 use fsl_foundation::diagnostic::category_of;
@@ -24,7 +25,6 @@ use fsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
     ProviderOrigin,
 };
-use filament_semantic_value::catalog::{CatalogCode, Category};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -874,14 +874,14 @@ pub enum ProvisionDigestDomain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use filament_contract_codegen as cg;
     use filament_driver::{
         build_linked_providers, build_registry, drive, CompileInput, FslCg, GenerationInput,
     };
     use filament_driver::{DriverRefusal, Upstream};
+    use filament_exact::Cancel;
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::SpineLimits;
-    use filament_contract_codegen as cg;
-    use filament_exact::Cancel;
     use std::cell::Cell;
     use std::collections::BTreeMap;
 
@@ -1381,7 +1381,7 @@ mod tests {
     fn driven_request_serializes_the_routed_fsl_candidate_and_emitted_package() {
         let source_text = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\nfunction negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let mut registry = build_linked_providers(&[]).expect("the empty linked registry builds");
@@ -1563,7 +1563,7 @@ mod tests {
     fn unsupported_fsl_candidate_does_not_create_a_process_request() {
         let source_text = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let registry = build_registry(&[ProviderManifest {

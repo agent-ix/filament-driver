@@ -258,7 +258,7 @@ add library-source intake or expand that baseline contract.
 | Replay disagrees or completes without reproducing the counterexample | FSL replay feeds CG's terminal mapping | Inconclusive with replay-parity cause |
 | Replay refuses or faults | Driver retains typed replay cause and uses CG's mapping | Refusal cause retained; a replay fault is an internal failure, never refuted |
 
-FSL's `quire-outcome/1` value is the machine outcome. FSL's category/severity
+FSL's `filament-outcome/1` value is the machine outcome. FSL's category/severity
 contract decides the process status, including multi-item outcomes and stream
 failures; the driver and ix-cli-kit introduce no additional mapping.
 

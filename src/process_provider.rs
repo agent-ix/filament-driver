@@ -11,10 +11,10 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::time::Duration;
 
+use filament_exact::Cancel;
 use fsl_package::EmittedPackage;
 use fsl_route::request::RequirementItem;
 use fsl_route::BackendDescriptor;
-use filament_exact::Cancel;
 
 use crate::{ProviderManifest, ProviderRequest, ProviderResults};
 

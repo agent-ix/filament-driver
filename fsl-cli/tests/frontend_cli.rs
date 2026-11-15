@@ -5,8 +5,8 @@
 
 use std::process::{Command, Output, Stdio};
 
-use ix_trace_rs::trace;
 use filament_semantic_value::catalog::Category;
+use ix_trace_rs::trace;
 
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
@@ -38,10 +38,6 @@ const COMPILE_REFUSED: &str = concat!(
 
 fn refusal_code() -> i32 {
     i32::from(Category::Refusal.exit_code())
-}
-
-fn tool_failure_code() -> i32 {
-    i32::from(Category::InternalFailure.exit_code())
 }
 
 fn fsl(arguments: &[&str]) -> Output {
@@ -357,7 +353,7 @@ fn stdout_write_failure_exits_30() {
             .expect("run fsl with a full stdout");
         assert_eq!(
             output.status.code(),
-            Some(tool_failure_code()),
+            Some(i32::from(Category::InternalFailure.exit_code())),
             "{arguments:?}"
         );
         assert!(
@@ -514,7 +510,7 @@ fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
         assert_eq!(relative.stderr, absolute.stderr, "{request}");
         let value: serde_json::Value =
             serde_json::from_slice(&relative.stdout).expect("outcome JSON");
-        assert_eq!(value["format"], "quire-outcome/1");
+        assert_eq!(value["format"], "filament-outcome/1");
     }
 }
 
@@ -572,7 +568,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     let directory =
         TestDirectory(std::env::temp_dir().join(format!("filament-clause-{}", std::process::id())));
     std::fs::create_dir_all(&directory.0).expect("clause directory");
-    let observation = serde_json::json!({"format":"quire.state.snapshot/v1",
+    let observation = serde_json::json!({"format":"filament.state.snapshot/v1",
         "identity":{"authority":"issuer","identity":"current"},"observation":"current"});
     std::fs::write(directory.0.join("current.json"), observation.to_string()).expect("observation");
     let request = serde_json::json!({"format":"native-run/1","request":{

@@ -6,6 +6,17 @@
 //! operation each. The trait lets tests wrap `FslCg`, record driver calls and
 //! still run the real functions.
 
+use filament_contract_codegen::{
+    generate_routed, negotiate_contract_package, BackendDescriptor, BackendKind,
+    BackendProviderEnvelope, ContractItemSettlement, ContractNegotiationError,
+    ContractRequestPosition, GenerationContexts, RoutedGeneration, RoutedGenerationError,
+    RoutedGenerationItem,
+};
+use filament_contract_model::{
+    read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
+    CheckedPackageReadLimits, CheckedPackageV2, ContractPackageV1,
+};
+use filament_exact::Cancel;
 use fsl_foundation::diagnostic::StageFailure;
 use fsl_foundation::source::provenance::OccurrenceKey;
 use fsl_foundation::SourceIdentity;
@@ -18,17 +29,6 @@ use fsl_route::routing::{route, Disposition};
 use fsl_route::Candidate;
 use fsl_semantics::check::RequirementMap;
 use fsl_semantics::model::intake::PackageInput;
-use filament_contract_codegen::{
-    generate_routed, negotiate_contract_package, BackendDescriptor, BackendKind,
-    BackendProviderEnvelope, ContractItemSettlement, ContractNegotiationError,
-    ContractRequestPosition, GenerationContexts, RoutedGeneration, RoutedGenerationError,
-    RoutedGenerationItem,
-};
-use filament_contract_model::{
-    read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageReadLimits, CheckedPackageV2, ContractPackageV1,
-};
-use filament_exact::Cancel;
 
 use crate::{DriverFault, DriverRefusal};
 
@@ -290,17 +290,19 @@ impl Upstream for NativeRouteFslCg {
         routed: &[RoutedGenerationItem],
         contexts: &GenerationContexts<'_>,
     ) -> Result<RoutedGeneration, RoutedGenerationError> {
-        filament_contract_codegen::generate_routed_native(source, package, positions, routed, contexts)
+        filament_contract_codegen::generate_routed_native(
+            source, package, positions, routed, contexts,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use filament_exact::CancelCause;
+    use filament_semantic_value::catalog::InternalFault;
     use fsl_foundation::diagnostic::{LimitExceeded, StageFailure};
     use fsl_foundation::Setting;
     use fsl_replay::spine::CompileRefusal;
-    use filament_exact::CancelCause;
-    use filament_semantic_value::catalog::InternalFault;
 
     use super::{driver_refusal, DriverFault, DriverRefusal, LifecycleOperation, SpineStage};
     use crate::{DriverStage, OutcomeKind};

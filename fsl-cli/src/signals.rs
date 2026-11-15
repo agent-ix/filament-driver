@@ -489,9 +489,9 @@ mod tests {
             ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
             ProviderManifest, ProviderRequest, ProviderResults,
         };
+        use filament_exact::Cancel;
         use fsl_foundation::BackendId;
         use fsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
-        use filament_exact::Cancel;
         use serde_json::Value;
 
         struct RemoveMarkers(Vec<std::path::PathBuf>);

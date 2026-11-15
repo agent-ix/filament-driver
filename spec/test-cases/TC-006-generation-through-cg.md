@@ -40,9 +40,9 @@ application, in occurrence-key order.
 5. Drive a unit with a `Text[1, 5; nfc]` parameter and one with a
    `Rational[0, 9; 1, 9]` parameter, with an empty registry (neither
    declares a scalar operation application).
-6. Drive a unit with an integer `=` (`quire.op.integer.eq`, a node CG's
+6. Drive a unit with an integer `=` (`filament.op.integer.eq`, a node CG's
    derivation names no operator family for) alongside an integer unary `-`
-   (`quire.op.integer.negate`, which it does derive): two requirement
+   (`filament.op.integer.negate`, which it does derive): two requirement
    records, the `=` at index 0 and the `-` at index 1, both routed to
    `kani`.
 7. Drive step 4's unit again, and check its `+` item's disposition and
@@ -190,7 +190,7 @@ the rational projection or candidate-control cases.
   conversion context. In FSL occurrence-key order, the guard at index 0
   settles as
   `Unsupported`/`OperationNotRendered`; the `+` at index 1 settles as
-  `Unsupported`/`ResultBoundUnreachable` (`quire.op.integer.add`, result
+  `Unsupported`/`ResultBoundUnreachable` (`filament.op.integer.add`, result
   `[0, 10]`, reachable `[100, 109]`). Neither item is routed or generated.
 - Step 11's E5 evidence contains every caller-supplied domain-package
   document under the original identity and with the original bytes, and still

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Authentic ordinary-source record admission, independently of monitor closure.
 
+use filament_contract_model::{
+    CheckedNodeId, CheckedPackageReadLimits, ExactTypeProjectionError,
+    ExactTypeProjectionErrorCode, NativeJoinBudget, SelectedExactIdentities,
+};
 use filament_driver::monitor::source_record::{
     admit_source_records, AdmittedSourceRecords, SourceRecordAdmissionError,
     SourceRecordAdmissionErrorCode,
@@ -8,16 +12,12 @@ use filament_driver::monitor::source_record::{
 use filament_driver::monitor::{
     MonitorPreparationError, MonitorPreparationErrorCode, MonitorPreparationLimits,
 };
-use ix_trace_rs::trace;
+use filament_exact::{Cancel, Presence, ValueType};
 use fsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
 use fsl_package::{emit_checked, Emission};
 use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
 use fsl_semantics::model::intake::package_input;
-use filament_contract_model::{
-    CheckedNodeId, CheckedPackageReadLimits, ExactTypeProjectionError,
-    ExactTypeProjectionErrorCode, NativeJoinBudget, SelectedExactIdentities,
-};
-use filament_exact::{Cancel, Presence, ValueType};
+use ix_trace_rs::trace;
 
 const JOIN_LIMITS: MonitorPreparationLimits = MonitorPreparationLimits {
     work: 100_000,
@@ -26,7 +26,7 @@ const JOIN_LIMITS: MonitorPreparationLimits = MonitorPreparationLimits {
 
 fn produce(identity: &str) -> (Emission, CheckedNodeId, CheckedNodeId) {
     let source = r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "filament.value.complete/v1";
 record Point { x: Integer; y: Integer; }
 record Tagged { p: Point; note: Boolean?; maybe: Option<Integer>; }
 record Tree { weight: Integer; kids: Sequence<Tree>[0, 3]; rest: Option<Tree>; }
@@ -452,10 +452,10 @@ fn native_opaque_claim_acceptance_does_not_replace_emission_authority() {
 #[trace("FR-018-AC-1", "FR-018-AC-3")]
 #[test]
 fn final_real_plan_root_emission_retains_its_source_record_rows() {
+    use filament_exact::{Integer, Rational};
     use fsl_analyze::monitor_root::{emit_plan_root, PlanRootRequest};
     use fsl_replay::{MonitorTarget, TimingObligationSettings};
     use fsl_semantics::library::LibraryName;
-    use filament_exact::{Integer, Rational};
 
     let metadata = std::process::Command::new("cargo")
         .args(["metadata", "--format-version", "1", "--locked"])
@@ -490,9 +490,9 @@ fn final_real_plan_root_emission_retains_its_source_record_rows() {
     let packages = package_input([document.as_slice()]).unwrap();
     let source = format!(
         r#"language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
-profile timed = "quire.temporal.timed/v1";
-profile complete = "quire.temporal.complete/v1";
+profile v = "filament.value.complete/v1";
+profile timed = "filament.temporal.timed/v1";
+profile complete = "filament.temporal.complete/v1";
 model Selected = "{identity}";
 dimension Time;
 unit second : Time = rational(1, 1);

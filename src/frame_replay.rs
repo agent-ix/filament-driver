@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Retained request to FSL-selected frame replay preparation (FR-009).
 
-use fsl_foundation::SourceIdentity;
-use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
 use filament_contract_codegen::{
     FrameReplay, FrameReplayError, FrameReplayInputs, SelectedFrameTarget,
 };
 use filament_contract_model::ContractSourceV1;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
 
 use crate::{Driven, DriverFault, DriverRefusal};
 

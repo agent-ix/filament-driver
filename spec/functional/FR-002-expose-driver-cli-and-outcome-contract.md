@@ -32,7 +32,7 @@ Each verb SHALL call its corresponding typed FSL or driver operation.
 The CLI SHALL not make semantic decisions based on diagnostic text.
 
 In machine mode, each verb SHALL write exactly one FSL-defined
-`quire-outcome/1` JSON value to stdout and preserve the typed library outcome
+`filament-outcome/1` JSON value to stdout and preserve the typed library outcome
 without changing its schema or values, except when the CLI reports a reserved
 exit-code mapping invariant failure or SIGINT/SIGTERM terminates an active
 plugin session as specified below. The driver SHALL use FSL's single total
@@ -48,7 +48,7 @@ the fallback when that function returns reserved value `5`.
 
 ## Outputs
 
-- One FSL-defined `quire-outcome/1` JSON value in machine mode, or the
+- One FSL-defined `filament-outcome/1` JSON value in machine mode, or the
   selected text rendering, except that a reserved-code mapping invariant
   failure or signal-terminated active plugin invocation writes no outcome
   document or text result. Until FSL supplies typed outcome text rendering,
@@ -67,14 +67,14 @@ the fallback when that function returns reserved value `5`.
   the FSL workspace supplies no competing user binary. The `filament-driver`
   library SHALL NOT compose the downstream `filament-cache` package. FR-014
   specifies the separate CLI package boundary.
-- The CLI SHALL preserve the library's FSL-defined `quire-outcome/1` value
+- The CLI SHALL preserve the library's FSL-defined `filament-outcome/1` value
   without adding, removing or changing outcome data, except in the two
   invocation cases specified by AC-6 and AC-7.
 - When an invocation on Linux or macOS is terminated by SIGINT or SIGTERM
   during an active plugin session, after the plugin cleanup specified by
   FR-006 the CLI SHALL
   restore the default signal disposition and re-raise the received signal.
-  That terminated invocation SHALL write no `quire-outcome/1` document, and
+  That terminated invocation SHALL write no `filament-outcome/1` document, and
   the CLI SHALL make no FSL cancellation-cause claim.
 - The CLI SHALL pass FSL's `Category::exit_code` result to
   `ix_cli_kit::exit::caller_exit_code`; it SHALL NOT remap accepted values
@@ -144,10 +144,10 @@ the fallback when that function returns reserved value `5`.
 | --- | --- | --- |
 | FR-002-AC-1 | The driver binary exposes the command and output surface defined by FSL ADR-029 LC-1, CB-1 and CB-5, and dispatches each command to its typed operation. | Test (TC-009) |
 | FR-002-AC-2 | For each FSL category whose exit result is not reserved code `5`, the process status equals the value returned by FSL's `Category::exit_code`; no second category-to-exit mapping is applied. Reserved result `5` is governed by AC-6. | Test (TC-009, TC-018) |
-| FR-002-AC-3 | In machine mode, each command writes one parseable `quire-outcome/1` value equal to the library outcome under FSL's schema; the CLI adds, removes or changes no outcome data. The mapping-invariant and signal exceptions are specified in AC-6 and AC-7. | Test (TC-009, TC-018, TC-028) |
+| FR-002-AC-3 | In machine mode, each command writes one parseable `filament-outcome/1` value equal to the library outcome under FSL's schema; the CLI adds, removes or changes no outcome data. The mapping-invariant and signal exceptions are specified in AC-6 and AC-7. | Test (TC-009, TC-018, TC-028) |
 | FR-002-AC-4 | The CLI passes FSL's `Category::exit_code` result through `ix_cli_kit::exit::caller_exit_code` and preserves each accepted numeric value without mapping it through the kit's typed `Outcome`. | Test (TC-009, TC-018) |
 | FR-002-AC-5 | The CLI reads only input paths named by its arguments and reads no unnamed configuration file. | Test (TC-009) |
-| FR-002-AC-6 | If FSL's category exit function returns reserved value `5`, the CLI writes a plain-text stderr diagnostic naming reserved code `5` and fallback code `30`, writes no text result or `quire-outcome/1` document to stdout, and returns `Category::InternalFailure.exit_code()` (`30`) without attributing a FSL cause. | Test (TC-009, TC-018) |
+| FR-002-AC-6 | If FSL's category exit function returns reserved value `5`, the CLI writes a plain-text stderr diagnostic naming reserved code `5` and fallback code `30`, writes no text result or `filament-outcome/1` document to stdout, and returns `Category::InternalFailure.exit_code()` (`30`) without attributing a FSL cause. | Test (TC-009, TC-018) |
 | FR-002-AC-7 | When a Linux or macOS invocation receives SIGINT or SIGTERM during an active plugin session, the CLI cleans up, restores the default disposition, and re-raises that signal without writing a result or outcome document or inventing a numeric exit value or FSL cause. | Test (TC-028) |
 | FR-002-AC-8 | When the CLI writes results and diagnostics, it uses ix-cli-kit's `streams` module for stream discipline. | Test (TC-009, TC-018) |
 | FR-002-AC-9 | When the CLI writes machine-mode outcomes, it uses ix-cli-kit's `json` module for canonical JSON encoding. | Test (TC-009, TC-018) |

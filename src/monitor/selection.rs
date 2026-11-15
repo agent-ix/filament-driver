@@ -393,10 +393,10 @@ fn clock_with_budget<'a>(
 #[cfg(test)]
 mod tests {
     use super::matches_configured_clock;
-    use ix_trace_rs::trace;
     use filament_contract_model::{
         CheckedMonitorClock, CheckedNodeId, CheckedNodePathSegment, ClockConfiguration,
     };
+    use ix_trace_rs::trace;
 
     #[trace("FR-015-AC-13")]
     #[test]

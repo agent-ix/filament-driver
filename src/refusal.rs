@@ -3,12 +3,6 @@
 //! AGE-394 (the lifecycle and CLI design) renders them; this module only types
 //! them.
 
-use fsl_foundation::diagnostic::StageFailure;
-use fsl_foundation::source::provenance::OccurrenceKey;
-use fsl_foundation::{BackendId, Code, EmptyBackendIdentity};
-use fsl_package::ExportRefusal;
-use fsl_replay::spine::{BindRefusal, CompileRefusal, RunRefusal, SpineStage};
-use fsl_route::RegistrationRefusal;
 use filament_contract_codegen::{
     CheckedFunctionErrorCode, ContractNegotiationError, ContractScalarError, EnvelopeRefusal,
     KaniObligationError, KaniScalarNativeError, KaniScalarNativeErrorClass, KaniUnsupportedReason,
@@ -22,6 +16,12 @@ use filament_exact::CancelCause;
 use filament_exact::NodeKey;
 use filament_semantic_value::catalog::Category;
 use filament_semantic_value::catalog::InternalFault;
+use fsl_foundation::diagnostic::StageFailure;
+use fsl_foundation::source::provenance::OccurrenceKey;
+use fsl_foundation::{BackendId, Code, EmptyBackendIdentity};
+use fsl_package::ExportRefusal;
+use fsl_replay::spine::{BindRefusal, CompileRefusal, RunRefusal, SpineStage};
+use fsl_route::RegistrationRefusal;
 
 /// Why [`crate::drive`] or [`crate::build_registry`] produced no result.
 #[derive(Debug, thiserror::Error)]
@@ -1302,8 +1302,6 @@ fn envelope_message(refusal: &EnvelopeRefusal) -> String {
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
-    use fsl_foundation::EmptyBackendIdentity;
     use filament_contract_codegen::{CheckedFunctionErrorCode, KaniUnsupportedReason};
     use filament_contract_codegen::{
         ContractNegotiationError, ContractPackageIncompleteProjection,
@@ -1318,6 +1316,8 @@ mod tests {
     };
     use filament_exact::NodeKey;
     use filament_semantic_value::catalog::Category;
+    use fsl_foundation::EmptyBackendIdentity;
+    use ix_trace_rs::trace;
 
     use super::{DriverFault, DriverRefusal, DriverStage, OutcomeKind};
 

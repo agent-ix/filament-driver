@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Typed monitor preparation stops, separate from runtime outcomes.
 
-use fsl_analyze::monitor_root::PlanAuthorityRefusal;
-use fsl_package::{IdentityFileRefusal, NativeRowError, NativeRowErrorCode};
 use filament_contract_model::{
     CheckedCallableReadError, CheckedCallableReadErrorCode, CheckedMonitorClockReadError,
     CheckedMonitorClockReadErrorCode, CheckedNodeId, CheckedOperationViewError,
@@ -11,6 +9,8 @@ use filament_contract_model::{
 };
 use filament_contract_runtime::monitor::ProgramRefusal;
 use filament_exact::{CancelCause, InvalidNodeKey};
+use fsl_analyze::monitor_root::PlanAuthorityRefusal;
+use fsl_package::{IdentityFileRefusal, NativeRowError, NativeRowErrorCode};
 
 use filament_semantic_value::declaration::EnvironmentFailure;
 

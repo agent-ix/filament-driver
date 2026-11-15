@@ -4,12 +4,6 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
-use fsl_foundation::BackendId;
-use fsl_package::EmittedPackage;
-use fsl_replay::{
-    Certification, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, OutcomeWriteError,
-    ProofBasis, RequestIndex, TerminalRecord, TerminalValue,
-};
 use filament_contract_codegen::{
     execute_kani_obligation_decided, run_terminal_value, Candidate, DecidedRunRefusal,
     KaniExecutableHarness, KaniExecutionEvidence, KaniExecutionRefusal, KaniExecutionRequest,
@@ -17,6 +11,12 @@ use filament_contract_codegen::{
     TractabilityLoadError, TractabilityTable, UnsupportedObligation,
 };
 use filament_exact::{Cancel, CancelCause};
+use fsl_foundation::BackendId;
+use fsl_package::EmittedPackage;
+use fsl_replay::{
+    Certification, Operation, OutcomeDocument, OutcomeItem, OutcomeStage, OutcomeWriteError,
+    ProofBasis, RequestIndex, TerminalRecord, TerminalValue,
+};
 
 use crate::ProviderManifest;
 
@@ -235,7 +235,7 @@ impl<T, E> Default for ProviderResults<T, E> {
 pub type KaniProviderResults = ProviderResults<KaniExecutionEvidence, KaniProviderFailure>;
 
 impl ProviderResults<KaniExecutionEvidence, KaniProviderFailure> {
-    /// Serialize these provider items with FSL's canonical `quire-outcome/1`
+    /// Serialize these provider items with FSL's canonical `filament-outcome/1`
     /// document. This covers only the items in `self`; it is not a complete
     /// per-request outcome. Items that require replay or lack execution
     /// evidence remain typed errors; the driver does not invent settlements.
@@ -473,7 +473,15 @@ mod tests {
     use std::sync::LazyLock;
     use std::time::Duration;
 
-    use ix_trace_rs::trace;
+    use filament_contract_codegen::{
+        Candidate, KaniInconclusiveReason, KaniRunOutcome, KaniSolver, MemoryObservation,
+        ProofCeilings, SymbolicArgumentBounds, SymbolicBounds,
+    };
+    use filament_contract_codegen::{
+        KaniExecutableHarness, KaniFailureCause, KaniFailurePhase, KaniNoVerdictDiagnostics,
+        KaniStreamExcerpt, ReplaySettlement,
+    };
+    use filament_exact::{Cancel, CancelCause, Integer, Rational};
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::SpineLimits;
     use fsl_replay::statistical::{
@@ -485,15 +493,7 @@ mod tests {
         OutcomeDocument, OutcomeItem, OutcomeStage, ProofBasis, ReplayLimits, StageLimits,
         TerminalValue,
     };
-    use filament_contract_codegen::{
-        Candidate, KaniInconclusiveReason, KaniRunOutcome, KaniSolver, MemoryObservation,
-        ProofCeilings, SymbolicArgumentBounds, SymbolicBounds,
-    };
-    use filament_contract_codegen::{
-        KaniExecutableHarness, KaniFailureCause, KaniFailurePhase, KaniNoVerdictDiagnostics,
-        KaniStreamExcerpt, ReplaySettlement,
-    };
-    use filament_exact::{Cancel, CancelCause, Integer, Rational};
+    use ix_trace_rs::trace;
     use serde_json::Value;
 
     use super::{
@@ -517,7 +517,7 @@ mod tests {
     static REAL_ADMISSION: LazyLock<(CheckedNodeId, AdmittedItemAccounting)> =
         LazyLock::new(|| {
             let source = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\";\n\
+            profile v = \"filament.value.complete/v1\";\n\
             function f using v(x: Int[0, 9]): Boolean pure { x + 1 < 10 }\n";
             let compiled = compile_package(
                 fsl_replay::CompileUnit {
@@ -533,7 +533,7 @@ mod tests {
             )
             .expect("FSL compiles provider fixture");
             let mut evidence = CheckedPackageEvidence::new();
-            evidence.support_feature("quire.value.complete/v1");
+            evidence.support_feature("filament.value.complete/v1");
             let checked = match CheckedPackageV2::read(
                 compiled.bytes(),
                 CheckedPackageReadLimits::bounded(),
@@ -768,7 +768,7 @@ mod tests {
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"{}\";\n\
              function f using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n",
-            "quire.value.complete/v1"
+            "filament.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let registry = crate::build_registry(&[ProviderManifest {
@@ -1338,7 +1338,7 @@ mod tests {
                 max_sample_steps: None,
                 sampler: fsl_foundation::selection::DefinitionRef::new(
                     "agent-ix",
-                    "quire.simulation.sampler/v1",
+                    "filament.simulation.sampler/v1",
                 )
                 .expect("sampler has a valid identity"),
                 tests: Vec::new(),
