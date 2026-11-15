@@ -2412,10 +2412,7 @@ fn tc_006_x_plus_1_settles_supported() {
         .as_ref()
         .expect("a supported item carries its harness");
     assert_eq!(harness.identity.node_id, add);
-    assert_eq!(
-        harness.identity.operation_identity,
-        "quire.op.integer.add"
-    );
+    assert_eq!(harness.identity.operation_identity, "quire.op.integer.add");
     // `x` ranges its own `[0, 9]` domain; the literal `1` is held at exactly
     // its own value, not ranged over `1`'s plain scalar type.
     let bounds: Vec<(i64, i64)> = harness
@@ -2476,10 +2473,7 @@ fn tc_006_x_plus_y_settles_supported_with_independent_argument_bounds() {
         .as_ref()
         .expect("a supported item carries its harness");
     assert_eq!(harness.identity.node_id, add);
-    assert_eq!(
-        harness.identity.operation_identity,
-        "quire.op.integer.add"
-    );
+    assert_eq!(harness.identity.operation_identity, "quire.op.integer.add");
     let bounds: Vec<(i64, i64)> = harness
         .identity
         .arguments
