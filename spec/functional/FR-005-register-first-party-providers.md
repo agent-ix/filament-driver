@@ -195,7 +195,7 @@ remains Linked-only.
   registration; QSL-654 for per-registration domain admission and refusal.
 - FR-006 defines the driver-owned process-provider seam; FR-013 defines the
   separate host, and FR-014 defines its `fsl-cli` composition.
-- FSL FR-069 defines the typed terminal reader and `filament-outcome/1` remains
+- FSL FR-069 defines the typed terminal reader and `quire-outcome/1` remains
   the serialized outcome contract.
 - QSL-490 and QSL-655 are prerequisites for mapping plugin `proved` results to
   a trusted `ProofBasis` terminal and for replay-settling plugin counterexample

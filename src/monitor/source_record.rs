@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Authentic FSL source-record witnesses joined to their own strict IR admission.
 
-use filament_contract_model::{
+use qsl_package::Emission;
+use quire_contract_model::{
     read_checked_package, CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageEvidence,
     CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2,
     ExactTypeProjection, ExactTypeProjectionError, NativeJoinBudget, SelectedExactIdentities,
     SelectedSourceRecordMemberRow, SelectedSourceRecordRow,
 };
-use fsl_package::Emission;
 
 use super::request::MonitorPreparationLimits;
 
@@ -65,7 +65,7 @@ pub enum SourceRecordAdmissionError {
     ReadIncomplete(CheckedPackageIncomplete),
     /// The original operational catalog failure.
     #[error(transparent)]
-    CatalogUnavailable(filament_contract_model::CatalogReadError),
+    CatalogUnavailable(quire_contract_model::CatalogReadError),
     /// The native join's original error, including resource cause and source locus.
     #[error("source-record witness join failed: {0}")]
     Join(#[source] ExactTypeProjectionError),

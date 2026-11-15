@@ -159,17 +159,17 @@ executable nodes or parameters. No broad operator family implies support.
 
 | Native operation identity | Operator / arity | Operand types -> result | Native RT operation |
 | --- | --- | --- | --- |
-| `filament.op.integer.add` | Binary / 2 | Integer, Integer -> Integer | IntegerAdd |
-| `filament.op.integer.sub` | Binary / 2 | Integer, Integer -> Integer | IntegerSubtract |
-| `filament.op.integer.mul` | Binary / 2 | Integer, Integer -> Integer | IntegerMultiply |
-| `filament.op.integer.negate` | Unary / 1 | Integer -> Integer | IntegerNegate |
-| `filament.op.integer.lt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Less |
-| `filament.op.integer.le` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::LessOrEqual |
-| `filament.op.integer.gt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Greater |
-| `filament.op.integer.ge` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::GreaterOrEqual |
-| `filament.op.boolean.not` | Unary / 1 | Boolean -> Boolean | BooleanNot |
-| `filament.op.boolean.and` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanAnd |
-| `filament.op.boolean.or` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanOr |
+| `quire.op.integer.add` | Binary / 2 | Integer, Integer -> Integer | IntegerAdd |
+| `quire.op.integer.sub` | Binary / 2 | Integer, Integer -> Integer | IntegerSubtract |
+| `quire.op.integer.mul` | Binary / 2 | Integer, Integer -> Integer | IntegerMultiply |
+| `quire.op.integer.negate` | Unary / 1 | Integer -> Integer | IntegerNegate |
+| `quire.op.integer.lt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Less |
+| `quire.op.integer.le` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::LessOrEqual |
+| `quire.op.integer.gt` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::Greater |
+| `quire.op.integer.ge` | Binary / 2 | Integer, Integer -> Boolean | IntegerOrder, OrderingOperator::GreaterOrEqual |
+| `quire.op.boolean.not` | Unary / 1 | Boolean -> Boolean | BooleanNot |
+| `quire.op.boolean.and` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanAnd |
+| `quire.op.boolean.or` | Binary / 2 | Boolean, Boolean -> Boolean | BooleanOr |
 
 This is a closed initial set, not an illustrative list. Literal, If, Let,
 ordinary source Call, equality, integer division/remainder/modulo, Boolean

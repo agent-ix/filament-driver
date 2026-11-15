@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use filament_exact::{Cancel, CancelCause};
 use quire_canonical::{to_vec, Limits};
+use quire_exact::{Cancel, CancelCause};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1427,8 +1427,8 @@ mod tests {
         spawn_writer, write_frame_control, Envelope, FrameError, FrameLimits, FrameReader,
         FrameWriter, Kind, PluginError, PluginSession, RunLimits, SessionStart, PROTOCOL,
     };
-    use filament_exact::Cancel;
-    use filament_exact::CancelCause;
+    use quire_exact::Cancel;
+    use quire_exact::CancelCause;
     use serde::{Deserialize, Serialize};
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};

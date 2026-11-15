@@ -62,7 +62,7 @@ binary preserves them while using ix-cli-kit's exit, streams and JSON modules.
    typed result in the parent using the table's operation or constructor over
    that recorded request, including its source identity, profile and limits,
    and the table's cancellation arrangement. Use FSL's outcome conversion and
-   serialization to obtain the expected `filament-outcome/1` value, and call
+   serialization to obtain the expected `quire-outcome/1` value, and call
    FSL's `Category::exit_code` on its category for the expected status.
    Compare the status to that case's independently obtained expectation; the
    four expectations cover 20, 21, 22 and 30 without deriving them from child
@@ -148,7 +148,7 @@ review covers `fsl-cli/src/main.rs` and `fsl-cli/src/cli.rs`.
   instead uses status `30` and has no stdout result. There is one pass-through
   to `std::process::ExitCode` and no ix-cli-kit `Outcome` conversion.
 - With writable stdout, machine output contains exactly the unchanged FSL
-  `filament-outcome/1` value for each typed-result run. The code-5 fallback case
+  `quire-outcome/1` value for each typed-result run. The code-5 fallback case
   writes no stdout result
   and emits its specified plain-text diagnostic only on stderr. The known
   `undefined_expression/unproved-range` diagnostic

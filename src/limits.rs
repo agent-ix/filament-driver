@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Resolve and apply FR-003's caller-selected FSL limit settings through FSL.
 
-use fsl_foundation::{Setting, SettingLimits, SettingName, UsageRefusal};
-use fsl_replay::{
+use qsl_foundation::{Setting, SettingLimits, SettingName, UsageRefusal};
+use qsl_replay::{
     spine::{Call, ClauseRunRequest, SpineLimits},
     AccountingLimits, CallerLimits, ObservationLimits,
 };
@@ -25,7 +25,7 @@ pub struct LimitOverrides(Vec<(SettingName, u64)>);
 impl LimitOverrides {
     /// Parse operands with FSL's canonical setting grammar.
     pub fn parse(operands: &[String]) -> Result<Self, UsageRefusal> {
-        fsl_foundation::setting::parse_operands(operands.iter().map(String::as_str)).map(Self)
+        qsl_foundation::setting::parse_operands(operands.iter().map(String::as_str)).map(Self)
     }
 
     /// Apply settings exposed by the selected `run` operation.
@@ -46,7 +46,7 @@ impl LimitOverrides {
         &self,
         limits: &mut SpineLimits,
         mut observation: Option<&mut ObservationLimits>,
-        accounting: &mut filament_exact::ScalarLimits,
+        accounting: &mut quire_exact::ScalarLimits,
     ) -> Result<(), LimitError> {
         let mut available: Vec<Setting> = limits
             .bounds()
@@ -108,11 +108,11 @@ impl LimitOverrides {
     reason = "a failed assertion is the test failure report"
 )]
 mod tests {
-    use fsl_foundation::{
+    use qsl_foundation::{
         AccountingSetting, Setting, SettingLimits, SettingName, UsageCause, UsageRefusal,
     };
-    use fsl_replay::spine::{default_accounting, Call, SpineLimits};
-    use fsl_replay::AccountingLimits;
+    use qsl_replay::spine::{default_accounting, Call, SpineLimits};
+    use qsl_replay::AccountingLimits;
 
     use super::{LimitError, LimitOverrides};
 
@@ -121,15 +121,15 @@ mod tests {
             function: "run".to_owned(),
             arguments: Vec::new(),
             accounting: default_accounting(100),
-            supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
+            supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
             backend: Default::default(),
         }
     }
 
-    fn clause_request() -> fsl_replay::spine::ClauseRunRequest {
-        fsl_replay::spine::ClauseRunRequest {
-            source: fsl_replay::spine::ClauseRunSource::Program {
-                identity: fsl_foundation::SourceIdentity::new("issuer", "unit"),
+    fn clause_request() -> qsl_replay::spine::ClauseRunRequest {
+        qsl_replay::spine::ClauseRunRequest {
+            source: qsl_replay::spine::ClauseRunSource::Program {
+                identity: qsl_foundation::SourceIdentity::new("issuer", "unit"),
                 path: "unit.fsl".to_owned(),
                 bytes: Vec::new(),
             },
@@ -138,16 +138,16 @@ mod tests {
             dependencies: Default::default(),
             snapshots: Default::default(),
             invocations: Default::default(),
-            selection: fsl_replay::spine::ClauseRunSelection::Function {
+            selection: qsl_replay::spine::ClauseRunSelection::Function {
                 name: "yes".to_owned(),
                 arguments: Vec::new(),
-                snapshot: fsl_semantics::model::observation::DocumentRef {
+                snapshot: qsl_semantics::model::observation::DocumentRef {
                     authority: "issuer".to_owned(),
                     identity: "snapshot".to_owned(),
                 },
             },
             limits: SpineLimits::default(),
-            observation_limits: fsl_replay::ObservationLimits::default(),
+            observation_limits: qsl_replay::ObservationLimits::default(),
             accounting: default_accounting(17),
         }
     }
@@ -179,7 +179,7 @@ mod tests {
             AccountingLimits(request.accounting)
                 .bounds()
                 .into_iter()
-                .find(|(name, _)| *name == fsl_foundation::AccountingSetting::WorkUnits)
+                .find(|(name, _)| *name == qsl_foundation::AccountingSetting::WorkUnits)
                 .map(|(_, value)| value),
             Some(3)
         );

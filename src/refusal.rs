@@ -3,25 +3,25 @@
 //! AGE-394 (the lifecycle and CLI design) renders them; this module only types
 //! them.
 
-use filament_contract_model::{
-    CheckedNodeId, CheckedPackageIncomplete, CheckedPackageLimit, CheckedPackageRefusal,
-    CheckedPackageRefusalCause, CheckedPackageRefusalCode,
-};
-use filament_exact::CancelCause;
-use filament_exact::NodeKey;
-use filament_semantic_value::catalog::Category;
-use filament_semantic_value::catalog::InternalFault;
-use fsl_foundation::diagnostic::StageFailure;
-use fsl_foundation::source::provenance::OccurrenceKey;
-use fsl_foundation::{BackendId, Code, EmptyBackendIdentity};
-use fsl_package::ExportRefusal;
-use fsl_replay::spine::{BindRefusal, CompileRefusal, RunRefusal, SpineStage};
-use fsl_route::RegistrationRefusal;
+use qsl_foundation::diagnostic::StageFailure;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::{BackendId, Code, EmptyBackendIdentity};
+use qsl_package::ExportRefusal;
+use qsl_replay::spine::{BindRefusal, CompileRefusal, RunRefusal, SpineStage};
+use qsl_route::RegistrationRefusal;
 use quire_contract_codegen::{
     CheckedFunctionErrorCode, ContractNegotiationError, ContractScalarError, EnvelopeRefusal,
     KaniObligationError, KaniScalarNativeError, KaniScalarNativeErrorClass, KaniUnsupportedReason,
     OracleGenerationError, PackageRequestError, RoutedGenerationError,
 };
+use quire_contract_model::{
+    CheckedNodeId, CheckedPackageIncomplete, CheckedPackageLimit, CheckedPackageRefusal,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode,
+};
+use quire_exact::CancelCause;
+use quire_exact::NodeKey;
+use quire_semantic_value::catalog::Category;
+use quire_semantic_value::catalog::InternalFault;
 
 /// Why [`crate::drive`] or [`crate::build_registry`] produced no result.
 #[derive(Debug, thiserror::Error)]
@@ -96,7 +96,7 @@ pub enum DriverRefusal {
     PackageNegotiation(PackageRequestError),
     /// E5: the owner catalog could not be acquired; the package is not malformed.
     #[error(transparent)]
-    HandoffCatalogUnavailable(filament_contract_model::CatalogReadError),
+    HandoffCatalogUnavailable(quire_contract_model::CatalogReadError),
     /// E5: IR's reader stopped at one of its limits.
     #[error("IR's checked-package reader reached its {:?} limit", .0.limit_kind)]
     HandoffLimit(CheckedPackageIncomplete),
@@ -552,7 +552,7 @@ impl DriverRefusal {
                 // `StageFailure::Cancelled` has a category independent of
                 // its refusal payload. `LimitExceeded` satisfies the generic
                 // catalog bound without inventing a driver cancellation map.
-                let failure: StageFailure<fsl_foundation::diagnostic::LimitExceeded> =
+                let failure: StageFailure<qsl_foundation::diagnostic::LimitExceeded> =
                     StageFailure::Cancelled(*cause);
                 Some(failure.category())
             }
@@ -989,12 +989,12 @@ fn oracle_code(error: &OracleGenerationError) -> Code {
         | OracleGenerationError::UnauthenticatedRequestedRootKind { .. } => Code::RuntimeInvariant,
         OracleGenerationError::EnumReconstruction(_) => Code::InvalidPackage,
         OracleGenerationError::EnvironmentAdmission(failure) => match failure {
-            filament_semantic_value::declaration::EnvironmentFailure::Refused(_) => {
+            quire_semantic_value::declaration::EnvironmentFailure::Refused(_) => {
                 Code::InvalidPackage
             }
-            filament_semantic_value::declaration::EnvironmentFailure::Limit(_)
-            | filament_semantic_value::declaration::EnvironmentFailure::Allocation(_)
-            | filament_semantic_value::declaration::EnvironmentFailure::Capacity(_) => {
+            quire_semantic_value::declaration::EnvironmentFailure::Limit(_)
+            | quire_semantic_value::declaration::EnvironmentFailure::Allocation(_)
+            | quire_semantic_value::declaration::EnvironmentFailure::Capacity(_) => {
                 Code::ResourceExhausted
             }
         },
@@ -1302,14 +1302,8 @@ fn envelope_message(refusal: &EnvelopeRefusal) -> String {
 
 #[cfg(test)]
 mod tests {
-    use filament_contract_model::{
-        CheckedNodeId, CheckedPackageIncomplete, CheckedPackageLimit, CheckedPackageRefusalCause,
-        CheckedPackageRefusalCode, CheckedPackageRefusalLocation, JsonPointer,
-    };
-    use filament_exact::NodeKey;
-    use filament_semantic_value::catalog::Category;
-    use fsl_foundation::EmptyBackendIdentity;
     use ix_trace_rs::trace;
+    use qsl_foundation::EmptyBackendIdentity;
     use quire_contract_codegen::{CheckedFunctionErrorCode, KaniUnsupportedReason};
     use quire_contract_codegen::{
         ContractNegotiationError, ContractPackageIncompleteProjection,
@@ -1318,6 +1312,12 @@ mod tests {
         ModuleSymbol, OracleGenerationError, PackageRequestError, RoutedGenerationError,
         ScalarOracleStopKind,
     };
+    use quire_contract_model::{
+        CheckedNodeId, CheckedPackageIncomplete, CheckedPackageLimit, CheckedPackageRefusalCause,
+        CheckedPackageRefusalCode, CheckedPackageRefusalLocation, JsonPointer,
+    };
+    use quire_exact::NodeKey;
+    use quire_semantic_value::catalog::Category;
 
     use super::{DriverFault, DriverRefusal, DriverStage, OutcomeKind};
 
@@ -1342,9 +1342,9 @@ mod tests {
     #[trace("FR-001-AC-5")]
     #[test]
     fn current_owner_boundary_extension_keeps_native_code_and_cause() {
-        use fsl_replay::spine::CompileRefusal;
+        use qsl_replay::spine::CompileRefusal;
         let native =
-            fsl_semantics::library::extension::ExtensionRefusal::DefinitionCycle(Vec::new());
+            qsl_semantics::library::extension::ExtensionRefusal::DefinitionCycle(Vec::new());
         let refusal = DriverRefusal::Compile(Box::new(CompileRefusal::Extension(native.clone())));
         assert_eq!(refusal.code(), "invalid_package/definition-cycle");
         assert_eq!(
@@ -1373,11 +1373,11 @@ mod tests {
     #[trace("TC-004", "FR-001-AC-5")]
     #[test]
     fn new_oracle_failures_preserve_code_kind_stage_and_exact_payload() {
-        use filament_semantic_value::declaration::{
+        use quire_semantic_value::declaration::{
             DeclarationCause, EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind,
             InvalidDeclaration, StorageRequest, StorageUnit,
         };
-        use filament_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
+        use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
         let cases = [
             (
@@ -1603,7 +1603,7 @@ mod tests {
         let refusal = DriverRefusal::EmptyBackendIdentity(EmptyBackendIdentity);
         assert_eq!(
             refusal.code(),
-            fsl_foundation::Code::InvalidIdentifier.as_str()
+            qsl_foundation::Code::InvalidIdentifier.as_str()
         );
         assert_eq!(refusal.fsl_category(), Some(Category::Refusal));
         assert_eq!(refusal.kind(), OutcomeKind::Refused);
@@ -1668,7 +1668,7 @@ mod tests {
     #[trace("TC-004", "FR-001-AC-5")]
     #[test]
     fn unit_list_refusals_retain_the_owner_cause_and_intake_stage() {
-        use fsl_replay::spine::{CompileRefusal, SpineStage, UnitListRefusal};
+        use qsl_replay::spine::{CompileRefusal, SpineStage, UnitListRefusal};
         let cases = [
             (UnitListRefusal::Empty, "invalid_package/invalid-value"),
             (
@@ -1683,7 +1683,7 @@ mod tests {
             (
                 UnitListRefusal::SiblingImport {
                     identity: "sibling".to_owned(),
-                    unit: Box::new(fsl_foundation::SourceIdentity::new("test", "sibling")),
+                    unit: Box::new(qsl_foundation::SourceIdentity::new("test", "sibling")),
                     region: None,
                 },
                 "missing_import/missing-selection",
@@ -1895,7 +1895,7 @@ mod tests {
 
         assert_eq!(
             refusal.code(),
-            fsl_foundation::Code::RuntimeInvariant.as_str()
+            qsl_foundation::Code::RuntimeInvariant.as_str()
         );
         assert_eq!(refusal.stage(), DriverStage::Negotiation);
         assert_eq!(refusal.kind(), OutcomeKind::Fault);
@@ -2005,7 +2005,7 @@ mod tests {
             request_index: 1,
             node: NodeKey::new(
                 "pkg".to_owned(),
-                vec![filament_exact::PathSegment::Text("n".to_owned())],
+                vec![quire_exact::PathSegment::Text("n".to_owned())],
                 0,
             )
             .expect("a fixture key is admissible"),
@@ -2056,8 +2056,8 @@ mod tests {
         )))
     }
 
-    fn refused_package() -> Box<filament_contract_model::CheckedPackageRefusal> {
-        use filament_contract_model::{
+    fn refused_package() -> Box<quire_contract_model::CheckedPackageRefusal> {
+        use quire_contract_model::{
             CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2,
             CheckedPackageV2ReadResult,
         };
@@ -2100,7 +2100,7 @@ mod tests {
             (
                 "KaniReaderCatalogUnavailable",
                 OracleGenerationError::KaniReaderCatalogUnavailable(Box::new(
-                    filament_contract_model::CatalogReadError::new("operations/0", "unreadable"),
+                    quire_contract_model::CatalogReadError::new("operations/0", "unreadable"),
                 )),
                 "runtime_invariant",
                 OutcomeKind::Fault,
@@ -2267,7 +2267,7 @@ mod tests {
     fn requirement_occurrence() -> quire_contract_codegen::RequirementOccurrence {
         quire_contract_codegen::RequirementOccurrence {
             node_id: node_id("n"),
-            role: filament_contract_model::CheckedOccurrenceRole::Expression,
+            role: quire_contract_model::CheckedOccurrenceRole::Expression,
             ordinal: 0,
         }
     }
@@ -2350,14 +2350,14 @@ mod tests {
     #[test]
     fn requirement_record_faults_are_generation_runtime_invariants() {
         let key = |name: &str| {
-            fsl_foundation::source::provenance::OccurrenceKey::new(
+            qsl_foundation::source::provenance::OccurrenceKey::new(
                 NodeKey::new(
                     "pkg".to_owned(),
-                    vec![filament_exact::PathSegment::Text(name.to_owned())],
+                    vec![quire_exact::PathSegment::Text(name.to_owned())],
                     0,
                 )
                 .expect("a fixture key is admissible"),
-                filament_exact::Origin::new(filament_exact::Role::new("expression"), 0),
+                quire_exact::Origin::new(quire_exact::Role::new("expression"), 0),
             )
         };
         let faults = [

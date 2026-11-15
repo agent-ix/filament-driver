@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Typed monitor preparation stops, separate from runtime outcomes.
 
-use filament_contract_model::{
+use qsl_analyze::monitor_root::PlanAuthorityRefusal;
+use qsl_package::{IdentityFileRefusal, NativeRowError, NativeRowErrorCode};
+use quire_contract_model::{
     CheckedCallableReadError, CheckedCallableReadErrorCode, CheckedMonitorClockReadError,
     CheckedMonitorClockReadErrorCode, CheckedNodeId, CheckedOperationViewError,
     CheckedPackageIncomplete, CheckedPackageRefusal, ExactTypeProjectionError,
     ExactTypeProjectionErrorCode, NativeJoinChargeKind, SelectedMonitorTypeClosureErrorCode,
 };
-use filament_contract_runtime::monitor::ProgramRefusal;
-use filament_exact::{CancelCause, InvalidNodeKey};
-use fsl_analyze::monitor_root::PlanAuthorityRefusal;
-use fsl_package::{IdentityFileRefusal, NativeRowError, NativeRowErrorCode};
+use quire_contract_runtime::monitor::ProgramRefusal;
+use quire_exact::{CancelCause, InvalidNodeKey};
 
-use filament_semantic_value::declaration::EnvironmentFailure;
+use quire_semantic_value::declaration::EnvironmentFailure;
 
 use crate::monitor_refusal::{MonitorLocusError, TargetMismatch, UnsupportedOperation};
 
@@ -144,13 +144,13 @@ pub enum MonitorPreparationError {
     ClockRead(Box<CheckedMonitorClockReadError>),
     /// The native declaration lookup has no row for the original subject.
     #[error("no final declaration for monitor subject: {0:?}")]
-    MissingFinalSubject(Box<fsl_replay::MonitorSubject>),
+    MissingFinalSubject(Box<qsl_replay::MonitorSubject>),
     /// Original strict native emission-admission refusal.
     #[error("monitor emission admission refused: {0:?}")]
     EmissionRefused(Box<CheckedPackageRefusal>),
     /// The native catalog acquisition failure, separate from malformed input.
     #[error(transparent)]
-    CatalogUnavailable(filament_contract_model::CatalogReadError),
+    CatalogUnavailable(quire_contract_model::CatalogReadError),
     /// Original strict native acquisition limit, outside the driver ledger.
     #[error("monitor emission acquisition incomplete: {0:?}")]
     EmissionIncomplete(Box<CheckedPackageIncomplete>),
@@ -165,19 +165,19 @@ pub enum MonitorPreparationError {
     Key(#[from] InvalidNodeKey),
     /// FSL refused plan-authority admission; its payload is retained unchanged.
     #[error(transparent)]
-    Authority(Box<fsl_analyze::monitor_root::PlanAuthorityRefusal>),
+    Authority(Box<qsl_analyze::monitor_root::PlanAuthorityRefusal>),
     /// FSL refused the identity rows of the final emission.
     #[error(transparent)]
-    IdentityRows(Box<fsl_package::IdentityFileRefusal>),
+    IdentityRows(Box<qsl_package::IdentityFileRefusal>),
     /// A FSL row adapter refused or was denied a charge.
     #[error(transparent)]
-    Rows(#[from] fsl_package::NativeRowError),
+    Rows(#[from] qsl_package::NativeRowError),
     /// IR refused the same-emission authority row.
     #[error(transparent)]
-    AuthorityRow(filament_contract_model::SelectedMonitorAuthorityRowError),
+    AuthorityRow(quire_contract_model::SelectedMonitorAuthorityRowError),
     /// IR refused the selected type closure; its payload is retained unchanged.
     #[error(transparent)]
-    Closure(Box<filament_contract_model::SelectedMonitorTypeClosureError>),
+    Closure(Box<quire_contract_model::SelectedMonitorTypeClosureError>),
     /// An admitted rational or integer text did not convert.
     #[error("monitor preparation rational or integer conversion refused")]
     Rational,

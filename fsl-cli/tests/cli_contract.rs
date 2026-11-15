@@ -8,17 +8,17 @@
 use std::path::Path;
 use std::process::Command;
 
-use filament_exact::Cancel;
-use filament_semantic_value::catalog::Category;
-use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
-use fsl_foundation::diagnostic::{Code, Staged};
-use fsl_foundation::SourceIdentity;
-use fsl_replay::spine::{
-    check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
-};
-use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 use ix_cli_kit::version::Agreement;
 use ix_trace_rs::trace;
+use qsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
+use qsl_foundation::diagnostic::{Code, Staged};
+use qsl_foundation::SourceIdentity;
+use qsl_replay::spine::{
+    check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
+};
+use qsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
+use quire_exact::Cancel;
+use quire_semantic_value::catalog::Category;
 
 #[path = "common/requests.rs"]
 mod requests;
@@ -120,9 +120,9 @@ fn package_outcome_bytes(path: &'static str) -> Vec<u8> {
 fn format_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read format fixture");
     let source = SourceIdentity::new("issuer", "document");
-    let limits = fsl_cst::Limits::default();
+    let limits = qsl_cst::Limits::default();
     let cancel = Cancel::new();
-    let result = fsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
+    let result = qsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
         .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
     OutcomeDocument::from_format(&result)
@@ -373,11 +373,11 @@ fn parse_refusal_emits_fsl_diagnostic_cause_and_locus() {
 #[test]
 fn format_writes_fsl_formatted_text_without_editing_the_source() {
     let source = std::fs::read(SOURCE).expect("read format fixture");
-    let parsed = fsl_cst::parse_with_cancel(
+    let parsed = qsl_cst::parse_with_cancel(
         SourceIdentity::new("issuer", "document"),
         SOURCE,
         &source,
-        fsl_cst::Limits::default(),
+        qsl_cst::Limits::default(),
         &Cancel::new(),
     )
     .expect("fixture is an admissible parsed source");

@@ -62,8 +62,8 @@ pub(super) fn text(value: &str, budget: &mut Budget<'_>) -> Result<String, Error
 
 #[cfg(test)]
 mod tests {
-    use filament_exact::Cancel;
     use ix_trace_rs::trace;
+    use quire_exact::Cancel;
 
     use super::*;
     use crate::monitor::MonitorPreparationLimits;

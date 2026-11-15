@@ -5,8 +5,8 @@
 
 use std::process::{Command, Output, Stdio};
 
-use filament_semantic_value::catalog::Category;
 use ix_trace_rs::trace;
+use quire_semantic_value::catalog::Category;
 
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
@@ -443,8 +443,8 @@ impl Drop for TestDirectory {
 #[test]
 fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
     use filament_driver::{execute, ExecutionEngine, ExecutionRequest, ObjectEnvironment};
-    use fsl_command::command::{compile_outcome, prepare_run, PreparedRun, RunLimits};
-    use fsl_replay::Operation;
+    use qsl_command::command::{compile_outcome, prepare_run, PreparedRun, RunLimits};
+    use qsl_replay::Operation;
     let fixtures = std::path::Path::new(RUN_REQUEST)
         .parent()
         .expect("fixture directory");
@@ -475,10 +475,10 @@ fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
                 bytes: input.source.text().as_bytes(),
                 packages: &input.packages,
                 dependencies: &input.dependencies,
-                limits: fsl_replay::spine::SpineLimits::default(),
+                limits: qsl_replay::spine::SpineLimits::default(),
                 call: input.call,
                 object_environment: &ObjectEnvironment::default(),
-                cancel: filament_exact::Cancel::new(),
+                cancel: quire_exact::Cancel::new(),
                 engine: ExecutionEngine::Interpreter,
             });
             match result {
@@ -514,7 +514,7 @@ fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
         assert_eq!(relative.stderr, absolute.stderr, "{request}");
         let value: serde_json::Value =
             serde_json::from_slice(&relative.stdout).expect("outcome JSON");
-        assert_eq!(value["format"], "filament-outcome/1");
+        assert_eq!(value["format"], "quire-outcome/1");
     }
 }
 
@@ -566,13 +566,13 @@ fn request_byte_options_reach_owner_limits_and_compile_accepts_none() {
 #[trace("TC-1262", "FR-287-AC-9")]
 #[test]
 fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_providers() {
-    use fsl_command::command::{prepare_run, PreparedRun, RunLimits};
-    use fsl_replay::spine::ClauseRunSelection;
-    use fsl_replay::{OutcomeDocument, OutcomeStage};
+    use qsl_command::command::{prepare_run, PreparedRun, RunLimits};
+    use qsl_replay::spine::ClauseRunSelection;
+    use qsl_replay::{OutcomeDocument, OutcomeStage};
     let directory =
         TestDirectory(std::env::temp_dir().join(format!("filament-clause-{}", std::process::id())));
     std::fs::create_dir_all(&directory.0).expect("clause directory");
-    let observation = serde_json::json!({"format":"filament.state.snapshot/v1",
+    let observation = serde_json::json!({"format":"quire.state.snapshot/v1",
         "identity":{"authority":"issuer","identity":"current"},"observation":"current"});
     std::fs::write(directory.0.join("current.json"), observation.to_string()).expect("observation");
     let request = serde_json::json!({"format":"native-run/1","request":{
@@ -591,7 +591,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
         panic!("function claim");
     };
     let name = name.clone();
-    let report = fsl_replay::spine::run_clause(*request).expect("actual clause report");
+    let report = qsl_replay::spine::run_clause(*request).expect("actual clause report");
     let document =
         OutcomeDocument::from_clause_runs(Some(OutcomeStage::S4), [(name.as_str(), &report)])
             .expect("core producer");

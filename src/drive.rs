@@ -5,24 +5,24 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use filament_contract_model::{CheckedNodeId, CheckedPackageV2};
-use filament_exact::Cancel;
-use fsl_foundation::source::provenance::OccurrenceKey;
-use fsl_foundation::{BackendId, SourceIdentity};
-use fsl_package::{EmittedPackage, ExportRefusal};
-use fsl_replay::spine::{
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::{BackendId, SourceIdentity};
+use qsl_package::{EmittedPackage, ExportRefusal};
+use qsl_replay::spine::{
     AdmittedModels, BindOutcome, Call, CheckedUnit, ScalarOccurrence, SpineLimits,
 };
-use fsl_route::request::{items_from_requirements, ExtentClassification, RequirementItem};
-use fsl_route::routing::Disposition as RouteDisposition;
-use fsl_route::{Candidate, CandidateOutcome, Mode, Registry};
-use fsl_semantics::check::{Capability, RequirementMap};
-use fsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_route::request::{items_from_requirements, ExtentClassification, RequirementItem};
+use qsl_route::routing::Disposition as RouteDisposition;
+use qsl_route::{Candidate, CandidateOutcome, Mode, Registry};
+use qsl_semantics::check::{Capability, RequirementMap};
+use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_codegen as cg;
 use quire_contract_codegen::{
     BackendKind, ContractItemSettlement, KaniInstallation, KaniScalarNativeRequest,
     RoutedGeneration,
 };
+use quire_contract_model::{CheckedNodeId, CheckedPackageV2};
+use quire_exact::Cancel;
 
 use crate::handoff::handoff;
 use crate::{
@@ -58,7 +58,7 @@ pub struct CompileInput<'a> {
     /// The checked package's name; FSL's check names the package it builds.
     pub package_name: &'a str,
     /// FR-056's package input: domain package documents by model identity.
-    pub packages: &'a fsl_semantics::model::intake::PackageInput,
+    pub packages: &'a qsl_semantics::model::intake::PackageInput,
     /// The S1 to S3 stage limits.
     pub limits: SpineLimits,
     /// The caller-owned FSL cancellation handle. Pass a clone when the caller
@@ -102,7 +102,7 @@ pub struct ScalarExecutionInput<'a> {
     /// The exact FSL call selected by the caller.
     pub call: &'a Call,
     /// Caller-selected FSL replay limits retained for the later replay step.
-    pub replay_limits: fsl_replay::ReplayLimits,
+    pub replay_limits: qsl_replay::ReplayLimits,
     /// The same object environment supplied to the FSL call.
     pub environment: &'a ObjectEnvironment,
     /// Native runner settings, when this call also requests same-artifact
@@ -208,11 +208,11 @@ pub struct ScalarExecution {
     /// The caller's original cancellation handle, shared with FSL and CG.
     cancel: Cancel,
     /// Exact FSL replay limits retained alongside the native observation.
-    replay_limits: fsl_replay::ReplayLimits,
+    replay_limits: qsl_replay::ReplayLimits,
     /// The FSL requirement occurrence selected for this routed item.
     occurrence: ScalarOccurrence,
     /// Concrete FSL-bound operands in the generated harness argument order.
-    operands: fsl_replay::spine::BoundScalarOperands,
+    operands: qsl_replay::spine::BoundScalarOperands,
     /// CG's opaque proof/native receipt for the executed immutable snapshot.
     receipt: Option<cg::KaniScalarNativeReceipt>,
 }
@@ -239,7 +239,7 @@ impl ScalarExecution {
     }
 
     /// Caller replay limits retained with this execution.
-    pub fn replay_limits(&self) -> fsl_replay::ReplayLimits {
+    pub fn replay_limits(&self) -> qsl_replay::ReplayLimits {
         self.replay_limits
     }
 
@@ -249,7 +249,7 @@ impl ScalarExecution {
     }
 
     /// FSL-bound operands in generated harness order.
-    pub fn operands(&self) -> &fsl_replay::spine::BoundScalarOperands {
+    pub fn operands(&self) -> &qsl_replay::spine::BoundScalarOperands {
         &self.operands
     }
 
@@ -511,7 +511,7 @@ fn execute_scalar_items(
             application: item.node().clone(),
             occurrence: item.occurrence().clone(),
         };
-        let bound = match fsl_replay::spine::bind_scalar_operands(
+        let bound = match qsl_replay::spine::bind_scalar_operands(
             admitted,
             models,
             checked_unit,
@@ -590,7 +590,7 @@ fn execute_scalar_items(
 }
 
 fn bound_operands_match_identity(
-    bound: &fsl_replay::spine::BoundScalarOperands,
+    bound: &qsl_replay::spine::BoundScalarOperands,
     arguments: &[cg::ScalarObligationArgument],
 ) -> bool {
     bound.operands().len() == arguments.len()
@@ -608,7 +608,7 @@ fn verify_native_receipt(
     artifacts: &[cg::Artifact],
     harness: &cg::KaniScalarObligationHarness,
     operands: &[i64],
-    retained_limits: fsl_replay::ScalarLimits,
+    retained_limits: qsl_replay::ScalarLimits,
 ) -> Result<(), DriverRefusal> {
     if !native_limits_match(receipt, &retained_limits) {
         return Err(DriverRefusal::Fault(
@@ -626,7 +626,7 @@ fn verify_native_receipt(
 
 fn native_limits_match(
     receipt: &cg::KaniScalarNativeReceipt,
-    retained: &fsl_replay::ScalarLimits,
+    retained: &qsl_replay::ScalarLimits,
 ) -> bool {
     let returned = receipt.scalar_limits();
     let meter = receipt.meter_observation().limits();
@@ -635,7 +635,7 @@ fn native_limits_match(
 
 /// Project the caller's FSL limits into CG's public request type while retaining
 /// every named counter. CG is adding this type's root re-export on main.
-fn native_scalar_limits(limits: fsl_replay::ScalarLimits) -> quire_contract_codegen::ScalarLimits {
+fn native_scalar_limits(limits: qsl_replay::ScalarLimits) -> quire_contract_codegen::ScalarLimits {
     quire_contract_codegen::ScalarLimits {
         integer_bits: limits.integer_bits,
         decimal_digits: limits.decimal_digits,
@@ -652,8 +652,8 @@ fn native_scalar_limits(limits: fsl_replay::ScalarLimits) -> quire_contract_code
 
 #[cfg(test)]
 fn fsl_limit_fields_match(
-    left: &fsl_replay::ScalarLimits,
-    right: &fsl_replay::ScalarLimits,
+    left: &qsl_replay::ScalarLimits,
+    right: &qsl_replay::ScalarLimits,
 ) -> bool {
     native_limit_fields_match!(left, right)
 }
@@ -780,7 +780,7 @@ fn generate(
 }
 
 struct LoweredDriverRequest {
-    contract_package: filament_contract_model::ContractPackageV1,
+    contract_package: quire_contract_model::ContractPackageV1,
     positions: Vec<cg::ContractRequestPosition>,
     result_selections: Vec<cg::ContractDriverResultSelection>,
     /// FR-020: the requirement for each request index, `None` at an excluded
@@ -822,7 +822,7 @@ fn checked_node_keys(
 /// The one node walk: the V2 node whose structural key is `node`.
 fn select_node<'a>(
     nodes: impl Iterator<Item = (&'a CheckedNodeId, &'a CheckedNodeId)>,
-    node: &filament_exact::NodeKey,
+    node: &quire_exact::NodeKey,
 ) -> Result<&'a CheckedNodeId, NodeLookup> {
     let mut matches = nodes.filter_map(|(id, key)| structural_key_matches(key, node).then_some(id));
     let selected = matches.next().ok_or(NodeLookup::Unknown)?;
@@ -835,14 +835,14 @@ fn select_node<'a>(
 /// The V2 node of `node` in the admitted package, by the walk FR-001 uses.
 fn lookup_checked_node<'a>(
     checked: &'a CheckedPackageV2,
-    node: &filament_exact::NodeKey,
+    node: &quire_exact::NodeKey,
 ) -> Result<&'a CheckedNodeId, NodeLookup> {
     select_node(checked_node_keys(checked), node)
 }
 
 /// IR's occurrence role for a FSL role spelling.
-fn occurrence_role(role: &str) -> Option<filament_contract_model::CheckedOccurrenceRole> {
-    use filament_contract_model::CheckedOccurrenceRole as Role;
+fn occurrence_role(role: &str) -> Option<quire_contract_model::CheckedOccurrenceRole> {
+    use quire_contract_model::CheckedOccurrenceRole as Role;
     match role {
         "declaration" => Some(Role::Declaration),
         "type" => Some(Role::Type),
@@ -896,7 +896,7 @@ fn record_occurrence(
 fn record_node(
     checked: &CheckedPackageV2,
     record: &OccurrenceKey,
-    node: &filament_exact::NodeKey,
+    node: &quire_exact::NodeKey,
 ) -> Result<CheckedNodeId, DriverRefusal> {
     lookup_checked_node(checked, node)
         .cloned()
@@ -1069,7 +1069,7 @@ fn lower_driver_request(
     }
     let lowered = checked.lower(&roots, &cg::routed_contract_lowering_profile());
     let Some(contract_package) = lowered.package.wire().cloned() else {
-        if let Some(filament_contract_model::CompleteLoweringRecordV2::Failed {
+        if let Some(quire_contract_model::CompleteLoweringRecordV2::Failed {
             limit_kind,
             limit,
             consumed,
@@ -1077,7 +1077,7 @@ fn lower_driver_request(
         }) = lowered.records.iter().find(|record| {
             matches!(
                 record,
-                filament_contract_model::CompleteLoweringRecordV2::Failed { .. }
+                quire_contract_model::CompleteLoweringRecordV2::Failed { .. }
             )
         }) {
             return Err(DriverRefusal::LoweringLimit {
@@ -1101,9 +1101,9 @@ fn lower_driver_request(
 
 fn contract_occurrence(
     checked: &CheckedPackageV2,
-    occurrence: &fsl_foundation::source::provenance::OccurrenceKey,
+    occurrence: &qsl_foundation::source::provenance::OccurrenceKey,
     request_index: usize,
-) -> Result<filament_contract_model::ContractOccurrenceKeyV1, DriverRefusal> {
+) -> Result<quire_contract_model::ContractOccurrenceKeyV1, DriverRefusal> {
     let node_id =
         resolve_checked_node(checked_node_keys(checked), occurrence.node(), request_index)?.clone();
     let role = occurrence_role(occurrence.origin().role().as_str()).ok_or_else(|| {
@@ -1111,7 +1111,7 @@ fn contract_occurrence(
             role: occurrence.origin().role().as_str().to_owned(),
         })
     })?;
-    Ok(filament_contract_model::ContractOccurrenceKeyV1 {
+    Ok(quire_contract_model::ContractOccurrenceKeyV1 {
         node_id,
         role,
         ordinal: occurrence.origin().ordinal(),
@@ -1133,7 +1133,7 @@ mod scalar_receipt_tests {
             }
         }
 
-        let retained = fsl_replay::spine::default_accounting(1_000_000);
+        let retained = qsl_replay::spine::default_accounting(1_000_000);
         assert!(fsl_limit_fields_match(&retained, &retained));
         for field in 0..10 {
             let mut changed = retained;
@@ -1197,17 +1197,17 @@ mod scalar_receipt_tests {
 #[cfg(test)]
 mod scalar_native_tractability_tests {
     use super::*;
-    use filament_exact::{Integer, Value};
-    use fsl_replay::spine::{default_accounting, CallArgument};
     use ix_trace_rs::trace;
+    use qsl_replay::spine::{default_accounting, CallArgument};
     use quire_contract_codegen::ProofCeilings;
+    use quire_exact::{Integer, Value};
     use std::num::NonZeroU64;
 
     fn run(upstream: &impl crate::Upstream) -> Result<Driven, DriverRefusal> {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}\n",
-            "filament.value.complete/v1"
+            "quire.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let call = Call {
@@ -1258,7 +1258,7 @@ mod scalar_native_tractability_tests {
                 }),
                 scalar_execution: Some(ScalarExecutionInput {
                     call: &call,
-                    replay_limits: fsl_replay::ReplayLimits::default(),
+                    replay_limits: qsl_replay::ReplayLimits::default(),
                     environment: &environment,
                     native: Some(ScalarNativeInput {
                         installation: &installation,
@@ -1316,9 +1316,9 @@ mod scalar_native_tractability_tests {
 #[cfg(all(test, target_os = "linux"))]
 mod native_receipt_integration_tests {
     use super::*;
-    use filament_exact::{Integer, Value};
-    use fsl_replay::spine::{default_accounting, CallArgument};
+    use qsl_replay::spine::{default_accounting, CallArgument};
     use quire_contract_codegen::{KaniInstallation, ProofCeilings};
+    use quire_exact::{Integer, Value};
     use std::io::Write as _;
     use std::num::NonZeroU64;
     use std::path::PathBuf;
@@ -1371,7 +1371,7 @@ mod native_receipt_integration_tests {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function inc using v(x: Int[4, 4]): Int[5, 5] pure {{ x + 1 }}\n",
-            "filament.value.complete/v1"
+            "quire.value.complete/v1"
         );
         let packages = BTreeMap::new();
         let cancel = Cancel::new();
@@ -1410,7 +1410,7 @@ mod native_receipt_integration_tests {
             }),
             scalar_execution: Some(ScalarExecutionInput {
                 call: &call,
-                replay_limits: fsl_replay::ReplayLimits::default(),
+                replay_limits: qsl_replay::ReplayLimits::default(),
                 environment: &environment,
                 native: Some(ScalarNativeInput {
                     installation: &installation,
@@ -1616,7 +1616,7 @@ fn envelope(
 /// source form. The form is source evidence, never a driver classification.
 fn project_kani_form(
     checked: &Arc<CheckedPackageV2>,
-    node: &filament_exact::NodeKey,
+    node: &quire_exact::NodeKey,
     request_index: usize,
     lowered: &LoweredDriverRequest,
 ) -> Result<cg::KaniForm, DriverRefusal> {
@@ -1632,7 +1632,7 @@ fn project_kani_form(
 
 fn resolve_checked_node<'a>(
     nodes: impl Iterator<Item = (&'a CheckedNodeId, &'a CheckedNodeId)>,
-    node: &filament_exact::NodeKey,
+    node: &quire_exact::NodeKey,
     request_index: usize,
 ) -> Result<&'a CheckedNodeId, DriverRefusal> {
     select_node(nodes, node).map_err(|lookup| {
@@ -1650,9 +1650,9 @@ fn resolve_checked_node<'a>(
 }
 
 /// Compare the owners' borrowed structural forms without constructing another source graph.
-fn structural_key_matches(id: &CheckedNodeId, key: &filament_exact::NodeKey) -> bool {
-    use filament_contract_model::CheckedNodePathSegment;
-    use filament_exact::PathSegmentView;
+fn structural_key_matches(id: &CheckedNodeId, key: &quire_exact::NodeKey) -> bool {
+    use quire_contract_model::CheckedNodePathSegment;
+    use quire_exact::PathSegmentView;
 
     let mut pending = vec![(id, key.view())];
     while let Some((id, key)) = pending.pop() {
@@ -1694,7 +1694,7 @@ fn structural_key_matches(id: &CheckedNodeId, key: &filament_exact::NodeKey) -> 
 /// vocabulary exhaustively without inferring it from the backend identity or
 /// provider bytes (FSL ADR-029 PV-1, CG FR-019-AC-15).
 fn project_descriptor(
-    descriptor: &fsl_route::BackendDescriptor,
+    descriptor: &qsl_route::BackendDescriptor,
     bounds: Option<&BTreeMap<String, u64>>,
 ) -> Result<cg::BackendDescriptor, DriverRefusal> {
     let mut advertised = Vec::new();
@@ -1710,8 +1710,8 @@ fn project_descriptor(
     advertised.sort();
 
     let origin = match descriptor.origin() {
-        fsl_route::ProviderOrigin::Linked => cg::ProviderOrigin::Linked,
-        fsl_route::ProviderOrigin::Process => cg::ProviderOrigin::Process,
+        qsl_route::ProviderOrigin::Linked => cg::ProviderOrigin::Linked,
+        qsl_route::ProviderOrigin::Process => cg::ProviderOrigin::Process,
     };
 
     Ok(cg::BackendDescriptor {
@@ -1725,10 +1725,10 @@ fn project_descriptor(
 
 #[cfg(test)]
 mod kani_form_projection_tests {
-    use filament_contract_model::CheckedNodeId;
-    use filament_exact::NodeKey;
-    use filament_exact::PathSegment;
     use ix_trace_rs::trace;
+    use quire_contract_model::CheckedNodeId;
+    use quire_exact::NodeKey;
+    use quire_exact::PathSegment;
 
     use super::resolve_checked_node;
     use crate::{DriverFault, DriverRefusal, DriverStage, OutcomeKind};
@@ -1744,7 +1744,7 @@ mod kani_form_projection_tests {
 
     fn checked(key: &NodeKey) -> CheckedNodeId {
         serde_json::from_value(
-            fsl_foundation::node_wire::node_key_to_json(key).expect("the key encodes"),
+            qsl_foundation::node_wire::node_key_to_json(key).expect("the key encodes"),
         )
         .expect("the wire form is a checked node identity")
     }
@@ -1764,7 +1764,7 @@ mod kani_form_projection_tests {
     #[trace("TC-006", "FR-001-AC-12")]
     #[test]
     fn indexed_wire_id_is_selected_by_its_resolved_operand_key() {
-        use filament_contract_model::CheckedNodePathSegment;
+        use quire_contract_model::CheckedNodePathSegment;
         use std::sync::Arc;
 
         let child = key("operand", 0);
@@ -1933,8 +1933,8 @@ fn cg_extent(item: &RequirementItem) -> cg::ExtentClassification {
 
 #[cfg(test)]
 mod origin_projection_tests {
-    use fsl_foundation::BackendId;
-    use fsl_route::{BackendDescriptor, Candidate, ProviderOrigin, Registry};
+    use qsl_foundation::BackendId;
+    use qsl_route::{BackendDescriptor, Candidate, ProviderOrigin, Registry};
     use std::collections::BTreeMap;
 
     use quire_contract_codegen as cg;
@@ -1945,11 +1945,11 @@ mod origin_projection_tests {
         let candidate =
             Candidate::new(BackendId::from_wire(identity).expect("identity is nonempty"));
         let domains = ["integer"];
-        fsl_route::descriptor_from_manifest(
+        qsl_route::descriptor_from_manifest(
             candidate,
             origin,
             [(Some("value-validity"), Some("bounded"))],
-            fsl_route::ManifestMembers {
+            qsl_route::ManifestMembers {
                 domains: Some(&domains),
                 ..Default::default()
             },

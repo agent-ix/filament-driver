@@ -121,7 +121,7 @@ fn cargo_target_and_dependencies_belong_to_fsl_cli() {
     assert!(dependencies.contains("filament-cache"));
     assert!(dependencies.contains("filament-plugin-host"));
     assert!(dependencies.contains("ix-cli-kit"));
-    assert!(dependencies.contains("filament-semantic-value"));
+    assert!(dependencies.contains("quire-semantic-value"));
 }
 
 /// Trace: FR-014-AC-4, FR-014-AC-5, the parser, binary entry point, CLI tests and

@@ -6,8 +6,8 @@ use std::sync::{
     Arc, OnceLock,
 };
 
-use filament_contract_model::{CheckedNodeId, CheckedNodePathSegment};
-use filament_exact::CancelCause;
+use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment};
+use quire_exact::CancelCause;
 
 use super::*;
 
@@ -173,8 +173,8 @@ fn denied_reservations_and_invalid_releases_preserve_live_counts() {
     assert_eq!(budget.storage(), 0);
 }
 
-fn native_key() -> filament_exact::NodeKey {
-    use filament_exact::{NodeKey, PathSegment};
+fn native_key() -> quire_exact::NodeKey {
+    use quire_exact::{NodeKey, PathSegment};
     let child = NodeKey::try_new(
         "child".to_owned(),
         vec![PathSegment::Text("β".to_owned())],

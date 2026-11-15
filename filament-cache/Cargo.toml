@@ -10,14 +10,14 @@ publish = false
 
 [dependencies]
 filament-driver = { path = ".." }
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.20"
 
 [dev-dependencies]
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "fsl-rename" }
+qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.190"

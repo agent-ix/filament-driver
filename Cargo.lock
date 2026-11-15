@@ -441,6 +441,56 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "filament-cache"
+version = "0.1.0"
+dependencies = [
+ "filament-driver",
+ "libc",
+ "qsl-foundation",
+ "quire-canonical",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "filament-driver"
+version = "0.1.2"
+dependencies = [
+ "ix-trace-rs",
+ "qsl-analyze",
+ "qsl-foundation",
+ "qsl-package",
+ "qsl-replay",
+ "qsl-route",
+ "qsl-semantics",
+ "quire-canonical",
+ "quire-checked",
+ "quire-contract-codegen",
+ "quire-contract-model",
+ "quire-contract-runtime",
+ "quire-exact",
+ "quire-observation",
+ "quire-semantic-value",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "filament-plugin-host"
+version = "0.1.0"
+dependencies = [
+ "nix",
+ "process-wrap",
+ "quire-canonical",
+ "quire-exact",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -503,6 +553,9 @@ name = "fsl-cli"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
+ "filament-cache",
+ "filament-driver",
+ "filament-plugin-host",
  "ix-cli-kit",
  "ix-trace-rs",
  "libc",
@@ -513,13 +566,10 @@ dependencies = [
  "qsl-replay",
  "qsl-route",
  "qsl-semantics",
- "quire-cache",
  "quire-canonical",
  "quire-contract-codegen",
  "quire-contract-model",
- "quire-driver",
  "quire-exact",
- "quire-plugin-host",
  "quire-semantic-value",
  "regex",
  "serde",
@@ -1488,19 +1538,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quire-cache"
-version = "0.1.0"
-dependencies = [
- "libc",
- "qsl-foundation",
- "quire-canonical",
- "quire-driver",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "quire-canonical"
 version = "0.3.0"
 source = "git+https://github.com/agent-ix/quire-canonical?branch=main#7d2f8389d01fcbf318e658746015b85a31526cc9"
@@ -1609,30 +1646,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quire-driver"
-version = "0.1.2"
-dependencies = [
- "ix-trace-rs",
- "qsl-analyze",
- "qsl-foundation",
- "qsl-package",
- "qsl-replay",
- "qsl-route",
- "qsl-semantics",
- "quire-canonical",
- "quire-checked",
- "quire-contract-codegen",
- "quire-contract-model",
- "quire-contract-runtime",
- "quire-exact",
- "quire-observation",
- "quire-semantic-value",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "quire-eval"
 version = "0.1.0"
 source = "git+https://github.com/agent-ix/quire-eval?branch=main#0e9f1a67e0142d8862f4bbc4a1ad96c32739d0ba"
@@ -1670,19 +1683,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "quire-plugin-host"
-version = "0.1.0"
-dependencies = [
- "nix",
- "process-wrap",
- "quire-canonical",
- "quire-exact",
- "serde",
- "serde_json",
  "thiserror",
 ]
 

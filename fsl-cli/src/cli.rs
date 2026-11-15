@@ -14,21 +14,21 @@ use filament_driver::{
     ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
     ProviderRequest, ProviderResults,
 };
-use filament_exact::Cancel;
-use filament_semantic_value::catalog::Category;
-use fsl_command::command::{self, PreparedRun, RunLimits};
-use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
-use fsl_foundation::diagnostic::Code;
-use fsl_foundation::diagnostic::Staged;
-use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
-use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
-use fsl_replay::spine::{
-    check, parse, select, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits,
-};
-use fsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
-use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
+use qsl_command::command::{self, PreparedRun, RunLimits};
+use qsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::Staged;
+use qsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
+use qsl_foundation::{SettingLimits, SettingName, SourceIdentity};
+use qsl_replay::spine::{
+    check, parse, select, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits,
+};
+use qsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
+use qsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
+use quire_exact::Cancel;
+use quire_semantic_value::catalog::Category;
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
 #[must_use]
@@ -323,7 +323,7 @@ struct ActiveConfiguredProvider {
 struct ConfiguredCall {
     package_name: String,
     outcome: CallOutcome,
-    requirements: fsl_replay::CallRequirements,
+    requirements: qsl_replay::CallRequirements,
 }
 
 /// The configured run retains both compositions until FSL settlement owns the
@@ -390,7 +390,7 @@ struct ConfiguredRunRequest<'a> {
     source: SourceIdentity,
     limits: SpineLimits,
     call: Call,
-    packages: fsl_semantics::model::intake::PackageInput,
+    packages: qsl_semantics::model::intake::PackageInput,
     dependencies: DependencyInput,
     config: crate::provider_config::ProviderConfig,
     signals: crate::signals::SignalContext,
@@ -746,7 +746,7 @@ fn run(options: RunOptions) -> CommandResult {
     // Reject a setting unavailable to every run family before request-file I/O.
     // The selected function or clause still validates its exact bounds below.
     let mut exposed = SpineLimits::default().bounds();
-    exposed.extend(fsl_replay::ObservationLimits::default().bounds());
+    exposed.extend(qsl_replay::ObservationLimits::default().bounds());
     for (setting, _) in options.limits.values() {
         if let SettingName::Stage(stage) = setting {
             if !exposed.iter().any(|(available, _)| available == stage) {
@@ -830,13 +830,13 @@ fn run(options: RunOptions) -> CommandResult {
 
 /// Dispatch typed clause dispositions to FSL's existing document producers.
 fn run_clause_request(
-    mut request: fsl_replay::spine::ClauseRunRequest,
+    mut request: qsl_replay::spine::ClauseRunRequest,
     limits: &LimitOverrides,
 ) -> CommandResult {
-    use fsl_replay::spine::{
+    use qsl_replay::spine::{
         ClauseDisposition, ClauseRunSelection, ClauseRunStage, TemporalTraceRefusal,
     };
-    use fsl_semantics::model::observation::AdmissionFailure;
+    use qsl_semantics::model::observation::AdmissionFailure;
     if let Err(error) = limits.apply_to_clause(&mut request) {
         return CommandResult::input_refusal(Operation::Monitor, error.to_string());
     }
@@ -847,7 +847,7 @@ fn run_clause_request(
         }
         ClauseRunSelection::Frame { operation, .. } => operation.to_string(),
     };
-    let report = match fsl_replay::spine::run_clause(request) {
+    let report = match qsl_replay::spine::run_clause(request) {
         Ok(report) => report,
         Err(error) => return CommandResult::input_refusal(Operation::Monitor, error.to_string()),
     };
@@ -1239,7 +1239,7 @@ fn source_preflight(
     byte_limit: usize,
 ) -> Option<CommandResult> {
     let label = options.source.first_blank_label()?;
-    let diagnostic = fsl_cst::diagnostic::source_refusal(
+    let diagnostic = qsl_cst::diagnostic::source_refusal(
         SourceReadRefusal {
             cause: SourceReadCause::BlankLabel { label },
             error: SourceReadError {
@@ -1288,7 +1288,7 @@ fn parse_source(options: SourceOptions) -> CommandResult {
 
 /// Format one parsed source through FSL and retain its typed outcome.
 fn format_source(options: SourceOptions) -> CommandResult {
-    let limits = fsl_cst::Limits::default();
+    let limits = qsl_cst::Limits::default();
     let bytes = match read_source(&options.path, limits.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1299,7 +1299,7 @@ fn format_source(options: SourceOptions) -> CommandResult {
     let source = options.source;
     let display_path = options.path.to_string_lossy();
     let cancel = Cancel::new();
-    let result = fsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
+    let result = qsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
         .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
     let document = OutcomeDocument::from_format(&result);
@@ -1371,7 +1371,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Ok(options) => source_preflight(
                 &options,
                 Operation::Format,
-                fsl_cst::Limits::default().source_bytes,
+                qsl_cst::Limits::default().source_bytes,
             )
             .unwrap_or_else(|| format_source(options)),
             Err(error) => CommandResult::input_refusal(Operation::Format, error),
@@ -1510,8 +1510,8 @@ mod outcome_tests {
     use std::io;
     use std::process::ExitCode;
 
-    use filament_semantic_value::catalog::Category;
-    use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
+    use qsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
+    use quire_semantic_value::catalog::Category;
 
     use super::{process_exit_code, write_diagnostic, write_result_diagnostics, CommandResult};
 
@@ -1662,7 +1662,7 @@ mod tests {
         assert_eq!(
             options.limits.values(),
             &[(
-                fsl_foundation::SettingName::Stage(fsl_foundation::Setting::S1InputBytes),
+                qsl_foundation::SettingName::Stage(qsl_foundation::Setting::S1InputBytes),
                 1024,
             )]
         );
@@ -1760,11 +1760,11 @@ mod tests {
 mod configured_run_tests {
     use std::path::{Path, PathBuf};
 
-    use filament_exact::{Integer, Value};
-    use fsl_foundation::SourceIdentity;
-    use fsl_replay::spine::{
+    use qsl_foundation::SourceIdentity;
+    use qsl_replay::spine::{
         default_accounting, Call, CallArgument, SpineLimits, DEFAULT_WORK_UNITS,
     };
+    use quire_exact::{Integer, Value};
 
     use super::{run_configured_providers, Code, CommandResult, ConfiguredRunRequest};
 
@@ -1799,12 +1799,12 @@ mod configured_run_tests {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
              function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
+            "quire.value.complete/v1"
         );
         let path = "configured-run.native";
         let source = SourceIdentity::new("agent-ix", path);
         let packages = std::collections::BTreeMap::new();
-        let dependencies = fsl_replay::spine::DependencyInput::default();
+        let dependencies = qsl_replay::spine::DependencyInput::default();
         let limits = SpineLimits::default();
         let call = Call {
             function: "eq".to_owned(),
@@ -1971,7 +1971,7 @@ mod configured_run_tests {
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
              function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
              function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
+            "quire.value.complete/v1"
         );
         let path = "configured-duplicate.native";
         let source = SourceIdentity::new("agent-ix", path);
@@ -2036,7 +2036,7 @@ mod configured_run_tests {
             limits: SpineLimits::default(),
             call,
             packages: std::collections::BTreeMap::new(),
-            dependencies: fsl_replay::spine::DependencyInput::default(),
+            dependencies: qsl_replay::spine::DependencyInput::default(),
             config: crate::provider_config::ProviderConfig { providers },
             signals: crate::signals::SignalContext::default(),
         }) {
@@ -2050,7 +2050,7 @@ mod configured_run_tests {
         ));
         assert_eq!(
             failure.document.category(),
-            filament_semantic_value::catalog::Category::Refusal
+            quire_semantic_value::catalog::Category::Refusal
         );
         assert!(failure
             .document

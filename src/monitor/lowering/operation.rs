@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Closed direct scalar mappings; source admission and accounting stay with the caller.
 
-use filament_contract_model::{ApplicationOperator, CheckedOperationRead};
-use filament_contract_runtime::monitor::{ExpressionId, Operation};
-use filament_exact::{OrderingOperator, ValueType};
+use quire_contract_model::{ApplicationOperator, CheckedOperationRead};
+use quire_contract_runtime::monitor::{ExpressionId, Operation};
+use quire_exact::{OrderingOperator, ValueType};
 
 /// Map only the exact admitted plain operation/shape declared by FR-017.
 /// `None` asks the caller to retain the original located Unsupported payload;
@@ -25,22 +25,22 @@ pub(super) fn map_application(
             [ValueType::Integer, ValueType::Integer],
             ValueType::Integer,
         ) => match source.identity {
-            "filament.op.integer.add" => Some(Operation::IntegerAdd {
+            "quire.op.integer.add" => Some(Operation::IntegerAdd {
                 left: *left,
                 right: *right,
             }),
-            "filament.op.integer.sub" => Some(Operation::IntegerSubtract {
+            "quire.op.integer.sub" => Some(Operation::IntegerSubtract {
                 left: *left,
                 right: *right,
             }),
-            "filament.op.integer.mul" => Some(Operation::IntegerMultiply {
+            "quire.op.integer.mul" => Some(Operation::IntegerMultiply {
                 left: *left,
                 right: *right,
             }),
             _ => None,
         },
         (ApplicationOperator::Unary, [value], [ValueType::Integer], ValueType::Integer)
-            if source.identity == "filament.op.integer.negate" =>
+            if source.identity == "quire.op.integer.negate" =>
         {
             Some(Operation::IntegerNegate { value: *value })
         }
@@ -51,10 +51,10 @@ pub(super) fn map_application(
             ValueType::Boolean,
         ) => {
             let operator = match source.identity {
-                "filament.op.integer.lt" => OrderingOperator::Less,
-                "filament.op.integer.le" => OrderingOperator::LessOrEqual,
-                "filament.op.integer.gt" => OrderingOperator::Greater,
-                "filament.op.integer.ge" => OrderingOperator::GreaterOrEqual,
+                "quire.op.integer.lt" => OrderingOperator::Less,
+                "quire.op.integer.le" => OrderingOperator::LessOrEqual,
+                "quire.op.integer.gt" => OrderingOperator::Greater,
+                "quire.op.integer.ge" => OrderingOperator::GreaterOrEqual,
                 _ => return None,
             };
             Some(Operation::IntegerOrder {
@@ -64,7 +64,7 @@ pub(super) fn map_application(
             })
         }
         (ApplicationOperator::Unary, [value], [ValueType::Boolean], ValueType::Boolean)
-            if source.identity == "filament.op.boolean.not" =>
+            if source.identity == "quire.op.boolean.not" =>
         {
             Some(Operation::BooleanNot { value: *value })
         }
@@ -74,11 +74,11 @@ pub(super) fn map_application(
             [ValueType::Boolean, ValueType::Boolean],
             ValueType::Boolean,
         ) => match source.identity {
-            "filament.op.boolean.and" => Some(Operation::BooleanAnd {
+            "quire.op.boolean.and" => Some(Operation::BooleanAnd {
                 left: *left,
                 right: *right,
             }),
-            "filament.op.boolean.or" => Some(Operation::BooleanOr {
+            "quire.op.boolean.or" => Some(Operation::BooleanOr {
                 left: *left,
                 right: *right,
             }),
@@ -108,19 +108,19 @@ pub(super) fn accepts_header(
         (
             ApplicationOperator::Unary,
             1,
-            "filament.op.integer.negate" | "filament.op.boolean.not"
+            "quire.op.integer.negate" | "quire.op.boolean.not"
         ) | (
             ApplicationOperator::Binary,
             2,
-            "filament.op.integer.add"
-                | "filament.op.integer.sub"
-                | "filament.op.integer.mul"
-                | "filament.op.integer.lt"
-                | "filament.op.integer.le"
-                | "filament.op.integer.gt"
-                | "filament.op.integer.ge"
-                | "filament.op.boolean.and"
-                | "filament.op.boolean.or"
+            "quire.op.integer.add"
+                | "quire.op.integer.sub"
+                | "quire.op.integer.mul"
+                | "quire.op.integer.lt"
+                | "quire.op.integer.le"
+                | "quire.op.integer.gt"
+                | "quire.op.integer.ge"
+                | "quire.op.boolean.and"
+                | "quire.op.boolean.or"
         )
     )
 }

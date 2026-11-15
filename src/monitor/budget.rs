@@ -3,7 +3,7 @@
 
 use std::mem::size_of;
 
-use filament_exact::Cancel;
+use quire_exact::Cancel;
 
 use super::{
     material::Material, AdmittedMonitorSelection, MonitorPreparationError, MonitorPreparationLimits,

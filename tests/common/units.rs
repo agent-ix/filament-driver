@@ -5,7 +5,7 @@
 pub fn unit(body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"filament.value.complete/v1\";\n{body}"
+         profile v = \"quire.value.complete/v1\";\n{body}"
     )
 }
 

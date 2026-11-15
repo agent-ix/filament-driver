@@ -9,14 +9,14 @@
 //! [`drive`] runs one request through these steps, in this order:
 //!
 //! 1. S1 to S4: FSL's typed `parse`, `select` and `check` operations.
-//! 2. E4: FSL's `package` operation emits the `filament.checked-package/v2`
+//! 2. E4: FSL's `package` operation emits the `quire.checked-package/v2`
 //!    bytes ([`Driven::emitted`]).
 //! 3. The `route` candidate step: each item's candidate set. The items are
 //!    not supplied by the caller: they are written from the compiled unit's
 //!    own checked requirement records
-//!    (`fsl_package::CheckedPackage::graph().requirements()`, FR-062,
+//!    (`qsl_package::CheckedPackage::graph().requirements()`, FR-062,
 //!    FR-075), one item per record in occurrence-key order
-//!    (`fsl_route::request::items_from_requirements`).
+//!    (`qsl_route::request::items_from_requirements`).
 //! 4. The pre-negotiation conversion (ADR-012 §7.2, MD-2): every registered
 //!    descriptor goes through CG's origin-aware conversion
 //!    (`BackendKind::from_descriptor`). Unknown linked identities are refused
@@ -71,7 +71,6 @@ pub use drive::{
 };
 pub use execute::{execute, ExecutionEngine, ExecutionFailure, ExecutionRequest, ExecutionResult};
 pub use frame_replay::{FrameReplayFailure, FrameReplayFailureCode};
-pub use fsl_semantics::model::object_environment::ObjectEnvironment;
 pub use limits::{LimitError, LimitOverrides};
 pub use process_provider::{
     ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
@@ -81,6 +80,7 @@ pub use provider::{
     ProviderItemFailure, ProviderItemResult, ProviderLimits, ProviderOutcomeError, ProviderRequest,
     ProviderResults, ProviderTerminalError,
 };
+pub use qsl_semantics::model::object_environment::ObjectEnvironment;
 pub use quire_contract_codegen::RoutedItemOutput;
 pub use quire_contract_codegen::{Candidate, ProofCeilings};
 pub use refusal::{

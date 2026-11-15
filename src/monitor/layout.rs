@@ -2,10 +2,10 @@
 //! The runtime `Layout` of a prepared program, derived only from the selected
 //! closure and the admitted plan.
 
-use filament_contract_model::{CheckedNodeId, CheckedPackageV2, SelectedMonitorTypeClosure};
-use filament_contract_runtime::monitor::{Buffer, Entries, Layout, TypeBinding};
-use filament_exact::{Cancel, Integer};
-use fsl_analyze::monitor_root::AdmittedPlanAuthority;
+use qsl_analyze::monitor_root::AdmittedPlanAuthority;
+use quire_contract_model::{CheckedNodeId, CheckedPackageV2, SelectedMonitorTypeClosure};
+use quire_contract_runtime::monitor::{Buffer, Entries, Layout, TypeBinding};
+use quire_exact::{Cancel, Integer};
 
 use super::{
     lowering::node_key, types::rational, MonitorPreparationError as Error, MonitorPreparationLimits,

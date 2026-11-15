@@ -13,7 +13,7 @@ relationships:
 ## Description
 
 Verify that the driver CLI exposes the specified verbs, preserves typed
-outcomes in `filament-outcome/1` documents and uses FSL's single exit function.
+outcomes in `quire-outcome/1` documents and uses FSL's single exit function.
 
 Scope: FR-002-AC-1 through FR-002-AC-6 and FR-002-AC-8 through FR-002-AC-13,
 FR-002-AC-17, plus FR-014-AC-4.
@@ -49,7 +49,7 @@ FR-002-AC-17, plus FR-014-AC-4.
    through ix-cli-kit's `streams` module. Exercise its stdout/stderr selection,
    write-failure and broken-pipe behavior through the CLI.
 9. Inspect machine-mode serialization and verify the CLI calls ix-cli-kit's
-   `json` module to encode the unchanged FSL `filament-outcome/1` value.
+   `json` module to encode the unchanged FSL `quire-outcome/1` value.
 10. Invoke parse, check, compile and run with omitted output format and with
     `--format text`. Verify each returns the operation-specific FSL
     `UnimplementedCapability` result, exits with the unsupported category's
@@ -87,7 +87,7 @@ under test are owned by `fsl-cli/src/cli.rs`.
   and version behavior have separate criteria under IR-607. This case verifies
   the stream and JSON module call sites and behavior, plus the package-version
   output and agreement check.
-- JSON mode emits one FSL-defined `filament-outcome/1` value equal to the typed
+- JSON mode emits one FSL-defined `quire-outcome/1` value equal to the typed
   library outcome. A stream write failure returns the internal-failure
   category through FSL's exit function; a broken pipe ends quietly with the
   outcome's code.

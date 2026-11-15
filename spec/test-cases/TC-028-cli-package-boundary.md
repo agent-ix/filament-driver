@@ -89,7 +89,7 @@ kill-on-close in this PR.
    cases that accept `deadline_ms` values 1 and 9,007,199,254,740,991; keep
    end-to-end dispatch fixtures' deadlines large enough for the fixture run.
    Verify each process exits with the existing FSL
-   refusal category and writes exactly one `filament-outcome/1` for
+   refusal category and writes exactly one `quire-outcome/1` for
    `Operation::Execute` with `Code::InvalidRequest` to stdout. Compare the
    document with the existing CLI input-refusal result, including its
    diagnostic; assert no configuration-specific code or cause is introduced.
@@ -129,7 +129,7 @@ kill-on-close in this PR.
    `RunLimits.cancellation_grace` expiry, terminates any remaining process
    tree, restores the default disposition and re-raises the received signal.
    Confirm the parent observes signal termination for that exact signal (not
-   an integer exit code), stdout contains no `filament-outcome/1` document, and no
+   an integer exit code), stdout contains no `quire-outcome/1` document, and no
    FSL cause is claimed. With no active session, confirm the CLI retains the
    platform's default signal disposition. Windows console control events are
    outside this signal guarantee. The production binary regression currently

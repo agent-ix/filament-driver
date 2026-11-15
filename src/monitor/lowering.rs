@@ -10,12 +10,12 @@ mod storage;
 
 pub use program::{lower_entries, LoweredBodies, LOWER_FRAME_BYTES};
 
-use filament_contract_model::{
+use quire_contract_model::{
     CheckedCallable, CheckedCallableIdentity, CheckedNodeId, CheckedPackageV2, CheckedTerm,
     NativeJoinBudget, SelectedExactIdentities,
 };
-use filament_contract_runtime::monitor::{Expression, ExpressionId, Function, FunctionId};
-use filament_exact::{Cancel, ValueType};
+use quire_contract_runtime::monitor::{Expression, ExpressionId, Function, FunctionId};
+use quire_exact::{Cancel, ValueType};
 
 use super::{budget::Budget, MonitorPreparationError as Error, MonitorPreparationLimits};
 use crate::monitor_refusal::unsupported_at;
@@ -26,7 +26,7 @@ pub(super) fn node_key(
     source: &CheckedNodeId,
     limits: MonitorPreparationLimits,
     cancel: &Cancel,
-) -> Result<filament_exact::NodeKey, Error> {
+) -> Result<quire_exact::NodeKey, Error> {
     key::own_key(source, &mut Budget::new(limits, cancel))
 }
 
@@ -274,7 +274,7 @@ fn lower_body(
                             key,
                             body_path: Vec::new(),
                             value_type,
-                            operation: filament_contract_runtime::monitor::Operation::Argument {
+                            operation: quire_contract_runtime::monitor::Operation::Argument {
                                 function: owner,
                                 position,
                             },
