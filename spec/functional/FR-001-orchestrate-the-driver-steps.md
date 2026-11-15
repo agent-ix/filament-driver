@@ -285,7 +285,7 @@ the request's selected byte ceiling.
   `SpineLimits.source.source_bytes`.
 - The driver's normal and build dependencies SHALL be exactly
   `fsl-analyze`, `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`,
-  `filament-exact`, `quire-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`,
+  `filament-exact`, `filament-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`,
   `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`, `serde_json` and `thiserror`. The direct
   `serde_json` edge is required to project FR-331's optional `bounds` member
   from the retained caller wire into CG's typed descriptor; the driver
@@ -300,7 +300,7 @@ the request's selected byte ceiling.
   [FR-015](FR-015-prepare-an-admitted-monitor-program.md) and
   [FR-017](FR-017-lower-and-retain-admitted-monitor-programs.md). RT's transitive
   normal/build closure SHALL contain no FSL package, `filament-contract-model`,
-  `filament-contract-ir`, `filament-driver` or `quire-contract-codegen` backedge.
+  `filament-contract-ir`, `filament-driver` or `filament-contract-codegen` backedge.
   The cache boundary is specified separately in FR-001-AC-11 and FR-012.
 - The driver's direct development dependencies SHALL be exactly
   `ix-trace-rs` and `filament-checked`. `fsl-analyze` is a normal edge
@@ -318,7 +318,7 @@ the request's selected byte ceiling.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-001-AC-1 | The driver's normal and build dependency set matches FSL ADR-011 §6.1 and the specified driver-layer exceptions: it contains exactly `fsl-analyze`, `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`, `filament-exact`, `quire-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`, `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`, `serde_json` and `thiserror`; `serde_json` is required for production projection of FR-331's retained optional `bounds` member and RT supplies FR-015/FR-017's native retained program/arena types. RT's normal/build closure contains no FSL package, IR/model, driver or codegen backedge. The driver's `filament-contract-model` is the one CG's IR crate depends on, CG's one FSL edge is `fsl-replay`, and the lock holds exactly one `filament-contract-model` package, so the driver's direct edge, CG's IR crate and FSL's `fsl-package` all resolve the same package id. | Test (TC-005) |
+| FR-001-AC-1 | The driver's normal and build dependency set matches FSL ADR-011 §6.1 and the specified driver-layer exceptions: it contains exactly `fsl-analyze`, `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`, `filament-exact`, `filament-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`, `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`, `serde_json` and `thiserror`; `serde_json` is required for production projection of FR-331's retained optional `bounds` member and RT supplies FR-015/FR-017's native retained program/arena types. RT's normal/build closure contains no FSL package, IR/model, driver or codegen backedge. The driver's `filament-contract-model` is the one CG's IR crate depends on, CG's one FSL edge is `fsl-replay`, and the lock holds exactly one `filament-contract-model` package, so the driver's direct edge, CG's IR crate and FSL's `fsl-package` all resolve the same package id. | Test (TC-005) |
 | FR-001-AC-2 | A run whose registry holds a `BackendId` with no CG kind refuses before any negotiation, with `invalid_capability`/`unknown-backend` and the unconverted ids in bytewise order. | Test (TC-002) |
 | FR-001-AC-3 | `route` is called only after negotiation, and only for `supported` items. | Test (TC-003) |
 | FR-001-AC-4 | The steps run in the order of the Description: compile and emit, the E5 read, the candidate step, conversion, negotiation, routing, generation. | Test (TC-001) |

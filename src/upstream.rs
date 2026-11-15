@@ -6,29 +6,29 @@
 //! operation each. The trait lets tests wrap `FslCg`, record driver calls and
 //! still run the real functions.
 
-use qsl_foundation::diagnostic::StageFailure;
-use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::SourceIdentity;
-use qsl_package::{BoundItem, CheckedPackage, ExportRefusal};
-use qsl_replay::spine::{
+use fsl_foundation::diagnostic::StageFailure;
+use fsl_foundation::source::provenance::OccurrenceKey;
+use fsl_foundation::SourceIdentity;
+use fsl_package::{BoundItem, CheckedPackage, ExportRefusal};
+use fsl_replay::spine::{
     check, package, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit, DependencyInput,
     EmittedUnit, FrontEndFailure, ParseRequest, SpineLimits, SpineStage,
 };
-use qsl_route::routing::{route, Disposition};
-use qsl_route::Candidate;
-use qsl_semantics::check::RequirementMap;
-use qsl_semantics::model::intake::PackageInput;
-use quire_contract_codegen::{
+use fsl_route::routing::{route, Disposition};
+use fsl_route::Candidate;
+use fsl_semantics::check::RequirementMap;
+use fsl_semantics::model::intake::PackageInput;
+use filament_contract_codegen::{
     generate_routed, negotiate_contract_package, BackendDescriptor, BackendKind,
     BackendProviderEnvelope, ContractItemSettlement, ContractNegotiationError,
     ContractRequestPosition, GenerationContexts, RoutedGeneration, RoutedGenerationError,
     RoutedGenerationItem,
 };
-use quire_contract_model::{
+use filament_contract_model::{
     read_checked_package, CheckedPackageDispatchResult, CheckedPackageEvidence,
     CheckedPackageReadLimits, CheckedPackageV2, ContractPackageV1,
 };
-use quire_exact::Cancel;
+use filament_exact::Cancel;
 
 use crate::{DriverFault, DriverRefusal};
 
@@ -94,7 +94,7 @@ pub trait Upstream {
     ) -> Result<(CheckedUnit, AdmittedModels, EmittedUnit), DriverRefusal>;
 
     /// E5: IR's checked-package reader,
-    /// `quire_contract_model::read_checked_package`. The full E4 value remains
+    /// `filament_contract_model::read_checked_package`. The full E4 value remains
     /// available here so E5 adapters can consult its bounded source provisions.
     fn read_package(
         &self,
@@ -107,7 +107,7 @@ pub trait Upstream {
     /// closed backend kind: `BackendKind::from_descriptor`.
     fn backend_kind(&self, descriptor: &BackendDescriptor) -> Option<BackendKind>;
 
-    /// E7: `quire_contract_codegen::negotiate_contract_package`, borrowing the
+    /// E7: `filament_contract_codegen::negotiate_contract_package`, borrowing the
     /// original E5-admitted source alongside its lowered contract package.
     fn negotiate(
         &self,
@@ -123,11 +123,11 @@ pub trait Upstream {
         package.graph().requirements().clone()
     }
 
-    /// The routing step: `qsl_route::routing::route`.
+    /// The routing step: `fsl_route::routing::route`.
     fn route<'d>(&self, dispositions: &'d [Disposition]) -> Vec<Option<&'d Candidate>>;
 
     /// CG generation over the routed items:
-    /// `quire_contract_codegen::generate_routed`, borrowing that same original source.
+    /// `filament_contract_codegen::generate_routed`, borrowing that same original source.
     fn generate(
         &self,
         source: &CheckedPackageV2,
@@ -151,7 +151,7 @@ impl Upstream for FslCg {
         package: &CheckedPackage,
         items: &[OccurrenceKey],
     ) -> Result<Vec<Result<BoundItem, ExportRefusal>>, ExportRefusal> {
-        Ok(qsl_package::export_bindings(package, items))
+        Ok(fsl_package::export_bindings(package, items))
     }
     fn compile(
         &self,
@@ -290,17 +290,17 @@ impl Upstream for NativeRouteFslCg {
         routed: &[RoutedGenerationItem],
         contexts: &GenerationContexts<'_>,
     ) -> Result<RoutedGeneration, RoutedGenerationError> {
-        quire_contract_codegen::generate_routed_native(source, package, positions, routed, contexts)
+        filament_contract_codegen::generate_routed_native(source, package, positions, routed, contexts)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
-    use qsl_foundation::Setting;
-    use qsl_replay::spine::CompileRefusal;
-    use quire_exact::CancelCause;
-    use quire_semantic_value::catalog::InternalFault;
+    use fsl_foundation::diagnostic::{LimitExceeded, StageFailure};
+    use fsl_foundation::Setting;
+    use fsl_replay::spine::CompileRefusal;
+    use filament_exact::CancelCause;
+    use filament_semantic_value::catalog::InternalFault;
 
     use super::{driver_refusal, DriverFault, DriverRefusal, LifecycleOperation, SpineStage};
     use crate::{DriverStage, OutcomeKind};
@@ -339,7 +339,7 @@ mod tests {
                 assert_eq!(refusal.stage(), DriverStage::Compile(expected_stage));
                 assert_eq!(
                     refusal.fsl_category(),
-                    Some(quire_semantic_value::catalog::Category::Incomplete)
+                    Some(filament_semantic_value::catalog::Category::Incomplete)
                 );
                 let DriverRefusal::Cancelled { stage, cause: seen } = refusal else {
                     panic!("FSL cancellation must remain a distinct typed result");

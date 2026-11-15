@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Closed direct scalar mappings; source admission and accounting stay with the caller.
 
-use quire_contract_model::{ApplicationOperator, CheckedOperationRead};
-use quire_contract_runtime::monitor::{ExpressionId, Operation};
-use quire_exact::{OrderingOperator, ValueType};
+use filament_contract_model::{ApplicationOperator, CheckedOperationRead};
+use filament_contract_runtime::monitor::{ExpressionId, Operation};
+use filament_exact::{OrderingOperator, ValueType};
 
 /// Map only the exact admitted plain operation/shape declared by FR-017.
 /// `None` asks the caller to retain the original located Unsupported payload;

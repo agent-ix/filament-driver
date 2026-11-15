@@ -8,10 +8,10 @@ use filament_driver::{
     monitor_refusal::{copy_monitor_locus, MonitorLocusCopyError},
 };
 use ix_trace_rs::trace;
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedNodeId, CheckedNodePathSegment as Segment, CheckedOccurrence, CheckedOccurrenceRole,
 };
-use quire_exact::{Cancel, CancelCause};
+use filament_exact::{Cancel, CancelCause};
 
 #[test]
 #[trace("FR-016-AC-9", "FR-016-AC-10")]

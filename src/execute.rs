@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The driver's selected FSL execution engine (FR-004).
 
-use qsl_foundation::Code;
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{Call, CallOutcome, DependencyInput, RunRefusal, SpineLimits};
-use qsl_replay::{OutcomeDocument, OutcomeWriteError};
-use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::Cancel;
-use quire_semantic_value::catalog::Category;
+use fsl_foundation::Code;
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{Call, CallOutcome, DependencyInput, RunRefusal, SpineLimits};
+use fsl_replay::{OutcomeDocument, OutcomeWriteError};
+use fsl_semantics::model::object_environment::ObjectEnvironment;
+use filament_exact::Cancel;
+use filament_semantic_value::catalog::Category;
 
 /// The engine selected for one execution request.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -59,7 +59,7 @@ pub struct ExecutionRequest<'a> {
     /// The checked package's name.
     pub package_name: &'a str,
     /// Domain package documents by model identity.
-    pub packages: &'a qsl_semantics::model::intake::PackageInput,
+    pub packages: &'a fsl_semantics::model::intake::PackageInput,
     /// Caller-supplied library dependencies.
     pub dependencies: &'a DependencyInput,
     /// Effective lifecycle limits.
@@ -120,8 +120,8 @@ impl ExecutionFailure {
     pub fn into_document(self) -> OutcomeDocument {
         match self {
             Self::UnsupportedEngine(engine) => {
-                OutcomeDocument::new(qsl_replay::Operation::Execute, None, Category::Unsupported)
-                    .with_diagnostics(vec![qsl_replay::OutcomeDiagnostic::new(
+                OutcomeDocument::new(fsl_replay::Operation::Execute, None, Category::Unsupported)
+                    .with_diagnostics(vec![fsl_replay::OutcomeDiagnostic::new(
                         None,
                         Code::UnimplementedCapability.as_str(),
                         None,
@@ -137,7 +137,7 @@ impl ExecutionFailure {
 /// AOT and JIT selections return Unsupported before compiling the source.
 pub fn execute(request: ExecutionRequest<'_>) -> Result<ExecutionResult, ExecutionFailure> {
     execute_using(request, |request, object_environment| {
-        qsl_replay::spine::run(
+        fsl_replay::spine::run(
             request.source.clone(),
             request.package_name.to_owned(),
             request.path,
@@ -180,25 +180,25 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::LazyLock;
 
-    use qsl_foundation::Setting;
-    use qsl_foundation::SourceIdentity;
-    use qsl_replay::spine::{
+    use fsl_foundation::Setting;
+    use fsl_foundation::SourceIdentity;
+    use fsl_replay::spine::{
         default_accounting, Call, CallArgument, CallOutcome, CallValue, DependencyInput,
         SpineLimits,
     };
-    use qsl_replay::spine::{CompileRefusal, RunRefusal};
-    use qsl_replay::OutcomeDocument;
-    use qsl_semantics::model::dispatch::GeneralizationClosure;
-    use qsl_semantics::model::domain_package::DomainPackageRecord;
-    use qsl_semantics::model::intake::package_input;
-    use qsl_semantics::model::object_environment::ObjectEnvironment;
-    use qsl_semantics::model::population::{
+    use fsl_replay::spine::{CompileRefusal, RunRefusal};
+    use fsl_replay::OutcomeDocument;
+    use fsl_semantics::model::dispatch::GeneralizationClosure;
+    use fsl_semantics::model::domain_package::DomainPackageRecord;
+    use fsl_semantics::model::intake::package_input;
+    use fsl_semantics::model::object_environment::ObjectEnvironment;
+    use fsl_semantics::model::population::{
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
-    use quire_exact::{Cancel, CancelCause, Value};
-    use quire_semantic_value::catalog::Category;
-    use quire_semantic_value::object_closure::ObjectClosure;
+    use filament_exact::{Cancel, CancelCause, Value};
+    use filament_semantic_value::catalog::Category;
+    use filament_semantic_value::object_closure::ObjectClosure;
 
     use super::{execute, ExecutionEngine, ExecutionFailure, ExecutionRequest};
 
@@ -219,7 +219,7 @@ mod tests {
                 function: "yes".to_owned(),
                 arguments: Vec::new(),
                 accounting: default_accounting(10),
-                supplied: quire_semantic_value::supplied_stop::SuppliedLimits::default(),
+                supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
                 backend: Default::default(),
             },
             object_environment: &EMPTY_OBJECT_ENVIRONMENT,
@@ -228,7 +228,7 @@ mod tests {
         }
     }
 
-    static EMPTY_PACKAGES: LazyLock<qsl_semantics::model::intake::PackageInput> =
+    static EMPTY_PACKAGES: LazyLock<fsl_semantics::model::intake::PackageInput> =
         LazyLock::new(BTreeMap::new);
     static NO_DEPENDENCIES: LazyLock<DependencyInput> = LazyLock::new(DependencyInput::default);
     static EMPTY_OBJECT_ENVIRONMENT: LazyLock<ObjectEnvironment> =
@@ -251,10 +251,10 @@ mod tests {
 
     struct ObjectContextFixture {
         source: String,
-        packages: qsl_semantics::model::intake::PackageInput,
-        population: quire_exact::PopulationId,
-        empty_population_id: quire_exact::PopulationId,
-        reference: quire_exact::ObjectReference,
+        packages: fsl_semantics::model::intake::PackageInput,
+        population: filament_exact::PopulationId,
+        empty_population_id: filament_exact::PopulationId,
+        reference: filament_exact::ObjectReference,
         populated: ObjectEnvironment,
         empty_context: ObjectEnvironment,
         empty_population_env: ObjectEnvironment,
@@ -270,8 +270,8 @@ mod tests {
              function query_absent using v(p: Population<M::Thing>[1], r: M::Thing): M::Thing pure { lookup<M::Thing>(p, r) absent undefined }\n";
         let source_identity = SourceIdentity::new("filament-driver-test", "object-context");
         let cancel = Cancel::new();
-        let parsed = qsl_replay::spine::parse(
-            &qsl_replay::spine::ParseRequest {
+        let parsed = fsl_replay::spine::parse(
+            &fsl_replay::spine::ParseRequest {
                 source: &source_identity,
                 path: "object-context.fsl",
                 bytes: source.as_bytes(),
@@ -282,10 +282,10 @@ mod tests {
         .expect("model-call source parses")
         .into_value();
         let models =
-            qsl_replay::spine::select(&parsed, &packages, SpineLimits::default().model, &cancel)
+            fsl_replay::spine::select(&parsed, &packages, SpineLimits::default().model, &cancel)
                 .expect("model-call package selects")
                 .into_value();
-        let checked = qsl_replay::spine::check(
+        let checked = fsl_replay::spine::check(
             &parsed,
             "object-context".to_owned(),
             &models,
@@ -340,13 +340,13 @@ mod tests {
         };
         let populated_binding = admit(vec![member]);
         let population = populated_binding.population_id();
-        let reference = quire_exact::ObjectReference::new(
+        let reference = filament_exact::ObjectReference::new(
             view.object_universe_of(&type_key)
                 .expect("Thing has an object universe")
                 .identity()
                 .expect("the universe has an identity"),
             type_identity,
-            quire_exact::ObjectId::new("g1").expect("fixture object id is valid"),
+            filament_exact::ObjectId::new("g1").expect("fixture object id is valid"),
         );
         let world = ObjectClosure::new(
             checked.package().graph().scope().types(),
@@ -388,8 +388,8 @@ mod tests {
         fixture: &'a ObjectContextFixture,
         environment: &'a ObjectEnvironment,
         function: &str,
-        population: quire_exact::PopulationId,
-        reference: quire_exact::ObjectReference,
+        population: filament_exact::PopulationId,
+        reference: filament_exact::ObjectReference,
     ) -> ExecutionRequest<'a> {
         ExecutionRequest {
             source: SourceIdentity::new("filament-driver-test", "object-context"),
@@ -422,7 +422,7 @@ mod tests {
     }
 
     fn direct_document(request: &ExecutionRequest<'_>) -> OutcomeDocument {
-        let outcome = qsl_replay::spine::run(
+        let outcome = fsl_replay::spine::run(
             request.source.clone(),
             request.package_name.to_owned(),
             request.path,
@@ -451,7 +451,7 @@ mod tests {
     #[test]
     fn execute_result_uses_fsl_outcome_document_serializer() {
         let request = request(ExecutionEngine::default(), SpineLimits::default());
-        let expected_run = qsl_replay::spine::run(
+        let expected_run = fsl_replay::spine::run(
             request.source.clone(),
             request.package_name.to_owned(),
             request.path,
@@ -483,7 +483,7 @@ mod tests {
         let mut request = request(ExecutionEngine::Interpreter, SpineLimits::default());
         request.object_environment = &objects;
 
-        let expected = qsl_replay::spine::run(
+        let expected = fsl_replay::spine::run(
             request.source.clone(),
             request.package_name.to_owned(),
             request.path,
@@ -667,7 +667,7 @@ mod tests {
         source.source_bytes = 1;
         request.limits.source = source;
 
-        let expected = qsl_replay::spine::run(
+        let expected = fsl_replay::spine::run(
             request.source.clone(),
             request.package_name.to_owned(),
             request.path,
@@ -704,7 +704,7 @@ mod tests {
         let request = request(ExecutionEngine::Interpreter, SpineLimits::default());
         request.cancel.cancel(CancelCause::Requested);
 
-        let expected_run = qsl_replay::spine::run(
+        let expected_run = fsl_replay::spine::run(
             request.source.clone(),
             request.package_name.to_owned(),
             request.path,

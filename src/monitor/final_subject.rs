@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Bind an original FSL subject through its owner's final declaration lookup.
 
-use qsl_package::Emission;
-use qsl_replay::MonitorSubject;
-use quire_contract_model::{
+use fsl_package::Emission;
+use fsl_replay::MonitorSubject;
+use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageReadLimits,
 };
-use quire_exact::Cancel;
+use filament_exact::Cancel;
 
 use super::{
     budget::Budget, selection, AdmittedMonitorClockSelection, AdmittedMonitorSelection,
@@ -108,7 +108,7 @@ pub fn admit_monitor_final_subject<'a>(
     budget.charge(1)?; // native origin record
     budget.inspect(subject.occurrence().origin().role().as_str())?;
     budget.charge(8)?; // native origin ordinal, before conversion
-    let Some(occurrence) = qsl_package::checked_occurrence(subject.occurrence().origin()) else {
+    let Some(occurrence) = fsl_package::checked_occurrence(subject.occurrence().origin()) else {
         return Err(mismatch(Field::ProducerSubject, request.clause));
     };
     if occurrence.role != CheckedOccurrenceRole::Claim {

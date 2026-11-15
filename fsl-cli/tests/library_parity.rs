@@ -8,15 +8,15 @@ use std::process::{Command, Output};
 use filament_driver::{
     execute, ExecutionEngine, ExecutionFailure, ExecutionRequest, ObjectEnvironment,
 };
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{
     check, default_accounting, package, parse, select, Call, CallArgument, DependencyInput,
     PackageLimits, ParseRequest, SpineLimits, DEFAULT_WORK_UNITS,
 };
-use qsl_replay::OutcomeDocument;
-use quire_exact::{Cancel, Integer, Value};
-use quire_semantic_value::catalog::Category;
-use quire_semantic_value::supplied_stop::SuppliedLimits;
+use fsl_replay::OutcomeDocument;
+use filament_exact::{Cancel, Integer, Value};
+use filament_semantic_value::catalog::Category;
+use filament_semantic_value::supplied_stop::SuppliedLimits;
 
 #[path = "common/requests.rs"]
 mod requests;

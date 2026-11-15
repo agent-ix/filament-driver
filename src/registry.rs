@@ -2,8 +2,8 @@
 //! The registry value (ADR-012 §7.1): built by the driver from provider
 //! manifests and passed to every consumer as an argument.
 
-use qsl_foundation::BackendId;
-use qsl_route::{
+use fsl_foundation::BackendId;
+use fsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, ManifestMembers, ProviderOrigin,
     RegistrationRefusal, Registry,
 };
@@ -334,8 +334,8 @@ pub fn build_linked_providers<'a>(
 mod tests {
     use std::collections::BTreeMap;
 
-    use qsl_foundation::BackendId;
-    use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
+    use fsl_foundation::BackendId;
+    use fsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
 
     use crate::{KaniProvider, Provider, ProviderManifest};
 
@@ -364,7 +364,7 @@ mod tests {
             .registry()
             .descriptors()
             .all(|descriptor| descriptor.domains().is_some_and(|domains| {
-                domains.contains(&qsl_foundation::bound::DomainKind::Integer)
+                domains.contains(&fsl_foundation::bound::DomainKind::Integer)
             })));
         let forward = admitted.manifest_snapshot();
         let reverse = build_linked_providers(&[&second, &first])
@@ -491,7 +491,7 @@ mod tests {
         assert_eq!(refusal.code(), "invalid_capability");
         assert_eq!(
             refusal.fsl_category(),
-            Some(quire_semantic_value::catalog::Category::Refusal)
+            Some(filament_semantic_value::catalog::Category::Refusal)
         );
         assert_eq!(refusal.stage(), crate::DriverStage::Registry);
         assert_eq!(refusal.kind(), crate::OutcomeKind::Refused);
@@ -517,8 +517,8 @@ mod tests {
         assert_eq!(refusal.stage(), crate::DriverStage::Registry);
         assert!(
             matches!(refusal, crate::DriverRefusal::Registration(ref errors)
-            if errors.len() == 1 && errors[0].cause() == &qsl_route::RegistrationCause::UnknownEvidenceKind(
-                qsl_route::EvidenceKindsDefect::Absent
+            if errors.len() == 1 && errors[0].cause() == &fsl_route::RegistrationCause::UnknownEvidenceKind(
+                fsl_route::EvidenceKindsDefect::Absent
             ))
         );
     }
@@ -545,7 +545,7 @@ mod tests {
         assert_eq!(refusals.len(), 1);
         assert_eq!(
             refusals[0].cause(),
-            &qsl_route::RegistrationCause::InvalidDomains(qsl_route::DomainsDefect::Absent)
+            &fsl_route::RegistrationCause::InvalidDomains(fsl_route::DomainsDefect::Absent)
         );
     }
 
@@ -562,7 +562,7 @@ mod tests {
             ),
             ProviderOrigin::Process,
             [(Some("operation-contract"), Some("bounded"))],
-            qsl_route::ManifestMembers {
+            fsl_route::ManifestMembers {
                 domains: Some(&["integer"]),
                 ..Default::default()
             },
@@ -612,7 +612,7 @@ mod tests {
             Candidate::new(BackendId::from_wire(identity).expect("nonempty identity")),
             ProviderOrigin::Process,
             [(Some("operation-contract"), Some("bounded"))],
-            qsl_route::ManifestMembers {
+            fsl_route::ManifestMembers {
                 domains: Some(&["integer"]),
                 ..Default::default()
             },
@@ -642,7 +642,7 @@ mod tests {
                         ),
                         ProviderOrigin::Process,
                         [(Some("operation-contract"), Some("bounded"))],
-                        qsl_route::ManifestMembers {
+                        fsl_route::ManifestMembers {
                             domains: Some(&["integer"]),
                             ..Default::default()
                         },
@@ -700,7 +700,7 @@ mod tests {
             ),
             ProviderOrigin::Process,
             [(Some("operation-contract"), Some("bounded"))],
-            qsl_route::ManifestMembers {
+            fsl_route::ManifestMembers {
                 domains: Some(&["integer"]),
                 ..Default::default()
             },

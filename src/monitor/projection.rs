@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The actual bounded initializer type read, without an environment substitute.
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedTerm, ExactTypeProjection, NativeJoinBudget, SelectedExactIdentities,
 };
-use quire_exact::Cancel;
+use filament_exact::Cancel;
 
 use super::budget::Budget;
 use super::{AdmittedMonitorSelection, MonitorPreparationError as Error};

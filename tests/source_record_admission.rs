@@ -9,15 +9,15 @@ use filament_driver::monitor::{
     MonitorPreparationError, MonitorPreparationErrorCode, MonitorPreparationLimits,
 };
 use ix_trace_rs::trace;
-use qsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
-use qsl_package::{emit_checked, Emission};
-use qsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
-use qsl_semantics::model::intake::package_input;
-use quire_contract_model::{
+use fsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
+use fsl_package::{emit_checked, Emission};
+use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+use fsl_semantics::model::intake::package_input;
+use filament_contract_model::{
     CheckedNodeId, CheckedPackageReadLimits, ExactTypeProjectionError,
     ExactTypeProjectionErrorCode, NativeJoinBudget, SelectedExactIdentities,
 };
-use quire_exact::{Cancel, Presence, ValueType};
+use filament_exact::{Cancel, Presence, ValueType};
 
 const JOIN_LIMITS: MonitorPreparationLimits = MonitorPreparationLimits {
     work: 100_000,
@@ -375,12 +375,12 @@ fn reader_incompleteness_retains_its_original_native_payload() {
         bytes: 0,
         ..CheckedPackageReadLimits::bounded()
     };
-    let native = quire_contract_model::read_checked_package(
+    let native = filament_contract_model::read_checked_package(
         emission.package().bytes(),
         limits,
         emission.evidence(),
     );
-    let quire_contract_model::CheckedPackageDispatchResult::Incomplete(expected) = native else {
+    let filament_contract_model::CheckedPackageDispatchResult::Incomplete(expected) = native else {
         panic!("zero bytes must stop native reading")
     };
     let actual = admit_source_records(&emission, emission.evidence(), limits, JOIN_LIMITS)
@@ -452,10 +452,10 @@ fn native_opaque_claim_acceptance_does_not_replace_emission_authority() {
 #[trace("FR-018-AC-1", "FR-018-AC-3")]
 #[test]
 fn final_real_plan_root_emission_retains_its_source_record_rows() {
-    use qsl_analyze::monitor_root::{emit_plan_root, PlanRootRequest};
-    use qsl_replay::{MonitorTarget, TimingObligationSettings};
-    use qsl_semantics::library::LibraryName;
-    use quire_exact::{Integer, Rational};
+    use fsl_analyze::monitor_root::{emit_plan_root, PlanRootRequest};
+    use fsl_replay::{MonitorTarget, TimingObligationSettings};
+    use fsl_semantics::library::LibraryName;
+    use filament_exact::{Integer, Rational};
 
     let metadata = std::process::Command::new("cargo")
         .args(["metadata", "--format-version", "1", "--locked"])
@@ -472,7 +472,7 @@ fn final_real_plan_root_emission_retains_its_source_record_rows() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|package| package["name"] == "qsl-replay")
+        .find(|package| package["name"] == "fsl-replay")
         .unwrap()["manifest_path"]
         .as_str()
         .unwrap();
@@ -540,13 +540,13 @@ temporal SelectedMonitor using timed over (candidate: Selected::ConfigVersion) c
     };
     // The current producer retains complete admission evidence. Deliberately
     // omit it only for this negative reader control.
-    let missing_evidence = quire_contract_model::CheckedPackageEvidence::new();
-    let native = quire_contract_model::read_checked_package(
+    let missing_evidence = filament_contract_model::CheckedPackageEvidence::new();
+    let native = filament_contract_model::read_checked_package(
         root.emission().package().bytes(),
         read_limits,
         &missing_evidence,
     );
-    let quire_contract_model::CheckedPackageDispatchResult::Refused(expected) = native else {
+    let filament_contract_model::CheckedPackageDispatchResult::Refused(expected) = native else {
         panic!("original model documents are required by the strict owner reader")
     };
     let error = admit_source_records(root.emission(), &missing_evidence, read_limits, JOIN_LIMITS)
@@ -575,8 +575,8 @@ temporal SelectedMonitor using timed over (candidate: Selected::ConfigVersion) c
         JOIN_LIMITS,
     )
     .unwrap_or_else(|error| {
-        let quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) =
-            quire_contract_model::read_checked_package(
+        let filament_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) =
+            filament_contract_model::read_checked_package(
                 root.emission().package().bytes(), read_limits, &evidence)
         else {
             panic!("the original final emission must first strictly admit")

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Borrowed independent selections and original witnesses for monitor preparation.
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedNodeId, CheckedPackageLockV2, CheckedPackageV2, CheckedRational, CheckedSelection,
     CheckedSourceMapEntry, SelectedFactRows, TemporalBinding,
 };

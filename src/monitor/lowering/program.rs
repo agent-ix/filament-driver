@@ -8,15 +8,15 @@
 
 use std::collections::BTreeMap;
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedBindingNameKind, CheckedNodeId, CheckedOperationMember, CheckedPackageV2, CheckedTerm,
     LiteralKind, SelectedMonitorTypeClosure,
 };
-use quire_contract_runtime::monitor::{
+use filament_contract_runtime::monitor::{
     Entries, Expression, ExpressionId, Function, FunctionId, LocalId, Operation,
 };
-use quire_exact::{Cancel, Integer, MemberId, MemberOwner, ValueType};
-use quire_semantic_value::declaration::CheckedEquality;
+use filament_exact::{Cancel, Integer, MemberId, MemberOwner, ValueType};
+use filament_semantic_value::declaration::CheckedEquality;
 
 use super::{key, operation, Budget, Error, MonitorPreparationLimits};
 use crate::monitor::ClosureFacts;
@@ -201,7 +201,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
     fn graph_node(
         &self,
         node: &CheckedNodeId,
-    ) -> Result<&'a quire_contract_model::CheckedSemanticNodeV2, Error> {
+    ) -> Result<&'a filament_contract_model::CheckedSemanticNodeV2, Error> {
         self.package
             .resolved_graph()
             .nodes
@@ -511,22 +511,22 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         &self,
         node: &CheckedNodeId,
         kind: &LiteralKind,
-        value: &quire_contract_model::CheckedJson,
-    ) -> Result<quire_exact::Value, Error> {
+        value: &filament_contract_model::CheckedJson,
+    ) -> Result<filament_exact::Value, Error> {
         Ok(match kind {
             LiteralKind::Integer => {
                 let text = value
                     .as_str()
                     .or_else(|| value.number_text())
                     .ok_or_else(|| self.invalid(node))?;
-                quire_exact::Value::Integer(
+                filament_exact::Value::Integer(
                     text.parse::<Integer>().map_err(|_| self.invalid(node))?,
                 )
             }
             LiteralKind::Boolean => {
-                quire_exact::Value::Boolean(value.as_bool().ok_or_else(|| self.invalid(node))?)
+                filament_exact::Value::Boolean(value.as_bool().ok_or_else(|| self.invalid(node))?)
             }
-            LiteralKind::String => quire_exact::Value::String(
+            LiteralKind::String => filament_exact::Value::String(
                 value.as_str().ok_or_else(|| self.invalid(node))?.to_owned(),
             ),
             _ => return Err(self.unsupported(node)),
@@ -739,7 +739,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         &mut self,
         frame: &mut Frame<'a>,
         node: &'a CheckedNodeId,
-        operation: &'a quire_contract_model::CheckedApplicationOperation,
+        operation: &'a filament_contract_model::CheckedApplicationOperation,
         arguments: &'a [CheckedTerm],
         result_type: &'a CheckedNodeId,
     ) -> Result<ExpressionId, Error> {

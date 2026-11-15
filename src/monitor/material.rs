@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Charged borrowed material walks; structural keys never use recursive Serde.
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedArtifactRef, CheckedNodeId, CheckedNodePathSegment, CheckedPackageLockV2,
     CheckedRational, CheckedSelection, CheckedSourceMapEntry, ClockConfiguration, ClockExactNumber,
     TemporalBinding,
 };
 
-use quire_exact::{NodeKey, PathSegmentView};
+use filament_exact::{NodeKey, PathSegmentView};
 
 use super::{budget::Budget, MonitorPreparationError};
 

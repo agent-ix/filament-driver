@@ -13,18 +13,18 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use filament_driver::Driven;
 use filament_driver::ProviderManifest;
-use qsl_foundation::backend::EmptyBackendIdentity;
-use qsl_foundation::bound::DomainKind;
-use qsl_foundation::diagnostic::category_of;
-use qsl_foundation::BackendId;
-use qsl_package::EmittedPackage;
-use qsl_route::request::RequirementItem;
-use qsl_route::CandidateOutcome;
-use qsl_route::{
+use fsl_foundation::backend::EmptyBackendIdentity;
+use fsl_foundation::bound::DomainKind;
+use fsl_foundation::diagnostic::category_of;
+use fsl_foundation::BackendId;
+use fsl_package::EmittedPackage;
+use fsl_route::request::RequirementItem;
+use fsl_route::CandidateOutcome;
+use fsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
     ProviderOrigin,
 };
-use quire_semantic_value::catalog::{CatalogCode, Category};
+use filament_semantic_value::catalog::{CatalogCode, Category};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -225,7 +225,7 @@ pub enum ManifestAdmissionError {
     /// FSL refused advertised labels or domain declarations with its native
     /// registration cause.
     #[error(transparent)]
-    Registration(#[from] qsl_route::RegistrationRefusal),
+    Registration(#[from] fsl_route::RegistrationRefusal),
     /// Canonical manifest hashing refused the input or exceeded its byte bound.
     #[error("plugin hello manifest could not be canonically encoded: {0}")]
     Canonical(#[from] quire_canonical::Error),
@@ -284,10 +284,10 @@ impl ManifestStage {
                 .advertises
                 .iter()
                 .map(|pair| (pair.kind.as_deref(), pair.mode.as_deref())),
-            qsl_route::ManifestMembers {
+            fsl_route::ManifestMembers {
                 domains: domain_labels.as_deref(),
                 fairness_kinds: fairness_member,
-                ..qsl_route::ManifestMembers::default()
+                ..fsl_route::ManifestMembers::default()
             },
         )?;
         Ok(AdmittedManifest {
@@ -404,7 +404,7 @@ impl RequestStage {
     /// they are not reconstructed from CG dispositions.
     pub fn from_driven(
         driven: &Driven,
-        backend: &qsl_foundation::BackendId,
+        backend: &fsl_foundation::BackendId,
         manifest: &[ProviderManifest],
         deadline_ms: u64,
     ) -> Result<Self, RequestStageError> {
@@ -620,13 +620,13 @@ impl RequestItem {
     /// classification, named backend, or candidate result.
     fn from_fsl(
         item: &RequirementItem,
-        routed_backend: &qsl_foundation::BackendId,
+        routed_backend: &fsl_foundation::BackendId,
     ) -> Result<Self, RequestStageError> {
         let request_index =
             u64::try_from(item.index().get()).map_err(|_| RequestStageError::FslRequestIndex)?;
         let origin = item.occurrence().origin();
         let claim = RequestClaim {
-            node: qsl_foundation::node_wire::node_key_to_json(item.node())
+            node: fsl_foundation::node_wire::node_key_to_json(item.node())
                 .map_err(|_| RequestStageError::NodeIdentity)?,
             occurrence: RequestClaimOccurrence {
                 role: origin.role().as_str().to_owned(),
@@ -655,10 +655,10 @@ impl RequestItem {
             }
         };
         let extent = match item.extent() {
-            qsl_route::request::ExtentClassification::Bounded => {
+            fsl_route::request::ExtentClassification::Bounded => {
                 Some(Extent::Bounded { bounds: Vec::new() })
             }
-            qsl_route::request::ExtentClassification::Unbounded {
+            fsl_route::request::ExtentClassification::Unbounded {
                 finite_bound_available,
             } => Some(Extent::Unbounded {
                 domains: item
@@ -666,13 +666,13 @@ impl RequestItem {
                     .iter()
                     .map(|(key, kind)| {
                         let domain = match key {
-                            qsl_foundation::bound::DomainKey::Node { node, path } => {
+                            fsl_foundation::bound::DomainKey::Node { node, path } => {
                                 DomainKey::Node {
                                     node: node.to_string(),
                                     path: path.to_vec(),
                                 }
                             }
-                            qsl_foundation::bound::DomainKey::Population {
+                            fsl_foundation::bound::DomainKey::Population {
                                 member_type,
                                 ordinal,
                             } => DomainKey::Population {
@@ -878,10 +878,10 @@ mod tests {
         build_linked_providers, build_registry, drive, CompileInput, FslCg, GenerationInput,
     };
     use filament_driver::{DriverRefusal, Upstream};
-    use qsl_foundation::SourceIdentity;
-    use qsl_replay::spine::SpineLimits;
-    use quire_contract_codegen as cg;
-    use quire_exact::Cancel;
+    use fsl_foundation::SourceIdentity;
+    use fsl_replay::spine::SpineLimits;
+    use filament_contract_codegen as cg;
+    use filament_exact::Cancel;
     use std::cell::Cell;
     use std::collections::BTreeMap;
 
@@ -893,33 +893,33 @@ mod tests {
     }
 
     impl Upstream for RouteRecorder {
-        fn has_abstraction_relation(&self, package: &qsl_package::CheckedPackage) -> bool {
+        fn has_abstraction_relation(&self, package: &fsl_package::CheckedPackage) -> bool {
             FslCg.has_abstraction_relation(package)
         }
         fn export_bindings(
             &self,
-            package: &qsl_package::CheckedPackage,
-            items: &[qsl_foundation::source::provenance::OccurrenceKey],
+            package: &fsl_package::CheckedPackage,
+            items: &[fsl_foundation::source::provenance::OccurrenceKey],
         ) -> Result<
-            Vec<Result<qsl_package::BoundItem, qsl_package::ExportRefusal>>,
-            qsl_package::ExportRefusal,
+            Vec<Result<fsl_package::BoundItem, fsl_package::ExportRefusal>>,
+            fsl_package::ExportRefusal,
         > {
             FslCg.export_bindings(package, items)
         }
         fn compile(
             &self,
-            source: qsl_foundation::SourceIdentity,
+            source: fsl_foundation::SourceIdentity,
             path: &str,
             bytes: &[u8],
             package_name: &str,
-            packages: &qsl_semantics::model::intake::PackageInput,
+            packages: &fsl_semantics::model::intake::PackageInput,
             limits: SpineLimits,
             cancel: &Cancel,
         ) -> Result<
             (
-                qsl_replay::spine::CheckedUnit,
-                qsl_replay::spine::AdmittedModels,
-                qsl_replay::spine::EmittedUnit,
+                fsl_replay::spine::CheckedUnit,
+                fsl_replay::spine::AdmittedModels,
+                fsl_replay::spine::EmittedUnit,
             ),
             DriverRefusal,
         > {
@@ -928,10 +928,10 @@ mod tests {
 
         fn read_package(
             &self,
-            emitted: &qsl_replay::spine::EmittedUnit,
-            limits: quire_contract_model::CheckedPackageReadLimits,
-            evidence: &quire_contract_model::CheckedPackageEvidence,
-        ) -> quire_contract_model::CheckedPackageDispatchResult {
+            emitted: &fsl_replay::spine::EmittedUnit,
+            limits: filament_contract_model::CheckedPackageReadLimits,
+            evidence: &filament_contract_model::CheckedPackageEvidence,
+        ) -> filament_contract_model::CheckedPackageDispatchResult {
             FslCg.read_package(emitted, limits, evidence)
         }
 
@@ -941,8 +941,8 @@ mod tests {
 
         fn negotiate(
             &self,
-            source: &quire_contract_model::CheckedPackageV2,
-            package: &quire_contract_model::ContractPackageV1,
+            source: &filament_contract_model::CheckedPackageV2,
+            package: &filament_contract_model::ContractPackageV1,
             positions: &[cg::ContractRequestPosition],
             envelope: &cg::BackendProviderEnvelope,
         ) -> Result<Vec<cg::ContractItemSettlement>, Box<cg::ContractNegotiationError>> {
@@ -977,16 +977,16 @@ mod tests {
 
         fn route<'d>(
             &self,
-            dispositions: &'d [qsl_route::routing::Disposition],
-        ) -> Vec<Option<&'d qsl_route::Candidate>> {
+            dispositions: &'d [fsl_route::routing::Disposition],
+        ) -> Vec<Option<&'d fsl_route::Candidate>> {
             self.calls.set(self.calls.get() + 1);
             FslCg.route(dispositions)
         }
 
         fn generate(
             &self,
-            source: &quire_contract_model::CheckedPackageV2,
-            package: &quire_contract_model::ContractPackageV1,
+            source: &filament_contract_model::CheckedPackageV2,
+            package: &filament_contract_model::ContractPackageV1,
             positions: &[cg::ContractRequestPosition],
             routed: &[cg::RoutedGenerationItem],
             contexts: &cg::GenerationContexts<'_>,
@@ -1057,7 +1057,7 @@ mod tests {
         assert!(admitted
             .descriptor()
             .domains()
-            .is_some_and(|domains| domains.contains(&qsl_foundation::bound::DomainKind::Integer)));
+            .is_some_and(|domains| domains.contains(&fsl_foundation::bound::DomainKind::Integer)));
         assert_eq!(
             admitted.manifest().bounds.as_ref(),
             Some(&BTreeMap::from([("max_states".to_owned(), 8)]))
@@ -1183,7 +1183,7 @@ mod tests {
         assert_eq!(refusal.catalog_code().cause(), "invalid-domains");
         assert!(matches!(
             refusal.cause(),
-            qsl_route::RegistrationCause::InvalidDomains(_)
+            fsl_route::RegistrationCause::InvalidDomains(_)
         ));
     }
 
@@ -1509,7 +1509,7 @@ mod tests {
         );
         assert_eq!(
             wire["request"]["items"][0]["claim"]["node"],
-            qsl_foundation::node_wire::node_key_to_json(fsl_item.node()).expect("the node encodes")
+            fsl_foundation::node_wire::node_key_to_json(fsl_item.node()).expect("the node encodes")
         );
         assert_eq!(
             wire["request"]["items"][0]["claim"]["occurrence"]["role"],
@@ -1618,7 +1618,7 @@ mod tests {
         assert!(matches!(
             RequestStage::from_driven(
                 &driven,
-                &qsl_foundation::BackendId::new("kani"),
+                &fsl_foundation::BackendId::new("kani"),
                 registry.manifests(),
                 250,
             ),

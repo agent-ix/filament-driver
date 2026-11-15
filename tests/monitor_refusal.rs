@@ -7,16 +7,16 @@ use filament_driver::monitor_refusal::{
     target_mismatch_at, unsupported_at, MonitorLocusErrorCode, TargetPremise,
 };
 use ix_trace_rs::trace;
-use qsl_foundation::SourceIdentity;
-use qsl_package::{emit_checked, emit_monitor_plan_over, Emission, MonitorPlanWire, V2ReadLimits};
-use qsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
-use qsl_semantics::{library::LibraryName, model::intake::package_input};
-use quire_contract_model::{
+use fsl_foundation::SourceIdentity;
+use fsl_package::{emit_checked, emit_monitor_plan_over, Emission, MonitorPlanWire, V2ReadLimits};
+use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+use fsl_semantics::{library::LibraryName, model::intake::package_input};
+use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedNodeKind, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedTerm,
 };
-use quire_exact::{Cancel, Integer, Rational};
+use filament_exact::{Cancel, Integer, Rational};
 
 // These ordinary functions only supply admitted diagnostic data. They are
 // neither a temporal algorithm nor evidence of monitor preparation/build.
@@ -76,7 +76,7 @@ fn model_document() -> Vec<u8> {
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| item["name"] == "qsl-replay")
+        .find(|item| item["name"] == "fsl-replay")
         .unwrap()["manifest_path"]
         .as_str()
         .unwrap();
@@ -470,7 +470,7 @@ fn invalid_indices_occurrences_and_selectors_keep_distinct_typed_failures() {
     assert!(
         raw.path.iter().any(|segment| matches!(
             segment,
-            quire_contract_model::CheckedNodePathSegment::Operand(_)
+            filament_contract_model::CheckedNodePathSegment::Operand(_)
         )),
         "the authentic node-held identity contains operand slots"
     );

@@ -19,9 +19,9 @@ use std::sync::atomic::AtomicI32;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use quire_exact::Cancel;
+use filament_exact::Cancel;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use quire_exact::CancelCause;
+use filament_exact::CancelCause;
 
 /// Shared cancellation state used by the CLI operation and process adapter.
 #[derive(Clone, Default)]
@@ -202,7 +202,7 @@ mod tests {
     //! permissions.
 
     use super::{lock_active, SignalContext};
-    use quire_exact::Cancel;
+    use filament_exact::Cancel;
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn read_child_output(child: &mut std::process::Child) -> (Vec<u8>, Vec<u8>) {
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn dropping_one_session_keeps_other_sessions_active() {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
-        use quire_exact::CancelCause;
+        use filament_exact::CancelCause;
 
         let context = SignalContext::default();
         let first = Cancel::new();
@@ -297,7 +297,7 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn handled_signal_cancels_the_active_fsl_handle_and_retains_its_number() {
-        use quire_exact::CancelCause;
+        use filament_exact::CancelCause;
         use signal_hook::consts::signal::SIGTERM;
 
         let context = SignalContext::default();
@@ -323,7 +323,7 @@ mod tests {
         use std::thread;
         use std::time::{Duration, Instant};
 
-        use quire_exact::{Cancel, CancelCause};
+        use filament_exact::{Cancel, CancelCause};
         use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
         if let (Ok(mode), Ok(marker)) = (
@@ -489,9 +489,9 @@ mod tests {
             ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
             ProviderManifest, ProviderRequest, ProviderResults,
         };
-        use qsl_foundation::BackendId;
-        use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
-        use quire_exact::Cancel;
+        use fsl_foundation::BackendId;
+        use fsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
+        use filament_exact::Cancel;
         use serde_json::Value;
 
         struct RemoveMarkers(Vec<std::path::PathBuf>);
@@ -547,7 +547,7 @@ mod tests {
                             ),
                             ProviderOrigin::Process,
                             Vec::<(Option<&str>, Option<&str>)>::new(),
-                            qsl_route::ManifestMembers::default(),
+                            fsl_route::ManifestMembers::default(),
                         )
                         .map_err(|e| format!("{e:?}"))?;
                         Ok((

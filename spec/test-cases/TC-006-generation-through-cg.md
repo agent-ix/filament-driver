@@ -180,7 +180,7 @@ the rational projection or candidate-control cases.
   (`undefined_expression`/`unproved-range`), before CG is ever called.
   CG's own `ResultBoundUnreachable` refusal names the identical
   disjoint-interval fact (confirmed against CG's own fixture test,
-  `quire-contract-codegen`'s
+  `filament-contract-codegen`'s
   `tc_033_fsl_shaped_literal_and_consumer_refusals_have_no_harness`). This
   is one shape, not a general guarantee that the refusal is unreachable:
   step 10 reaches it.

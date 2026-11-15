@@ -9,17 +9,17 @@ use filament_driver::{
     build_registry, drive, CompileInput, Driven, FrameReplayFailure, FslCg, GenerationInput,
 };
 use ix_trace_rs::trace;
-use qsl_foundation::SourceIdentity;
-use qsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
-use qsl_replay::{
+use fsl_foundation::SourceIdentity;
+use fsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
+use fsl_replay::{
     call_site, ClaimedChange, ClauseName, DocumentRef, Identifier, OperationName, ReplayLimits,
     SelectedObject,
 };
-use quire_contract_codegen::{
+use filament_contract_codegen::{
     self as cg, FrameReplayInputs, LockedSource, ProvidedDocument, ReplayInputs, SelectedFrameItem,
     WitnessDecodeLimits,
 };
-use quire_exact::{Cancel, Origin, Role};
+use filament_exact::{Cancel, Origin, Role};
 use serde_json::json;
 
 fn source() -> SourceIdentity {
@@ -39,7 +39,7 @@ struct Fixture {
     domain: Vec<u8>,
     driven: Driven,
     harness: cg::StateFrameIdentity,
-    site: qsl_replay::OperationSite,
+    site: fsl_replay::OperationSite,
     index: usize,
     transcript: String,
 }
@@ -89,7 +89,7 @@ impl Fixture {
         } else {
             unit.replace("on M::Child::touch", "on M::Base::touch")
         };
-        let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
+        let packages = fsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
         let driven = drive(
             &FslCg,
             CompileInput {
@@ -127,7 +127,7 @@ impl Fixture {
         )
         .unwrap();
         let package = driven.checked();
-        let mut keys = qsl_semantics::check::wire_id::StructuralKeys::default();
+        let mut keys = fsl_semantics::check::wire_id::StructuralKeys::default();
         let clause_node = package
             .resolved_graph()
             .nodes
@@ -155,7 +155,7 @@ impl Fixture {
                 unwind: 2,
             },
             cg::StateFrameRoleIdentities::new(
-                qsl_replay::ObligationIdentity::new(
+                fsl_replay::ObligationIdentity::new(
                     clause.site.node.clone(),
                     None,
                     u32::try_from(clause.site.occurrence.origin().ordinal()).unwrap(),
@@ -342,7 +342,7 @@ fn frame_projection_rejects_missing_changed_and_caller_populated_associations() 
         assert_join_fault(fixture.driven.prepare_frame_replay(inputs));
     }
     for (role, ordinal) in [("claim", 0), ("generated", 1)] {
-        let changed = qsl_replay::OccurrenceKey::new(
+        let changed = fsl_replay::OccurrenceKey::new(
             fixture.site.frame_occurrence.node().clone(),
             Origin::new(Role::new(role), ordinal),
         );
@@ -383,11 +383,11 @@ fn frame_projection_preserves_fsl_refusal_before_any_join_or_codegen_check() {
     };
     assert_eq!(actual.code(), expected.code());
     let (
-        qsl_replay::CallSiteRefusal::UnknownOperation {
+        fsl_replay::CallSiteRefusal::UnknownOperation {
             selection: actual_selection,
             package: actual_package,
         },
-        qsl_replay::CallSiteRefusal::UnknownOperation {
+        fsl_replay::CallSiteRefusal::UnknownOperation {
             selection: expected_selection,
             package: expected_package,
         },

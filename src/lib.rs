@@ -14,9 +14,9 @@
 //! 3. The `route` candidate step: each item's candidate set. The items are
 //!    not supplied by the caller: they are written from the compiled unit's
 //!    own checked requirement records
-//!    (`qsl_package::CheckedPackage::graph().requirements()`, FR-062,
+//!    (`fsl_package::CheckedPackage::graph().requirements()`, FR-062,
 //!    FR-075), one item per record in occurrence-key order
-//!    (`qsl_route::request::items_from_requirements`).
+//!    (`fsl_route::request::items_from_requirements`).
 //! 4. The pre-negotiation conversion (ADR-012 §7.2, MD-2): every registered
 //!    descriptor goes through CG's origin-aware conversion
 //!    (`BackendKind::from_descriptor`). Unknown linked identities are refused
@@ -80,9 +80,9 @@ pub use provider::{
     ProviderItemFailure, ProviderItemResult, ProviderLimits, ProviderOutcomeError, ProviderRequest,
     ProviderResults, ProviderTerminalError,
 };
-pub use qsl_semantics::model::object_environment::ObjectEnvironment;
-pub use quire_contract_codegen::RoutedItemOutput;
-pub use quire_contract_codegen::{Candidate, ProofCeilings};
+pub use fsl_semantics::model::object_environment::ObjectEnvironment;
+pub use filament_contract_codegen::RoutedItemOutput;
+pub use filament_contract_codegen::{Candidate, ProofCeilings};
 pub use refusal::{
     DriverFault, DriverRefusal, DriverStage, OutcomeKind, PackageReadDiagnostic,
     PackageReadFailure, PackageReadLimit, PackageReadLocation, RequirementRecordUnresolvedCause,

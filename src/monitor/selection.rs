@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Bind an independent selection to one immutable admitted monitor root.
 
-use quire_contract_model::{
+use filament_contract_model::{
     CheckedMonitorClock, CheckedMonitorClockRead, CheckedMonitorPlanRef, CheckedNodeId,
     CheckedOccurrence, CheckedOccurrenceRole, CheckedPackageV2, CheckedSelectionRole, CheckedTerm,
     ClockConfiguration, LawRole, NativeJoinBudget,
 };
-use quire_exact::Cancel;
+use filament_exact::Cancel;
 
 use crate::monitor_refusal::{target_mismatch_at, TargetPremise};
 
@@ -394,7 +394,7 @@ fn clock_with_budget<'a>(
 mod tests {
     use super::matches_configured_clock;
     use ix_trace_rs::trace;
-    use quire_contract_model::{
+    use filament_contract_model::{
         CheckedMonitorClock, CheckedNodeId, CheckedNodePathSegment, ClockConfiguration,
     };
 

@@ -37,31 +37,31 @@ path = "src/lib.rs"
 # the graph resolves one copy of it. The exact commits are in Cargo.lock.
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
-quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
-qsl-analyze = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-package = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-replay = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-route = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-qsl-semantics = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
-quire-contract-codegen = { git = "https://github.com/agent-ix/quire-contract-codegen", branch = "main" }
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
-quire-contract-runtime = { git = "https://github.com/agent-ix/quire-contract-runtime", branch = "main", default-features = false, features = ["exact"] }
+filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", branch = "main" }
+fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
+filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", branch = "main" }
+filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", branch = "main", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
-quire-observation = { git = "https://github.com/agent-ix/quire-observation", branch = "main" }
+filament-observation = { git = "https://github.com/agent-ix/filament-observation", branch = "main" }
 # FSpec FR-331's linked manifest snapshot is canonicalized at registry admission.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main" }
 # FSL's caller-owned cancellation handle is a public driver API type.
-quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
+filament-exact = { git = "https://github.com/agent-ix/filament-exact", branch = "main" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "=2.0.20"
 
 [dev-dependencies]
 # FR-020-AC-14: `PathGuard::new` and `RequirementRecord::with_path_condition`.
-qsl-semantics = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main", features = ["test-support"] }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main", features = ["test-support"] }
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
-quire-checked = { git = "https://github.com/agent-ix/quire-eval", branch = "main" }
+filament-checked = { git = "https://github.com/agent-ix/filament-eval", branch = "main" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [profile.release]

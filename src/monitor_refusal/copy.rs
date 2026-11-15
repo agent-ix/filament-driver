@@ -3,8 +3,8 @@
 
 use std::{collections::TryReserveError, mem::size_of, sync::Arc};
 
-use quire_contract_model::{CheckedNodeId, CheckedNodePathSegment, CheckedOccurrence};
-use quire_exact::{Cancel, CancelCause};
+use filament_contract_model::{CheckedNodeId, CheckedNodePathSegment, CheckedOccurrence};
+use filament_exact::{Cancel, CancelCause};
 
 use super::MonitorRefusalLocus;
 use crate::monitor::MonitorPreparationLimits;

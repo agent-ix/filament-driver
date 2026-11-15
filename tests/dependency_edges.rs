@@ -11,9 +11,9 @@ use ix_trace_rs::trace;
 use serde_json::Value;
 
 /// The source of every package built from the FSL repository.
-const FSL_SOURCE: &str = "git+https://github.com/agent-ix/quire-spec-language";
+const FSL_SOURCE: &str = "git+https://github.com/agent-ix/filament-spec-language";
 /// The FSL root crate, which is not a layer crate (ADR-011 §6.1 crate map).
-const FSL_ROOT: &str = "quire-spec-language";
+const FSL_ROOT: &str = "filament-spec-language";
 
 struct Package {
     name: String,
@@ -174,19 +174,19 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         .map(|p| p.name.as_str())
         .collect();
     let expected: BTreeSet<&str> = [
-        "qsl-analyze",
-        "qsl-foundation",
-        "qsl-package",
-        "qsl-replay",
-        "qsl-route",
-        "qsl-semantics",
-        "quire-exact",
-        "quire-contract-codegen",
-        "quire-contract-model",
-        "quire-contract-runtime",
+        "fsl-analyze",
+        "fsl-foundation",
+        "fsl-package",
+        "fsl-replay",
+        "fsl-route",
+        "fsl-semantics",
+        "filament-exact",
+        "filament-contract-codegen",
+        "filament-contract-model",
+        "filament-contract-runtime",
         "quire-canonical",
-        "quire-observation",
-        "quire-semantic-value",
+        "filament-observation",
+        "filament-semantic-value",
         "serde",
         "serde_json",
         "thiserror",
@@ -198,8 +198,8 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         graph.driver_dev_dependencies,
         [
             "ix-trace-rs".to_owned(),
-            "qsl-semantics".to_owned(),
-            "quire-checked".to_owned()
+            "fsl-semantics".to_owned(),
+            "filament-checked".to_owned()
         ]
         .into_iter()
         .collect()
@@ -215,13 +215,13 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
     assert_eq!(driver_fsl.len(), 6, "six FSL edges, by source");
     assert!(driver_fsl.iter().all(|p| p.name != FSL_ROOT));
 
-    let runtime = graph.ids_named("quire-contract-runtime");
+    let runtime = graph.ids_named("filament-contract-runtime");
     assert_eq!(runtime.len(), 1, "one runtime package");
     assert!(
         graph.reachable_from(runtime[0]).iter().all(|id| {
             let package = graph.package(id);
             !package.is_fsl() && !matches!(package.name.as_str(),
-                "quire-contract-model" | "quire-contract-ir" | "filament-driver" | "quire-contract-codegen")
+                "filament-contract-model" | "filament-contract-ir" | "filament-driver" | "filament-contract-codegen")
         }),
         "the runtime's normal/build closure reaches an upstream compiler, IR/model or driver package"
     );
@@ -235,7 +235,7 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         "filament-cache",
         "filament-plugin-host",
         "ix-cli-kit",
-        "quire-semantic-value",
+        "filament-semantic-value",
     ] {
         assert!(
             cli_direct.contains(required),
@@ -255,23 +255,23 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         );
     }
 
-    // §7.1 / FB-05: CG's one normal or build edge into FSL is `qsl-replay`.
-    let cg = graph.ids_named("quire-contract-codegen");
+    // §7.1 / FB-05: CG's one normal or build edge into FSL is `fsl-replay`.
+    let cg = graph.ids_named("filament-contract-codegen");
     assert_eq!(cg.len(), 1, "one CG revision");
     let cg_fsl: Vec<&Package> = graph.deps_of(cg[0]).filter(|p| p.is_fsl()).collect();
     let cg_fsl_names: Vec<&str> = cg_fsl.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(cg_fsl_names, ["qsl-replay"]);
+    assert_eq!(cg_fsl_names, ["fsl-replay"]);
 
     // The driver's model crate is the one CG's IR crate re-exports, so a
     // `CheckedPackageV2` the driver reads is the type CG generates from.
     let driver_model: Vec<&String> = graph.deps[&graph.root]
         .iter()
-        .filter(|id| graph.package(id).name == "quire-contract-model")
+        .filter(|id| graph.package(id).name == "filament-contract-model")
         .collect();
     assert_eq!(driver_model.len(), 1);
     let cg_ir: Vec<&String> = graph.deps[cg[0]]
         .iter()
-        .filter(|id| graph.package(id).name == "quire-contract-ir")
+        .filter(|id| graph.package(id).name == "filament-contract-ir")
         .collect();
     assert_eq!(cg_ir.len(), 1, "CG has one IR edge");
     assert!(
@@ -281,18 +281,18 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
     );
 
     // One copy of `filament-contract-model` across the whole graph, so the
-    // driver's direct edge, CG's IR crate and FSL's `qsl-package` all resolve
+    // driver's direct edge, CG's IR crate and FSL's `fsl-package` all resolve
     // the same package id and no IR type crosses between copies.
     assert_eq!(
-        graph.ids_named("quire-contract-model").len(),
+        graph.ids_named("filament-contract-model").len(),
         1,
         "one filament-contract-model copy"
     );
-    let qsl_package = graph.ids_named("qsl-package");
-    assert_eq!(qsl_package.len(), 1, "one FSL package emitter");
+    let fsl_package = graph.ids_named("fsl-package");
+    assert_eq!(fsl_package.len(), 1, "one FSL package emitter");
     assert!(
         graph
-            .reachable_from(qsl_package[0])
+            .reachable_from(fsl_package[0])
             .contains(driver_model[0].as_str()),
         "FSL's package emitter must resolve the same model package as the driver and CG"
     );
