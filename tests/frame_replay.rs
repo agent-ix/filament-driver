@@ -79,8 +79,8 @@ impl Fixture {
             "types": [{"identity": "ix://driver/model/Amount", "displayName": "Amount", "kind": {"module": "driver/model", "name": "value_type"},
                 "roles": [], "origin": origin("ix://driver/model/Amount"), "extensions": [], "unknownPolicy": "reject", "scalar": "integer",
                 "constraints": [
-                    {"identity": "ix://driver/model/Amount/min", "keyword": "min", "operands": {"value": "0"}, "appliesTo": "ix://quire/native/Integer", "diagnosticCode": "bound.min", "origin": origin("ix://driver/model/Amount")},
-                    {"identity": "ix://driver/model/Amount/max", "keyword": "max", "operands": {"value": "10"}, "appliesTo": "ix://quire/native/Integer", "diagnosticCode": "bound.max", "origin": origin("ix://driver/model/Amount")} ]}, ty("Base", json!([]), json!([op("Base")])),
+                    {"identity": "ix://driver/model/Amount/min", "keyword": "min", "operands": {"value": "0"}, "appliesTo": "ix://filament/native/Integer", "diagnosticCode": "bound.min", "origin": origin("ix://driver/model/Amount")},
+                    {"identity": "ix://driver/model/Amount/max", "keyword": "max", "operands": {"value": "10"}, "appliesTo": "ix://filament/native/Integer", "diagnosticCode": "bound.max", "origin": origin("ix://driver/model/Amount")} ]}, ty("Base", json!([]), json!([op("Base")])),
                 ty("Child", json!(["ix://driver/model/Base"]), if redefined {json!([child_op])} else {json!([])})]})
             .to_string().into_bytes();
         let unit = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nmodel M = \"driver/model\";\npost Holds using v on M::Child::touch { self.balance >= pre(self.balance) }\n".to_owned();

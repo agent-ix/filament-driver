@@ -263,9 +263,7 @@ fn invalid_os_string() -> std::ffi::OsString {
 #[cfg(any(unix, windows))]
 #[trace("TC-1262", "FR-287-AC-6")]
 #[test]
-fn non_utf8_commands_and_labels_refuse_but_raw_file_paths_parse() {
-    use std::ffi::OsString;
-
+fn non_utf8_commands_and_labels_refuse() {
     let mut cases = vec![vec![invalid_os_string(), MISSING_SOURCE.into()]];
     for verb in ["parse", "format"] {
         cases.push(vec![
@@ -294,6 +292,15 @@ fn non_utf8_commands_and_labels_refuse_but_raw_file_paths_parse() {
             "{arguments:?}: {stderr}"
         );
     }
+}
+
+// APFS refuses a file name that is not UTF-8, so macOS cannot create the source.
+#[cfg(all(any(unix, windows), not(target_os = "macos")))]
+#[trace("TC-1262", "FR-287-AC-6")]
+#[test]
+fn non_utf8_raw_file_paths_parse() {
+    use std::ffi::OsString;
+
     let directory = TestDirectory(
         std::env::temp_dir().join(format!("filament-frontend-raw-path-{}", std::process::id())),
     );
