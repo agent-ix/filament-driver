@@ -24,7 +24,7 @@ def write_frame(value):
     sys.stdout.buffer.flush()
 
 
-protocol = "quire.plugin-wire/v1"
+protocol = "filament.plugin-wire/v1"
 write_frame(
     {
         "protocol": protocol,

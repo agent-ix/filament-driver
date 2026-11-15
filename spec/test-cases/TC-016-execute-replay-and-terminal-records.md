@@ -3,14 +3,14 @@ id: TC-016
 title: "Settle one terminal record per item after replay"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-009
+  - target: ix://agent-ix/filament-driver/FR-009
     type: verifies
 ---
 # TC-016: Settle one terminal record per item after replay
 
 ## Description
 
-Verify the available proved-provider terminal path uses QSL's canonical
+Verify the available proved-provider terminal path uses FSL's canonical
 `OutcomeItem` and `OutcomeDocument` serializer. Full replay-driven settlement
 for every item in the CG request, including the routed scalar observation producer
 and report-claim guard, remains planned.
@@ -20,7 +20,7 @@ Scope: FR-009-AC-1 through FR-009-AC-24 and FR-009-AC-26 and FR-001-AC-23/24.
 ## Test Procedure
 
 Run a verified Kani result through `ProviderResults::outcome_bytes` and compare
-the bytes with QSL's `OutcomeDocument::settled` over
+the bytes with FSL's `OutcomeDocument::settled` over
 `OutcomeItem::from_terminal`. Verify that a falsified scalar without replay
 remains a typed error and produces no guessed outcome.
 
@@ -46,7 +46,7 @@ result is `DriverRefusal::ScalarNotTractable` carrying CG's
 (`ScalarNative`). `src/drive.rs::scalar_native_tractability_tests`.
 
 The scalar producer/replay scenarios below remain planned. IR-879 owns the
-production driver composition that binds a real QSL call to its exact selected
+production driver composition that binds a real FSL call to its exact selected
 requirement occurrence, retains the ordered operands and context beside the CG
 output, and supplies CG's existing admitted package and complete request
 positions. TC-006 verifies that prerequisite through the production generation
@@ -55,19 +55,19 @@ same-artifact producer; IR-631 consumes its receipt for replay conversion, and
 IR-610 owns later E9 integration. The producer does not perform replay
 conversion, settlement, or terminal creation. Its later qualification must
 retain the exact generated artifact/package, scalar identity/occurrence,
-ordered operands, original `ScalarLimits` and `ReplayLimits`, and original QSL
-claim/replay context as one execution context. No positional zip of QSL and CG
+ordered operands, original `ScalarLimits` and `ReplayLimits`, and original FSL
+claim/replay context as one execution context. No positional zip of FSL and CG
 vectors, inferred occurrence, caller-authored operand list, or limits from a
 different call is a valid positive case. Missing, ambiguous, or mismatched
-call/occurrence binding must not yield an accepted receipt or reach QSL replay,
+call/occurrence binding must not yield an accepted receipt or reach FSL replay,
 settlement, or terminal creation. The production composition and the producer
 qualification remain planned until each owning slice is implemented.
 
 The function proof producer and join scenarios remain planned until IR-1121
 supplies CG’s current-V2 generated function harness and proving-run identity.
-From one QSL source and dependency lock, select two function proof items that
+From one FSL source and dependency lock, select two function proof items that
 name the same checked node at different application occurrences. Record each
-original request index, QSL-selected function declaration and exact occurrence,
+original request index, FSL-selected function declaration and exact occurrence,
 E5-admitted package identity, CG generated item and `KaniObligationIdentity`.
 Invoke the selected provider once per matching item with a one-item
 `ProviderRequest`, retaining a private invocation slot that binds its request
@@ -90,7 +90,7 @@ ceilings, kind, argument bounds, solver or unwind. Assert a driver
 `runtime_invariant` fault before playback intake, no fallback selection, and
 no settlement or terminal. This mutation changes actual provider-result fields
 or the private invocation slot, never imaginary occurrence/package/identity
-fields on `ProviderItemResult`. Independently make QSL selection, IR admission,
+fields on `ProviderItemResult`. Independently make FSL selection, IR admission,
 CG generation and the provider return their own typed refusals; assert each is
 preserved unchanged at its owning stage, with no driver join fault substituted.
 Do not mint an identity from caller text, a diagnostic or a Kani transcript.
@@ -129,7 +129,7 @@ checks are part of the oracle. These checks do not claim the current
 generation-only `drive()` path performs replay.
 
 When IR-773 adds the native producer after the production mapping exists,
-send the retained `ReplayLimits` unchanged in the QSL replay request and execute
+send the retained `ReplayLimits` unchanged in the FSL replay request and execute
 the artifact with the retained scalar inputs and `ScalarLimits`.
 Preserve
 upstream typed completion refusals according to the merged IR-847 refusal
@@ -140,7 +140,7 @@ Check driver-owned staged entries against retained originals; the opaque CG
 receipt attests that CG-generated runner entries are part of the immutable
 snapshot CG executed. The native outcome is carried separately as the claim. The oracle compares
 the retained and sent `ReplayLimits` for equality. It must reject missing or
-mismatched evidence without invoking QSL or creating settlement. The
+mismatched evidence without invoking FSL or creating settlement. The
 report-claim mismatch case remains planned until CG exports its FR-032 public
 scalar binding converter: then pass every report outcome through that
 converter, verify it compares `report.claim()` with the
@@ -155,7 +155,7 @@ then deliberately send the native request with different limits `L1`. Use a
 receipt whose CG attestation says the request supplied `L1`, the meter used
 `L1`, and the receipt returns `L1`; this is a valid receipt for the request,
 not a fabricated or mutated receipt. Verify that the driver compares `L1` with
-its private `L0`, rejects the completion, and does not invoke QSL replay,
+its private `L0`, rejects the completion, and does not invoke FSL replay,
 settle an item, or create a terminal. For this successful receipt, assert
 `DriverRefusal::Fault(DriverFault::NativeExecutionLimitsMismatch)`, stage
 `DriverStage::Replay`, code `runtime_invariant`, and outcome kind `Fault`. Also
@@ -164,55 +164,55 @@ preserved unchanged. The successful-receipt mismatch test remains planned
 until the driver implements this contract; it must not manufacture an
 upstream refusal.
 
-The production QSL-call-to-CG-generation prerequisite is covered by TC-006.
+The production FSL-call-to-CG-generation prerequisite is covered by TC-006.
 Test location for Kani request/evidence forwarding and terminal mapping:
 `src/provider.rs`. Test location for native receipt and settlement qualification: `src/provider.rs`;
 full prove/replay integration remains planned.
 
 For the frame-target projection scenario, call production
-`Driven::prepare_frame_replay` with the real QSL producer and public CG
+`Driven::prepare_frame_replay` with the real FSL producer and public CG
 consumer. Reject a prepopulated target, missing request item, changed package,
 index and complete occurrence (including node, role and ordinal) before CG
 construction. Compare the prepared CG packet and request targets and assert
 that request arguments, request occurrence key and function target are absent,
 and the original request/routed inventory is unchanged. Use object-type operation fixtures
 covering an inherited operation and a redefined operation. Obtain the
-`OperationSite.frame_operation` values from QSL's validated call-site result
+`OperationSite.frame_operation` values from FSL's validated call-site result
 and compare each value unchanged with the target placed on the CG selected item
-joined by the same admitted package identity and request index. QSL FR-121 is
+joined by the same admitted package identity and request index. FSL FR-121 is
 the oracle for how the declaring object is resolved; this driver check asserts
-only lossless projection. QSpec FR-323 is the oracle for packet/request shape.
+only lossless projection. FSpec FR-323 is the oracle for packet/request shape.
 Do not infer the target from CG function selection or caller spelling, and do
 not add a routed item.
 
-For the negative partition, first make QSL call-site selection return its typed
+For the negative partition, first make FSL call-site selection return its typed
 refusal and assert the driver returns that same refusal before CG frame-target
-construction or replay. Separately, provide a successful QSL result whose driver-retained association
+construction or replay. Separately, provide a successful FSL result whose driver-retained association
 (package identity or request index) has a value that differs from the
 corresponding value on the CG selected item;
 assert the driver returns FR-001's typed `runtime_invariant` fault before CG
 frame-target construction or replay. A typed refusal returned by CG itself is
 propagated unchanged and is not treated as a driver join mismatch. Both cases
 produce no settlement or terminal. `tests/frame_replay.rs` verifies these
-preparation scenarios with real QSL compilation and CG-generated frame
+preparation scenarios with real FSL compilation and CG-generated frame
 harness identities. Full frame settlement remains outside this check.
 
 ## Expected Results
 
 - For a frame counterexample, the CG selected item's target equals the exact
-  `OperationSite.frame_operation` value returned by QSL for the same admitted
-  package identity and request index. QSL FR-121 defines the declaring-owner
-  resolution and QSpec FR-323 defines the packet/request shape; this driver
+  `OperationSite.frame_operation` value returned by FSL for the same admitted
+  package identity and request index. FSL FR-121 defines the declaring-owner
+  resolution and FSpec FR-323 defines the packet/request shape; this driver
   projection adds no target inference or routed item.
-- A typed QSL call-site refusal is preserved unchanged. A successful QSL result
+- A typed FSL call-site refusal is preserved unchanged. A successful FSL result
   that the driver detects cannot be joined to the CG item by equal package
   identity and request index returns FR-001's typed `runtime_invariant` fault.
   A CG-returned typed refusal remains under CG's refusal contract. Neither path
   proceeds to replay, settlement, or terminal creation.
-- Available proved-provider outcomes are serialized by QSL's
+- Available proved-provider outcomes are serialized by FSL's
   `OutcomeDocument`; the driver defines no JSON document shape.
-- A falsified scalar without QSL replay does not produce a terminal document.
-- For predicate/function counterexamples, `refuted` requires QSL replay
+- A falsified scalar without FSL replay does not produce a terminal document.
+- For predicate/function counterexamples, `refuted` requires FSL replay
   reproduction; disagreement or completed non-reproduction is `inconclusive`
   with the replay-parity cause, a replay refusal keeps its typed cause, and a
   replay fault is an internal failure.
@@ -223,7 +223,7 @@ harness identities. Full frame settlement remains outside this check.
   evidence failure after successful parsing follows CG's typed settlement and
   terminal mapping with the original execution evidence; its terminal is not
   `refuted`.
-- Scalar operator-parity reports preserve QSL FR-357's typed `Agrees`,
+- Scalar operator-parity reports preserve FSL FR-357's typed `Agrees`,
   `Diverged`, `GeneratedFault`, `RefusedInput`, `Incomplete`, or refusal
   outcome through CG FR-032's typed settlement conversion. No scalar
   operator-parity report settles as `refuted`.
@@ -237,13 +237,13 @@ harness identities. Full frame settlement remains outside this check.
   request-level typed refusal before settlement has no per-item terminal
   record guarantee.
 - Missing or mismatched retained context or authentic native-observation
-  evidence prevents QSL replay evaluation, settlement, and terminal creation.
+  evidence prevents FSL replay evaluation, settlement, and terminal creation.
   Preserve an upstream typed completion refusal unchanged only when the
   upstream operation actually returns one.
 - When a successful CG receipt consistently attests request, metered, and
   returned native limits `L1`, but the driver's privately retained original
   limits are `L0` and differ from `L1`, the driver rejects the completion
-  before QSL replay, settlement, or terminal creation. It returns
+  before FSL replay, settlement, or terminal creation. It returns
   `DriverRefusal::Fault(DriverFault::NativeExecutionLimitsMismatch)` at
   `DriverStage::Replay`, with code `runtime_invariant` and outcome kind `Fault`;
   it does not manufacture or attribute this driver-owned fault to an upstream
@@ -257,4 +257,4 @@ harness identities. Full frame settlement remains outside this check.
 
 - A provider `ToolFailed` value retains its exact typed tool failure, including
   configured and observed byte counts, request index, and backend identity in
-  QSL's terminal record (FR-009-AC-25).
+  FSL's terminal record (FR-009-AC-25).

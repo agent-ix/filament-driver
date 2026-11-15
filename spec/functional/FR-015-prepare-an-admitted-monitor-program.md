@@ -3,25 +3,25 @@ id: FR-015
 title: "Prepare one admitted monitor program for the runtime"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: depends_on
-  - target: ix://agent-ix/quire-driver/FR-003
+  - target: ix://agent-ix/filament-driver/FR-003
     type: depends_on
-  - target: ix://agent-ix/quire-driver/FR-011
+  - target: ix://agent-ix/filament-driver/FR-011
     type: depends_on
-  - target: ix://agent-ix/quire-contract-ir/FR-038
+  - target: ix://agent-ix/filament-contract-ir/FR-038
     type: depends_on
-  - target: ix://agent-ix/quire-contract-ir/FR-353
+  - target: ix://agent-ix/filament-contract-ir/FR-353
     type: depends_on
-  - target: ix://agent-ix/quire-contract-ir/FR-354
+  - target: ix://agent-ix/filament-contract-ir/FR-354
     type: depends_on
-  - target: ix://agent-ix/quire-contract-ir/FR-357
+  - target: ix://agent-ix/filament-contract-ir/FR-357
     type: depends_on
-  - target: ix://agent-ix/quire-contract-runtime/FR-276
+  - target: ix://agent-ix/filament-contract-runtime/FR-276
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-251
+  - target: ix://agent-ix/filament-spec-language/FR-251
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-487
+  - target: ix://agent-ix/filament-specification/FR-487
     type: depends_on
 ---
 # FR-015: Prepare one admitted monitor program for the runtime
@@ -36,7 +36,7 @@ Preparation SHALL execute no initializer or transition.
 
 QSL-1630 and QSL-1631 supply body-sensitive plan identity and source enum
 rows. Contract IR PR #905 delivered the IR-1323 native union
-admission/projection seam. QSL PR #2385 supplies final source-record/member
+admission/projection seam. FSL PR #2385 supplies final source-record/member
 rows and Contract IR PR #910 supplies native source-record admission and
 projection. The clock component does not join those record rows or establish
 complete generated record closure. The authentic final source-union handoff
@@ -44,9 +44,9 @@ complete generated record closure. The authentic final source-union handoff
 healthy complete preparation. Native clock refusal evidence does not qualify
 a prepared program.
 
-This library boundary is downstream of QSL production and IR admission. It
-implements the consumer handoff of [IR FR-038](ix://agent-ix/quire-contract-ir/FR-038)
-and [RT FR-276](ix://agent-ix/quire-contract-runtime/FR-276), rather than another
+This library boundary is downstream of FSL production and IR admission. It
+implements the consumer handoff of [IR FR-038](ix://agent-ix/filament-contract-ir/FR-038)
+and [RT FR-276](ix://agent-ix/filament-contract-runtime/FR-276), rather than another
 temporal checker or a command-line monitor feature. Its implementation and
 producer-to-runtime qualification are not delivered by this specification.
 
@@ -77,8 +77,8 @@ logically separate inputs:
 A driver request may group borrows to these canonical values. It SHALL NOT
 introduce a copied plan representation, second expression/type vocabulary,
 caller-supplied executable callback or unchecked replacement environment.
-No authored source, parser, formula renderer or QSL evaluator is an input to
-preparation. This specification invents no missing QSL witness carrier and
+No authored source, parser, formula renderer or FSL evaluator is an input to
+preparation. This specification invents no missing FSL witness carrier and
 claims no already implemented handoff for one.
 
 ### Concrete clock admission within the partial selection boundary
@@ -116,7 +116,7 @@ NOT replace the native semantic refusal. The exposed inner selection SHALL
 include the clock work prefix so subsequent projection cannot reset that
 allowance.
 
-QSL's current Timed PlanRoot has a model-time binding and no temporal clock
+FSL's current Timed PlanRoot has a model-time binding and no temporal clock
 row. IR reads that admitted model-time source directly, including its exact
 timed-model root, model, source and unit, with clock name `model-time`. The
 driver SHALL retain that native receipt without fabricating a configured row.
@@ -129,22 +129,22 @@ without such a row; the current Timed producer does not exercise it.
 
 This partial clock component establishes no order or progress association,
 complete generated record closure, full `Program`, or producer-to-runtime
-qualification. QSL PR #2395 (QSL-1728) now supplies the owner lookup from
+qualification. FSL PR #2395 (QSL-1728) now supplies the owner lookup from
 an original `MonitorSubject` clause key and Claim ordinal to its final emitted
 checked declaration. Driver consumption of that mapping is defined below;
 the lookup does not supply a Timed clock configuration.
 
 ### Native final-subject admission
 
-The driver SHALL expose this partial native-subject entry, consuming QSL's
+The driver SHALL expose this partial native-subject entry, consuming FSL's
 admitted plan authority rather than reading the emission itself:
 
 ```rust
 admit_monitor_final_subject<'a>(
     request: &MonitorPreparationRequest<'a>,
-    authority: &'a qsl_analyze::monitor_root::AdmittedPlanAuthority,
-    budget: &mut quire_contract_model::NativeJoinBudget,
-    cancel: &quire_exact::Cancel,
+    authority: &'a fsl_analyze::monitor_root::AdmittedPlanAuthority,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    cancel: &filament_exact::Cancel,
 ) -> Result<AdmittedMonitorFinalSubject<'a>, MonitorPreparationError>
 ```
 
@@ -198,7 +198,7 @@ available work SHALL refuse before comparing an edited producer identity.
 
 ### Executed narrow clock refusal evidence
 
-The production quire-integration `monitor_preparation` controls exercise FR-015-AC-13:
+The production filament-integration `monitor_preparation` controls exercise FR-015-AC-13:
 wrong clause, role and ordinal preserve the original native payload; the
 native `MissingClock` payload retains its outer `selection` classification;
 same-clause twin claims retain their exact requested occurrences; one-under
@@ -219,9 +219,9 @@ The public entry's request/result shape SHALL be:
 ```rust
 prepare_monitor(
     request: MonitorPreparationRequest<'_>,
-    budget: &mut quire_contract_model::NativeJoinBudget,
-    cancel: &quire_exact::Cancel,
-) -> Result<Rc<quire_contract_runtime::monitor::Program>, MonitorPreparationError>
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    cancel: &filament_exact::Cancel,
+) -> Result<Rc<filament_contract_runtime::monitor::Program>, MonitorPreparationError>
 ```
 
 `MonitorPreparationRequest` SHALL carry the plan root, the authority
@@ -233,7 +233,7 @@ SHALL carry no operating limits. It SHALL NOT accept `ProgramParts`, a caller-bu
 The package SHALL resolve its selected root and four entries itself; a foreign
 borrowed view SHALL NOT replace that resolution.
 
-The request's exact public fields, the consumed QSL plan-root interface and
+The request's exact public fields, the consumed FSL plan-root interface and
 the same-emission order and progress authority are fixed by
 [FR-019](FR-019-prepare-the-complete-monitor-program-under-one-budget.md).
 Raw caller bytes or a local association wrapper SHALL NOT be treated as
@@ -317,7 +317,7 @@ substituted temporal algorithm or partial executable program. The driver
 SHALL NOT interpret temporal formula operators to supply missing body meaning.
 
 The driver SHALL materialize the needed admitted native type/declaration
-closure in canonical QSV `TypeEnvironment`, using the original Exact shared
+closure in canonical FSV `TypeEnvironment`, using the original Exact shared
 values/types and identities. Source-owned records, tuples and unions SHALL
 retain declaration order, closed/open shape, presence and payload types. Collections SHALL retain their
 structural Exact element, kind and cardinality types without inventing a
@@ -325,7 +325,7 @@ collection declaration identity. The driver SHALL NOT treat a selected-domain
 projection as a complete projection of generated source types, or invent an identity when the required
 projection/witness is unavailable.
 
-[IR FR-357](ix://agent-ix/quire-contract-ir/FR-357) owns the complete selected
+[IR FR-357](ix://agent-ix/filament-contract-ir/FR-357) owns the complete selected
 generated-source type/declaration projection needed for this environment.
 Its first bounded witnessed subset, exercised by merged integration PR #47,
 reads explicitly selected model declaration/field and equality facts only;
@@ -337,8 +337,8 @@ IR `admitted_equality` with matching original producer application, fact and
 source-unit rows. It SHALL obtain `CheckedEquality` through
 `CheckedEquality::from_admitted_decision`. It SHALL NOT choose a schedule,
 recheck a decision, reconstruct producer identities, filter enum facts or
-select a new unit conversion path. The hidden QSV reader seal/mint SHALL NOT
-be called by the driver or re-exported by this interface. Existing IR/QSV
+select a new unit conversion path. The hidden FSV reader seal/mint SHALL NOT
+be called by the driver or re-exported by this interface. Existing IR/FSV
 permitted mechanical materialization and its original typed arithmetic/resource
 failures remain authoritative.
 
@@ -350,7 +350,7 @@ supply the four entry bodies.
 
 ### Retain exact plan and operating premises
 
-Preparation SHALL consume QSpec FR-487's current seventeen-binding root through
+Preparation SHALL consume FSpec FR-487's current seventeen-binding root through
 the admitted view. State SHALL retain `now`, `history_start`, ordered
 `buffer_<n>` fields, `activations`, then exact Integer `event_position`.
 An admitted activation status SHALL remain opaque to plan selection: its
@@ -374,15 +374,15 @@ allowances SHALL NOT alter semantic capacities or become temporal verdicts.
 
 ### Lifetime and dependency boundary
 
-After successful preparation, dropping source bytes, QSL checked objects,
+After successful preparation, dropping source bytes, FSL checked objects,
 producer witness holders and admitted-package preparation SHALL leave the
 program usable. Runtime `build` SHALL create fresh independent state for each
 build under RT FR-276; preparation SHALL share no live state or rebinding path.
 
-The production dependency direction SHALL be driver to IR/QSV/Exact and RT.
+The production dependency direction SHALL be driver to IR/FSV/Exact and RT.
 The cycle-free IR model SHALL NOT depend on RT or the driver. RT SHALL remain
-a leaf without IR, driver or QSL dependencies. Preparation SHALL perform no
-QSL compile/recompile, source parsing, evaluator call, CG generation or external
+a leaf without IR, driver or FSL dependencies. Preparation SHALL perform no
+FSL compile/recompile, source parsing, evaluator call, CG generation or external
 effect.
 
 The bounded locus-copy component of
@@ -395,7 +395,7 @@ projection/callable failure payloads.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-015-AC-1 | Planned until IR-721 lands. A fresh QSL plan-root package is strictly admitted and its independently selected root, clause, authentic occurrence, subject and target prepare one RT owner. Changing each selection independently, including another package instance with equal labels/indices, gives typed selection refusal before init and no owner. | Test |
+| FR-015-AC-1 | Planned until IR-721 lands. A fresh FSL plan-root package is strictly admitted and its independently selected root, clause, authentic occurrence, subject and target prepare one RT owner. Changing each selection independently, including another package instance with equal labels/indices, gives typed selection refusal before init and no owner. | Test |
 | FR-015-AC-2 | Planned until IR-721 lands. Layout retains the admitted root/four-entry content keys, lock, clock/order/progress associations, exact tick premises and capacities. Independent edits are either retained exactly after valid admission or refused at the owning selection boundary; labels, metadata PlanId, defaults and truncated keys never supply a match. | Test |
 | FR-015-AC-3 | Planned until IR-721 lands. A genuine generated closure containing shared expressions, lexical bindings, lazy branches, recursive calls, records, tuples, sequences/folds, union payloads and native comparisons lowers with original identities/order and one address per expression/function. Its actual admitted bodies execute; no handwritten temporal body substitutes. | Test |
 | FR-015-AC-4 | Planned until IR-721 lands. Generated source records, tuples, collections and unions reach the canonical TypeEnvironment with complete shapes, presence and original member/variant identities. Missing/foreign identity or projection gives the native typed refusal and no invented type or partial owner. | Test |
@@ -404,45 +404,45 @@ projection/callable failure payloads.
 | FR-015-AC-7 | Planned until IR-721 lands. A reachable admitted operation absent from RT gives typed unsupported lowering at that operation before init; an unrelated unsupported node outside the closure does not block the plan. Neither invokes a callback, evaluator, parser, compiler or replacement temporal algorithm. | Test |
 | FR-015-AC-8 | Planned until IR-721 lands. Work/storage exhaustion, cancellation, upstream nominal/equality refusal and RT ProgramRefusal preserve distinct typed causes/loci, return no partial program and leave every input unchanged except the caller budget, whose cumulative consumption retains every charge admitted before the stop. A broken lowering invariant is a driver fault rather than input refusal; expected operating failure is not a fault. No preparation failure becomes a temporal verdict, StepResourceStop or ExecutorInvariantFailure. | Test |
 | FR-015-AC-9 | Planned until IR-721 lands. After producer/reader preparation is dropped, two builds of one prepared owner have independent fresh state. Actual admitted entries execute with explicit StepBudget; baseline event, watermark, poll and gap controls preserve RT's event-position/baseline rules and exact outcomes. Preparation itself invokes no entry or build. | Test |
-| FR-015-AC-10 | Planned until IR-721 lands. Real producer/read/lower/RT execution is compared with QSL's independent tick reference for RT FR-276's boundary, uncertainty, buffer21/22, wrap/gap, changed identity/order, activation and typed-stop controls. QSpec vectors are read by reference. Construction diagnostics and a single pilot plan receive no complete FR-276 execution credit. | Test |
+| FR-015-AC-10 | Planned until IR-721 lands. Real producer/read/lower/RT execution is compared with FSL's independent tick reference for RT FR-276's boundary, uncertainty, buffer21/22, wrap/gap, changed identity/order, activation and typed-stop controls. FSpec vectors are read by reference. Construction diagnostics and a single pilot plan receive no complete FR-276 execution credit. | Test |
 | FR-015-AC-11 | Planned until IR-721 lands. A large selected closure amid an unrelated long graph visits only relevant reachable nodes/edges and identity/value material under the caller allowance, without a whole-package sort or repeated full indexing. Equal budgets give equal typed work stops without a semantic depth/size ceiling. | Test |
-| FR-015-AC-12 | Planned until IR-721 lands. Public consumer/API and dependency controls establish one retained RT Program, no source input/callback, no driver seal/mint export or copied plan/expression/value family, and no IR/QSL/driver backedge from RT or RT edge from the cycle-free IR model. | Test |
+| FR-015-AC-12 | Planned until IR-721 lands. Public consumer/API and dependency controls establish one retained RT Program, no source input/callback, no driver seal/mint export or copied plan/expression/value family, and no IR/FSL/driver backedge from RT or RT edge from the cycle-free IR model. | Test |
 | FR-015-AC-13 | The separate clock-admission entry preserves native `WrongClause`, `WrongRole`, `UnknownOccurrence`, `MissingClock` and `WorkLimit` refusal payloads, including exact locus, occurrence, consumed work and attempted work. Semantic clock refusals map to outer `selection`; native work refusal maps to `work`. A missing clock returns no clock-admitted token even when the optional clock expectation is absent. Pre-cancellation returns the original cancellation cause, no clock-admitted token and unchanged inputs. Existing partial selection remains explicitly unclocked. | Test |
 | FR-015-AC-14 | A healthy clock-admission entry exposes the native `clock_for_claim` receipt for its independently selected final clause/Claim, charges successful receipt work exactly once to the remaining cumulative allowance, and compares every field of any optional independent clock row. A Timed model-subject receipt identifies the admitted timed-model root, model, source and exact unit with clock name `model-time` and no temporal clock row; an extra independent configured row refuses. The exposed inner selection retains that work prefix for later projection. Authentic Timed model-time receipt, extra-row refusal and cumulative work are exercised; configured-profile row comparison and complete criterion qualification remain Planned. This establishes no order/progress association or complete program. | Test |
 | FR-015-AC-15 | A genuine `AdmittedPlanAuthority` admits one final-subject token over its own `admitted_package()`, with no driver strict read, only after lock and root/entry key equality with the independent request, owner declaration lookup, exact root/clause/Claim, full source-map, native name and existing independent selection checks. Two-clause controls select their own final declarations; absent lookup, foreign subject/package, role/node/ordinal and independent request discrepancies give typed refusal. Cancellation returns the original cause and no token. Budget consumption is retained across the token's native model-time clock path, and the owner's linear lookup stays outside the budget. No complete preparation credit is claimed. | Test |
 
 ## Dependencies
 
-- [IR FR-038](ix://agent-ix/quire-contract-ir/FR-038) owns admission, borrowed
+- [IR FR-038](ix://agent-ix/filament-contract-ir/FR-038) owns admission, borrowed
   views, independent selection and root/four-entry identity.
-  [QSpec FR-487](ix://agent-ix/quire-specification/FR-487) and
-  [QSpec FR-322](ix://agent-ix/quire-specification/FR-322) own the current
+  [FSpec FR-487](ix://agent-ix/filament-specification/FR-487) and
+  [FSpec FR-322](ix://agent-ix/filament-specification/FR-322) own the current
   carriers. Those artifacts and vectors are read by reference, not copied.
-- [QSL FR-251](ix://agent-ix/quire-spec-language/FR-251) owns derivation and
+- [FSL FR-251](ix://agent-ix/filament-spec-language/FR-251) owns derivation and
   entry semantics. Its public producer is
-  `qsl_analyze::monitor_root::emit_plan_root`. Merged QSL-1463 retains and
+  `fsl_analyze::monitor_root::emit_plan_root`. Merged QSL-1463 retains and
   rekeys model declaration/field, equality producer/fact and selected source-unit
   witness rows in the final `PlanRoot.emission`. QSL-1630 now binds atom,
   guard and helper bodies to plan identity; QSL-1631 now retains and rekeys
   source enum declaration/member rows. Collections are structural and require
   no declaration identity row. Contract IR PR #905 supplies source union identity admission/projection;
   the matching authentic final producer handoff (QSL-1723) remains required;
-  QSL PR #2385 now retains and rekeys source-record/member rows, with native
+  FSL PR #2385 now retains and rekeys source-record/member rows, with native
   admission/projection supplied by Contract IR PR #910. Joining those rows
   in the driver and qualifying complete generated record closure remain
   separate work. Selected model rows and source enum rows do not substitute
   for either source-owned witness channel. Final admitted clock/order/progress associations must also
-  come from their owning admitted interfaces. No new QSL carrier is defined
-  here; FR-019 fixes the request field list and the consumed QSL interface.
-- [IR FR-353](ix://agent-ix/quire-contract-ir/FR-353) owns the no-recheck equality
-  read; [IR FR-354](ix://agent-ix/quire-contract-ir/FR-354) owns nominal reads.
-  [IR FR-357](ix://agent-ix/quire-contract-ir/FR-357) owns the complete selected
+  come from their owning admitted interfaces. No new FSL carrier is defined
+  here; FR-019 fixes the request field list and the consumed FSL interface.
+- [IR FR-353](ix://agent-ix/filament-contract-ir/FR-353) owns the no-recheck equality
+  read; [IR FR-354](ix://agent-ix/filament-contract-ir/FR-354) owns nominal reads.
+  [IR FR-357](ix://agent-ix/filament-contract-ir/FR-357) owns the complete selected
   generated-source type/declaration projection. Its first witnessed subset is
   insufficient for a complete `TypeEnvironment` or RT `ProgramParts`; complete
   projection and driver lowering remain planned IR-721 work.
-- [RT FR-276](ix://agent-ix/quire-contract-runtime/FR-276) owns Program/build,
+- [RT FR-276](ix://agent-ix/filament-contract-runtime/FR-276) owns Program/build,
   bounded state and executor outcomes. The tick-aware reference is
-  `qsl_eval::temporal::TickMonitorReference`.
+  `fsl_eval::temporal::TickMonitorReference`.
 - [TC-029](../test-cases/TC-029-admitted-monitor-program-preparation.md) defines
   planned evidence. IR-721 owns preparation; IR-722 owns execution
   qualification. Their obligations remain open until that evidence exists.

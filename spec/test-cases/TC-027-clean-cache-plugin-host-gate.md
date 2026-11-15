@@ -3,7 +3,7 @@ id: TC-027
 title: "Run plugin-host tests and dependency checks from a clean cache"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-013
+  - target: ix://agent-ix/filament-driver/FR-013
     type: verifies
 ---
 # TC-027: Run plugin-host tests and dependency checks from a clean cache

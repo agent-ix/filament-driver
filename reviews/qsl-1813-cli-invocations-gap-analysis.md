@@ -6,7 +6,7 @@ analysis: gap-analysis
 scope: "agent-ix/quire-driver; QSL-1813; PR #141; full local matrix and changed CLI invocation slice"
 review_set: subset
 relationships:
-  - { target: ix://agent-ix/quire-spec-language/FR-287, type: references }
+  - { target: ix://agent-ix/filament-spec-language/FR-287, type: references }
   - { target: ix://agent-ix/quire-driver/FR-002, type: references }
 ---
 ## Summary

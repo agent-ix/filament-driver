@@ -36,9 +36,9 @@ struct AdvertisedPairWire<'a> {
 /// registration path instead (ADR-029 PV-1).
 ///
 /// The `advertises` pairs are the manifest's `(kind, mode)` labels exactly
-/// as it states them; QSL admits them through `descriptor_from_manifest`, so an
+/// as it states them; FSL admits them through `descriptor_from_manifest`, so an
 /// absent or unknown label refuses the registration.
-/// Optional `domains` labels are passed to that same QSL admission call; QSL
+/// Optional `domains` labels are passed to that same FSL admission call; FSL
 /// owns boundable-kind and mode/domain consistency refusals.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProviderManifest {
@@ -57,7 +57,7 @@ pub struct ProviderManifest {
 /// A registry accepted by the driver's complete manifest-admission pass.
 ///
 /// The wrapper exposes shared access by default. Process descriptors that have
-/// already crossed QSL admission may be appended explicitly through
+/// already crossed FSL admission may be appended explicitly through
 /// [`LinkedProviders::register_admitted`].
 #[derive(Debug)]
 pub struct AdmittedRegistry {
@@ -66,19 +66,19 @@ pub struct AdmittedRegistry {
 }
 
 impl AdmittedRegistry {
-    /// Retained FR-331 descriptors paired with each admitted QSL descriptor.
+    /// Retained FR-331 descriptors paired with each admitted FSL descriptor.
     #[must_use]
     pub fn manifest_snapshot(&self) -> &[ProviderManifest] {
         &self.manifests
     }
 }
 
-/// The QSL registry and linked providers admitted from the same manifest set.
+/// The FSL registry and linked providers admitted from the same manifest set.
 ///
 /// Provider lookup is by the opaque backend identity, the same value the
 /// registry routes. Lookup returns `None` when no implementation matches or
 /// when identical idempotent manifests name multiple implementations; the
-/// latter is ambiguous even though QSL admits and routes the identity.
+/// latter is ambiguous even though FSL admits and routes the identity.
 pub struct LinkedProviders<'a> {
     admitted: AdmittedRegistry,
     providers: Vec<(String, &'a dyn Provider)>,
@@ -112,7 +112,7 @@ impl LinkedProviders<'_> {
 
     /// Register caller-admitted descriptors and their lossless FR-331 DTOs in
     /// the same registry that owns linked providers. Every registered
-    /// descriptor has one retained manifest snapshot source. QSL retains
+    /// descriptor has one retained manifest snapshot source. FSL retains
     /// authority over duplicate refusal; this method does not re-admit.
     pub fn register_admitted(
         &mut self,
@@ -146,7 +146,7 @@ impl LinkedProviders<'_> {
     ///
     /// Returns `None` when there is no matching provider or when multiple
     /// implementations share an identical idempotent manifest. The latter
-    /// identity is admitted by QSL, but this lookup does not choose an
+    /// identity is admitted by FSL, but this lookup does not choose an
     /// implementation by input order.
     #[must_use]
     pub fn provider(&self, backend: &BackendId) -> Option<&dyn Provider> {
@@ -157,7 +157,7 @@ impl LinkedProviders<'_> {
         {
             return None;
         }
-        // A repeated identical manifest is QSL-idempotent, but it does not
+        // A repeated identical manifest is FSL-idempotent, but it does not
         // identify which of multiple linked implementations should execute.
         let mut matching = self
             .providers
@@ -293,7 +293,7 @@ fn linked_manifest_wire(manifest: &ProviderManifest) -> Result<Arc<[u8]>, Driver
 /// Register descriptors admitted by the caller (for example, the CLI's
 /// process-host hello admitter) without performing descriptor admission a
 /// second time. The caller supplies each descriptor's origin; this function
-/// preserves it and delegates duplicate-backend policy to QSL's registry.
+/// preserves it and delegates duplicate-backend policy to FSL's registry.
 fn register_into_registry(
     registry: &mut Registry,
     descriptors: impl IntoIterator<Item = BackendDescriptor>,
@@ -402,7 +402,7 @@ mod tests {
         });
 
         let manifests = build_linked_providers(&[&absent_optional, &present_optional])
-            .expect("QSL admits both linked manifests")
+            .expect("FSL admits both linked manifests")
             .manifest_snapshot();
         let absent = manifests
             .iter()
@@ -441,7 +441,7 @@ mod tests {
         });
 
         let snapshot = build_linked_providers(&[&provider])
-            .expect("QSL admits the linked descriptor")
+            .expect("FSL admits the linked descriptor")
             .manifest_snapshot();
         assert_eq!(snapshot[0].wire.as_deref(), Some(wire.as_ref()));
     }
@@ -490,7 +490,7 @@ mod tests {
         ));
         assert_eq!(refusal.code(), "invalid_capability");
         assert_eq!(
-            refusal.qsl_category(),
+            refusal.fsl_category(),
             Some(quire_semantic_value::catalog::Category::Refusal)
         );
         assert_eq!(refusal.stage(), crate::DriverStage::Registry);
@@ -523,7 +523,7 @@ mod tests {
         );
     }
 
-    /// A bounded advertisement without QSL's required domain labels preserves
+    /// A bounded advertisement without FSL's required domain labels preserves
     /// the typed FR-290 admission cause instead of inventing a default domain.
     #[test]
     fn linked_registry_preserves_absent_domains_refusal() {
@@ -538,9 +538,9 @@ mod tests {
             wire: None,
         };
         let crate::DriverRefusal::Registration(refusals) =
-            super::build_registry(&[manifest]).expect_err("QSL requires bounded domains")
+            super::build_registry(&[manifest]).expect_err("FSL requires bounded domains")
         else {
-            panic!("QSL admission refusal remains typed");
+            panic!("FSL admission refusal remains typed");
         };
         assert_eq!(refusals.len(), 1);
         assert_eq!(
@@ -567,7 +567,7 @@ mod tests {
                 ..Default::default()
             },
         )
-        .expect("the host hello admitter returns a QSL-admitted descriptor");
+        .expect("the host hello admitter returns a FSL-admitted descriptor");
         let id = BackendId::from_wire("agent-ix/plugin/test").expect("nonempty identity");
         linked
             .register_admitted([(
@@ -600,9 +600,9 @@ mod tests {
 
     /// Trace: FR-005-AC-4.
     /// Unequal linked/process descriptors withdraw their shared identity and
-    /// retain each distinct identity in QSL's refusal.
+    /// retain each distinct identity in FSL's refusal.
     #[test]
-    fn linked_process_conflict_returns_qsl_refusals_and_withdraws_identity() {
+    fn linked_process_conflict_returns_fsl_refusals_and_withdraws_identity() {
         let identity = "agent-ix/provider/shared";
         let linked_provider = provider(identity);
         let other_linked = provider("agent-ix/provider/linked");
@@ -688,7 +688,7 @@ mod tests {
 
     /// Trace: FR-005-AC-4.
     /// Repeating an identical caller-admitted descriptor is idempotent under
-    /// the QSL registry.
+    /// the FSL registry.
     #[test]
     fn repeated_process_descriptor_is_idempotent() {
         let linked_provider = provider("agent-ix/provider/linked");

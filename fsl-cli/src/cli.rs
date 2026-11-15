@@ -8,6 +8,12 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use filament_driver::{
+    build_linked_providers, drive, execute, CompileInput, Driven, ExecutionEngine,
+    ExecutionFailure, ExecutionRequest, FslCg, GenerationInput, LimitOverrides, ObjectEnvironment,
+    ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
+    ProviderRequest, ProviderResults,
+};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
 use qsl_command::command::{self, PreparedRun, RunLimits};
@@ -21,16 +27,10 @@ use qsl_replay::spine::{
 };
 use qsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
 use qsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
-use quire_driver::{
-    build_linked_providers, drive, execute, CompileInput, Driven, ExecutionEngine,
-    ExecutionFailure, ExecutionRequest, GenerationInput, LimitOverrides, ObjectEnvironment,
-    ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
-    ProviderRequest, ProviderResults, QslCg,
-};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
 
-/// Pass QSL's category result through the kit without converting it to an `Outcome`.
+/// Pass FSL's category result through the kit without converting it to an `Outcome`.
 #[must_use]
 fn process_exit_code(category: Category) -> ExitCode {
     let result = category_exit_result(category);
@@ -53,7 +53,7 @@ fn process_exit_code(category: Category) -> ExitCode {
 #[cfg(all(feature = "tc018-test-adapter", not(debug_assertions)))]
 compile_error!("the TC-018 test adapter is unavailable in release builds");
 
-/// Return QSL's exit result, with a test-only seam for the reserved-code case.
+/// Return FSL's exit result, with a test-only seam for the reserved-code case.
 fn category_exit_result(category: Category) -> u8 {
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
     if std::env::var_os("TC018_CASE").as_deref() == Some(std::ffi::OsStr::new("reserved-exit")) {
@@ -70,7 +70,7 @@ fn write_diagnostic<W: Write>(sink: &mut W, kind: &str, message: &str) -> io::Re
 }
 
 /// Best-effort stderr output; a closed diagnostic pipe must not replace the
-/// command's already selected QSL exit result with a panic.
+/// command's already selected FSL exit result with a panic.
 fn emit_diagnostic(kind: &str, message: &str) {
     let mut stderr = io::stderr().lock();
     let _ = write_diagnostic(&mut stderr, kind, message);
@@ -143,7 +143,7 @@ fn help_exit_code() -> ExitCode {
     ))
 }
 
-/// Output selector for QSL ADR-029's CLI grammar.
+/// Output selector for FSL ADR-029's CLI grammar.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum OutputFormat {
     #[default]
@@ -152,7 +152,7 @@ enum OutputFormat {
     Dot,
 }
 
-/// Dispatch selector for verbs specified by QSL ADR-029.
+/// Dispatch selector for verbs specified by FSL ADR-029.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Verb {
     Parse,
@@ -234,7 +234,7 @@ enum Invocation {
     },
 }
 
-/// Parse the root command surface defined by QSL ADR-029.
+/// Parse the root command surface defined by FSL ADR-029.
 fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let Some(command) = arguments.first() else {
         return Ok(Invocation::Help);
@@ -326,7 +326,7 @@ struct ConfiguredCall {
     requirements: qsl_replay::CallRequirements,
 }
 
-/// The configured run retains both compositions until QSL settlement owns the
+/// The configured run retains both compositions until FSL settlement owns the
 /// provider result mapping. No provider result is converted to a terminal.
 #[allow(
     dead_code,
@@ -336,12 +336,12 @@ struct ConfiguredRun {
     call: ConfiguredCall,
     driven: Driven,
     provider_results: Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    diagnostics: Vec<quire_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
+    diagnostics: Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
 }
 
 #[allow(
     dead_code,
-    reason = "typed configured-run failures remain unmapped until their QSL contracts land"
+    reason = "typed configured-run failures remain unmapped until their FSL contracts land"
 )]
 #[derive(Debug)]
 enum ConfiguredRunErrorKind {
@@ -353,8 +353,8 @@ enum ConfiguredRunErrorKind {
         provider: String,
         source: CliProviderError,
     },
-    Register(quire_driver::DriverRefusal),
-    Drive(quire_driver::DriverRefusal),
+    Register(filament_driver::DriverRefusal),
+    Drive(filament_driver::DriverRefusal),
     PackageMismatch,
     Pairing(crate::process_provider::CallItemProjectionError),
     Invoke {
@@ -379,7 +379,7 @@ struct ConfiguredRunFailure {
     document: OutcomeDocument,
     kind: ConfiguredRunErrorKind,
     cleanup_diagnostics:
-        Vec<quire_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
+        Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
     cleanup_failures: Vec<CliProviderError>,
 }
 
@@ -399,7 +399,7 @@ struct ConfiguredRunRequest<'a> {
 fn close_configured_providers(
     sessions: Vec<ActiveConfiguredProvider>,
 ) -> (
-    Vec<quire_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
+    Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
     Vec<CliProviderError>,
 ) {
     let mut diagnostics = Vec::new();
@@ -627,7 +627,7 @@ impl RunOptions {
     }
 }
 
-/// One command's QSL category, optional outcome document, and diagnostic.
+/// One command's FSL category, optional outcome document, and diagnostic.
 struct CommandResult {
     category: Category,
     document: Option<OutcomeDocument>,
@@ -671,7 +671,7 @@ impl CommandResult {
         }
     }
 
-    /// An input refusal raised before QSL runs, recorded with QSL's native code.
+    /// An input refusal raised before FSL runs, recorded with FSL's native code.
     fn input_refusal(operation: Operation, message: impl Into<String>) -> Self {
         Self::catalog_failure_for(operation, Code::InvalidRequest, message)
     }
@@ -719,13 +719,13 @@ fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> i
     }
     if let Some(document) = &result.document {
         for diagnostic in document.diagnostics() {
-            write_diagnostic(sink, "QslDiagnostic", diagnostic.message())?;
+            write_diagnostic(sink, "FslDiagnostic", diagnostic.message())?;
         }
     }
     Ok(())
 }
 
-/// Run one complete-V1 function through QSL's interpreter.
+/// Run one complete-V1 function through FSL's interpreter.
 fn run(options: RunOptions) -> CommandResult {
     let provider_config = match options.provider_config.as_deref() {
         Some(path) => match crate::provider_config::load(path) {
@@ -752,7 +752,7 @@ fn run(options: RunOptions) -> CommandResult {
             if !exposed.iter().any(|(available, _)| available == stage) {
                 return CommandResult::input_refusal(
                     Operation::Execute,
-                    quire_driver::LimitError::OperationUnavailable { setting: *setting }
+                    filament_driver::LimitError::OperationUnavailable { setting: *setting }
                         .to_string(),
                 );
             }
@@ -828,7 +828,7 @@ fn run(options: RunOptions) -> CommandResult {
     }
 }
 
-/// Dispatch typed clause dispositions to QSL's existing document producers.
+/// Dispatch typed clause dispositions to FSL's existing document producers.
 fn run_clause_request(
     mut request: qsl_replay::spine::ClauseRunRequest,
     limits: &LimitOverrides,
@@ -1042,7 +1042,7 @@ fn run_configured_providers(
     }
 
     let driven = match drive(
-        &QslCg,
+        &FslCg,
         CompileInput {
             source,
             package_name,
@@ -1097,7 +1097,7 @@ fn run_configured_providers(
             .iter()
             .map(|item| item.request_index)
             .collect::<BTreeSet<_>>();
-        let qsl_items = projection
+        let fsl_items = projection
             .items
             .iter()
             .filter(|item| routed_indices.contains(&item.index().get()))
@@ -1108,7 +1108,7 @@ fn run_configured_providers(
             deadline_ms: provider.deadline_ms,
             manifest: &manifest_snapshot,
             provider_request: ProviderRequest::new(&routed),
-            qsl_items: &qsl_items,
+            fsl_items: &fsl_items,
             cancel: &cancel,
         };
         match provider.session.invoke(request) {
@@ -1160,7 +1160,7 @@ fn compile(options: CompileOptions) -> CommandResult {
     }
 }
 
-/// Check one source through QSL's typed front-end and serialize its S4 outcome.
+/// Check one source through FSL's typed front-end and serialize its S4 outcome.
 fn check_source(options: CheckOptions) -> CommandResult {
     let limits = SpineLimits::default();
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
@@ -1170,7 +1170,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
             return CommandResult::catalog_failure_for(Operation::Check, Code::IoError, message);
         }
     };
-    let source = SourceIdentity::new("quire", &options.path);
+    let source = SourceIdentity::new("filament", &options.path);
     let packages = BTreeMap::new();
     let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
@@ -1200,7 +1200,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
 }
 
 /// Observe the TC-018 refused-range selection at the typed check boundary.
-/// The normal QSL parse/select/check below supplies the result; argv parsing,
+/// The normal FSL parse/select/check below supplies the result; argv parsing,
 /// source reading, serialization and exit mapping remain the production paths.
 #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
 fn tc018_record_check_request(
@@ -1262,7 +1262,7 @@ fn source_preflight(
     ))
 }
 
-/// Parse one source through QSL and serialize its typed parse outcome.
+/// Parse one source through FSL and serialize its typed parse outcome.
 fn parse_source(options: SourceOptions) -> CommandResult {
     let limits = SpineLimits::default();
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
@@ -1286,7 +1286,7 @@ fn parse_source(options: SourceOptions) -> CommandResult {
     CommandResult::document(OutcomeDocument::from_parse(&result))
 }
 
-/// Format one parsed source through QSL and retain its typed outcome.
+/// Format one parsed source through FSL and retain its typed outcome.
 fn format_source(options: SourceOptions) -> CommandResult {
     let limits = qsl_cst::Limits::default();
     let bytes = match read_source(&options.path, limits.source_bytes) {
@@ -1308,7 +1308,7 @@ fn format_source(options: SourceOptions) -> CommandResult {
 }
 
 /// Read at most one byte beyond the caller's source limit. Passing that
-/// sentinel byte to QSL preserves its typed source-limit refusal while
+/// sentinel byte to FSL preserves its typed source-limit refusal while
 /// keeping the CLI's input buffer bounded by the configured limit.
 fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<Vec<u8>> {
     let read_limit = u64::try_from(source_limit)
@@ -1319,7 +1319,7 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
     Ok(bytes)
 }
 
-/// Dispatch the root verb while preserving its QSL-owned result category.
+/// Dispatch the root verb while preserving its FSL-owned result category.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
     if verb == Verb::Run {
         return match RunOptions::parse(raw_arguments) {
@@ -1404,9 +1404,9 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     }
 }
 
-/// Refuse a text selection whose QSL outcome renderer is not available.
-/// Machine mode remains fully QSL-serialized; the diagnostic includes the
-/// native QSL code because text mode has no outcome-document renderer.
+/// Refuse a text selection whose FSL outcome renderer is not available.
+/// Machine mode remains fully FSL-serialized; the diagnostic includes the
+/// native FSL code because text mode has no outcome-document renderer.
 fn text_rendering_unavailable(operation: Operation, verb: &str) -> CommandResult {
     let code = Code::UnimplementedCapability;
     CommandResult::catalog_failure_for(
@@ -1515,9 +1515,9 @@ mod outcome_tests {
 
     use super::{process_exit_code, write_diagnostic, write_result_diagnostics, CommandResult};
 
-    /// Trace: FR-002-AC-2, FR-002-AC-4; one QSL exit result reaches process exit unchanged through the kit.
+    /// Trace: FR-002-AC-2, FR-002-AC-4; one FSL exit result reaches process exit unchanged through the kit.
     #[test]
-    fn process_code_is_qsl_category_exit_code_without_remapping() {
+    fn process_code_is_fsl_category_exit_code_without_remapping() {
         let expected = [0, 10, 10, 20, 21, 22, 0, 11, 22, 30];
         assert_eq!(Category::ALL.len(), expected.len());
         for (category, expected_code) in Category::ALL.into_iter().zip(expected) {
@@ -1546,7 +1546,7 @@ mod outcome_tests {
         assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
     }
 
-    /// Trace: FR-002-AC-8; QSL document diagnostics are retained on stderr.
+    /// Trace: FR-002-AC-8; FSL document diagnostics are retained on stderr.
     #[test]
     fn typed_outcome_diagnostics_are_written_to_stderr() {
         let document = OutcomeDocument::new(Operation::Execute, None, Category::Refusal)
@@ -1558,7 +1558,7 @@ mod outcome_tests {
             )]);
         let result = CommandResult::document(document);
         let mut stderr = Vec::new();
-        write_result_diagnostics(&result, &mut stderr).expect("write QSL diagnostic");
+        write_result_diagnostics(&result, &mut stderr).expect("write FSL diagnostic");
         assert_eq!(stderr, b"the selected function has no parameter named x\n");
     }
 }
@@ -1638,7 +1638,7 @@ mod tests {
             OsString::from("run"),
             OsString::from("--limit"),
             OsString::from("steps=12"),
-            OsString::from("unit.qsl"),
+            OsString::from("unit.fsl"),
         ];
         assert!(matches!(
             parse_invocation(&args),
@@ -1650,14 +1650,14 @@ mod tests {
     #[test]
     fn run_options_keep_the_requested_engine_and_limits() {
         let args = vec![
-            OsString::from("unit.qsl"),
+            OsString::from("unit.fsl"),
             OsString::from("--engine"),
             OsString::from("interpreter"),
             OsString::from("--limit"),
             OsString::from("s1.input_bytes=1024"),
         ];
         let options = RunOptions::parse(&args).expect("valid run options");
-        assert_eq!(options.path, std::path::Path::new("unit.qsl"));
+        assert_eq!(options.path, std::path::Path::new("unit.fsl"));
         assert_eq!(options.engine, ExecutionEngine::Interpreter);
         assert_eq!(
             options.limits.values(),
@@ -1673,7 +1673,7 @@ mod tests {
     #[test]
     fn run_options_accept_one_provider_config_path() {
         let args = vec![
-            OsString::from("unit.qsl"),
+            OsString::from("unit.fsl"),
             OsString::from("--provider-config"),
             OsString::from("providers.json"),
         ];
@@ -1688,7 +1688,7 @@ mod tests {
     #[test]
     fn run_options_reject_missing_or_duplicate_provider_config_path() {
         let missing = vec![
-            OsString::from("unit.qsl"),
+            OsString::from("unit.fsl"),
             OsString::from("--provider-config"),
         ];
         assert!(RunOptions::parse(&missing)
@@ -1697,7 +1697,7 @@ mod tests {
             .contains("--provider-config requires a path"));
 
         let duplicate = vec![
-            OsString::from("unit.qsl"),
+            OsString::from("unit.fsl"),
             OsString::from("--provider-config"),
             OsString::from("one.json"),
             OsString::from("--provider-config"),
@@ -1713,7 +1713,7 @@ mod tests {
     #[test]
     fn run_options_refuse_unknown_engine_values() {
         let args = vec![
-            OsString::from("unit.qsl"),
+            OsString::from("unit.fsl"),
             OsString::from("--engine"),
             OsString::from("gpu"),
         ];
@@ -1723,7 +1723,7 @@ mod tests {
     /// Trace: FR-003-AC-3, the bounded read includes input exactly at its limit.
     #[test]
     fn bounded_source_read_accepts_bytes_at_the_limit() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
         let expected = std::fs::read(path).expect("fixture source");
         assert_eq!(
             read_source(path, expected.len()).expect("source at limit"),
@@ -1734,7 +1734,7 @@ mod tests {
     /// Trace: FR-003-AC-3, over-limit read buffers only the one-byte sentinel.
     #[test]
     fn bounded_source_read_captures_one_sentinel_byte_over_limit() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
         let expected = std::fs::read(path).expect("fixture source");
         let limit = 8;
         assert!(
@@ -1919,16 +1919,16 @@ mod configured_run_tests {
         let command = CommandResult::configured(Ok(configured));
         assert!(
             command.document.is_some(),
-            "existing QSL call result is retained"
+            "existing FSL call result is retained"
         );
         assert!(
             command
                 .document
                 .as_ref()
-                .expect("QSL call document remains available")
+                .expect("FSL call document remains available")
                 .items()
                 .is_empty(),
-            "provider results are not fabricated as QSL terminals"
+            "provider results are not fabricated as FSL terminals"
         );
         let Some(Ok(retained)) = command.configured_run.as_ref() else {
             panic!("typed configured result remains owned by the command result");

@@ -112,7 +112,7 @@ impl Drop for ActiveSession {
 }
 
 /// Run an operation that routes a plugin session with a Linux/macOS signal
-/// listener. Signals cancel every registered QSL handle; the original signal
+/// listener. Signals cancel every registered FSL handle; the original signal
 /// is re-raised when the final active session completes bounded cleanup. With no
 /// active session, the listener emulates the default action. The listener
 /// remains until process exit so a signal after session drop is not swallowed.
@@ -296,7 +296,7 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn handled_signal_cancels_the_active_qsl_handle_and_retains_its_number() {
+    fn handled_signal_cancels_the_active_fsl_handle_and_retains_its_number() {
         use quire_exact::CancelCause;
         use signal_hook::consts::signal::SIGTERM;
 
@@ -327,8 +327,8 @@ mod tests {
         use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
         if let (Ok(mode), Ok(marker)) = (
-            std::env::var("QUIRE_SIGNAL_TEST_MODE"),
-            std::env::var("QUIRE_SIGNAL_TEST_MARKER"),
+            std::env::var("FILAMENT_SIGNAL_TEST_MODE"),
+            std::env::var("FILAMENT_SIGNAL_TEST_MARKER"),
         ) {
             let marker = std::path::PathBuf::from(marker);
             if mode == "post-session" {
@@ -378,7 +378,7 @@ mod tests {
                 17
             })
             .expect("signal wrapper starts");
-            println!("QUIRE_OUTCOME_SENTINEL");
+            println!("FILAMENT_OUTCOME_SENTINEL");
             return;
         }
 
@@ -398,8 +398,8 @@ mod tests {
                     "--exact",
                     "signals::tests::signal_is_forwarded_after_active_cleanup_and_defaults_without_a_session",
                 ])
-                .env("QUIRE_SIGNAL_TEST_MODE", mode)
-                .env("QUIRE_SIGNAL_TEST_MARKER", &marker)
+                .env("FILAMENT_SIGNAL_TEST_MODE", mode)
+                .env("FILAMENT_SIGNAL_TEST_MARKER", &marker)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -456,8 +456,8 @@ mod tests {
             assert_eq!(status.signal(), Some(expected), "{mode}: {failure}");
             assert!(
                 !stdout
-                    .windows(b"QUIRE_OUTCOME_SENTINEL".len())
-                    .any(|window| window == b"QUIRE_OUTCOME_SENTINEL"),
+                    .windows(b"FILAMENT_OUTCOME_SENTINEL".len())
+                    .any(|window| window == b"FILAMENT_OUTCOME_SENTINEL"),
                 "signal path emitted outcome bytes: {failure}"
             );
             assert!(
@@ -485,12 +485,12 @@ mod tests {
         use std::thread;
         use std::time::{Duration, Instant};
 
-        use qsl_foundation::BackendId;
-        use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
-        use quire_driver::{
+        use filament_driver::{
             ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
             ProviderManifest, ProviderRequest, ProviderResults,
         };
+        use qsl_foundation::BackendId;
+        use qsl_route::{descriptor_from_manifest, Candidate, ProviderOrigin};
         use quire_exact::Cancel;
         use serde_json::Value;
 
@@ -504,11 +504,11 @@ mod tests {
         }
 
         if let (Ok(stage), Ok(ready), Ok(descendant), Ok(plugin_marker), Ok(outcome)) = (
-            std::env::var("QUIRE_PLUGIN_SIGNAL_STAGE"),
-            std::env::var("QUIRE_PLUGIN_SIGNAL_READY"),
-            std::env::var("QUIRE_PLUGIN_SIGNAL_DESCENDANT"),
-            std::env::var("QUIRE_PLUGIN_SIGNAL_PLUGIN_MARKER"),
-            std::env::var("QUIRE_PLUGIN_SIGNAL_OUTCOME"),
+            std::env::var("FILAMENT_PLUGIN_SIGNAL_STAGE"),
+            std::env::var("FILAMENT_PLUGIN_SIGNAL_READY"),
+            std::env::var("FILAMENT_PLUGIN_SIGNAL_DESCENDANT"),
+            std::env::var("FILAMENT_PLUGIN_SIGNAL_PLUGIN_MARKER"),
+            std::env::var("FILAMENT_PLUGIN_SIGNAL_OUTCOME"),
         ) {
             super::run(move |context| {
                 let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
@@ -585,7 +585,7 @@ mod tests {
                         deadline_ms: 4096,
                         manifest: &[],
                         provider_request: ProviderRequest::new(&[]),
-                        qsl_items: &[],
+                        fsl_items: &[],
                         cancel: &request_cancel,
                     };
                     let _ = session.invoke(request);
@@ -598,16 +598,17 @@ mod tests {
                     }
                 }
                 let _ = session.shutdown();
-                std::fs::write(outcome, b"QUIRE_OUTCOME_SENTINEL")
+                std::fs::write(outcome, b"FILAMENT_OUTCOME_SENTINEL")
                     .expect("a signal must be re-raised before outcome settlement");
             })
             .expect("signal wrapper starts");
-            println!("QUIRE_OUTCOME_SENTINEL");
+            println!("FILAMENT_OUTCOME_SENTINEL");
             panic!("adapter signal was not re-raised");
         }
 
         use std::os::unix::process::ExitStatusExt;
-        let root = std::env::temp_dir().join(format!("quire-host-signal-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("filament-host-signal-{}", std::process::id()));
         for stage in [
             "hello",
             "hello-int",
@@ -643,12 +644,12 @@ mod tests {
                     "--exact",
                     "signals::tests::plugin_session_signals_cancel_and_reap_each_active_lifecycle_stage",
                 ])
-                    .env("QUIRE_PLUGIN_SIGNAL_STAGE", stage)
-                    .env("QUIRE_PLUGIN_SIGNAL_READY", &ready)
-                .env("QUIRE_PLUGIN_SIGNAL_RELEASE", &release)
-                    .env("QUIRE_PLUGIN_SIGNAL_DESCENDANT", &descendant)
-                .env("QUIRE_PLUGIN_SIGNAL_PLUGIN_MARKER", &plugin_marker)
-                .env("QUIRE_PLUGIN_SIGNAL_OUTCOME", &outcome)
+                    .env("FILAMENT_PLUGIN_SIGNAL_STAGE", stage)
+                    .env("FILAMENT_PLUGIN_SIGNAL_READY", &ready)
+                .env("FILAMENT_PLUGIN_SIGNAL_RELEASE", &release)
+                    .env("FILAMENT_PLUGIN_SIGNAL_DESCENDANT", &descendant)
+                .env("FILAMENT_PLUGIN_SIGNAL_PLUGIN_MARKER", &plugin_marker)
+                .env("FILAMENT_PLUGIN_SIGNAL_OUTCOME", &outcome)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
@@ -709,8 +710,8 @@ mod tests {
             );
             assert!(
                 !stdout
-                    .windows(b"QUIRE_OUTCOME_SENTINEL".len())
-                    .any(|window| window == b"QUIRE_OUTCOME_SENTINEL"),
+                    .windows(b"FILAMENT_OUTCOME_SENTINEL".len())
+                    .any(|window| window == b"FILAMENT_OUTCOME_SENTINEL"),
                 "{stage}: signal wrote outcome bytes: {failure}"
             );
             assert!(

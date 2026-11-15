@@ -3,7 +3,7 @@ id: TC-029
 title: "Prepare and execute actual admitted monitor programs"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-015
+  - target: ix://agent-ix/filament-driver/FR-015
     type: verifies
 ---
 # TC-029: Prepare and execute actual admitted monitor programs
@@ -11,14 +11,14 @@ relationships:
 ## Description
 
 Planned until IR-721 lands. Verify the driver boundary from a genuinely
-QSL-produced, strictly IR-admitted monitor root to the one RT-owned program.
+FSL-produced, strictly IR-admitted monitor root to the one RT-owned program.
 This case does not substitute the existing hand-built construction arenas for
 the emitted entries or treat the absence of a witness as a passing negative
 compiler control.
 
 ## Test Procedure
 
-1. Invoke the public QSL plan-root producer for independently authored timed
+1. Invoke the public FSL plan-root producer for independently authored timed
    clauses and explicit targets, with any selected model document read from
    the owner checkout by reference. Retain the original producer witnesses
    from that same acquisition. Read exactly the emitted bytes with IR's
@@ -47,7 +47,7 @@ compiler control.
    source/API absence of the driver's reader seal/mint access, alternate
    schedule or unit-identity reconstruction.
 5. Include admitted current State layouts with ordered buffers, activations
-   and final event_position, an opaque activation status allowed by QSpec,
+   and final event_position, an opaque activation status allowed by FSpec,
    zero activation capacity and exact capacities larger than host width.
    Require exact retention; do not execute a host-width impossible capacity
    allocation merely to establish its admitted value. Independently exercise
@@ -70,21 +70,21 @@ compiler control.
    no partial owner, and absence of temporal/runtime-step verdict substitution.
    Exercise a large selected closure amid an unrelated long graph and count
    visits/charges rather than relying on a wall-clock threshold.
-8. Drop source buffers, checked QSL objects, producer witness holders, IR
+8. Drop source buffers, checked FSL objects, producer witness holders, IR
    package and driver preparation after retaining the program. Build twice
    with explicit StepBudget and require independent initialized state and no
    initialization verdict. Execute the actual emitted entries with baseline
    event, further event, watermark, poll and reading-gap inputs; compare
    event_position, baseline, full instance identity and outcome data.
-9. Compare actual RT execution with the QSL tick-aware reference over RT
+9. Compare actual RT execution with the FSL tick-aware reference over RT
    FR-276's complete required boundary, uncertainty, buffer21/22, wrap/gap,
    changed identity/order, activation, open/closed endpoint and typed-stop
-   families. Consume QSpec vectors by reference and assert the independent
+   families. Consume FSpec vectors by reference and assert the independent
    adverse expectations as well as differential equality. A constant-plan
    pilot establishes only its own executed controls.
 10. Check the public API/dependency surfaces: preparation takes no authored
     source or callback, returns the RT-owned program without a second plan
-    representation, and leaves RT independent of QSL/IR/driver and the
+    representation, and leaves RT independent of FSL/IR/driver and the
     cycle-free IR model independent of RT. Separate the preparation entry
     from the driver's existing compile/generate operations when observing
     forbidden calls.
@@ -98,7 +98,7 @@ all of RT FR-276 or close IR-722. QSL-1463 retains and rekeys final-emission
 equality producer/fact and selected source-unit rows. QSL-1630 supplies
 body-sensitive plan identity and QSL-1631 supplies source enum
 declaration/member rows; collections are structural and need no identity
-row. QSL PR #2385 supplies final source-record/member rows and Contract IR
+row. FSL PR #2385 supplies final source-record/member rows and Contract IR
 PR #910 supplies native record admission/projection; their driver join and
 complete generated record closure remain separately planned. Contract IR
 PR #905 supplies the native union seam; the authentic final source-union
@@ -113,7 +113,7 @@ missing evidence.
 
 ## Current Partial Source Evidence
 
-The real final QSL producer and strict IR admission are exercised by the quire-integration
+The real final FSL producer and strict IR admission are exercised by the filament-integration
 tests `monitor_preparation`, `monitor_closure` and `monitor_final_subject` (that repository
 owns the real-producer fixture); they exercise the producer and strict
 IR admission before the driver's package-instance/root/four-entry/clause/full
@@ -179,7 +179,7 @@ Retain native refusal payloads and verify cumulative receipt accounting.
 An admitted non-Timed monitor Claim with no clock binding must refuse with
 `MissingClock`. The current authentic Timed PlanRoot reads its model-time source.
 Independently selecting a known admitted Claim for this
-component is not final PlanRoot mapping qualification: QSL PR #2395 supplies that owner mapping; driver consumption is qualified separately by FR-015-AC-15.
+component is not final PlanRoot mapping qualification: FSL PR #2395 supplies that owner mapping; driver consumption is qualified separately by FR-015-AC-15.
 Existing non-clock identity and target controls remain required. Executed
 controls qualify only the covered parts of FR-015-AC-13 and FR-015-AC-14,
 not complete preparation or the whole TC-029 procedure.
@@ -198,7 +198,7 @@ configured-profile row comparison remains Planned.
 ### Executed production component checks
 
 After adopting Contract CG PR #749, the production driver runs the
-quire-integration `monitor_preparation` and the driver `monitor_lowering` suites successfully.
+filament-integration `monitor_preparation` and the driver `monitor_lowering` suites successfully.
 The clock-admission tests establish the reached FR-015-AC-13 native semantic/work
 refusals, `MissingClock` payload classification, twin occurrence retention and original
 pre-cancellation cause with no capability or input mutation. Existing partial
@@ -230,7 +230,7 @@ no driver work receipt and receive no cumulative-work credit. These controls
 trace only FR-015-AC-15; optional clock comparison AC-14, source-record closure and
 full Program remain Planned.
 
-The eight quire-integration `monitor_final_subject` production tests execute this narrow
+The eight filament-integration `monitor_final_subject` production tests execute this narrow
 procedure, including successful final-subject tokens for each distinct clause
 and the token's genuine native model-time source read. Full native
 acquisition refusal/incomplete payloads, foreign associations, absent mappings,

@@ -3,13 +3,13 @@
 
 #[allow(
     dead_code,
-    reason = "FR-331 request members await the remaining QSL projection support"
+    reason = "FR-331 request members await the remaining FSL projection support"
 )]
 mod backend_provider;
 mod cli;
 #[allow(
     dead_code,
-    reason = "typed process results remain unmapped pending QSL settlement APIs"
+    reason = "typed process results remain unmapped pending FSL settlement APIs"
 )]
 mod process_provider;
 mod provider_config;

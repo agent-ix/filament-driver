@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Functional diagnostic derivation from QSL emission and strict IR admission.
+//! Functional diagnostic derivation from FSL emission and strict IR admission.
 
 use std::{path::PathBuf, process::Command, sync::LazyLock};
 
+use filament_driver::monitor_refusal::{
+    target_mismatch_at, unsupported_at, MonitorLocusErrorCode, TargetPremise,
+};
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
 use qsl_package::{emit_checked, emit_monitor_plan_over, Emission, MonitorPlanWire, V2ReadLimits};
@@ -12,9 +15,6 @@ use quire_contract_model::{
     read_checked_package, CheckedNodeId, CheckedNodeKind, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedTerm,
-};
-use quire_driver::monitor_refusal::{
-    target_mismatch_at, unsupported_at, MonitorLocusErrorCode, TargetPremise,
 };
 use quire_exact::{Cancel, Integer, Rational};
 
@@ -207,7 +207,7 @@ fn fixture() -> Fixture {
         V2ReadLimits::bounded(1 << 24),
         limits.package.emit(),
     )
-    .expect("the public QSL writer emits the checked diagnostic root");
+    .expect("the public FSL writer emits the checked diagnostic root");
     let package = admit(&emission, &evidence);
     assert_eq!(package.monitor_plans().len(), 1);
     Fixture { package }
@@ -566,7 +566,7 @@ fn owned_diagnostics_outlive_the_package_and_occurrence_buffers() {
 #[test]
 #[trace("FR-016-AC-9")]
 fn bounded_copy_preserves_actual_resolved_target_axes() {
-    use quire_driver::{monitor::MonitorPreparationLimits, monitor_refusal::copy_monitor_locus};
+    use filament_driver::{monitor::MonitorPreparationLimits, monitor_refusal::copy_monitor_locus};
     let package = &FIXTURE.package;
     let plan = package.monitor_plans().next().unwrap();
     let actual = target_mismatch_at(

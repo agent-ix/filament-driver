@@ -3,19 +3,19 @@ id: FR-013
 title: "Host process providers through a bounded session"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-driver/FR-006
+  - target: ix://agent-ix/filament-driver/FR-006
     type: references
-  - target: ix://agent-ix/quire-spec-language/ADR-029
+  - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
 ---
 # FR-013: Host process providers through a bounded session
 
 ## Description
 
-The `quire-plugin-host` package SHALL implement the process boundary required
-by QSL ADR-029 PL-1 through PL-7. It SHALL expose a session that starts a
+The `filament-plugin-host` package SHALL implement the process boundary required
+by FSL ADR-029 PL-1 through PL-7. It SHALL expose a session that starts a
 named executable, reads and returns its `hello` manifest before accepting any
 provider request, permits zero or more validated requests, and shuts down the
 same process. The `fsl-cli` process-provider adapter SHALL perform manifest
@@ -57,7 +57,7 @@ specifies the driver-owned process-provider seam and settlement composition.
   correlate each response to its request identity, validate each result
   through the `fsl-cli` adapter's callback, and preserve the validated typed
   result unchanged.
-- Each frame SHALL use the QSL PL-3 length-prefixed JCS wire format.
+- Each frame SHALL use the FSL PL-3 length-prefixed JCS wire format.
 - The host SHALL enforce the per-frame limit before allocation and the shared
   session byte limit across both directions and all requests. Stderr retention
   is also capped for the whole session. Truncated, non-canonical, malformed,
@@ -99,11 +99,11 @@ specifies the driver-owned process-provider seam and settlement composition.
   return a typed host-start failure, dispatch no provider request, and
   terminate any child already created.
 - The process host SHALL remain a separate package.
-- The `quire-driver` package SHALL NOT have a normal or build dependency on
-  `quire-plugin-host`.
+- The `filament-driver` package SHALL NOT have a normal or build dependency on
+  `filament-plugin-host`.
 - The `fsl-cli` package SHALL compose the host implementation with the
   driver's process-provider seam, as specified by FR-014.
-- The process host SHALL NOT implement QSL manifest hashing, cache results, or
+- The process host SHALL NOT implement FSL manifest hashing, cache results, or
   map CG process backend variants; those responsibilities remain with their
   owning components.
 - The repository test suite SHALL run `cargo fetch --locked` before its
@@ -125,15 +125,15 @@ specifies the driver-owned process-provider seam and settlement composition.
 | FR-013-AC-7 | Truncated, malformed, non-canonical, oversized, unexpected, and wrongly correlated frames produce their specific typed failures without allocation above configured limits. | Test |
 | FR-013-AC-9 | Stderr beyond the session retention limit is drained but not retained; stderr is available on failures, and reader/writer workers are joined within one second after termination begins. | Test |
 | FR-013-AC-10 | After stdout closes while the child remains alive, process-exit waiting does not busy-wait; EOF before a response preserves an available child exit status. | Test |
-| FR-013-AC-11 | The host uses QSL ADR-029 PL-1 through PL-7 without defining a local wire or manifest-digest format; `quire-driver` excludes the host crate, and `fsl-cli` has a direct host dependency and composes it with the driver's seam. | Test (TC-005, TC-028) and analysis |
+| FR-013-AC-11 | The host uses FSL ADR-029 PL-1 through PL-7 without defining a local wire or manifest-digest format; `filament-driver` excludes the host crate, and `fsl-cli` has a direct host dependency and composes it with the driver's seam. | Test (TC-005, TC-028) and analysis |
 | FR-013-AC-12 | On a clean Cargo cache, the repository `make test` target fetches every locked platform dependency before running the offline TC-005 dependency metadata check, and the check passes. | Test (TC-027) |
 | FR-013-AC-13 | The host test suite reports an actionable prerequisite failure naming the missing fixture runtime and its installation instructions. | Test (TC-027) |
 | FR-013-AC-14 | When the IR-674 follow-up selects and implements a supported Windows process-tree cleanup mechanism, the host assigns the plugin process tree to a kill-on-close Job Object before plugin code executes; closing the owning job handle terminates remaining job members. | Deferred to IR-674; not implemented or verified by this PR; native Windows evidence required |
-| FR-013-AC-15 | When Windows process-tree setup fails before plugin execution, the host returns a typed host-start failure, dispatches no provider request, and terminates any child already created. | Analysis/Inspection (review Windows host startup/error path in `quire-plugin-host`; runtime evidence requires a native Windows runner and an injectable or distinguishable setup-failure seam) |
+| FR-013-AC-15 | When Windows process-tree setup fails before plugin execution, the host returns a typed host-start failure, dispatches no provider request, and terminates any child already created. | Analysis/Inspection (review Windows host startup/error path in `filament-plugin-host`; runtime evidence requires a native Windows runner and an injectable or distinguishable setup-failure seam) |
 
 ## Dependencies
 
-- QSL ADR-029 PL-1 through PL-7 and PV-1 define the authoritative process
+- FSL ADR-029 PL-1 through PL-7 and PV-1 define the authoritative process
   protocol, session lifecycle, and admission boundary.
 - [FR-006](./FR-006-host-provider-plugins.md) defines driver dispatch and
   settlement composition; [TC-013](../test-cases/TC-013-plugin-host-protocol-and-failures.md)

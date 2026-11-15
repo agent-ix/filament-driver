@@ -27,12 +27,12 @@ def write_frame(value):
 identity = "agent-ix/provider/fr331-fixture"
 write_frame(
     {
-        "protocol": "quire.plugin-wire/v1",
+        "protocol": "filament.plugin-wire/v1",
         "id": 0,
         "kind": "hello",
         "body": {
-            "contract_version": "quire.backend-provider/v1",
-            "capability_vocabulary": "quire.capability-kind/v1",
+            "contract_version": "filament.backend-provider/v1",
+            "capability_vocabulary": "filament.capability-kind/v1",
             "manifest": [
                 {
                     "backend": identity,
@@ -55,7 +55,7 @@ while True:
         raise SystemExit(3)
     write_frame(
         {
-            "protocol": "quire.plugin-wire/v1",
+            "protocol": "filament.plugin-wire/v1",
             "id": request["id"],
             "kind": "result",
             "body": {

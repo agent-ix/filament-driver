@@ -3,7 +3,7 @@ id: TC-025
 title: "Preserve plugin settlement during cancellation and bound deadlines"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-013
+  - target: ix://agent-ix/filament-driver/FR-013
     type: verifies
 ---
 # TC-025: Preserve plugin settlement during cancellation and bound deadlines

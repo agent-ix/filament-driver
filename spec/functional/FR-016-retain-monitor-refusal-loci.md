@@ -3,9 +3,9 @@ id: FR-016
 title: "Retain typed monitor target and unsupported-operation refusal loci"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-015
+  - target: ix://agent-ix/filament-driver/FR-015
     type: references
-  - target: ix://agent-ix/quire-contract-ir/FR-038
+  - target: ix://agent-ix/filament-contract-ir/FR-038
     type: depends_on
 ---
 # FR-016: Retain typed monitor target and unsupported-operation refusal loci
@@ -150,7 +150,7 @@ copy_monitor_locus(
     structural_key: &CheckedNodeId,
     body_path: &[usize],
     occurrence: Option<&CheckedOccurrence>,
-    budget: &mut quire_contract_model::NativeJoinBudget,
+    budget: &mut filament_contract_model::NativeJoinBudget,
     cancel: &Cancel,
 ) -> Result<CopiedMonitorLocus, MonitorLocusCopyError>
 ```
@@ -291,7 +291,7 @@ boxed text only after the exact-capacity guard. Its receipt covers this componen
 only; bounded diagnostic integration remains Planned.
 
 The four original focused `monitor_refusal` tests execute the diagnostic-constructor
-controls of AC-1 through AC-7 through public QSL checking/emission and strict
+controls of AC-1 through AC-7 through public FSL checking/emission and strict
 IR admission. They cover all eight target-premise value paths and buffer
 ownership, complete original root-application data, admitted nonapplication
 child paths and reference boundaries,
@@ -311,7 +311,7 @@ and whole FR-276 acceptance remain unqualified.
 - [FR-015](FR-015-prepare-an-admitted-monitor-program.md) owns independent
   selection comparison, runtime-support policy, the preparation request and
   outer failure categories that consume these diagnostics.
-- [IR FR-038](ix://agent-ix/quire-contract-ir/FR-038) owns strict admission,
+- [IR FR-038](ix://agent-ix/filament-contract-ir/FR-038) owns strict admission,
   canonical checked terms, structural-key resolution and retained occurrences.
 - [TC-030](../test-cases/TC-030-monitor-refusal-loci.md) verifies the diagnostic
   constructors without granting full monitor qualification.

@@ -3,9 +3,9 @@
 
 use std::collections::BTreeMap;
 
+use filament_driver::{build_registry, drive, CompileInput, FslCg, GenerationInput};
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::SpineLimits;
-use quire_driver::{build_registry, drive, CompileInput, GenerationInput, QslCg};
 
 pub fn emitted_package() -> qsl_package::EmittedPackage {
     emitted_package_with_source_name("process-provider-test")
@@ -34,7 +34,7 @@ fn emitted_package_with_source_name(source_name: &str) -> qsl_package::EmittedPa
         cancel: quire_exact::Cancel::new(),
     };
     drive(
-        &QslCg,
+        &FslCg,
         input,
         &build_registry(&[]).expect("empty linked registry is admitted"),
         None,

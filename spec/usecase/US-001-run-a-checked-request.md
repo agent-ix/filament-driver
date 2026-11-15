@@ -3,14 +3,14 @@ id: US-001
 title: "Run one checked request from source to routed backends"
 type: US
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: exercises
 ---
 # US-001: Run one checked request from source to routed backends
 
 ## Story
 
-**As a** QSL user proving a property of a checked package
+**As a** FSL user proving a property of a checked package
 **I want** one call that compiles my source, negotiates each requested item
 with the registered backends and routes the supported ones
 **So that** each item reaches the backend that can discharge it, or gets a
@@ -18,8 +18,8 @@ typed reason why none can.
 
 ## Context
 
-QSL compiles and routes; CG negotiates and generates. Neither may call the
-other in that direction, so the driver calls both (QSL ADR-011 §6.1 driver
+FSL compiles and routes; CG negotiates and generates. Neither may call the
+other in that direction, so the driver calls both (FSL ADR-011 §6.1 driver
 row, T-13).
 
 ## Acceptance Examples (Illustrative)

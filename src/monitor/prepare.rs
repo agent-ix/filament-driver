@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Complete monitor preparation: a genuine QSL plan root becomes a checked
+//! Complete monitor preparation: a genuine FSL plan root becomes a checked
 //! runtime `Program` (FR-019).
 
 use std::rc::Rc;

@@ -3,7 +3,7 @@ id: TC-026
 title: "Bound plugin stderr and preserve cleanup"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-013
+  - target: ix://agent-ix/filament-driver/FR-013
     type: verifies
 ---
 # TC-026: Bound plugin stderr and preserve cleanup

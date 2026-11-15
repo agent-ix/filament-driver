@@ -3,7 +3,7 @@ id: TC-023
 title: "Start a plugin session and admit hello before requests"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-013
+  - target: ix://agent-ix/filament-driver/FR-013
     type: verifies
 ---
 # TC-023: Start a plugin session and admit hello before requests

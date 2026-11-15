@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Authentic QSL source-record witnesses joined to their own strict IR admission.
+//! Authentic FSL source-record witnesses joined to their own strict IR admission.
 
 use qsl_package::Emission;
 use quire_contract_model::{

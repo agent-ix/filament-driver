@@ -3,7 +3,7 @@ id: TC-001
 title: "The steps run in ADR-011 T-13 order"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-001: The steps run in ADR-011 T-13 order
@@ -12,7 +12,7 @@ relationships:
 
 Verify that the driver calls compile, the E5 read, the Linked-backend
 conversion, negotiation, routing and generation in that order, against the
-real QSL and CG functions.
+real FSL and CG functions.
 
 Scope: FR-001-AC-4 and FR-001-AC-25.
 
@@ -25,7 +25,7 @@ Scope: FR-001-AC-4 and FR-001-AC-25.
    makes it.
 3. Drive a fixture with a caller-selected `emit.output_bytes` ceiling equal to
    its actual canonical E4 byte length and confirm E5 admits it. Lower the
-   ceiling by one byte and confirm QSL refuses at E4 before E5. Inspect the
+   ceiling by one byte and confirm FSL refuses at E4 before E5. Inspect the
    E5 call to `admission_evidence` to confirm it receives that same caller
    `SpineLimits.package.emit()` value.
 

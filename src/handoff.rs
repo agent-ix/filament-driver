@@ -21,7 +21,7 @@ pub(crate) fn handoff(
     emit: qsl_package::EmitLimits,
 ) -> Result<CheckedPackageV2, DriverRefusal> {
     let evidence = admission_evidence(models, checked, emitted, imports, emit)
-        .map_err(DriverRefusal::QslAdmissionEvidence)?;
+        .map_err(DriverRefusal::FslAdmissionEvidence)?;
     let package =
         match upstream.read_package(emitted, CheckedPackageReadLimits::bounded(), &evidence) {
             CheckedPackageDispatchResult::AdmittedV2(package) => *package,

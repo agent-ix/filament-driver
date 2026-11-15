@@ -1,17 +1,17 @@
 [package]
-name = "quire-driver"
+name = "filament-driver"
 version = "0.1.2"
 edition = "2021"
 rust-version = "1.98.1"
-description = "Orchestrating driver: calls QSL (compile, emit, route) and CG (negotiate) across repositories (ADR-011 T-13)."
+description = "Orchestrating driver: calls FSL (compile, emit, route) and CG (negotiate) across repositories (ADR-011 T-13)."
 authors = ["Agent IX <agent@agent-ix.dev>"]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/agent-ix/filament-driver"
 publish = false
 
 [workspace]
-members = ["quire-cache", "fsl-cli", "quire-plugin-host"]
-default-members = [".", "quire-cache", "fsl-cli", "quire-plugin-host"]
+members = ["filament-cache", "fsl-cli", "filament-plugin-host"]
+default-members = [".", "filament-cache", "fsl-cli", "filament-plugin-host"]
 resolver = "2"
 
 [workspace.lints.rust]
@@ -23,20 +23,20 @@ all = "deny"
 undocumented_unsafe_blocks = "deny"
 
 [lib]
-name = "quire_driver"
+name = "filament_driver"
 path = "src/lib.rs"
 
-# ADR-011 §6.1 driver row: the driver depends on the QSL layer crates, on CG
-# and on IR's model crate (the E5 v2 reader and `CheckedNodeId`), and no QSL,
-# IR or CG package depends on it. Downstream packages such as `quire-cache`
-# may depend on its interface. It is downstream of CG because CG -> QSL
-# (`qsl-replay`) is a normal edge and Cargo refuses a package cycle.
+# ADR-011 §6.1 driver row: the driver depends on the FSL layer crates, on CG
+# and on IR's model crate (the E5 v2 reader and `CheckedNodeId`), and no FSL,
+# IR or CG package depends on it. Downstream packages such as `filament-cache`
+# may depend on its interface. It is downstream of CG because CG -> FSL
+# (`fsl-replay`) is a normal edge and Cargo refuses a package cycle.
 #
-# The QSL layer crates and CG are tracked on `main` of their repositories, the
-# same spelling CG and QSL use for their own `quire-contract-model` edge, so
+# The FSL layer crates and CG are tracked on `main` of their repositories, the
+# same spelling CG and FSL use for their own `filament-contract-model` edge, so
 # the graph resolves one copy of it. The exact commits are in Cargo.lock.
 [dependencies]
-# Shared diagnostic types are owned by QSV, not re-exported by QSL.
+# Shared diagnostic types are owned by FSV, not re-exported by FSL.
 quire-semantic-value = { git = "https://github.com/agent-ix/quire-semantic-value", branch = "main" }
 qsl-analyze = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
 qsl-foundation = { git = "https://github.com/agent-ix/quire-spec-language", branch = "main" }
@@ -49,9 +49,9 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 quire-contract-runtime = { git = "https://github.com/agent-ix/quire-contract-runtime", branch = "main", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
 quire-observation = { git = "https://github.com/agent-ix/quire-observation", branch = "main" }
-# QSpec FR-331's linked manifest snapshot is canonicalized at registry admission.
+# FSpec FR-331's linked manifest snapshot is canonicalized at registry admission.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main" }
-# QSL's caller-owned cancellation handle is a public driver API type.
+# FSL's caller-owned cancellation handle is a public driver API type.
 quire-exact = { git = "https://github.com/agent-ix/quire-exact", branch = "main" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "1.0.151"

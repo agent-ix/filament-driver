@@ -3,7 +3,7 @@ id: TC-012
 title: "Register and invoke a first-party provider through Provider"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-005
+  - target: ix://agent-ix/filament-driver/FR-005
     type: verifies
 ---
 # TC-012: Register and invoke a first-party provider through Provider
@@ -20,9 +20,9 @@ and FR-005-AC-20 through FR-005-AC-22.
 
 ## Test Procedure
 
-1. Register two providers with distinct identities and verify the QSL
+1. Register two providers with distinct identities and verify the FSL
    registry admits both and the driver resolves each identity to its provider.
-2. Register identical linked manifests in both input orders. Verify QSL
+2. Register identical linked manifests in both input orders. Verify FSL
    admits one descriptor and driver lookup does not select one implementation
    according to input order.
 3. Exercise Kani item preflight with cancellation, backend mismatch, missing
@@ -53,8 +53,8 @@ and FR-005-AC-20 through FR-005-AC-22.
 9. Pass a cover-unsatisfied outcome and a timeout outcome through CG's
    `run_terminal_value`; verify they map to `Proved { success_checks: 0 }`
    and `Incomplete(TimedOut)` respectively.
-10. The origin-aware QSL-to-CG descriptor projection is tested in
-   `src/drive.rs`: build separate QSL registries with otherwise equal `kani`
+10. The origin-aware FSL-to-CG descriptor projection is tested in
+   `src/drive.rs`: build separate FSL registries with otherwise equal `kani`
    descriptors, one `Linked` and one `Process`, then verify their CG
    descriptor projections preserve identity, advertised pairs and the supplied
    origin. Then verify the driver's pre-negotiation conversion calls CG's
@@ -75,7 +75,7 @@ and FR-005-AC-20 through FR-005-AC-22.
    `src/provider.rs::falsified_scalar_does_not_guess_a_replay_settlement`
    checks the optional replay settlement reaches CG's map.
 12. Planned under QSL-655: keep a plugin counterexample in the shared carrier
-    as a non-terminal candidate until QSL S6a replay reproduces it; do not emit
+    as a non-terminal candidate until FSL S6a replay reproduces it; do not emit
     `Refuted` before replay.
 13. Build a linked provider registry from a manifest whose `wire` is absent.
     Verify `build_registry` retains canonical FR-331 bytes, includes present
@@ -107,7 +107,7 @@ invocation and process-provider terminal integration remain planned.
 
 - Distinct manifest identities become corresponding registered backends, and
   lookup resolves each uniquely registered linked provider.
-- Repeating an identical linked manifest is QSL-idempotent. If multiple
+- Repeating an identical linked manifest is FSL-idempotent. If multiple
   linked implementations share that identity, lookup does not choose one
   based on input order.
 - Kani preflight preserves cancellation and backend mismatch and reports

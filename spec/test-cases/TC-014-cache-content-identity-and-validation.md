@@ -3,7 +3,7 @@ id: TC-014
 title: "Exercise driver calls through a recording cache interface"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-007
+  - target: ix://agent-ix/filament-driver/FR-007
     type: verifies
 ---
 # TC-014: Exercise driver calls through a recording cache interface
@@ -35,5 +35,5 @@ I/O error and excluded/oversize record outcomes.
 - An identity admission refusal yields no cache request or lookup.
 - Typed I/O faults are not converted to misses; `NeverStore` and `NotStored`
   preserve the provider result.
-- The recording interface is supplied by the test; the `quire-driver`
-  package has no dependency on the concrete `quire-cache` package.
+- The recording interface is supplied by the test; the `filament-driver`
+  package has no dependency on the concrete `filament-cache` package.

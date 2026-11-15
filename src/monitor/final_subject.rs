@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Bind an original QSL subject through its owner's final declaration lookup.
+//! Bind an original FSL subject through its owner's final declaration lookup.
 
 use qsl_package::Emission;
 use qsl_replay::MonitorSubject;

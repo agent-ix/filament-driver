@@ -3,9 +3,9 @@ id: TC-013
 title: "Dispatch process-provider results through the driver"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-006
+  - target: ix://agent-ix/filament-driver/FR-006
     type: verifies
-  - target: ix://agent-ix/quire-driver/FR-005
+  - target: ix://agent-ix/filament-driver/FR-005
     type: verifies
 ---
 # TC-013: Dispatch process-provider results through the driver
@@ -15,7 +15,7 @@ relationships:
 Verify that the driver passes negotiated process-provider work through its
 process-provider seam and returns typed provider results through its proof
 path; TC-028 verifies the configured `fsl-cli` composition with
-`quire-plugin-host`. Settlement remains pending the QSL result-mapping APIs.
+`filament-plugin-host`. Settlement remains pending the FSL result-mapping APIs.
 
 Scope: FR-005-AC-12 through FR-005-AC-19, FR-006-AC-1 through FR-006-AC-2,
 and FR-006-AC-5 through FR-006-AC-23.
@@ -26,7 +26,7 @@ and FR-006-AC-5 through FR-006-AC-23.
    driver's registry record for every linked and process candidate. Have the
    driver compose the full registered-candidate snapshot. For each constructed
    request item, serialize request index, claim locus, kind, extent/bounds and
-   candidate set from the corresponding retained QSL
+   candidate set from the corresponding retained FSL
    `RequirementItem`/`CandidateOutcome`, using the same request data used to
    build typed CG negotiation; take the selected backend from CG's routed
    output. Supply the snapshot and constructed request data with the package,
@@ -36,7 +36,7 @@ and FR-006-AC-5 through FR-006-AC-23.
    entry. The selected-provider production composition test exercises the
    Process seam and retains its typed result in `CommandResult`; the production
    binary tests separately cover duplicate-identity refusal and active-session
-   signal cleanup. These checks do not claim QSL terminal settlement for the
+   signal cleanup. These checks do not claim FSL terminal settlement for the
    provider result. Temporal subject proof bounds remain sourced as specified
    in FR-006.
 2. Have the `fsl-cli` adapter serialize the request through the typed FR-331
@@ -48,21 +48,21 @@ and FR-006-AC-5 through FR-006-AC-23.
    selected provider's configuration entry. Verify bounds appear only at
    `items[].extent.bounds` and
    `items[].temporal.subject.proof_bounds`, with no request-level `domains` or
-   `limits` member. QSpec TC-271 owns the CG negotiation checks for QSpec
+   `limits` member. FSpec TC-271 owns the CG negotiation checks for FSpec
    FR-290-AC-13. Do not claim a serialized proof-bound
    `kind` until QSL-654 emitter support lands.
 3. Start the explicit fixture executable. Have the `fsl-cli` adapter decode
    its FR-331 hello DTO without discarding optional fields. Pass its identity,
-   advertised labels and domain labels through one QSL descriptor admission
+   advertised labels and domain labels through one FSL descriptor admission
    with caller-supplied `Process` origin, then return the admitted descriptor
    and lossless FR-331 DTO to the driver. Register the descriptor with the one
-   QSL registry owned by the driver's `AdmittedRegistry`, without a second
+   FSL registry owned by the driver's `AdmittedRegistry`, without a second
    admission. Retain one lossless `ProviderManifest` carrier for each
    registered candidate. Convert the process hello DTO losslessly into that
    carrier; populate linked-provider carriers from their FR-331 manifests and
    do not synthesize absent optional members. An absent or unknown kind/mode
-   reaches QSL and remains its typed `invalid_capability` refusal. Have the
-   `fsl-cli` host hello admitter pass domain labels to QSL and verify it returns
+   reaches FSL and remains its typed `invalid_capability` refusal. Have the
+   `fsl-cli` host hello admitter pass domain labels to FSL and verify it returns
    `invalid_capability` with cause `invalid-domains`;
    the driver does not validate domains or construct that refusal. Verify
    descriptor identity, advertised pairs and supplied origin are passed to CG
@@ -71,32 +71,32 @@ and FR-006-AC-5 through FR-006-AC-23.
    from the supplied origin. TC-012 covers this conversion. The driver does not
    construct that kind or infer it from backend identity.
 
-4. Use each of the 13 Kani result rows in QSpec FR-331-AC-20's Kani results
+4. Use each of the 13 Kani result rows in FSpec FR-331-AC-20's Kani results
    table as a conversion case. For each row, compare the typed result fields
-   with the current QSL terminal contract and exercise a terminal only where
+   with the current FSL terminal contract and exercise a terminal only where
    that contract supplies one. Keep a plugin counterexample in the shared
-   carrier as a non-terminal candidate until QSL S6a replay reproduces it.
+   carrier as a non-terminal candidate until FSL S6a replay reproduces it.
    Do not create a terminal for that candidate before replay. Keep plugin
    `proved` results unmapped until QSL-490 and QSL-655 supply the trusted
    proof-basis terminal.
 5. Once QSL-655 amends ADR-029 PL-7 to define plugin claims of
    `replay-parity`, `replay-refused` or `kani_vacuous_proof` as invalid, have
    the plugin make each claim. Verify the driver rejects each as a tool failure
-   and records the affected item as failed; the plugin cannot supply QSL's
+   and records the affected item as failed; the plugin cannot supply FSL's
    replay disagreement payload or replay result. Until that PL-7 amendment
    lands, this case remains planned and defines no driver behavior.
 6. Send a valid plugin response with a `declined` result and a typed code.
    Verify that the `fsl-cli` adapter preserves the decoded result and that
-   the driver's shared settlement path preserves the code in QSL
+   the driver's shared settlement path preserves the code in FSL
    `TerminalValue::Declined { code }`. Send a valid response whose result has
-   no current QSL terminal mapping; verify it remains typed and unmapped.
-   These cases remain planned until the relevant QSL mapping is available.
+   no current FSL terminal mapping; verify it remains typed and unmapped.
+   These cases remain planned until the relevant FSL mapping is available.
 7. Retired: the package-id mismatch case no longer exists.
 8. Retired with step 7.
 9. Verify the driver's shared settlement path maps each failed routed item to
-   QSL `TerminalValue::Failed`.
+   FSL `TerminalValue::Failed`.
 10. Verify the shared settlement path carries the typed diagnostic separately
-    in QSL `OutcomeDiagnostic`.
+    in FSL `OutcomeDiagnostic`.
 11. Verify settlement of the failed process-provider response leaves
     unrelated provider results unchanged.
 12. Repeat with a non-canonical spelling of the package. Verify the FR-331
@@ -105,10 +105,10 @@ and FR-006-AC-5 through FR-006-AC-23.
 13. Verify the `fsl-cli` adapter preserves every routed item identity and the
     typed diagnostic from the non-canonical-package response.
 14. Verify the driver's shared settlement path maps each failed routed item to
-    QSL `TerminalValue::Failed` and carries the diagnostic separately in QSL
+    FSL `TerminalValue::Failed` and carries the diagnostic separately in FSL
     `OutcomeDiagnostic`.
 15. Verify settlement leaves unrelated provider results unchanged. A free-form
-    diagnostic message or detail never selects a QSL terminal.
+    diagnostic message or detail never selects a FSL terminal.
 16. Verify PL-7 transport failures are handled by the driver's typed transport
     failure mapping and are not misreported as plugin request-body refusals.
 
@@ -117,15 +117,15 @@ by [TC-023](./TC-023-plugin-session-and-admission.md) through
 [TC-026](./TC-026-plugin-resource-bounds-and-cleanup.md). The driver uses
 CG IR-629's landed origin-aware descriptor conversion. Production process-provider
 dispatch and typed-result retention are exercised by the configured composition;
-settlement remains planned under QSL result-mapping dependencies. The current
+settlement remains planned under FSL result-mapping dependencies. The current
 `RoutedItemOutput` does not carry every FR-331 request item field or deadline. The
 adapter's request index, claim locus, kind, extent/bounds and candidate set
-come from the corresponding retained QSL `RequirementItem`/`CandidateOutcome`,
+come from the corresponding retained FSL `RequirementItem`/`CandidateOutcome`,
 using the same request data used to build typed CG negotiation; the selected
 backend comes from CG's routed output. The configured composition integrates those sources with the request deadline. Temporal subject
 proof bounds remain a projection gap as stated in FR-006. FR-331
-specifies the proof-bound `kind`; QSL-654 owns the pending QSL emitter support
-for writing it. The test must not synthesize QSL-owned item fields from
+specifies the proof-bound `kind`; QSL-654 owns the pending FSL emitter support
+for writing it. The test must not synthesize FSL-owned item fields from
 unrelated provider evidence.
 
 Test locations: `fsl-cli/src/cli.rs` configured-run composition tests and
@@ -133,7 +133,7 @@ Test locations: `fsl-cli/src/cli.rs` configured-run composition tests and
 test exercises hello/admission, request DTO construction, selected-provider
 dispatch and typed result retention; production tests cover strict config,
 duplicate identity, and active-request SIGTERM cleanup. Settlement remains held
-for QSL result-mapping APIs. FR-006-AC-14 through AC-23
+for FSL result-mapping APIs. FR-006-AC-14 through AC-23
 remain unclaimed for terminal settlement pending QSL-655; this test does not
 define or infer terminal mappings.
 
@@ -145,7 +145,7 @@ define or infer terminal mappings.
   records; `deadline_ms` unchanged from the selected provider's validated
   configuration entry; each
   item's request index, claim locus, kind, extent/bounds and candidate set from
-  the corresponding retained QSL `RequirementItem`/`CandidateOutcome`, using
+  the corresponding retained FSL `RequirementItem`/`CandidateOutcome`, using
   the same request data used to build typed CG negotiation; and its selected
   backend from CG's routed output.
 - The driver composes the manifest snapshot from one retained DTO in each
@@ -153,10 +153,10 @@ define or infer terminal mappings.
   members.
 - The test fixture supplies all-items-failed responses for package mismatch or
   non-canonical package spelling. The `fsl-cli` adapter decodes those
-  responses; the driver's shared settlement path maps them to QSL `Failed`
+  responses; the driver's shared settlement path maps them to FSL `Failed`
   terminals and attaches typed FR-272 diagnostics separately. It does not
-  claim QSL read the request body.
-- The planned conversion matrix enumerates the 13 Kani rows in QSpec
+  claim FSL read the request body.
+- The planned conversion matrix enumerates the 13 Kani rows in FSpec
   FR-331-AC-20's Kani result table, not the larger vectors file. Replay-only
   plugin claims become tool failures recorded as failed items only after the
   QSL-655 PL-7 amendment;

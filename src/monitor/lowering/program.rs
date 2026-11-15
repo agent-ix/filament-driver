@@ -669,7 +669,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
             .iter()
             .find(|row| &row.structural_node == semantic)
         {
-            // QSL's generated records declare every member required and emit
+            // FSL's generated records declare every member required and emit
             // every member (checked against the genuine plan in
             // `monitor_closure.rs`), so a missing binding is an invariant
             // fault, never an absent optional member.

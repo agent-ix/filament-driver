@@ -23,7 +23,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 /// The sole protocol identity accepted by ADR-029 PL-4.
-pub const PROTOCOL: &str = "quire.plugin-wire/v1";
+pub const PROTOCOL: &str = "filament.plugin-wire/v1";
 const WORKER_CLEANUP_LIMIT: Duration = Duration::from_secs(1);
 
 fn wrap_plugin_command(command: Command) -> CommandWrap {
@@ -239,7 +239,7 @@ fn spawn_writer<W: Write + Send + 'static>(
 ) -> io::Result<(mpsc::Sender<WriterMessage>, thread::JoinHandle<()>)> {
     let (sender, receiver) = mpsc::channel::<WriterMessage>();
     let thread = thread::Builder::new()
-        .name("quire-plugin-stdin".to_owned())
+        .name("filament-plugin-stdin".to_owned())
         .spawn(move || {
             let mut writer = FrameWriter::with_budget(writer, max_frame_bytes, budget);
             while let Ok(message) = receiver.recv() {
@@ -342,7 +342,7 @@ pub struct SessionFinished<M> {
 }
 
 /// A hello-admitted process session that accepts zero or more sequential
-/// provider requests before shutdown (QSL ADR-029 PL-6).
+/// provider requests before shutdown (FSL ADR-029 PL-6).
 pub struct PluginSession<M, F, A> {
     child: Option<Box<dyn ChildWrapper>>,
     manifest: Option<M>,
@@ -424,7 +424,7 @@ where
         };
         let (sender, receiver) = mpsc::channel::<Result<Option<Envelope>, FrameError>>();
         let reader_thread = match thread::Builder::new()
-            .name("quire-plugin-stdout".to_owned())
+            .name("filament-plugin-stdout".to_owned())
             .spawn(move || {
                 let mut reader = FrameReader::with_budget(
                     stdout,
@@ -459,7 +459,7 @@ where
         };
         let stderr_limit = start.limits.max_stderr_bytes;
         let stderr_thread = match thread::Builder::new()
-            .name("quire-plugin-stderr".to_owned())
+            .name("filament-plugin-stderr".to_owned())
             .spawn(move || capture_stderr(stderr, stderr_limit))
         {
             Ok(handle) => handle,
@@ -1558,14 +1558,14 @@ mod tests {
             Ok(())
         } else {
             Err(format!(
-                "quire-plugin-host tests require fixture runtime {executable:?}; install Python 3 and rerun make test"
+                "filament-plugin-host tests require fixture runtime {executable:?}; install Python 3 and rerun make test"
             ))
         }
     }
 
     fn ready_fixture_path() -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
-            "quire-plugin-host-ready-{}-{}",
+            "filament-plugin-host-ready-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -1991,8 +1991,8 @@ mod tests {
     fn fixture_runtime_prerequisite_names_python3() {
         assert_eq!(ensure_fixture_runtime("python3"), Ok(()));
         assert_eq!(
-            ensure_fixture_runtime("quire-plugin-host-python3-missing-test"),
-            Err("quire-plugin-host tests require fixture runtime \"quire-plugin-host-python3-missing-test\"; install Python 3 and rerun make test".to_owned())
+            ensure_fixture_runtime("filament-plugin-host-python3-missing-test"),
+            Err("filament-plugin-host tests require fixture runtime \"filament-plugin-host-python3-missing-test\"; install Python 3 and rerun make test".to_owned())
         );
     }
 

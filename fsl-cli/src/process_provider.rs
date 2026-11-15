@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Generic `quire-plugin-host` adapter for the driver's process-provider seam.
+//! Generic `filament-plugin-host` adapter for the driver's process-provider seam.
 
 use std::convert::Infallible;
 use std::ffi::OsString;
@@ -7,22 +7,22 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 
-use qsl_replay::CallRequirements;
-use qsl_route::request::RequirementItem;
-use qsl_route::{BackendDescriptor, ProviderOrigin};
-use quire_driver::{
+use filament_driver::{
     ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
     ProviderItemResult, ProviderResults, RoutedItemOutput,
 };
-use quire_exact::Cancel;
-use quire_plugin_host::{
+use filament_plugin_host::{
     FrameLimits, PluginError, PluginSession, RunLimits, SessionFinished, SessionStart,
 };
+use qsl_replay::CallRequirements;
+use qsl_route::request::RequirementItem;
+use qsl_route::{BackendDescriptor, ProviderOrigin};
+use quire_exact::Cancel;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
-/// Closed FR-331 result values retained before a QSL mapping is available.
+/// Closed FR-331 result values retained before a FSL mapping is available.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum Fr331ResultKind {
@@ -54,7 +54,7 @@ pub(crate) struct ProcessProviderOutcome {
     pub(crate) response: Arc<serde_json::Value>,
 }
 
-/// The call-selected QSL items, verified against the exact package and driver
+/// The call-selected FSL items, verified against the exact package and driver
 /// request that produced the routed generation.
 pub(crate) struct CallItemProjection {
     pub(crate) package_name: String,
@@ -64,24 +64,24 @@ pub(crate) struct CallItemProjection {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum CallItemProjectionError {
-    #[error("QSL call requirements and driver generation came from different packages")]
+    #[error("FSL call requirements and driver generation came from different packages")]
     PackageMismatch,
-    #[error("a call requirement request index does not identify exactly one driver QSL item")]
+    #[error("a call requirement request index does not identify exactly one driver FSL item")]
     RequestIndex,
-    #[error("a call requirement occurrence differs from the driver QSL item at its index")]
+    #[error("a call requirement occurrence differs from the driver FSL item at its index")]
     Occurrence,
-    #[error("QSL returned a duplicate call requirement request index")]
+    #[error("FSL returned a duplicate call requirement request index")]
     DuplicateIndex,
 }
 
-/// Join QSL's call-aware members to the exact retained driver request items.
+/// Join FSL's call-aware members to the exact retained driver request items.
 /// The package name is checked before using request indices, then every selected
 /// occurrence must match; package-wide items outside the selected call are
 /// excluded from the returned sidecar.
 pub(crate) fn project_call_items(
     package_name: &str,
     requirements: &CallRequirements,
-    driven: &quire_driver::Driven,
+    driven: &filament_driver::Driven,
 ) -> Result<CallItemProjection, CallItemProjectionError> {
     if package_name != driven.emitted().name() {
         return Err(CallItemProjectionError::PackageMismatch);
@@ -128,7 +128,7 @@ pub(crate) fn project_call_items(
     })
 }
 
-/// Build one request body from retained driver and QSL values.
+/// Build one request body from retained driver and FSL values.
 pub(crate) fn encode_fr331_request(
     request: ProcessProviderRequest<'_>,
 ) -> Result<crate::backend_provider::RequestStage, String> {
@@ -166,14 +166,14 @@ pub(crate) fn validate_fr331_response(
     Ok(())
 }
 
-/// Retain the full FR-331 outcome without selecting QSL terminals.
+/// Retain the full FR-331 outcome without selecting FSL terminals.
 pub(crate) fn convert_fr331_response(
     response: serde_json::Value,
 ) -> Result<ProviderResults<ProcessProviderOutcome, String>, String> {
     retain_fr331_response(response)
 }
 
-/// An FR-331 item state kept distinct until the QSL mapping API is available.
+/// An FR-331 item state kept distinct until the FSL mapping API is available.
 #[derive(Clone, Debug)]
 pub(crate) enum ProcessProviderItemOutcome {
     Result {
@@ -211,8 +211,8 @@ fn retain_fr331_response(
     let vocabulary = response
         .get("capability_vocabulary")
         .and_then(serde_json::Value::as_str);
-    if contract != Some("quire.backend-provider/v1")
-        || vocabulary != Some("quire.capability-kind/v1")
+    if contract != Some("filament.backend-provider/v1")
+        || vocabulary != Some("filament.capability-kind/v1")
     {
         return Err("plugin result has an unsupported FR-331 identity".to_owned());
     }
@@ -251,7 +251,7 @@ fn retain_fr331_response(
             };
             items.push(ProviderItemResult {
                 request_index,
-                backend: quire_driver::Candidate {
+                backend: filament_driver::Candidate {
                     identity: parsed.backend,
                 },
                 result: Ok(ProcessProviderOutcome {
@@ -271,7 +271,7 @@ type SessionWireTypes<Q, R, V, I, E> = fn() -> (Q, R, V, I, E);
 /// Why hello admission did not provide a caller-admitted process descriptor.
 #[derive(Debug, thiserror::Error)]
 pub enum AdmissionFailure<E> {
-    /// The caller's QSL admission boundary rejected the manifest.
+    /// The caller's FSL admission boundary rejected the manifest.
     #[error("caller rejected plugin hello: {0}")]
     Caller(E),
     /// The returned descriptor did not carry the caller-supplied Process origin.
@@ -320,7 +320,7 @@ pub struct HostProcessProvider<M, Q, R, F, A, V, I, E, Admit, Encode, Validate, 
 impl<M, Q, R, F, A, V, I, E, Admit, Encode, Validate, Convert>
     HostProcessProvider<M, Q, R, F, A, V, I, E, Admit, Encode, Validate, Convert>
 {
-    /// Build the adapter from QSL admission and caller-owned typed FR-331
+    /// Build the adapter from FSL admission and caller-owned typed FR-331
     /// request/result conversions.
     pub fn new(
         signals: crate::signals::SignalContext,
@@ -347,7 +347,7 @@ where
     Q: Serialize,
     R: DeserializeOwned,
     F: DeserializeOwned,
-    Admit: Fn(&M) -> Result<(BackendDescriptor, quire_driver::ProviderManifest), A> + 'static,
+    Admit: Fn(&M) -> Result<(BackendDescriptor, filament_driver::ProviderManifest), A> + 'static,
     Encode: for<'a> Fn(ProcessProviderRequest<'a>) -> Result<Q, V> + 'static,
     Validate: Fn(&M, &R) -> Result<(), V> + 'static,
     Convert: Fn(R) -> Result<ProviderResults<I, E>, V> + 'static,
@@ -408,7 +408,7 @@ where
 pub struct HostProcessSession<M, Q, R, F, A, V, I, E, Encode, Validate, Convert> {
     host: PluginSession<M, F, AdmissionFailure<A>>,
     descriptor: BackendDescriptor,
-    manifest: quire_driver::ProviderManifest,
+    manifest: filament_driver::ProviderManifest,
     signals: crate::signals::SignalContext,
     encode: Arc<Encode>,
     validate: Arc<Validate>,
@@ -437,7 +437,7 @@ where
         &self.descriptor
     }
 
-    fn manifest(&self) -> &quire_driver::ProviderManifest {
+    fn manifest(&self) -> &filament_driver::ProviderManifest {
         &self.manifest
     }
 
@@ -477,21 +477,21 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use filament_driver::{
+        build_linked_providers, drive, CompileInput, FslCg, GenerationInput, ProcessProvider,
+        ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession, ProviderItemResult,
+        ProviderManifest, ProviderRequest, ProviderResults,
+    };
     use qsl_foundation::BackendId;
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::{default_accounting, Call, CallArgument, DependencyInput, SpineLimits};
     use qsl_route::{descriptor_from_manifest, BackendDescriptor, Candidate, ProviderOrigin};
-    use quire_driver::{
-        build_linked_providers, drive, CompileInput, GenerationInput, ProcessProvider,
-        ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession, ProviderItemResult,
-        ProviderManifest, ProviderRequest, ProviderResults, QslCg,
-    };
     use quire_exact::{Cancel, Integer, Value};
     use serde::Deserialize;
 
     use super::{project_call_items, HostProcessProvider};
 
-    /// Trace: FR-006-AC-1, FR-006-AC-5..FR-006-AC-8, FR-006-AC-13; pair the selected QSL call
+    /// Trace: FR-006-AC-1, FR-006-AC-5..FR-006-AC-8, FR-006-AC-13; pair the selected FSL call
     /// with the driver generation by package, request index and occurrence before writing FR-331.
     #[test]
     fn configured_call_projection_sends_only_its_correlated_routed_items() {
@@ -537,11 +537,11 @@ mod tests {
             &objects,
             &cancel,
         )
-        .expect("the selected call completes with its QSL requirement members");
+        .expect("the selected call completes with its FSL requirement members");
 
         let hello = ManifestStage {
-            contract_version: "quire.backend-provider/v1".to_owned(),
-            capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
+            contract_version: "filament.backend-provider/v1".to_owned(),
+            capability_vocabulary: Some("filament.capability-kind/v1".to_owned()),
             manifest: vec![Arc::new(serde_json::json!({
                 "backend": "agent-ix/provider/fr331-fixture",
                 "advertises": [{ "kind": "value-validity", "mode": "bounded" }],
@@ -550,13 +550,13 @@ mod tests {
         };
         let admitted = hello
             .admit_process(4096)
-            .expect("QSL admits the configured process manifest");
+            .expect("FSL admits the configured process manifest");
         let mut linked = build_linked_providers(&[]).expect("one registry is built");
         linked
             .register_admitted([(admitted.descriptor().clone(), admitted.manifest().clone())])
             .expect("the already admitted descriptor is registered once");
         let driven = drive(
-            &QslCg,
+            &FslCg,
             CompileInput {
                 source,
                 package_name: "configured-call",
@@ -601,7 +601,7 @@ mod tests {
             deadline_ms: 4096,
             manifest: &manifest,
             provider_request: ProviderRequest::new(&projection.routed),
-            qsl_items: &projection.items,
+            fsl_items: &projection.items,
             cancel: &cancel,
         };
         let wire = serde_json::to_value(
@@ -668,7 +668,7 @@ mod tests {
 
     fn fixture_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../quire-plugin-host/tests/fixtures/echo-plugin.py")
+            .join("../filament-plugin-host/tests/fixtures/echo-plugin.py")
     }
 
     fn backend_provider_fixture_path() -> PathBuf {
@@ -738,7 +738,7 @@ mod tests {
                 Ok(ProviderResults::<String, String> {
                     items: vec![ProviderItemResult {
                         request_index: 23,
-                        backend: quire_driver::Candidate {
+                        backend: filament_driver::Candidate {
                             identity: identity.clone(),
                         },
                         result: Ok(identity),
@@ -784,7 +784,7 @@ mod tests {
             deadline_ms: 4096,
             manifest: &manifest,
             provider_request: ProviderRequest::new(&[]),
-            qsl_items: &[],
+            fsl_items: &[],
             cancel: &cancel,
         };
         let results = session.invoke(request).expect("host returns typed result");
@@ -894,7 +894,7 @@ mod tests {
             deadline_ms: 4096,
             manifest: &manifest,
             provider_request: ProviderRequest::new(&[]),
-            qsl_items: &[],
+            fsl_items: &[],
             cancel: &cancel,
         };
         session
@@ -908,7 +908,7 @@ mod tests {
 
     #[test]
     fn adapter_preserves_result_validation_rejection() {
-        use quire_plugin_host::PluginError;
+        use filament_plugin_host::PluginError;
 
         let provider = HostProcessProvider::<
             Hello,
@@ -948,7 +948,7 @@ mod tests {
             deadline_ms: 4096,
             manifest: &[],
             provider_request: ProviderRequest::new(&[]),
-            qsl_items: &[],
+            fsl_items: &[],
             cancel: &cancel,
         };
         let error = session.invoke(request);
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn caller_admission_rejects_linked_origin_descriptor() {
-        use quire_plugin_host::PluginError;
+        use filament_plugin_host::PluginError;
 
         let provider = HostProcessProvider::<
             Hello,

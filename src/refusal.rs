@@ -26,14 +26,14 @@ use quire_semantic_value::catalog::InternalFault;
 /// Why [`crate::drive`] or [`crate::build_registry`] produced no result.
 #[derive(Debug, thiserror::Error)]
 pub enum DriverRefusal {
-    /// The QSL binding export refused the run as a whole.
-    #[error("QSL binding export refused the run: {0:?}")]
+    /// The FSL binding export refused the run as a whole.
+    #[error("FSL binding export refused the run: {0:?}")]
     BindingsExport(ExportRefusal),
-    /// A provider manifest supplied QSL's typed empty-identity refusal.
+    /// A provider manifest supplied FSL's typed empty-identity refusal.
     #[error(transparent)]
     EmptyBackendIdentity(EmptyBackendIdentity),
     /// A linked provider manifest cannot produce an FR-331 descriptor because
-    /// it advertises no capabilities. No QSL cause exists for this schema
+    /// it advertises no capabilities. No FSL cause exists for this schema
     /// shape, so the refusal carries only the base catalog code.
     #[error("linked FR-331 manifest must advertise at least one capability")]
     EmptyLinkedManifestAdvertisements,
@@ -44,13 +44,13 @@ pub enum DriverRefusal {
     /// S1 to S4, or the E4 emitter, refused the unit.
     #[error("{0}")]
     Compile(Box<CompileRefusal>),
-    /// A QSL scalar call used for occurrence binding refused unchanged.
+    /// A FSL scalar call used for occurrence binding refused unchanged.
     #[error(transparent)]
     ScalarCall(Box<RunRefusal>),
-    /// QSL's exact evidence builder refused while preparing IR's one reader call.
+    /// FSL's exact evidence builder refused while preparing IR's one reader call.
     #[error(transparent)]
-    QslAdmissionEvidence(Box<RunRefusal>),
-    /// QSL refused to bind a call to the selected scalar occurrence.
+    FslAdmissionEvidence(Box<RunRefusal>),
+    /// FSL refused to bind a call to the selected scalar occurrence.
     #[error(transparent)]
     ScalarBinding(BindRefusal),
     /// CG's paired proof/native runner refused or faulted with its stable
@@ -67,10 +67,10 @@ pub enum DriverRefusal {
         /// CG's typed refusal.
         refusal: Box<quire_contract_codegen::UnsupportedObligation>,
     },
-    /// QSL stopped a lifecycle stage because the caller cancelled its handle.
-    #[error("QSL {stage:?} lifecycle cancelled: {cause:?}")]
+    /// FSL stopped a lifecycle stage because the caller cancelled its handle.
+    #[error("FSL {stage:?} lifecycle cancelled: {cause:?}")]
     Cancelled {
-        /// The QSL lifecycle stage that stopped.
+        /// The FSL lifecycle stage that stopped.
         stage: SpineStage,
         /// The caller's cancellation cause, unchanged.
         cause: CancelCause,
@@ -128,7 +128,7 @@ pub enum DriverFault {
     /// A frame replay was detached from its original admitted request.
     #[error("frame replay selection does not match the retained request")]
     FrameReplayAssociation,
-    /// QSL's export did not return one result for each driver-built key.
+    /// FSL's export did not return one result for each driver-built key.
     #[error("binding export returned {returned} results for {requested} items")]
     ExportCount {
         /// Number of driver-built keys submitted.
@@ -136,18 +136,18 @@ pub enum DriverFault {
         /// Number of per-item export results returned.
         returned: usize,
     },
-    /// QSL's export said a driver-built key names no requirement record.
+    /// FSL's export said a driver-built key names no requirement record.
     #[error("binding export did not recognize driver item {item:?}")]
     ExportUnknownItem {
         /// The exact occurrence the export could not match.
         item: OccurrenceKey,
     },
-    /// QSL's typed lifecycle reported a broken invariant.
-    #[error("QSL {stage:?} spine fault: {fault:?}")]
+    /// FSL's typed lifecycle reported a broken invariant.
+    #[error("FSL {stage:?} spine fault: {fault:?}")]
     Spine {
         /// The typed lifecycle operation where the failure surfaced.
         stage: SpineStage,
-        /// QSL's stable fault details.
+        /// FSL's stable fault details.
         fault: InternalFault,
     },
     /// Negotiation returned a different number of settlements, or one out
@@ -181,10 +181,10 @@ pub enum DriverFault {
         /// The backend negotiation named.
         backend: String,
     },
-    /// A capability label QSL spells has no member in CG's vocabulary.
+    /// A capability label FSL spells has no member in CG's vocabulary.
     #[error("CG's capability vocabulary has no `{label}`")]
     VocabularyMismatch {
-        /// The QSL wire label.
+        /// The FSL wire label.
         label: String,
     },
     /// Routing returned a different number of targets than it was given
@@ -193,11 +193,11 @@ pub enum DriverFault {
         "routing returned no usable target for a supported item, or routed an item outside the request"
     )]
     RoutingTarget,
-    /// IR's reader refused the bytes QSL's E4 emitter just wrote.
+    /// IR's reader refused the bytes FSL's E4 emitter just wrote.
     #[error("IR refused the emitted checked package: {:?}", .0.code)]
     HandoffRefused(Box<CheckedPackageRefusal>),
-    /// QSL admitted a linked manifest whose advertised pair was incomplete.
-    #[error("QSL admitted a linked manifest with an incomplete advertised pair")]
+    /// FSL admitted a linked manifest whose advertised pair was incomplete.
+    #[error("FSL admitted a linked manifest with an incomplete advertised pair")]
     AdmittedManifestMissingLabel,
     /// A registered descriptor has no retained FR-331 manifest source.
     #[error("registered descriptor has no retained manifest source")]
@@ -206,7 +206,7 @@ pub enum DriverFault {
     /// Every item's node comes from `CheckedPackage::graph().requirements()`,
     /// and `checked` is IR's own admission of the bytes that same package
     /// emitted -- so this can only happen if E4
-    /// emitted, or E5 admitted, a graph missing a node QSL's own requirement
+    /// emitted, or E5 admitted, a graph missing a node FSL's own requirement
     /// record names. Not a caller input: no request the driver builds from
     /// `items_from_requirements` can name a node outside its own package.
     #[error(
@@ -229,16 +229,16 @@ pub enum DriverFault {
         /// The node whose identity is ambiguous.
         node: NodeKey,
     },
-    /// A QSL occurrence role is outside IR's closed occurrence vocabulary.
-    #[error("QSL occurrence role `{role}` has no IR occurrence role")]
+    /// A FSL occurrence role is outside IR's closed occurrence vocabulary.
+    #[error("FSL occurrence role `{role}` has no IR occurrence role")]
     UnknownOccurrenceRole {
-        /// The exact QSL role spelling.
+        /// The exact FSL role spelling.
         role: String,
     },
     /// IR lowering did not return a package despite having no typed limit result.
     #[error("IR lowering returned no contract package and no limit record")]
     ContractLoweringIncomplete,
-    /// QSL holds no `value-validity` record at the occurrence of an item
+    /// FSL holds no `value-validity` record at the occurrence of an item
     /// negotiation routed to Kani (FR-020). The driver never substitutes
     /// another record for it.
     #[error(
@@ -247,14 +247,14 @@ pub enum DriverFault {
     RequirementRecordAbsent {
         /// The routed item's request index.
         request_index: usize,
-        /// The item's QSL occurrence key.
+        /// The item's FSL occurrence key.
         occurrence: OccurrenceKey,
     },
     /// A `value-validity` record of the compiled package does not project
     /// into the admitted package's frame (FR-020).
     #[error("requirement record {occurrence:?} does not project: {cause}")]
     RequirementRecordUnresolved {
-        /// The record's QSL occurrence key.
+        /// The record's FSL occurrence key.
         occurrence: OccurrenceKey,
         /// Why the record does not project.
         cause: RequirementRecordUnresolvedCause,
@@ -289,7 +289,7 @@ pub enum RequirementRecordUnresolvedCause {
     /// The record's occurrence role is outside IR's occurrence vocabulary.
     #[error("occurrence role `{role}` has no IR occurrence role")]
     UnknownOccurrenceRole {
-        /// The exact QSL role spelling.
+        /// The exact FSL role spelling.
         role: String,
     },
 }
@@ -392,7 +392,7 @@ impl From<ContractNegotiationError> for DriverRefusal {
 /// The step a [`DriverRefusal`] comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DriverStage {
-    /// QSL's binding export, after the checked-package handoff.
+    /// FSL's binding export, after the checked-package handoff.
     BindingsExport,
     /// Building the registry from provider manifests.
     Registry,
@@ -424,7 +424,7 @@ pub enum OutcomeKind {
     /// A stage reached one of its limits.
     Limit,
     /// A caller cancellation stopped a lifecycle operation. Use
-    /// [`DriverRefusal::qsl_category`] for QSL's broader incomplete category.
+    /// [`DriverRefusal::fsl_category`] for FSL's broader incomplete category.
     Cancelled,
     /// An internal invariant was violated.
     Fault,
@@ -524,13 +524,13 @@ impl PackageReadFailure {
 }
 
 impl DriverRefusal {
-    /// A QSL-owned category carried without translation by a typed refusal.
-    pub fn qsl_category(&self) -> Option<Category> {
+    /// A FSL-owned category carried without translation by a typed refusal.
+    pub fn fsl_category(&self) -> Option<Category> {
         match self {
             Self::EmptyBackendIdentity(refusal) => Some(refusal.category()),
             Self::EmptyLinkedManifestAdvertisements => Some(Category::Refusal),
             Self::ScalarCall(refusal) => Some(refusal.category()),
-            Self::QslAdmissionEvidence(refusal) => Some(refusal.category()),
+            Self::FslAdmissionEvidence(refusal) => Some(refusal.category()),
             Self::ScalarBinding(refusal) => Some(refusal.code().category()),
             Self::HandoffCatalogUnavailable(_) => Some(Category::InternalFailure),
             Self::PackageRead(failure) => Some(failure.diagnostic().category()),
@@ -577,7 +577,7 @@ impl DriverRefusal {
             ),
             Self::Compile(refusal) => compile_code(refusal),
             Self::ScalarCall(refusal) => refusal.code().as_str().to_owned(),
-            Self::QslAdmissionEvidence(refusal) => refusal.code().as_str().to_owned(),
+            Self::FslAdmissionEvidence(refusal) => refusal.code().as_str().to_owned(),
             Self::ScalarBinding(refusal) => {
                 let code = refusal.code().as_str();
                 match refusal.cause() {
@@ -644,7 +644,7 @@ impl DriverRefusal {
                 DriverFault::AdmittedManifestMissingLabel | DriverFault::AdmittedManifestMissing,
             ) => DriverStage::Registry,
             Self::Compile(refusal) => DriverStage::Compile(refusal.stage()),
-            Self::QslAdmissionEvidence(_) => DriverStage::Handoff,
+            Self::FslAdmissionEvidence(_) => DriverStage::Handoff,
             Self::ScalarCall(_)
             | Self::ScalarBinding(_)
             | Self::ScalarNative(_)
@@ -702,9 +702,9 @@ impl DriverRefusal {
             Self::EmptyBackendIdentity(_) => OutcomeKind::Refused,
             Self::EmptyLinkedManifestAdvertisements => OutcomeKind::Refused,
             Self::Cancelled { .. } => OutcomeKind::Cancelled,
-            Self::ScalarCall(refusal) => outcome_kind_for_qsl(refusal.category()),
-            Self::QslAdmissionEvidence(refusal) => outcome_kind_for_qsl(refusal.category()),
-            Self::ScalarBinding(refusal) => outcome_kind_for_qsl(refusal.code().category()),
+            Self::ScalarCall(refusal) => outcome_kind_for_fsl(refusal.category()),
+            Self::FslAdmissionEvidence(refusal) => outcome_kind_for_fsl(refusal.category()),
+            Self::ScalarBinding(refusal) => outcome_kind_for_fsl(refusal.code().category()),
             Self::PackageRead(failure) => failure.diagnostic().kind(),
             Self::Envelope(refusal) => match refusal.as_ref() {
                 EnvelopeRefusal::ContractPackageCatalogUnavailable { .. } => OutcomeKind::Fault,
@@ -805,7 +805,7 @@ impl DriverRefusal {
     }
 }
 
-fn outcome_kind_for_qsl(category: Category) -> OutcomeKind {
+fn outcome_kind_for_fsl(category: Category) -> OutcomeKind {
     match category {
         Category::Refusal | Category::Unsupported => OutcomeKind::Refused,
         Category::Incomplete => OutcomeKind::Cancelled,
@@ -969,7 +969,7 @@ fn generation_code(error: &RoutedGenerationError) -> Code {
         RoutedGenerationError::UnauthenticatedOperationView { .. } => Code::RuntimeInvariant,
         // FR-020: CG found the driver's projected requirement or keyed record
         // disagreeing with the authenticated selection. The driver built both
-        // from QSL's own record, so it is a broken join, not the caller's input.
+        // from FSL's own record, so it is a broken join, not the caller's input.
         RoutedGenerationError::RequirementRecord { .. } => Code::RuntimeInvariant,
         RoutedGenerationError::MissingKindContext { .. }
         | RoutedGenerationError::Kani(
@@ -1028,7 +1028,7 @@ fn oracle_code(error: &OracleGenerationError) -> Code {
 }
 
 /// The catalog code of a Kani-harness owner-path failure: the driver-built
-/// join breaking is an internal fault; QSL not issuing what the requested
+/// join breaking is an internal fault; FSL not issuing what the requested
 /// function needs is the request's.
 fn owner_path_code(code: CheckedFunctionErrorCode) -> Code {
     match code {
@@ -1068,7 +1068,7 @@ fn compile_code(refusal: &CompileRefusal) -> String {
 /// Exhaustive, not a catch-all: `Source`,
 /// `Forms`, `Intake` (a `model` declaration's own domain-package intake,
 /// not an ADR-015 D-1 import), `Assembly`, `Emit` and `Omitted` name no
-/// cause in QSL's own catalog today.
+/// cause in FSL's own catalog today.
 fn compile_cause(refusal: &CompileRefusal) -> Option<&'static str> {
     match refusal {
         CompileRefusal::Source(_)
@@ -1563,7 +1563,7 @@ mod tests {
             ScalarOracleStopKind::IllTyped,
         ));
         assert_eq!(refusal.code(), "oracle_stop");
-        assert_eq!(refusal.qsl_category(), None);
+        assert_eq!(refusal.fsl_category(), None);
         assert_eq!(refusal.stage(), DriverStage::Replay);
         assert_eq!(refusal.kind(), OutcomeKind::Refused);
         assert_eq!(
@@ -1599,13 +1599,13 @@ mod tests {
     }
 
     #[test]
-    fn empty_backend_identity_preserves_qsl_code_and_category() {
+    fn empty_backend_identity_preserves_fsl_code_and_category() {
         let refusal = DriverRefusal::EmptyBackendIdentity(EmptyBackendIdentity);
         assert_eq!(
             refusal.code(),
             qsl_foundation::Code::InvalidIdentifier.as_str()
         );
-        assert_eq!(refusal.qsl_category(), Some(Category::Refusal));
+        assert_eq!(refusal.fsl_category(), Some(Category::Refusal));
         assert_eq!(refusal.kind(), OutcomeKind::Refused);
         assert_eq!(refusal.stage(), DriverStage::Registry);
     }
@@ -1724,7 +1724,7 @@ mod tests {
 
         assert_eq!(refusal.code(), "wrong_snapshot");
         assert_eq!(refusal.package_read_cause(), Some("wrong-observation"));
-        assert_eq!(refusal.qsl_category(), Some(Category::Refusal));
+        assert_eq!(refusal.fsl_category(), Some(Category::Refusal));
         assert_eq!(refusal.kind(), OutcomeKind::Refused);
         assert_eq!(refusal.stage(), DriverStage::PackageRead);
         assert_eq!(refusal.package_read_refusal_projection(), Some(&projection));
@@ -1833,7 +1833,7 @@ mod tests {
                 incomplete: projection.clone(),
             });
             assert_eq!(refusal.code(), "stage_limit_exceeded");
-            assert_eq!(refusal.qsl_category(), Some(Category::Incomplete));
+            assert_eq!(refusal.fsl_category(), Some(Category::Incomplete));
             assert_eq!(refusal.kind(), OutcomeKind::Limit);
             assert_eq!(refusal.stage(), DriverStage::PackageRead);
             let diagnostic = refusal.package_read_diagnostic().unwrap();
@@ -2216,7 +2216,7 @@ mod tests {
     }
 
     /// The owner-path code decides the refusal: a join the driver built
-    /// breaking is a fault, QSL not issuing a selection is the request's.
+    /// breaking is a fault, FSL not issuing a selection is the request's.
     #[trace("TC-007", "FR-001-AC-24")]
     #[test]
     fn kani_owner_path_code_decides_fault_or_request_refusal() {

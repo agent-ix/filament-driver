@@ -34,7 +34,7 @@ FAIL - not mergeable. The projection direction, names (RequirementItem accessors
       "id": "FR-020",
       "path": "spec/functional/FR-020-project-requirement-records-into-codegen-input.md",
       "role": "examined",
-      "excerpt": "One application node can carry several scalar occurrences, each with its own result bound and path condition (QSL-266, QSL-700, QSL-904). The node id alone cannot say which claim an item makes. For each routed Kani item the driver SHALL hand CG the QSL record of that exact occurrence: the item's `RoutedRequirement`, and the package's `RequirementRecords` on the Kani generation context. A record that cannot be projected exactly is a typed driver fault, never a guess. CG owns the types and every comparison ([CG FR-022](ix://agent-ix/quire-contract-codegen/FR-022), \"Per-occurrence requirement ..."
+      "excerpt": "One application node can carry several scalar occurrences, each with its own result bound and path condition (QSL-266, QSL-700, QSL-904). The node id alone cannot say which claim an item makes. For each routed Kani item the driver SHALL hand CG the QSL record of that exact occurrence: the item's `RoutedRequirement`, and the package's `RequirementRecords` on the Kani generation context. A record that cannot be projected exactly is a typed driver fault, never a guess. CG owns the types and every comparison ([CG FR-022](ix://agent-ix/filament-contract-codegen/FR-022), \"Per-occurrence requirement ..."
     },
     {
       "id": "FR-020-AC-1",
@@ -110,7 +110,7 @@ FAIL - not mergeable. The projection direction, names (RequirementItem accessors
     },
     {
       "id": "FR-022",
-      "path": "ix://agent-ix/quire-contract-codegen/FR-022",
+      "path": "ix://agent-ix/filament-contract-codegen/FR-022",
       "role": "context_only",
       "excerpt": "RequirementRecords wraps a BTreeMap<RequirementOccurrence, RequirementRecordInput> for the whole checked package. It is built with RequirementRecords::new(map), so one key has at most one record by type."
     }

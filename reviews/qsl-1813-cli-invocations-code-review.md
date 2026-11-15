@@ -6,7 +6,7 @@ analysis: code-review
 scope: "agent-ix/quire-driver; QSL-1813; PR #141; quire-cli/src/cli.rs and quire-cli/tests/frontend_cli.rs"
 review_set: subset
 relationships:
-  - { target: ix://agent-ix/quire-spec-language/FR-287, type: references }
+  - { target: ix://agent-ix/filament-spec-language/FR-287, type: references }
   - { target: ix://agent-ix/quire-driver/FR-002, type: references }
 ---
 ## Summary

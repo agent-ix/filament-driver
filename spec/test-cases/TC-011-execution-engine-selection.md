@@ -3,7 +3,7 @@ id: TC-011
 title: "Select only the requested execution engine"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-004
+  - target: ix://agent-ix/filament-driver/FR-004
     type: verifies
 ---
 # TC-011: Select only the requested execution engine
@@ -13,8 +13,8 @@ relationships:
 Verify the `--engine` default, closed set, unavailable-engine refusal and
 no-substitution behavior. Also verify that the selected interpreter receives
 the caller-owned `ObjectEnvironment` unchanged for public library requests,
-preserves QSL's actual outcome when object context is absent, including both
-QSL-defined `Undefined` and typed-refusal cases, and explicitly applies the
+preserves FSL's actual outcome when object context is absent, including both
+FSL-defined `Undefined` and typed-refusal cases, and explicitly applies the
 current CLI's empty-environment caller policy.
 
 Scope: FR-004-AC-1 through FR-004-AC-10.
@@ -26,14 +26,14 @@ Scope: FR-004-AC-1 through FR-004-AC-10.
 3. Run with a recognized engine that is not linked into the binary.
 4. Run the linked interpreter with a source-byte bound that causes a typed
    preparation refusal. Compare the driver's exact typed refusal with a direct
-   `qsl_replay::spine::run` using the same source, call and limits.
+   `fsl_replay::spine::run` using the same source, call and limits.
 5. Exercise the current private callback through the same selection and
    dispatch function called by public `execute` with two designated failures:
-   QSL `RunRefusal::UnsupportedResult` and a typed preparation refusal. For
-   each case, assert the exact refusal and QSL document are returned and the
+   FSL `RunRefusal::UnsupportedResult` and a typed preparation refusal. For
+   each case, assert the exact refusal and FSL document are returned and the
    callback ran exactly once. This callback count alone SHALL NOT be reported
    as proof of no substitution.
-6. Inspect `src/execute.rs`: confirm the callback type returns only QSL run
+6. Inspect `src/execute.rs`: confirm the callback type returns only FSL run
    success or `RunRefusal`, including `RunRefusal::UnsupportedResult` whose
    category is `Unsupported`. Distinguish this selected-engine result from
    `ExecutionFailure::UnsupportedEngine`, which is produced before callback
@@ -48,7 +48,7 @@ Scope: FR-004-AC-1 through FR-004-AC-10.
    this test fail; if the seam cannot enforce that property, AC-4 remains
    Partial.
 8. Inspect `src/execute.rs` and `fsl-cli/src/cli.rs`: confirm public
-   `execute` calls the same private dispatch function with QSL
+   `execute` calls the same private dispatch function with FSL
    `spine::run`, and neither the public API nor CLI, configuration, or
    environment can select the test callback.
 9. Inspect `fsl-cli/src/cli.rs`: confirm the CLI invocation exposes no
@@ -57,14 +57,14 @@ Scope: FR-004-AC-1 through FR-004-AC-10.
 10. Through the public library execution request, run a function whose result
    depends on an object supplied in a nonempty caller-owned
    `ObjectEnvironment`; run the same call with an empty environment and
-   compare both driver outcomes with direct QSL runs using those exact
+   compare both driver outcomes with direct FSL runs using those exact
    environments.
 11. Run a function with a population argument whose identity has no binding in
    the caller-supplied environment; compare the driver's typed refusal with
-   direct QSL, as specified by QSL FR-089-AC-4.
+   direct FSL, as specified by FSL FR-089-AC-4.
 12. Run a `lookup<T>(p, r) absent undefined` query whose bound population has
-   no matching key; compare the driver's `Undefined` outcome with direct QSL,
-   as specified by QSL FR-090.
+   no matching key; compare the driver's `Undefined` outcome with direct FSL,
+   as specified by FSL FR-090.
 
 Test locations: `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 `fsl-cli/tests/binary_process.rs`.
@@ -72,13 +72,13 @@ Test locations: `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 ## Expected Results
 
 - The omitted option selects the interpreter.
-- An unknown name is refused before any stage with QSL's refusal category.
+- An unknown name is refused before any stage with FSL's refusal category.
 - A recognized but unavailable engine is refused before any stage with exit
-  status selected by QSL's category exit function and category unsupported.
+  status selected by FSL's category exit function and category unsupported.
 - The CLI run handler explicitly supplies an empty environment under its
   caller policy; the public library request requires its caller to provide an
   environment, and the nonempty public-library case is tested separately.
-- Callback-injected tests can verify exact QSL failure preservation through
+- Callback-injected tests can verify exact FSL failure preservation through
   the current shared dispatch function for both `RunRefusal::UnsupportedResult`
   and a typed preparation refusal. Their callback counts do not establish
   that an alternate engine was never invoked.
@@ -87,16 +87,16 @@ Test locations: `src/execute.rs`, `fsl-cli/src/cli.rs`, and
   selected-engine result and make all engine invocations observable; the
   oracle checks exact failure, one selected invocation, and zero alternative
   invocations, and fails if any invocation bypasses it.
-- Inspection confirms the callback is private, public `execute` supplies QSL
+- Inspection confirms the callback is private, public `execute` supplies FSL
   `spine::run`, and no API/CLI/configuration/environment/default surface
   selects a callback.
-- The nonempty caller environment reaches QSL unchanged: the driver's result
-  matches the direct QSL result for that environment and differs from the
-  direct QSL result using an empty environment.
+- The nonempty caller environment reaches FSL unchanged: the driver's result
+  matches the direct FSL result for that environment and differs from the
+  direct FSL result using an empty environment.
 - When a population argument names an identity absent from the environment,
-  the driver returns the same typed QSL refusal as the direct run.
+  the driver returns the same typed FSL refusal as the direct run.
 - When an `absent undefined` lookup has no matching key, the driver returns
-  QSL's `Undefined` outcome unchanged. The driver does not replace QSL's
+  FSL's `Undefined` outcome unchanged. The driver does not replace FSL's
   operation-specific outcome with a refusal or another outcome.
 - The driver does not create a default environment or derive context from
   display text or package bytes.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Shared native source fixtures for the driver and CLI integration tests.
 
-/// Build a source unit with QSL's pinned root profile and the supplied body.
+/// Build a source unit with FSL's pinned root profile and the supplied body.
 pub fn unit(body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\

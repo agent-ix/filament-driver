@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Production frame preparation with real QSL selection and public CG construction.
+//! Production frame preparation with real FSL selection and public CG construction.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
 use std::time::Duration;
 
+use filament_driver::{
+    build_registry, drive, CompileInput, Driven, FrameReplayFailure, FslCg, GenerationInput,
+};
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
@@ -15,9 +18,6 @@ use qsl_replay::{
 use quire_contract_codegen::{
     self as cg, FrameReplayInputs, LockedSource, ProvidedDocument, ReplayInputs, SelectedFrameItem,
     WitnessDecodeLimits,
-};
-use quire_driver::{
-    build_registry, drive, CompileInput, Driven, FrameReplayFailure, GenerationInput, QslCg,
 };
 use quire_exact::{Cancel, Origin, Role};
 use serde_json::json;
@@ -91,7 +91,7 @@ impl Fixture {
         };
         let packages = qsl_semantics::model::intake::package_input([domain.as_slice()]).unwrap();
         let driven = drive(
-            &QslCg,
+            &FslCg,
             CompileInput {
                 source: source(),
                 path: "frame",
@@ -140,7 +140,7 @@ impl Fixture {
                 keys.key(original).expect("native structural key converts") == clause.site.node
             })
             .map(|(_, node)| &node.node_id)
-            .expect("the original QSL clause selects its admitted document-held node");
+            .expect("the original FSL clause selects its admitted document-held node");
         let harness = cg::generate_state_frame_obligations(
             &cg::StateFrameRequest {
                 ceilings: cg::ProofCeilings {
@@ -299,10 +299,10 @@ fn assert_join_fault(result: Result<cg::FrameReplay, FrameReplayFailure>) {
         panic!("expected driver association fault");
     };
     assert_eq!(error.code(), "runtime_invariant");
-    assert_eq!(error.stage(), quire_driver::DriverStage::Replay);
+    assert_eq!(error.stage(), filament_driver::DriverStage::Replay);
     assert!(matches!(
         *error,
-        quire_driver::DriverRefusal::Fault(quire_driver::DriverFault::FrameReplayAssociation)
+        filament_driver::DriverRefusal::Fault(filament_driver::DriverFault::FrameReplayAssociation)
     ));
 }
 
@@ -357,7 +357,7 @@ fn frame_projection_rejects_missing_changed_and_caller_populated_associations() 
 
 #[trace("FR-009-AC-18", "TC-016")]
 #[test]
-fn frame_projection_preserves_qsl_refusal_before_any_join_or_codegen_check() {
+fn frame_projection_preserves_fsl_refusal_before_any_join_or_codegen_check() {
     let fixture = Fixture::new(false);
     let expected = call_site(
         source(),
@@ -377,9 +377,9 @@ fn frame_projection_preserves_qsl_refusal_before_any_join_or_codegen_check() {
         .driven
         .prepare_frame_replay(inputs)
         .err()
-        .expect("QSL refusal")
+        .expect("FSL refusal")
     else {
-        panic!("QSL refusal must precede driver and CG checks");
+        panic!("FSL refusal must precede driver and CG checks");
     };
     assert_eq!(actual.code(), expected.code());
     let (
@@ -393,7 +393,7 @@ fn frame_projection_preserves_qsl_refusal_before_any_join_or_codegen_check() {
         },
     ) = (*actual, *expected)
     else {
-        panic!("original QSL UnknownOperation payload must survive");
+        panic!("original FSL UnknownOperation payload must survive");
     };
     assert_eq!(actual_selection, expected_selection);
     assert_eq!(actual_package, expected_package);
@@ -438,7 +438,10 @@ fn frame_projection_preserves_native_codegen_failure_and_admitted_package_equali
         .prepare_frame_replay(inputs)
         .err()
         .expect("CG refusal");
-    assert_eq!(error.code(), quire_driver::FrameReplayFailureCode::Codegen);
+    assert_eq!(
+        error.code(),
+        filament_driver::FrameReplayFailureCode::Codegen
+    );
     let FrameReplayFailure::Codegen(cg::FrameReplayError::FieldSetMismatch {
         state_fields,
         granted,
@@ -450,14 +453,14 @@ fn frame_projection_preserves_native_codegen_failure_and_admitted_package_equali
     assert_eq!(state_fields, ["balance", "not-granted-or-checked"]);
     assert!(granted.is_empty());
     assert_eq!(checked, ["balance"]);
-    for code in quire_driver::FrameReplayFailureCode::all() {
+    for code in filament_driver::FrameReplayFailureCode::all() {
         assert_eq!(
-            quire_driver::FrameReplayFailureCode::from_code(code.as_str()),
+            filament_driver::FrameReplayFailureCode::from_code(code.as_str()),
             Some(*code)
         );
     }
     assert_eq!(
-        quire_driver::FrameReplayFailureCode::from_code("unknown"),
+        filament_driver::FrameReplayFailureCode::from_code("unknown"),
         None
     );
 }

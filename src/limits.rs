@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Resolve and apply FR-003's caller-selected QSL limit settings through QSL.
+//! Resolve and apply FR-003's caller-selected FSL limit settings through FSL.
 
 use qsl_foundation::{Setting, SettingLimits, SettingName, UsageRefusal};
 use qsl_replay::{
@@ -10,7 +10,7 @@ use qsl_replay::{
 /// A recognized caller-selected setting unavailable to the selected operation.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum LimitError {
-    /// QSL recognizes the setting, but this operation does not expose it.
+    /// FSL recognizes the setting, but this operation does not expose it.
     #[error("limit setting `{}` is unavailable for the `run` operation", setting.name())]
     OperationUnavailable {
         /// The recognized setting absent from the operation's bounds.
@@ -23,7 +23,7 @@ pub enum LimitError {
 pub struct LimitOverrides(Vec<(SettingName, u64)>);
 
 impl LimitOverrides {
-    /// Parse operands with QSL's canonical setting grammar.
+    /// Parse operands with FSL's canonical setting grammar.
     pub fn parse(operands: &[String]) -> Result<Self, UsageRefusal> {
         qsl_foundation::setting::parse_operands(operands.iter().map(String::as_str)).map(Self)
     }
@@ -72,10 +72,10 @@ impl LimitOverrides {
                             setting: SettingName::Stage(*setting),
                         });
                     }
-                    // `bounds()` and `set_bound()` are the paired QSL API for
+                    // `bounds()` and `set_bound()` are the paired FSL API for
                     // the selected operation; an exposed setting must be writable.
                     let updated = caller_limits.set_bound(*setting, *value);
-                    debug_assert!(updated, "QSL bound listed by bounds() must be settable");
+                    debug_assert!(updated, "FSL bound listed by bounds() must be settable");
                     if !updated {
                         return Err(LimitError::OperationUnavailable {
                             setting: SettingName::Stage(*setting),
@@ -95,7 +95,7 @@ impl LimitOverrides {
         Ok(())
     }
 
-    /// The parsed QSL settings, for caller inspection.
+    /// The parsed FSL settings, for caller inspection.
     pub fn values(&self) -> &[(SettingName, u64)] {
         &self.0
     }
@@ -130,7 +130,7 @@ mod tests {
         qsl_replay::spine::ClauseRunRequest {
             source: qsl_replay::spine::ClauseRunSource::Program {
                 identity: qsl_foundation::SourceIdentity::new("issuer", "unit"),
-                path: "unit.qsl".to_owned(),
+                path: "unit.fsl".to_owned(),
                 bytes: Vec::new(),
             },
             package_name: "unit".to_owned(),
@@ -219,7 +219,7 @@ mod tests {
         let mut call = call();
         let before_accounting = AccountingLimits(call.accounting).bounds();
         let override_ = LimitOverrides::parse(&["s1.input_bytes=5".to_owned()])
-            .expect("QSL parses its setting operand");
+            .expect("FSL parses its setting operand");
         assert_eq!(
             override_.values(),
             &[(SettingName::Stage(Setting::S1InputBytes), 5)]
@@ -248,7 +248,7 @@ mod tests {
             "s1.input_bytes=5".to_owned(),
             "explore.states=11".to_owned(),
         ])
-        .expect("both setting names are recognized by QSL");
+        .expect("both setting names are recognized by FSL");
 
         assert_eq!(
             overrides.apply_to(&mut limits, &mut call),
@@ -265,7 +265,7 @@ mod tests {
 
     /// Trace: FR-003-AC-1, FR-003-AC-4, FR-003-AC-6.
     #[test]
-    fn every_exposed_setting_updates_only_its_qsl_bound() {
+    fn every_exposed_setting_updates_only_its_fsl_bound() {
         let defaults = SpineLimits::default();
         let default_bounds = defaults.bounds();
         for (setting, original) in default_bounds.iter().copied() {
@@ -275,12 +275,12 @@ mod tests {
                 original - 1
             };
             let operand = format!("{}={requested}", setting.name());
-            let overrides = LimitOverrides::parse(&[operand]).expect("QSL parses exposed name");
+            let overrides = LimitOverrides::parse(&[operand]).expect("FSL parses exposed name");
             let mut effective = defaults;
             let mut call = call();
             overrides
                 .apply_to(&mut effective, &mut call)
-                .expect("QSL exposes setting to run");
+                .expect("FSL exposes setting to run");
             for (observed, bound) in effective.bounds() {
                 assert_eq!(
                     bound,
@@ -302,7 +302,7 @@ mod tests {
 
     /// Trace: FR-003-AC-2, FR-003-AC-7, FR-003-AC-8.
     #[test]
-    fn qsl_parser_refuses_unknown_malformed_and_duplicate_operands() {
+    fn fsl_parser_refuses_unknown_malformed_and_duplicate_operands() {
         assert!(matches!(
             LimitOverrides::parse(&["normalization.work_units=1".to_owned()]),
             Err(UsageRefusal {
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn recognized_but_unavailable_setting_has_operation_specific_error() {
         let overrides = LimitOverrides::parse(&["explore.states=11".to_owned()])
-            .expect("QSL recognizes exploration settings");
+            .expect("FSL recognizes exploration settings");
         let mut limits = SpineLimits::default();
         let mut call = call();
         assert_eq!(
@@ -341,28 +341,28 @@ mod tests {
         );
     }
 
-    /// Trace: FR-003-AC-1, FR-003-AC-6, QSL applies the exposed setting.
+    /// Trace: FR-003-AC-1, FR-003-AC-6, FSL applies the exposed setting.
     #[test]
     fn s3_nodes_changes_only_the_checking_node_ceiling() {
         let overrides =
-            LimitOverrides::parse(&["s3.nodes=7".to_owned()]).expect("QSL recognizes the setting");
+            LimitOverrides::parse(&["s3.nodes=7".to_owned()]).expect("FSL recognizes the setting");
         let mut limits = SpineLimits::default();
         let mut call = call();
         let original_checking = limits.checking;
         overrides
             .apply_to(&mut limits, &mut call)
-            .expect("QSL exposes the typed node setting");
+            .expect("FSL exposes the typed node setting");
         assert_eq!(limits.checking, original_checking.with_nodes(7));
     }
 
-    /// Trace: FR-003-AC-9, FR-003-AC-10. QSL-named accounting settings update only the call.
+    /// Trace: FR-003-AC-9, FR-003-AC-10. FSL-named accounting settings update only the call.
     #[test]
     fn each_named_accounting_setting_updates_only_call_accounting() {
         let defaults = call().accounting;
         let default_bounds = AccountingLimits(defaults).bounds();
         for setting in AccountingSetting::ALL {
             let operand = format!("{}=7", setting.name());
-            let overrides = LimitOverrides::parse(&[operand]).expect("QSL parses counter name");
+            let overrides = LimitOverrides::parse(&[operand]).expect("FSL parses counter name");
             assert_eq!(overrides.values(), &[(SettingName::Accounting(setting), 7)]);
             let mut limits = SpineLimits::default();
             let before_limits = limits;
@@ -380,7 +380,7 @@ mod tests {
                         .find_map(|(default_setting, bound)| {
                             (*default_setting == observed).then_some(*bound)
                         })
-                        .expect("QSL exposes every accounting default")
+                        .expect("FSL exposes every accounting default")
                 };
                 assert_eq!(bound, expected, "only {setting} should change");
             }

@@ -163,13 +163,13 @@ pub enum MonitorPreparationError {
     /// Native structural-key copy/allocation failure, without replacing its payload.
     #[error(transparent)]
     Key(#[from] InvalidNodeKey),
-    /// QSL refused plan-authority admission; its payload is retained unchanged.
+    /// FSL refused plan-authority admission; its payload is retained unchanged.
     #[error(transparent)]
     Authority(Box<qsl_analyze::monitor_root::PlanAuthorityRefusal>),
-    /// QSL refused the identity rows of the final emission.
+    /// FSL refused the identity rows of the final emission.
     #[error(transparent)]
     IdentityRows(Box<qsl_package::IdentityFileRefusal>),
-    /// A QSL row adapter refused or was denied a charge.
+    /// A FSL row adapter refused or was denied a charge.
     #[error(transparent)]
     Rows(#[from] qsl_package::NativeRowError),
     /// IR refused the same-emission authority row.

@@ -3,14 +3,14 @@ id: TC-020
 title: "Derive cache identity from meaning inputs"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-012
+  - target: ix://agent-ix/filament-driver/FR-012
     type: verifies
 ---
 # TC-020: Derive cache identity from meaning inputs
 
 ## Description
 
-Verify the cache key binds every meaning input and uses the QSL-admitted
+Verify the cache key binds every meaning input and uses the FSL-admitted
 manifest content identity instead of a recorded revision or version pin.
 
 Scope: FR-012-AC-1 through FR-012-AC-5.

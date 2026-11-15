@@ -3,16 +3,16 @@ id: FR-008
 title: "Invoke the selected AOT execution backend"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/US-001
+  - target: ix://agent-ix/filament-driver/US-001
     type: implements
-  - target: ix://agent-ix/quire-spec-language/ADR-029
+  - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
 ---
 # FR-008: Invoke the selected AOT execution backend
 
 ## Description
 
-When an execution request selects AOT, the driver SHALL invoke QSL's AOT
+When an execution request selects AOT, the driver SHALL invoke FSL's AOT
 backend with only the checked package and selected entries from that request.
 The driver SHALL return the backend's typed result or failure without
 substituting another engine.
@@ -29,7 +29,7 @@ substituting another engine.
 
 ## Behavior
 
-- QSL ADR-029 EB-1 through EB-6 and EB-8 own the execution seam, checked-only
+- FSL ADR-029 EB-1 through EB-6 and EB-8 own the execution seam, checked-only
   admission, interpreter parity, AOT preparation and engine selection
   semantics.
 - The driver SHALL pass the current request's checked package, selected
@@ -46,6 +46,6 @@ substituting another engine.
 
 ## Dependencies
 
-- QSL ADR-029 EB-1 through EB-6 and EB-8 define the execution and parity
-  contract; QSpec FR-306 defines cross-backend conformance evidence.
+- FSL ADR-029 EB-1 through EB-6 and EB-8 define the execution and parity
+  contract; FSpec FR-306 defines cross-backend conformance evidence.
 - [TC-015](../test-cases/TC-015-aot-matches-interpreter.md).

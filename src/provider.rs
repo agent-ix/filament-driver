@@ -82,7 +82,7 @@ pub struct ProviderItemResult<T = KaniExecutionEvidence, E = KaniProviderFailure
 
 impl ProviderItemResult<KaniExecutionEvidence, KaniProviderFailure> {
     /// Compose a terminal record for a Kani result through CG's authoritative map. A
-    /// falsification needs QSL replay first.
+    /// falsification needs FSL replay first.
     pub fn terminal_record(&self) -> Result<TerminalRecord, ProviderTerminalError> {
         let value = self.terminal_value_with_settlement(None)?;
         let request_index = RequestIndex::new(self.request_index);
@@ -159,17 +159,17 @@ pub enum ProviderTerminalError {
     /// Kani execution returned a typed refusal instead of evidence.
     #[error("provider execution did not produce evidence")]
     ExecutionDidNotProduceEvidence,
-    /// A falsified Kani result has no terminal record until QSL replay settles it.
-    #[error("a falsified Kani result requires QSL replay before terminal recording")]
+    /// A falsified Kani result has no terminal record until FSL replay settles it.
+    #[error("a falsified Kani result requires FSL replay before terminal recording")]
     ReplayUnavailableForScalarObligation,
-    /// QSL has no backend-bearing constructor for a non-Kani proof basis or
+    /// FSL has no backend-bearing constructor for a non-Kani proof basis or
     /// non-certified proof in this scalar Kani execution path.
-    #[error("Kani proof basis has no backend-bearing QSL constructor")]
+    #[error("Kani proof basis has no backend-bearing FSL constructor")]
     UnsupportedProofBasis,
     /// CG rejected the outcome/settlement pair.
     #[error(transparent)]
     TerminalPair(#[from] TerminalPairError),
-    /// CG produced a value for which QSL has no matching provider constructor.
+    /// CG produced a value for which FSL has no matching provider constructor.
     #[error("CG produced a terminal value not supported by the provider record API")]
     UnsupportedTerminalValue,
 }
@@ -235,7 +235,7 @@ impl<T, E> Default for ProviderResults<T, E> {
 pub type KaniProviderResults = ProviderResults<KaniExecutionEvidence, KaniProviderFailure>;
 
 impl ProviderResults<KaniExecutionEvidence, KaniProviderFailure> {
-    /// Serialize these provider items with QSL's canonical `quire-outcome/1`
+    /// Serialize these provider items with FSL's canonical `quire-outcome/1`
     /// document. This covers only the items in `self`; it is not a complete
     /// per-request outcome. Items that require replay or lack execution
     /// evidence remain typed errors; the driver does not invent settlements.
@@ -260,7 +260,7 @@ pub enum ProviderOutcomeError {
     /// A provider item has no terminal until its replay lifecycle settles.
     #[error(transparent)]
     Terminal(#[from] ProviderTerminalError),
-    /// QSL's canonical outcome serializer failed.
+    /// FSL's canonical outcome serializer failed.
     #[error(transparent)]
     Encode(#[from] OutcomeWriteError),
 }
@@ -289,7 +289,7 @@ pub struct KaniProvider {
 }
 
 impl KaniProvider {
-    /// Build the provider from the manifest it registers with the QSL registry.
+    /// Build the provider from the manifest it registers with the FSL registry.
     #[must_use]
     pub const fn new(manifest: ProviderManifest) -> Self {
         Self { manifest }
@@ -531,7 +531,7 @@ mod tests {
                 StageLimits::default(),
                 ReplayLimits::default(),
             )
-            .expect("QSL compiles provider fixture");
+            .expect("FSL compiles provider fixture");
             let mut evidence = CheckedPackageEvidence::new();
             evidence.support_feature("quire.value.complete/v1");
             let checked = match CheckedPackageV2::read(
@@ -540,7 +540,7 @@ mod tests {
                 &evidence,
             ) {
                 CheckedPackageV2ReadResult::Admitted(package) => *package,
-                other => panic!("IR admits QSL provider fixture: {other:?}"),
+                other => panic!("IR admits FSL provider fixture: {other:?}"),
             };
             let node_id = checked
                 .resolved_graph()
@@ -760,7 +760,7 @@ mod tests {
     }
 
     fn generated_routed_item() -> RoutedItemOutput {
-        generated_routed_item_with(&crate::QslCg)
+        generated_routed_item_with(&crate::FslCg)
     }
 
     fn generated_routed_item_with(upstream: &impl crate::Upstream) -> RoutedItemOutput {
@@ -840,7 +840,7 @@ mod tests {
     /// Trace: FR-005-AC-20.
     #[test]
     fn kani_request_forwards_only_the_explicit_home_directory() {
-        const CHILD_MODE: &str = "QUIRE_DRIVER_IR843_HOME_REQUEST_CHILD";
+        const CHILD_MODE: &str = "FILAMENT_DRIVER_IR843_HOME_REQUEST_CHILD";
         if std::env::var_os(CHILD_MODE).is_some() {
             assert_request_home_directory();
             return;
@@ -982,7 +982,7 @@ mod tests {
     #[trace("TC-012", "FR-005-AC-22")]
     #[test]
     fn native_route_scalar_harness_still_reaches_execution() {
-        let item = generated_routed_item_with(&crate::upstream::NativeRouteQslCg);
+        let item = generated_routed_item_with(&crate::upstream::NativeRouteFslCg);
         let KindOutput::Kani {
             harness: Some(harness),
             ..
@@ -1211,9 +1211,9 @@ mod tests {
         }
     }
 
-    /// Trace: FR-009-AC-4, TC-016; serialize CG's terminal through QSL's outcome API.
+    /// Trace: FR-009-AC-4, TC-016; serialize CG's terminal through FSL's outcome API.
     #[test]
-    fn provider_results_use_qsl_outcome_serializer() {
+    fn provider_results_use_fsl_outcome_serializer() {
         let results = ProviderResults {
             items: vec![result(KaniRunOutcome::Verified)],
         };
@@ -1226,12 +1226,12 @@ mod tests {
             vec![OutcomeItem::from_terminal(&record)],
         )
         .to_bytes()
-        .expect("QSL serializes the typed outcome");
+        .expect("FSL serializes the typed outcome");
 
         assert_eq!(
             results
                 .outcome_bytes()
-                .expect("provider results use QSL serialization"),
+                .expect("provider results use FSL serialization"),
             expected
         );
     }
@@ -1250,7 +1250,7 @@ mod tests {
                 .outcome_bytes()
                 .expect("both provider items have terminals"),
         )
-        .expect("QSL bytes are JSON");
+        .expect("FSL bytes are JSON");
         let items = document["items"].as_array().expect("items is an array");
 
         assert_eq!(items.len(), 2);
@@ -1288,7 +1288,7 @@ mod tests {
             counterexample: "witness".to_owned(),
         })
         .terminal_value_with_settlement(Some(ReplaySettlement::Reproduced))
-        .expect("the original CG evidence and QSL replay settlement reach CG's map");
+        .expect("the original CG evidence and FSL replay settlement reach CG's map");
         assert_eq!(settled, TerminalValue::Refuted);
     }
 
@@ -1310,7 +1310,7 @@ mod tests {
 
     /// Trace: FR-006-AC-15; statistical measurements are not Kani proof terminals.
     #[test]
-    fn measured_qsl_value_remains_unmapped_in_kani_terminal_projection() {
+    fn measured_fsl_value_remains_unmapped_in_kani_terminal_projection() {
         let half = Rational::new(Integer::one(), Integer::from(2_i64))
             .expect("one-half is a valid rational");
         let confidence = Confidence::new(half.clone(), half.clone(), half.clone())

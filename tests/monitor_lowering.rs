@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Real ordinary-source scalar lowering; no monitor Program or runtime construction claim.
 
+use filament_driver::monitor::{
+    lowering::lower_scalar_functions, MonitorPreparationError, MonitorPreparationLimits,
+};
 use ix_trace_rs::trace;
 use qsl_foundation::{node_wire::node_key_to_json, SourceIdentity};
 use qsl_package::emit_checked;
@@ -11,9 +14,6 @@ use quire_contract_model::{
     CheckedPackageReadLimits, NativeJoinBudget, SelectedExactIdentities,
 };
 use quire_contract_runtime::monitor::{FunctionId, Operation};
-use quire_driver::monitor::{
-    lowering::lower_scalar_functions, MonitorPreparationError, MonitorPreparationLimits,
-};
 use quire_exact::{Cancel, CancelCause, OrderingOperator, ValueType};
 
 /// These native views are acquired in explicit setup, outside any assembly
@@ -134,7 +134,7 @@ fn source_fixture(source: &str, package_name: &str, names: &[&str]) -> Fixture {
         })
         .collect::<Vec<_>>();
     let emission = emit_checked(checked.package(), limits.package.emit())
-        .expect("the real QSL producer emits");
+        .expect("the real FSL producer emits");
     let package = match read_checked_package(
         emission.package().bytes(),
         CheckedPackageReadLimits::bounded(),

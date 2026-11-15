@@ -23,7 +23,7 @@ pub struct CacheRequest<'a> {
     package_id: &'a str,
     /// Canonical JSON encoding of the typed operation request.
     request: &'a [u8],
-    /// Selected provider identity admitted by QSL.
+    /// Selected provider identity admitted by FSL.
     backend: &'a BackendId,
     /// Target and output-affecting options, required only for generation.
     target: Option<&'a [u8]>,
@@ -101,13 +101,13 @@ pub enum CacheRequestError {
 /// Whether a computed result may be stored.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CacheEligibility {
-    /// The result satisfies QSL ADR-029 CA-5.
+    /// The result satisfies FSL ADR-029 CA-5.
     Eligible,
-    /// The result is explicitly excluded by QSL ADR-029 CA-5.
+    /// The result is explicitly excluded by FSL ADR-029 CA-5.
     NeverStore(CacheExclusion),
 }
 
-/// A QSL CA-5 reason an operation value is excluded from the cache.
+/// A FSL CA-5 reason an operation value is excluded from the cache.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CacheExclusion {
     /// The result is an internal failure.
@@ -138,7 +138,7 @@ pub enum CacheLookup<T> {
 pub enum CacheWriteOutcome {
     /// The value was stored.
     Stored,
-    /// QSL policy excluded the value.
+    /// FSL policy excluded the value.
     NeverStore,
     /// The value could not fit the configured storage limits.
     NotStored,

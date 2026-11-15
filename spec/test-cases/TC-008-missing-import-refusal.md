@@ -3,7 +3,7 @@ id: TC-008
 title: "A missing import or an unknown header profile refuses at compile"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-008: A missing import or an unknown header profile refuses at compile
@@ -16,7 +16,7 @@ the intake stage, and that `DriverRefusal::code()` renders that refusal's
 `code/cause`, not just its bare code.
 
 It also verifies that a header `profile` selecting an identity in no catalog
-refuses at the assembly stage as `CompileRefusal::Profile` (QSL FR-110), and
+refuses at the assembly stage as `CompileRefusal::Profile` (FSL FR-110), and
 that its code renders the first refusal's cause.
 
 Scope: FR-001-AC-5.

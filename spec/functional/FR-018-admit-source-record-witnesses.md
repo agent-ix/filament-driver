@@ -3,20 +3,20 @@ id: FR-018
 title: "Admit authentic source-record witnesses"
 type: FR
 relationships:
-  - target: "ix://agent-ix/quire-driver/US-001"
+  - target: "ix://agent-ix/filament-driver/US-001"
     type: implements
 ---
 # FR-018: Admit authentic source-record witnesses
 
 ## Description
 
-The driver SHALL admit source-record witnesses from the immutable QSL Emission
+The driver SHALL admit source-record witnesses from the immutable FSL Emission
 that produced the strictly read IR package, preserving producer authority and
 all original native identity and value fields.
 
 ## Inputs
 
-The component accepts a genuine QSL Emission, native IR reader evidence and
+The component accepts a genuine FSL Emission, native IR reader evidence and
 package-reader limits, and required explicit work and storage limits for the
 separate native source-record join.
 
@@ -64,7 +64,7 @@ and executable Program construction remain outside this component.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-018-AC-1 | Genuine ordinary source records emitted by public QSL and strictly admitted by IR retain all complete joined native rows and opaque record keys through driver admission/projection, including required, optional and Option fields and recursive/shared types where the owners admit them. | Test |
+| FR-018-AC-1 | Genuine ordinary source records emitted by public FSL and strictly admitted by IR retain all complete joined native rows and opaque record keys through driver admission/projection, including required, optional and Option fields and recursive/shared types where the owners admit them. | Test |
 | FR-018-AC-2 | Native structural/source/owner/member-order/presence/type mismatch and duplicate controls return the original native error payload and work; independent join exhaustion returns no admitted owner. Counterfactual native-row controls establish structural checks only and never producer authority. | Test |
 | FR-018-AC-3 | The public API accepts genuine immutable Emission authority and binds its rows to its own strict reader output; caller-created row structs cannot enter production admission. Native reader refusal/incompleteness remain distinct. | Test |
 | FR-018-AC-4 | Projection uses the retained package and native identities with its independent limit, retaining original native type and complete source_record_view without schema reconstruction or invented member identities. | Test |
@@ -112,5 +112,5 @@ Complete IR-721 AC1, monitor preparation and whole-preparation limits remain Pla
 ## Dependencies
 
 - [FR-015](FR-015-prepare-an-admitted-monitor-program.md) owns complete monitor admission.
-- QSL owns immutable Emission producer rows and final emitted identity rekeying.
+- FSL owns immutable Emission producer rows and final emitted identity rekeying.
 - IR/model owns strict reading, finite native record joining and exact projection.

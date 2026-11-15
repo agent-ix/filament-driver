@@ -73,13 +73,13 @@ Both edited documents and the repository specification validate. The engine's on
     },
     {
       "id": "FR-287-AC-8",
-      "path": "ix://agent-ix/quire-spec-language/FR-287",
+      "path": "ix://agent-ix/filament-spec-language/FR-287",
       "role": "context_only",
       "excerpt": "When the reader of stdout closes the pipe before the output is written, `quire parse`, `format`, `run` and `compile` end quietly, write nothing to stderr and exit with the outcome's FR-285 code, not 30."
     },
     {
       "id": "ADR-029",
-      "path": "ix://agent-ix/quire-spec-language/ADR-029",
+      "path": "ix://agent-ix/filament-spec-language/ADR-029",
       "role": "context_only",
       "excerpt": "Every verb writes one JSON outcome document to stdout in machine mode."
     }

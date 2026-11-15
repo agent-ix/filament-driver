@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-001 acceptance tests: the driver's step order, the MD-2 refusal,
-//! routing after negotiation, the E5 hand-off and CG generation. Every call goes to the real QSL and CG
+//! routing after negotiation, the E5 hand-off and CG generation. Every call goes to the real FSL and CG
 //! functions; `Recorder` only logs the order in which the driver makes them.
 //!
 //! QSL-266 (#459) keys `CheckedGraph::requirements()` by one record per
@@ -18,11 +18,17 @@ use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Duration;
 
+use filament_driver::{
+    build_registry, drive, CompileInput, Driven, DriverFault, DriverRefusal, DriverStage, FslCg,
+    GenerationInput, KaniInput, KaniProvider, OutcomeKind, Provider, ProviderItemFailure,
+    ProviderItemResult, ProviderLimits, ProviderManifest, ProviderRequest,
+    RequirementRecordUnresolvedCause, ScalarExecutionInput, Upstream,
+};
 use ix_trace_rs::trace;
 use qsl_foundation::BackendId;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::spine::{
-    check, default_accounting, package, parse, select, Call as QslCall, CallArgument, CheckedUnit,
+    check, default_accounting, package, parse, select, Call as FslCall, CallArgument, CheckedUnit,
     CompileRefusal, DependencyInput, EmittedUnit, PackageLimits, ParseRequest, SpineLimits,
     SpineStage,
 };
@@ -42,19 +48,13 @@ use quire_contract_model::{
     CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageEvidence, CheckedPackageReadLimits,
     CheckedPackageV2, CheckedTerm, ContractPackageV1,
 };
-use quire_driver::{
-    build_registry, drive, CompileInput, Driven, DriverFault, DriverRefusal, DriverStage,
-    GenerationInput, KaniInput, KaniProvider, OutcomeKind, Provider, ProviderItemFailure,
-    ProviderItemResult, ProviderLimits, ProviderManifest, ProviderRequest, QslCg,
-    RequirementRecordUnresolvedCause, ScalarExecutionInput, Upstream,
-};
 use quire_exact::{Cancel, CancelCause, Integer, Value};
 use quire_semantic_value::catalog::Category;
 
 #[path = "common/units.rs"]
 mod shared_units;
 
-/// A unit: the `ix:native` header, the `v` profile selecting QSL's own
+/// A unit: the `ix:native` header, the `v` profile selecting FSL's own
 /// root profile, then `body`.
 fn unit(body: &str) -> String {
     shared_units::unit(body)
@@ -63,7 +63,7 @@ fn unit(body: &str) -> String {
 static UNIT: LazyLock<String> =
     LazyLock::new(|| unit("function f using v(): Boolean pure { true }\n"));
 
-// Minimal model document authored for TC-019. QSL's package_input helper
+// Minimal model document authored for TC-019. FSL's package_input helper
 // keys each document by its declared identity, so this test has no copied fixture.
 const CANCEL_MODEL_DOCUMENT: &str = r#"{
   "contractVersion": "2.0.0",
@@ -118,7 +118,7 @@ const CANCEL_MODEL_DOCUMENT: &str = r#"{
 /// `quire.op.numeric.narrow` by name) and so is not itself a requirement
 /// record; only the `+` is. The `+`'s own operands are `x` (owns its
 /// `[0, 9]` bound) and the literal `1`, which
-/// QSL represents as a reference to its own plain-typed `value` node: CG's
+/// FSL represents as a reference to its own plain-typed `value` node: CG's
 /// IR-302 reads that reference as a literal operand (its body decides it,
 /// not its type), owning no bound and constrained to exactly its own
 /// value, so this `+` settles `Supported` (`NEGATE_UNIT` below is the
@@ -152,7 +152,7 @@ static EQ_UNIT: LazyLock<String> = LazyLock::new(|| {
 ///
 /// A genuine two-operand case with each argument independently bounded
 /// (e.g. `x + y` over `Int[0, 9]` and `Int[10, 20]`) also settles
-/// `Supported`: QSL always wraps arithmetic in a separate narrowing
+/// `Supported`: FSL always wraps arithmetic in a separate narrowing
 /// `conversion` node when the declared context is bounded, so the `+`
 /// node's own type is the plain scalar type, and only that conversion
 /// consumes it. IR-302 reads the result bound of a scalar-typed node
@@ -179,25 +179,25 @@ static TWO_PARAM_UNIT: LazyLock<String> = LazyLock::new(|| {
 
 /// A unit with an integer `+` whose one operand's domain (`x: Int[0, 9]`)
 /// puts every exact result (`[100, 109]`) outside the declared result bound
-/// (`Int[0, 10]`), with no conditional to hide it behind: QSL's own checker
+/// (`Int[0, 10]`), with no conditional to hide it behind: FSL's own checker
 /// proves the identical disjoint-interval fact and refuses to emit the
 /// package at all (`Unproved(Range { .. })`, at the check stage), before CG
 /// is ever called. This is one shape, not every shape: `DEAD_BRANCH_UNIT`
 /// below reaches CG's own `Unsupported`/`ResultBoundUnreachable` for the
-/// identical reachable range, because QSL does not discharge that
+/// identical reachable range, because FSL does not discharge that
 /// coercion at all inside a branch it proves dead.
 static OVERFLOW_UNIT: LazyLock<String> = LazyLock::new(shared_units::overflow_unit);
 
 /// A unit whose `+` (`x + 100`) is the same shape `OVERFLOW_UNIT` declares,
-/// but reached only through an `if` branch QSL's checker proves dead
-/// (`x > 20` never holds over `x: Int[0, 9]`): QSL's `Facts::walk` never
+/// but reached only through an `if` branch FSL's checker proves dead
+/// (`x > 20` never holds over `x: Int[0, 9]`): FSL's `Facts::walk` never
 /// discharges a coercion inside a branch it proves unreachable, so the
 /// package still emits. CG ignores path conditions (`reachable_results`
 /// ranges every operand over its full declared domain, live branch or
 /// dead), so routing this `+` to Kani settles the same
 /// `Unsupported`/`ResultBoundUnreachable` `OVERFLOW_UNIT`'s direct case
 /// never reaches CG to report. The `if` guard (`x > 20`) is itself a scalar
-/// comparison, so this unit has two requirement records in QSL occurrence-key
+/// comparison, so this unit has two requirement records in FSL occurrence-key
 /// order: the guard first and the `+` second for this checked package.
 static DEAD_BRANCH_UNIT: LazyLock<String> = LazyLock::new(|| {
     unit("function unreachable_branch using v(x: Int[0, 9]): Int[0, 10] pure { if x > 20 then x + 100 else 0 }\n")
@@ -335,7 +335,7 @@ impl Upstream for Recorder {
             || self.export_wrong_bound_at.is_some()
             || self.export_wrong_unbound_at.is_some()
             || self.export_short_result
-            || QslCg.has_abstraction_relation(package)
+            || FslCg.has_abstraction_relation(package)
     }
     fn export_bindings(
         &self,
@@ -392,7 +392,7 @@ impl Upstream for Recorder {
         cancel: &Cancel,
     ) -> Result<(CheckedUnit, qsl_replay::spine::AdmittedModels, EmittedUnit), DriverRefusal> {
         self.calls.borrow_mut().push(Call::Compile);
-        QslCg.compile(source, path, bytes, package_name, packages, limits, cancel)
+        FslCg.compile(source, path, bytes, package_name, packages, limits, cancel)
     }
 
     fn read_package(
@@ -412,7 +412,7 @@ impl Upstream for Recorder {
         );
         match &self.read_answer {
             Some(answer) => answer.clone(),
-            None => QslCg.read_package(emitted, limits, evidence),
+            None => FslCg.read_package(emitted, limits, evidence),
         }
     }
 
@@ -420,7 +420,7 @@ impl Upstream for Recorder {
         self.calls
             .borrow_mut()
             .push(Call::BackendKind(descriptor.identity.clone()));
-        QslCg.backend_kind(descriptor)
+        FslCg.backend_kind(descriptor)
     }
 
     fn negotiate(
@@ -447,7 +447,7 @@ impl Upstream for Recorder {
                 refusal.clone(),
             )));
         }
-        let mut settlements = QslCg.negotiate(source, package, positions, envelope)?;
+        let mut settlements = FslCg.negotiate(source, package, positions, envelope)?;
         if let Some(index) = self.unsupported_at {
             if let Some(settlement) = settlements.get_mut(index) {
                 let backend = settlement.backend.as_mut().expect("a lowered item settles");
@@ -474,14 +474,14 @@ impl Upstream for Recorder {
             supported,
             dispositions: dispositions.len(),
         });
-        QslCg.route(dispositions)
+        FslCg.route(dispositions)
     }
 
     fn requirement_records(
         &self,
         package: &qsl_package::CheckedPackage,
     ) -> qsl_semantics::check::RequirementMap {
-        let records = QslCg.requirement_records(package);
+        let records = FslCg.requirement_records(package);
         match self.requirement_rewrite {
             Some(rewrite) => rewrite(records),
             None => records,
@@ -528,7 +528,7 @@ impl Upstream for Recorder {
                     requirement_records: records,
                     ..kani
                 });
-            return QslCg.generate(
+            return FslCg.generate(
                 source,
                 package,
                 positions,
@@ -536,7 +536,7 @@ impl Upstream for Recorder {
                 &GenerationContexts { kani },
             );
         }
-        QslCg.generate(source, package, positions, routed, contexts)
+        FslCg.generate(source, package, positions, routed, contexts)
     }
 }
 
@@ -592,7 +592,7 @@ fn cancellation_source_and_packages() -> (String, qsl_semantics::model::intake::
     (source, packages)
 }
 
-/// Baseline QSL charge counts after parse, select, check and package. The
+/// Baseline FSL charge counts after parse, select, check and package. The
 /// cancellation fixture includes a model so every stage has a charged path.
 fn cancellation_boundaries(
     source_text: &str,
@@ -636,7 +636,7 @@ fn cancellation_boundaries(
     [after_parse, after_select, after_check, after_package]
 }
 
-/// Cancel from a second thread on exactly the target QSL charge, waiting for
+/// Cancel from a second thread on exactly the target FSL charge, waiting for
 /// that thread to record the cause before the meter polls the handle.
 fn cancel_on_charge(
     target: usize,
@@ -746,7 +746,7 @@ fn int_package() -> Driven {
     let registry = build_registry(&[]).expect("an empty registry builds");
     let packages = BTreeMap::new();
     drive(
-        &QslCg,
+        &FslCg,
         int_input(&packages),
         &registry,
         None,
@@ -799,8 +799,8 @@ fn tc_019_cancellation_preserves_every_stage_and_cause() {
             assert_eq!(refusal.code(), "cancelled");
             assert_eq!(refusal.kind(), OutcomeKind::Cancelled);
             let category = refusal
-                .qsl_category()
-                .expect("QSL owns cancellation category");
+                .fsl_category()
+                .expect("FSL owns cancellation category");
             assert_eq!(category, Category::Incomplete);
             assert_eq!(category.exit_code(), Category::Incomplete.exit_code());
             assert_eq!(category.exit_code(), 22);
@@ -887,7 +887,7 @@ fn eq_package() -> Driven {
     let registry = build_registry(&[]).expect("an empty registry builds");
     let packages = BTreeMap::new();
     drive(
-        &QslCg,
+        &FslCg,
         eq_input(&packages),
         &registry,
         None,
@@ -901,7 +901,7 @@ fn two_param_package() -> Driven {
     let registry = build_registry(&[]).expect("an empty registry builds");
     let packages = BTreeMap::new();
     drive(
-        &QslCg,
+        &FslCg,
         two_param_input(&packages),
         &registry,
         None,
@@ -915,7 +915,7 @@ fn negate_package() -> Driven {
     let registry = build_registry(&[]).expect("an empty registry builds");
     let packages = BTreeMap::new();
     drive(
-        &QslCg,
+        &FslCg,
         negate_input(&packages),
         &registry,
         None,
@@ -1094,7 +1094,7 @@ fn export_partition_withholds_b_and_preserves_a_and_c_indices() {
         )
         .expect("the resolved key serializes"),
         qsl_foundation::node_wire::node_key_to_json(driven.request_items[1].node())
-            .expect("the selected QSL key serializes"),
+            .expect("the selected FSL key serializes"),
     );
     assert!(matches!(
         driver_positions[2],
@@ -1336,7 +1336,7 @@ fn routed_generation_item(
 
 /// CG's own `generate_routed` over the expected routed items and Kani
 /// context. Each item's requirement and the requirement records are computed
-/// here from QSL's own records in `driven` (FR-020), never taken from what the
+/// here from FSL's own records in `driven` (FR-020), never taken from what the
 /// driver passed, so the comparison with the driver's output keeps an
 /// independent oracle. `routed` and `contexts` name which items and ceilings
 /// the test expects.
@@ -1587,7 +1587,7 @@ fn tc_001_caller_emit_ceiling_bounds_e4_and_admits_at_e5() {
     let registry = build_registry(&[]).expect("an empty registry builds");
     let packages = BTreeMap::new();
     let ordinary = drive(
-        &QslCg,
+        &FslCg,
         input(&packages),
         &registry,
         None,
@@ -1952,7 +1952,7 @@ fn foreign_admitted_source_is_refused_by_negotiation_and_generation() {
     )
     .expect("the original admitted source generates");
     let foreign = drive(
-        &QslCg,
+        &FslCg,
         CompileInput {
             package_name: "foreign",
             ..int_input(&packages)
@@ -1964,7 +1964,7 @@ fn foreign_admitted_source_is_refused_by_negotiation_and_generation() {
     .expect("a separate named source admits");
     let (contract, positions) = recorder.generation_input();
     let expected = contract.wire().package.source.clone();
-    let negotiation = QslCg
+    let negotiation = FslCg
         .negotiate(
             foreign.checked(),
             &contract,
@@ -1972,7 +1972,7 @@ fn foreign_admitted_source_is_refused_by_negotiation_and_generation() {
             &recorder.envelope(),
         )
         .expect_err("a foreign source must not negotiate the original lowering");
-    let generation = QslCg
+    let generation = FslCg
         .generate(
             foreign.checked(),
             &contract,
@@ -2018,7 +2018,7 @@ fn foreign_admitted_source_is_refused_by_negotiation_and_generation() {
 }
 
 /// Trace: FR-001-AC-12.
-/// Provenance: QSL RR-16.
+/// Provenance: FSL RR-16.
 /// Two occurrences of the same addition keep their own selected narrow
 /// conversion roots through IR lowering and CG generation.
 #[test]
@@ -2043,8 +2043,8 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
         "CG emits two request items"
     );
 
-    let qsl_requirements = driven.package().package().graph().requirements();
-    let expected_contexts = qsl_requirements
+    let fsl_requirements = driven.package().package().graph().requirements();
+    let expected_contexts = fsl_requirements
         .iter()
         .filter_map(|(application, requirement)| {
             requirement
@@ -2055,7 +2055,7 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
     assert_eq!(
         expected_contexts.len(),
         2,
-        "QSL supplies two narrow contexts"
+        "FSL supplies two narrow contexts"
     );
 
     let (lowered, positions) = recorder.generation_input();
@@ -2122,7 +2122,7 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
             )
             .expect("the resolved key serializes"),
             qsl_foundation::node_wire::node_key_to_json(key)
-                .expect("the selected QSL key serializes")
+                .expect("the selected FSL key serializes")
         );
     };
     for ((expected_application, expected_conversion), (application, conversion)) in
@@ -2172,7 +2172,7 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
 }
 
 /// Trace: FR-001-AC-13, FR-001-AC-14, FR-001-AC-15, FR-001-AC-16, FR-009-AC-13, TC-006.
-/// Provenance: QSL RR-16.
+/// Provenance: FSL RR-16.
 #[test]
 fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
@@ -2181,7 +2181,7 @@ fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
     let cancel = Cancel::new();
     let mut compile = rr16_input(&packages);
     compile.cancel = cancel.clone();
-    let call = QslCall {
+    let call = FslCall {
         function: "f".to_owned(),
         arguments: vec![CallArgument {
             parameter: "x".to_owned(),
@@ -2306,7 +2306,7 @@ fn tc_006_no_selected_scalar_item_skips_binding_and_native_execution() {
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the kani manifest registers");
     let packages = BTreeMap::new();
-    let call = QslCall {
+    let call = FslCall {
         function: "f".to_owned(),
         arguments: Vec::new(),
         accounting: default_accounting(1_000_000),
@@ -2323,7 +2323,7 @@ fn tc_006_no_selected_scalar_item_skips_binding_and_native_execution() {
     });
 
     let driven = drive(
-        &QslCg,
+        &FslCg,
         CompileInput {
             bytes: UNIT.as_bytes(),
             ..input(&packages)
@@ -2382,7 +2382,7 @@ fn tc_006_x_plus_y_generation_passes_through_unchanged() {
 
 /// FR-001-AC-6 (TC-006), IR-302: `INT_UNIT`'s `+` (`x + 1`) settles
 /// `Supported`. CG's IR-302 reads a `reference` to a `value` node whose
-/// body is a literal as a literal operand (QSL's own shape for `1`), not a
+/// body is a literal as a literal operand (FSL's own shape for `1`), not a
 /// plain-typed unbounded reference: the literal owns no bound and is
 /// constrained to its own value, so only `x`'s own `[0, 9]` domain ranges
 /// the first argument.
@@ -2394,7 +2394,7 @@ fn tc_006_x_plus_1_settles_supported() {
         .expect("the kani manifest registers");
     let packages = BTreeMap::new();
 
-    let driven = drive(&QslCg, int_input(&packages), &registry, None, kani_input())
+    let driven = drive(&FslCg, int_input(&packages), &registry, None, kani_input())
         .expect("the run completes");
 
     let KindOutput::Kani { record, harness } = &driven.generation().items[0].output else {
@@ -2495,34 +2495,34 @@ fn tc_006_x_plus_y_settles_supported_with_independent_argument_bounds() {
 }
 
 /// FR-001-AC-6 (TC-006): `OVERFLOW_UNIT`'s `+` (`x + 100` directly in the
-/// return context of `Int[0, 10]`) never reaches CG at all: QSL's own
+/// return context of `Int[0, 10]`) never reaches CG at all: FSL's own
 /// checker proves the identical disjoint-interval fact CG's
 /// `ResultBoundUnreachable` names (the same exact-integer-arithmetic
 /// reachability question over `[100, 109]` against `[0, 10]`) and refuses
 /// to compile the unit, at the check stage. This is one shape, not a
 /// general proof that CG's refusal is unreachable -- see
 /// `tc_006_x_plus_100_in_a_dead_branch_settles_result_bound_unreachable`
-/// for a QSL-compiled unit that does reach it.
+/// for a FSL-compiled unit that does reach it.
 #[test]
 fn tc_006_x_plus_100_in_the_return_context_is_refused_at_check() {
     let registry = build_registry(&[]).expect("an empty registry builds");
     let packages = BTreeMap::new();
 
     let refusal = drive(
-        &QslCg,
+        &FslCg,
         overflow_input(&packages),
         &registry,
         None,
         GenerationInput::default(),
     )
-    .expect_err("QSL's own checker refuses a result bound its own arithmetic disproves");
+    .expect_err("FSL's own checker refuses a result bound its own arithmetic disproves");
 
     assert_eq!(refusal.stage(), DriverStage::Compile(SpineStage::Check));
     assert_eq!(refusal.code(), "undefined_expression/unproved-range");
     assert_eq!(refusal.kind(), OutcomeKind::Refused);
 }
 
-/// FR-001-AC-6 (TC-006), IR-302: `DEAD_BRANCH_UNIT` compiles -- QSL's
+/// FR-001-AC-6 (TC-006), IR-302: `DEAD_BRANCH_UNIT` compiles -- FSL's
 /// `Facts::walk` proves `x > 20` is never true over `x: Int[0, 9]` and
 /// never discharges the dead branch's coercion, so the checked package
 /// still emits. The unit carries two scalar operation applications --
@@ -2548,13 +2548,13 @@ fn tc_006_x_plus_100_in_the_return_context_is_refused_at_check() {
 #[test]
 fn tc_006_x_plus_100_in_a_dead_branch_settles_result_bound_unreachable() {
     let checked = drive(
-        &QslCg,
+        &FslCg,
         dead_branch_input(&BTreeMap::new()),
         &build_registry(&[]).expect("an empty registry builds"),
         None,
         GenerationInput::default(),
     )
-    .expect("QSL does not discharge a dead branch's coercion, so this compiles")
+    .expect("FSL does not discharge a dead branch's coercion, so this compiles")
     .checked()
     .clone();
     let x_bound = integer_range_bound(&checked, "0", "9");
@@ -2850,7 +2850,7 @@ fn tc_004_repeated_manifest_identity_from_negotiation_is_an_internal_fault() {
 }
 
 /// FR-001-AC-3 and FR-001-AC-6 (TC-003): a unit with no scalar operation
-/// application writes no requirement record (QSL FR-075), so the driver
+/// application writes no requirement record (FSL FR-075), so the driver
 /// routes nothing and calls neither `route` nor `generate` -- with no
 /// caller input naming an item, `UNIT` (`function f(): Boolean pure { true
 /// }`) still drives to completion.
@@ -2992,7 +2992,7 @@ fn tc_008_a_missing_import_refuses_at_compile_intake() {
         ..input(&packages)
     };
 
-    let refusal = drive(&QslCg, broken, &registry, None, GenerationInput::default())
+    let refusal = drive(&FslCg, broken, &registry, None, GenerationInput::default())
         .expect_err("nothing supplies test/library");
 
     assert_eq!(refusal.stage(), DriverStage::Compile(SpineStage::Intake));
@@ -3001,7 +3001,7 @@ fn tc_008_a_missing_import_refuses_at_compile_intake() {
 }
 
 /// FR-001-AC-5 (TC-008): a header `profile` whose identity is in no catalog
-/// refuses at the assembly stage as `CompileRefusal::Profile` (QSL FR-110),
+/// refuses at the assembly stage as `CompileRefusal::Profile` (FSL FR-110),
 /// rendered `unknown_profile/unsupported-selection`: the code and the first
 /// refusal's cause.
 #[test]
@@ -3014,7 +3014,7 @@ fn tc_008_an_unknown_header_profile_refuses_with_its_cause() {
         ..input(&packages)
     };
 
-    let refusal = drive(&QslCg, broken, &registry, None, GenerationInput::default())
+    let refusal = drive(&FslCg, broken, &registry, None, GenerationInput::default())
         .expect_err("no catalog holds test:unknown-profile");
 
     assert!(
@@ -3249,7 +3249,7 @@ fn provider_trait_run_processes_a_selected_item() {
     let registry = build_registry(&[manifest("kani", &["value-validity"])])
         .expect("the Kani manifest registers");
     let packages = BTreeMap::new();
-    let driven = drive(&QslCg, int_input(&packages), &registry, None, kani_input())
+    let driven = drive(&FslCg, int_input(&packages), &registry, None, kani_input())
         .expect("the Kani item is generated");
     assert_eq!(driven.generation().items.len(), 1);
     let KindOutput::Kani {
@@ -3341,7 +3341,7 @@ fn current_owner_boundary_raw_slots_resolve_in_each_holding_row() {
     );
 }
 
-// FR-020 (TC-034): the driver hands CG each routed item's QSL requirement and
+// FR-020 (TC-034): the driver hands CG each routed item's FSL requirement and
 // the package's `value-validity` records.
 
 /// A unit whose one `x + 1` node has a then and an else occurrence, guarded by
@@ -3383,7 +3383,7 @@ fn resolve_node(driven: &Driven, key: &quire_exact::NodeKey) -> CheckedNodeId {
             let structural = checked.structural_key_at(index)?;
             (serde_json::to_value(structural).ok()? == wanted).then(|| node.node_id.clone())
         })
-        .expect("the QSL node is in the admitted package")
+        .expect("the FSL node is in the admitted package")
 }
 
 fn expected_occurrence(
@@ -3577,7 +3577,7 @@ fn two_nested_guards_keep_outermost_first_order_in_the_requirement_and_roots() {
         .iter()
         .map(|guard| guard.holds())
         .collect::<Vec<_>>();
-    assert_eq!(holds, [true, false], "QSL records outermost-first");
+    assert_eq!(holds, [true, false], "FSL records outermost-first");
     let outer = resolve_node(&driven, record.path_condition()[0].occurrence().node());
     let inner = resolve_node(&driven, record.path_condition()[1].occurrence().node());
     assert_ne!(outer, inner, "the two guards are distinct nodes");
@@ -3838,7 +3838,7 @@ fn a_guard_whose_node_the_package_lacks_refuses_before_negotiation() {
     );
 }
 
-/// The `test/orders` model document of QSL's switch-transition example: a
+/// The `test/orders` model document of FSL's switch-transition example: a
 /// `Switch` with an `on` field and `set`/`adjust` operations. A `post` clause
 /// on one of them writes `operation-contract` requirement records.
 const SWITCH_MODEL_DOCUMENT: &str = r#"{"canonicalization":{"algorithm":"rfc8785-v1"},"constructs":[{"construct":{"identity":"none","meaning":"quire.meaning.model.object-type/v1","members":{"identityFields":"required"},"shape":"record"},"kind":{"module":"test/business","name":"thing"},"moduleVersion":"1.0.0"}],"contractVersion":"2.0.0","extensions":[],"occurrences":[],"package":{"identity":"test/orders","mappingVersions":[],"profileVersions":[],"version":"1"},"source":{"dialect":"spec-bundle","identity":"ix://test/orders/spec","version":"1.0.0"},"types":[{"constraints":[],"displayName":"Switch","extensions":[],"fields":[{"defaultKind":"none","identity":"ix://test/orders/Switch/sid","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"sid","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/sid","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/sid"]}},"presence":"required","typeRef":"ix://quire/native/Integer"},{"defaultKind":"none","identity":"ix://test/orders/Switch/on","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"on","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/on","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/on"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"identity":"ix://test/orders/Switch","identityFields":["ix://test/orders/Switch/sid"],"kind":{"module":"test/business","name":"thing"},"operations":[{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/set","name":"set","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/set/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/set/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/set/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]},{"frame":{"creates":[],"deletes":[],"modifies":["ix://test/orders/Switch/on"]},"identity":"ix://test/orders/Switch/adjust","name":"adjust","origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust"]}},"params":[{"defaultKind":"none","identity":"ix://test/orders/Switch/adjust/flag","multiplicity":{"lower":1,"ordered":false,"unique":true,"upper":1},"name":"flag","nullable":false,"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch/adjust/flag","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch/adjust/flag"]}},"presence":"required","typeRef":"ix://quire/native/Boolean"}],"post":[],"pre":[]}],"origin":{"generated":{"generatorIdentity":"ix://test/orders/Switch","generatorVersion":"1.0.0","inputIdentities":["ix://test/orders/Switch"]}},"roles":[],"unknownPolicy":"reject"}]}"#;
@@ -4037,7 +4037,7 @@ fn expected_record_set(driven: &Driven, records: &[VvRecord]) -> RequirementReco
 }
 
 /// The generation item the driver must pass for `request_index`: CG's own
-/// constructor plus the QSL record's requirement.
+/// constructor plus the FSL record's requirement.
 fn expected_item(
     recorder: &Recorder,
     driven: &Driven,

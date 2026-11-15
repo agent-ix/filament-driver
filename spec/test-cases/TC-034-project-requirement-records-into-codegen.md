@@ -1,16 +1,16 @@
 ---
 id: TC-034
-title: "Project QSL requirement records into CG's typed input"
+title: "Project FSL requirement records into CG's typed input"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-020
+  - target: ix://agent-ix/filament-driver/FR-020
     type: verifies
 ---
-# TC-034: Project QSL requirement records into CG's typed input
+# TC-034: Project FSL requirement records into CG's typed input
 
 ## Description
 
-Verify that the driver hands CG each routed item's QSL requirement and the
+Verify that the driver hands CG each routed item's FSL requirement and the
 package's requirement records exactly, and refuses typed when it cannot.
 
 Scope: FR-020-AC-1 through FR-020-AC-15.
@@ -19,7 +19,7 @@ for FR-020-AC-6 only.
 
 ## Test Procedure
 
-1. Check a QSL unit with one node carrying two occurrences with different
+1. Check a FSL unit with one node carrying two occurrences with different
    result bounds and guards (the built `if p then g(x + 1) else h(x + 1)`
    unit of AC-3), one with a conversion context and two guards, a map built with `FromIterator` whose
    one occurrence holds a `value-validity` and an `operation-contract`
@@ -34,7 +34,7 @@ for FR-020-AC-6 only.
    run with a `RequirementMap` missing the routed
    item's `value-validity` record (AC-4), and with a record whose
    key node the admitted package does not hold, and with a record whose
-   key has an unmapped role and with a record whose path guard names a node the package lacks (AC-14, built with QSL's `test-support` constructors). Assert the fault
+   key has an unmapped role and with a record whose path guard names a node the package lacks (AC-14, built with FSL's `test-support` constructors). Assert the fault
    fields, code, stage, kind and that the recording seam saw no generation
    call.
 3. Reuse the FR-010-AC-4 partition vector, once as is and once with B's
@@ -68,7 +68,7 @@ correct driver.
 | Attach a requirement at B's index, or fault on B's missing record | AC-6 `None` at index 1; completion with B's record removed |
 | Place guard roots before the conversion root, in reverse, or advance driver indices | AC-7 position order and next index |
 | Emit a shared guard root once for both items | AC-12 (the else span lacks the root) |
-| Replace the QSL result bound with the IR selected type | AC-8 (CG then reports no mismatch) |
+| Replace the FSL result bound with the IR selected type | AC-8 (CG then reports no mismatch) |
 | Map a CG record refusal to `invalid_request` | AC-9, AC-13 wire code |
 | Report a CG record refusal at the Negotiation stage | AC-9, AC-13 stage |
 | Report a CG record refusal as outcome kind refusal | AC-9, AC-13 outcome kind |
@@ -79,6 +79,6 @@ correct driver.
 
 ## Expected Results
 
-- The projection equals QSL's `value-validity` values field by field; an
+- The projection equals FSL's `value-validity` values field by field; an
   absent or unresolvable record is a `runtime_invariant` Generation fault
   before CG is called; CG's record refusals pass through unchanged.

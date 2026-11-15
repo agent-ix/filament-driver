@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Typed driver inputs for QSpec's backend-provider/v1 envelope.
+//! Typed driver inputs for FSpec's backend-provider/v1 envelope.
 //!
 //! This module projects the path-addressed FR-331 contract into driver types;
 //! it does not carry a copy of the schema or its vectors. Canonical descriptor
@@ -11,6 +11,8 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use filament_driver::Driven;
+use filament_driver::ProviderManifest;
 use qsl_foundation::backend::EmptyBackendIdentity;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::category_of;
@@ -22,14 +24,12 @@ use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
     ProviderOrigin,
 };
-use quire_driver::Driven;
-use quire_driver::ProviderManifest;
 use quire_semantic_value::catalog::{CatalogCode, Category};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-const CONTRACT_VERSION: &str = "quire.backend-provider/v1";
-const CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
+const CONTRACT_VERSION: &str = "filament.backend-provider/v1";
+const CAPABILITY_VOCABULARY: &str = "filament.capability-kind/v1";
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Deserialize)]
@@ -111,8 +111,8 @@ fn validate_manifest(shape: &ProviderDescriptorShape) -> Result<(), ManifestAdmi
     {
         return Err(invalid_member("advertises", "contains a duplicate pair"));
     }
-    // Domain vocabulary and admission refusal belong to QSL. Keep the
-    // typed value for QSL instead of pre-refusing it in the driver.
+    // Domain vocabulary and admission refusal belong to FSL. Keep the
+    // typed value for FSL instead of pre-refusing it in the driver.
     if shape.options.as_ref().is_some_and(BTreeMap::is_empty) {
         return Err(invalid_member("options", "must not be empty when present"));
     }
@@ -184,7 +184,7 @@ pub struct AdmittedManifest {
 }
 
 impl AdmittedManifest {
-    /// The descriptor admitted once by QSL for this process hello.
+    /// The descriptor admitted once by FSL for this process hello.
     #[must_use]
     pub fn descriptor(&self) -> &BackendDescriptor {
         &self.descriptor
@@ -199,13 +199,13 @@ impl AdmittedManifest {
     }
 }
 
-/// An invalid FR-331 hello body or a typed QSL registration refusal.
+/// An invalid FR-331 hello body or a typed FSL registration refusal.
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestAdmissionError {
     /// The manifest-stage envelope identity did not match FR-331.
     #[error("plugin hello has an unsupported FR-331 contract identity")]
     ContractIdentity,
-    /// The manifest-stage capability vocabulary is not recognized by QSL.
+    /// The manifest-stage capability vocabulary is not recognized by FSL.
     #[error("{0}")]
     CapabilityVocabulary(CatalogCode),
     /// A provider hello did not carry exactly one descriptor.
@@ -219,10 +219,10 @@ pub enum ManifestAdmissionError {
         /// Parser or semantic-validation detail for the rejected member.
         detail: String,
     },
-    /// QSL refused the descriptor's backend identity.
+    /// FSL refused the descriptor's backend identity.
     #[error(transparent)]
     EmptyBackendIdentity(#[from] EmptyBackendIdentity),
-    /// QSL refused advertised labels or domain declarations with its native
+    /// FSL refused advertised labels or domain declarations with its native
     /// registration cause.
     #[error(transparent)]
     Registration(#[from] qsl_route::RegistrationRefusal),
@@ -234,10 +234,10 @@ pub enum ManifestAdmissionError {
 impl ManifestStage {
     /// Admit the hello's one manifest using the caller-supplied Process origin.
     ///
-    /// The retained bytes use RFC 8785. QSL owns identity,
+    /// The retained bytes use RFC 8785. FSL owns identity,
     /// capability, mode and domain admission; this method neither normalizes
     /// labels nor assigns an origin from wire data. Evidence-label admission
-    /// remains QSL-owned without a driver-side vocabulary rule.
+    /// remains FSL-owned without a driver-side vocabulary rule.
     pub fn admit_process(
         &self,
         max_frame_bytes: u64,
@@ -314,7 +314,7 @@ pub struct RequestStage {
     pub contract_version: &'static str,
     /// FR-290 capability-vocabulary identity.
     pub capability_vocabulary: &'static str,
-    /// Snapshot of retained FR-331 manifests for the current QSL registry.
+    /// Snapshot of retained FR-331 manifests for the current FSL registry.
     pub manifest: Vec<Value>,
     /// The provider request body.
     pub request: RequestBody,
@@ -338,34 +338,34 @@ pub enum RequestStageError {
     /// A retained manifest snapshot could not be reconstructed as JSON.
     #[error("a retained FR-331 manifest descriptor is invalid")]
     ManifestDescriptor,
-    /// A QSL request index cannot be represented by the FR-331 integer contract.
-    #[error("a QSL request index cannot be represented by FR-331")]
-    QslRequestIndex,
-    /// A QSL node key could not be written as its structural wire object.
-    #[error("a QSL node identity cannot be written as an FR-331 node object")]
+    /// A FSL request index cannot be represented by the FR-331 integer contract.
+    #[error("a FSL request index cannot be represented by FR-331")]
+    FslRequestIndex,
+    /// A FSL node key could not be written as its structural wire object.
+    #[error("a FSL node identity cannot be written as an FR-331 node object")]
     NodeIdentity,
     /// A routed provider is absent from the retained registry manifest.
     #[error("the routed backend is absent from the retained FR-331 manifest")]
     RoutedBackendMissing,
-    /// The routed backend is not in that request item's QSL candidate set.
-    #[error("the routed backend is absent from the QSL candidate outcome")]
+    /// The routed backend is not in that request item's FSL candidate set.
+    #[error("the routed backend is absent from the FSL candidate outcome")]
     RoutedBackendOutsideCandidates,
-    /// The request index does not identify exactly one QSL-produced item.
-    #[error("the routed request index has no matching QSL request item")]
-    MissingQslRequestItem,
-    /// The retained QSL sidecar contains the same request index more than once.
-    #[error("the routed request index has multiple matching QSL request items")]
-    AmbiguousQslRequestItem,
-    /// The generated backend identity cannot be represented as a QSL id.
+    /// The request index does not identify exactly one FSL-produced item.
+    #[error("the routed request index has no matching FSL request item")]
+    MissingFslRequestItem,
+    /// The retained FSL sidecar contains the same request index more than once.
+    #[error("the routed request index has multiple matching FSL request items")]
+    AmbiguousFslRequestItem,
+    /// The generated backend identity cannot be represented as a FSL id.
     #[error("the generated process backend identity is invalid")]
     RoutedBackendIdentity,
 }
 
 impl RequestStage {
     /// Build the FR-331 request from the exact production process request,
-    /// joining each generated item to its retained QSL request item.
+    /// joining each generated item to its retained FSL request item.
     pub fn from_process_request(
-        request: &quire_driver::ProcessProviderRequest<'_>,
+        request: &filament_driver::ProcessProviderRequest<'_>,
     ) -> Result<Self, RequestStageError> {
         let items = request
             .provider_request
@@ -375,16 +375,16 @@ impl RequestStage {
                 let backend = BackendId::from_wire(&generated.backend.identity)
                     .map_err(|_| RequestStageError::RoutedBackendIdentity)?;
                 let mut matching_items = request
-                    .qsl_items
+                    .fsl_items
                     .iter()
                     .filter(|item| item.index().get() == generated.request_index);
                 let item = matching_items
                     .next()
-                    .ok_or(RequestStageError::MissingQslRequestItem)?;
+                    .ok_or(RequestStageError::MissingFslRequestItem)?;
                 if matching_items.next().is_some() {
-                    return Err(RequestStageError::AmbiguousQslRequestItem);
+                    return Err(RequestStageError::AmbiguousFslRequestItem);
                 }
-                RequestItem::from_qsl(item, &backend)
+                RequestItem::from_fsl(item, &backend)
             })
             .collect::<Result<Vec<_>, _>>()?;
         Self::from_emitted(
@@ -396,11 +396,11 @@ impl RequestStage {
     }
 
     /// Build one process-provider request from the routed items, the exact
-    /// QSL request items used for CG negotiation, and the retained registry
+    /// FSL request items used for CG negotiation, and the retained registry
     /// manifest.
     ///
     /// This is the production bridge from the driver's E4/E5 result to the
-    /// FR-331 writer. Candidate wire values are projected from QSL outcomes;
+    /// FR-331 writer. Candidate wire values are projected from FSL outcomes;
     /// they are not reconstructed from CG dispositions.
     pub fn from_driven(
         driven: &Driven,
@@ -425,8 +425,8 @@ impl RequestStage {
                     .request_items
                     .iter()
                     .find(|item| item.index().get() == generated.request_index)
-                    .ok_or(RequestStageError::MissingQslRequestItem)?;
-                RequestItem::from_qsl(item, backend)
+                    .ok_or(RequestStageError::MissingFslRequestItem)?;
+                RequestItem::from_fsl(item, backend)
             })
             .collect::<Result<Vec<_>, _>>()?;
         Self::from_emitted(driven.emitted(), manifest, deadline_ms, items)
@@ -435,7 +435,7 @@ impl RequestStage {
     /// Build the wire request from an emitted package and typed routed inputs.
     ///
     /// `manifest` comes from
-    /// retained decoded provider-manifest DTOs, not from QSL registry
+    /// retained decoded provider-manifest DTOs, not from FSL registry
     /// descriptors, which intentionally omit optional FR-331 members.
     pub fn from_emitted(
         package: &EmittedPackage,
@@ -549,7 +549,7 @@ pub struct RequestBody {
     pub memory: Option<Vec<Value>>,
 }
 
-/// One FR-331 request item, with its QSpec-owned claim and candidate values.
+/// One FR-331 request item, with its FSpec-owned claim and candidate values.
 #[derive(Clone, Debug, Serialize)]
 pub struct RequestItem {
     /// Zero-based request position supplied by the driver/CG routing seam.
@@ -557,7 +557,7 @@ pub struct RequestItem {
     /// Requested FR-290 capability label, kept as received from the request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
-    /// QSpec locus, supplied by the driver's original request item.
+    /// FSpec locus, supplied by the driver's original request item.
     pub claim: RequestClaim,
     /// Classification and proof bounds supplied by CG's routed item.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -581,7 +581,7 @@ pub struct RequestItem {
     pub probabilistic: Option<Value>,
 }
 
-/// QSpec-owned semantic claim carried by one request item.
+/// FSpec-owned semantic claim carried by one request item.
 #[derive(Clone, Debug, Serialize)]
 pub struct RequestClaim {
     /// Stable identity of the checked semantic node.
@@ -590,40 +590,40 @@ pub struct RequestClaim {
     pub occurrence: RequestClaimOccurrence,
 }
 
-/// QSL source occurrence identity in the FR-331 wire format.
+/// FSL source occurrence identity in the FR-331 wire format.
 #[derive(Clone, Debug, Serialize)]
 pub struct RequestClaimOccurrence {
-    /// QSL occurrence role.
+    /// FSL occurrence role.
     pub role: String,
     /// Zero-based ordinal within that role.
     pub ordinal: u64,
 }
 
-/// QSL's computed candidate outcome in the FR-331 request representation.
+/// FSL's computed candidate outcome in the FR-331 request representation.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum CandidateWire {
-    /// A candidate set, ordered by QSL's bytewise backend ordering.
+    /// A candidate set, ordered by FSL's bytewise backend ordering.
     Set {
-        /// Candidate backend identities in QSL's computed order.
+        /// Candidate backend identities in FSL's computed order.
         backends: Vec<String>,
     },
     /// The request named a backend absent from the admitted registry.
     UnknownBackend {
-        /// The backend identity QSL found to be unknown.
+        /// The backend identity FSL found to be unknown.
         backend: String,
     },
 }
 
 impl RequestItem {
-    /// Project one QSL-produced item without re-deriving its claim,
+    /// Project one FSL-produced item without re-deriving its claim,
     /// classification, named backend, or candidate result.
-    fn from_qsl(
+    fn from_fsl(
         item: &RequirementItem,
         routed_backend: &qsl_foundation::BackendId,
     ) -> Result<Self, RequestStageError> {
         let request_index =
-            u64::try_from(item.index().get()).map_err(|_| RequestStageError::QslRequestIndex)?;
+            u64::try_from(item.index().get()).map_err(|_| RequestStageError::FslRequestIndex)?;
         let origin = item.occurrence().origin();
         let claim = RequestClaim {
             node: qsl_foundation::node_wire::node_key_to_json(item.node())
@@ -768,13 +768,13 @@ pub enum ExtentDomainKind {
 /// One FR-331 ADR-014 domain substitution.
 #[derive(Clone, Debug, Serialize)]
 pub struct ProofBound {
-    /// The bounded QSpec domain key.
+    /// The bounded FSpec domain key.
     pub domain: DomainKey,
     /// The finite bound supplied by the request.
     pub bound: FiniteBound,
 }
 
-/// QSpec FR-331 domain key.
+/// FSpec FR-331 domain key.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum DomainKey {
@@ -784,7 +784,7 @@ pub enum DomainKey {
     Population { member_type: String, ordinal: u32 },
 }
 
-/// QSpec finite proof-bound shape.
+/// FSpec finite proof-bound shape.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum FiniteBound {
@@ -818,7 +818,7 @@ pub struct TemporalSubject {
     pub proof_bounds: Vec<ProofBound>,
 }
 
-/// QSpec temporal item kind.
+/// FSpec temporal item kind.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TemporalItemKind {
@@ -826,7 +826,7 @@ pub enum TemporalItemKind {
     DeadlockFreedom,
 }
 
-/// QSpec temporal fairness constraint.
+/// FSpec temporal fairness constraint.
 #[derive(Clone, Debug, Serialize)]
 pub struct Fairness {
     /// Weak or strong fairness.
@@ -837,7 +837,7 @@ pub struct Fairness {
     pub granularity: FairnessGranularity,
 }
 
-/// QSpec fairness kind.
+/// FSpec fairness kind.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FairnessKind {
@@ -845,7 +845,7 @@ pub enum FairnessKind {
     Strong,
 }
 
-/// QSpec fairness granularity.
+/// FSpec fairness granularity.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FairnessGranularity {
@@ -863,7 +863,7 @@ pub struct ProvisionRef {
     pub digest: String,
 }
 
-/// QSpec provision digest-domain vocabulary.
+/// FSpec provision digest-domain vocabulary.
 #[derive(Clone, Debug, Serialize)]
 pub enum ProvisionDigestDomain {
     /// RFC 8785 SHA-256 digest.
@@ -874,13 +874,13 @@ pub enum ProvisionDigestDomain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use filament_driver::{
+        build_linked_providers, build_registry, drive, CompileInput, FslCg, GenerationInput,
+    };
+    use filament_driver::{DriverRefusal, Upstream};
     use qsl_foundation::SourceIdentity;
     use qsl_replay::spine::SpineLimits;
     use quire_contract_codegen as cg;
-    use quire_driver::{
-        build_linked_providers, build_registry, drive, CompileInput, GenerationInput, QslCg,
-    };
-    use quire_driver::{DriverRefusal, Upstream};
     use quire_exact::Cancel;
     use std::cell::Cell;
     use std::collections::BTreeMap;
@@ -894,7 +894,7 @@ mod tests {
 
     impl Upstream for RouteRecorder {
         fn has_abstraction_relation(&self, package: &qsl_package::CheckedPackage) -> bool {
-            QslCg.has_abstraction_relation(package)
+            FslCg.has_abstraction_relation(package)
         }
         fn export_bindings(
             &self,
@@ -904,7 +904,7 @@ mod tests {
             Vec<Result<qsl_package::BoundItem, qsl_package::ExportRefusal>>,
             qsl_package::ExportRefusal,
         > {
-            QslCg.export_bindings(package, items)
+            FslCg.export_bindings(package, items)
         }
         fn compile(
             &self,
@@ -923,7 +923,7 @@ mod tests {
             ),
             DriverRefusal,
         > {
-            QslCg.compile(source, path, bytes, package_name, packages, limits, cancel)
+            FslCg.compile(source, path, bytes, package_name, packages, limits, cancel)
         }
 
         fn read_package(
@@ -932,11 +932,11 @@ mod tests {
             limits: quire_contract_model::CheckedPackageReadLimits,
             evidence: &quire_contract_model::CheckedPackageEvidence,
         ) -> quire_contract_model::CheckedPackageDispatchResult {
-            QslCg.read_package(emitted, limits, evidence)
+            FslCg.read_package(emitted, limits, evidence)
         }
 
         fn backend_kind(&self, descriptor: &cg::BackendDescriptor) -> Option<cg::BackendKind> {
-            QslCg.backend_kind(descriptor)
+            FslCg.backend_kind(descriptor)
         }
 
         fn negotiate(
@@ -946,7 +946,7 @@ mod tests {
             positions: &[cg::ContractRequestPosition],
             envelope: &cg::BackendProviderEnvelope,
         ) -> Result<Vec<cg::ContractItemSettlement>, Box<cg::ContractNegotiationError>> {
-            let mut settlements = QslCg.negotiate(source, package, positions, envelope)?;
+            let mut settlements = FslCg.negotiate(source, package, positions, envelope)?;
             for index in &self.unsupported_at {
                 if let Some(settlement) = settlements.get_mut(*index) {
                     let backend = settlement.backend.as_mut().expect("a lowered item settles");
@@ -980,7 +980,7 @@ mod tests {
             dispositions: &'d [qsl_route::routing::Disposition],
         ) -> Vec<Option<&'d qsl_route::Candidate>> {
             self.calls.set(self.calls.get() + 1);
-            QslCg.route(dispositions)
+            FslCg.route(dispositions)
         }
 
         fn generate(
@@ -991,7 +991,7 @@ mod tests {
             routed: &[cg::RoutedGenerationItem],
             contexts: &cg::GenerationContexts<'_>,
         ) -> Result<cg::RoutedGeneration, cg::RoutedGenerationError> {
-            QslCg.generate(source, package, positions, routed, contexts)
+            FslCg.generate(source, package, positions, routed, contexts)
         }
     }
 
@@ -1021,7 +1021,7 @@ mod tests {
             .into()],
         }
         .admit_process(4096)
-        .expect("QSL admits the process hello")
+        .expect("FSL admits the process hello")
     }
 
     /// Trace: FR-005-AC-15.
@@ -1065,8 +1065,8 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_capability_vocabulary_uses_qsl_typed_refusal() {
-        for capability_vocabulary in [None, Some("quire.capability-kind/v0".to_owned())] {
+    fn unsupported_capability_vocabulary_uses_fsl_typed_refusal() {
+        for capability_vocabulary in [None, Some("filament.capability-kind/v0".to_owned())] {
             let mut stage = hello(
                 Value::String("operation-contract".to_owned()),
                 Value::String("bounded".to_owned()),
@@ -1076,7 +1076,7 @@ mod tests {
                 .admit_process(1024)
                 .expect_err("unknown vocabulary refuses");
             let ManifestAdmissionError::CapabilityVocabulary(code) = error else {
-                panic!("vocabulary mismatch must retain QSL's typed refusal: {error:?}");
+                panic!("vocabulary mismatch must retain FSL's typed refusal: {error:?}");
             };
             assert_eq!(code.code(), "invalid_capability");
             assert_eq!(code.cause(), "unknown-vocabulary");
@@ -1129,7 +1129,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_and_unknown_hello_labels_reach_qsl_admission() {
+    fn absent_and_unknown_hello_labels_reach_fsl_admission() {
         for invalid in [
             (
                 Value::Null,
@@ -1154,17 +1154,17 @@ mod tests {
         ] {
             let error = hello(invalid.0, invalid.1)
                 .admit_process(1024 * 1024)
-                .expect_err("QSL refuses malformed capability labels");
+                .expect_err("FSL refuses malformed capability labels");
             let ManifestAdmissionError::Registration(refusal) = error else {
-                panic!("malformed labels must be classified by QSL: {error:?}");
+                panic!("malformed labels must be classified by FSL: {error:?}");
             };
             assert_eq!(refusal.cause().as_str(), invalid.2);
         }
     }
 
-    /// Trace: FR-005-AC-18; domain vocabulary and refusal remain QSL-owned.
+    /// Trace: FR-005-AC-18; domain vocabulary and refusal remain FSL-owned.
     #[test]
-    fn invalid_domains_reach_qsl_admission_without_driver_reclassification() {
+    fn invalid_domains_reach_fsl_admission_without_driver_reclassification() {
         let mut stage = hello(
             Value::String("operation-contract".to_owned()),
             Value::String("bounded".to_owned()),
@@ -1175,9 +1175,9 @@ mod tests {
 
         let error = stage
             .admit_process(1024 * 1024)
-            .expect_err("QSL refuses a domain that cannot have a finite bound");
+            .expect_err("FSL refuses a domain that cannot have a finite bound");
         let ManifestAdmissionError::Registration(refusal) = error else {
-            panic!("domain admission must preserve QSL's typed refusal: {error:?}");
+            panic!("domain admission must preserve FSL's typed refusal: {error:?}");
         };
         assert_eq!(refusal.catalog_code().code(), "invalid_capability");
         assert_eq!(refusal.catalog_code().cause(), "invalid-domains");
@@ -1265,7 +1265,7 @@ mod tests {
             bounds: Some(BTreeMap::from([("max_states".to_owned(), 8)])),
             wire: Some(Arc::clone(&retained_wire)),
         };
-        let linked_provider = quire_driver::KaniProvider::new(ProviderManifest {
+        let linked_provider = filament_driver::KaniProvider::new(ProviderManifest {
             identity: "agent-ix/provider/linked".to_owned(),
             advertises: vec![(
                 Some("operation-contract".to_owned()),
@@ -1275,7 +1275,7 @@ mod tests {
             bounds: None,
             wire: None,
         });
-        let linked_manifests = quire_driver::build_linked_providers(&[&linked_provider])
+        let linked_manifests = filament_driver::build_linked_providers(&[&linked_provider])
             .expect("linked provider is admitted by the production registry")
             .manifest_snapshot();
         let mut manifests = vec![process_manifest];
@@ -1378,7 +1378,7 @@ mod tests {
 
     /// Trace: FR-006-AC-5, FR-006-AC-6, FR-006-AC-8, FR-006-AC-10, FR-006-AC-11.
     #[test]
-    fn driven_request_serializes_the_routed_qsl_candidate_and_emitted_package() {
+    fn driven_request_serializes_the_routed_fsl_candidate_and_emitted_package() {
         let source_text = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\nfunction negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
             "quire.value.complete/v1"
@@ -1395,7 +1395,7 @@ mod tests {
                     .iter()
                     .map(|admitted| (admitted.descriptor().clone(), admitted.manifest().clone())),
             )
-            .expect("both process descriptors join the QSL registry");
+            .expect("both process descriptors join the FSL registry");
         let manifests = registry.manifest_snapshot();
         let source = SourceIdentity::new("agent-ix", "ir813");
         let input = CompileInput {
@@ -1408,7 +1408,7 @@ mod tests {
             cancel: Cancel::new(),
         };
         let upstream = RouteRecorder {
-            // Keep the real QSL candidate data, but make the first two
+            // Keep the real FSL candidate data, but make the first two
             // settlement unsupported so the writer is exercised at a nonzero
             // index. This is a test seam, not production negotiation.
             unsupported_at: vec![0],
@@ -1422,7 +1422,7 @@ mod tests {
             None,
             GenerationInput::default(),
         )
-        .expect("QSL emits two items and the test seam routes the supported one");
+        .expect("FSL emits two items and the test seam routes the supported one");
 
         assert_eq!(driven.request_items.len(), 2);
         assert_eq!(driven.settlements.len(), 2);
@@ -1456,11 +1456,11 @@ mod tests {
             .find(|settlement| settlement.request_index == request_index)
             .expect("the supported settlement retains request index 1");
         assert_eq!(settlement.request_index, request_index);
-        let qsl_item = driven
+        let fsl_item = driven
             .request_items
             .iter()
             .find(|item| item.index().get() == request_index)
-            .expect("the routed QSL item is retained");
+            .expect("the routed FSL item is retained");
         assert_eq!(
             settlement
                 .backend
@@ -1468,7 +1468,7 @@ mod tests {
                 .expect("a lowered item settles")
                 .kind
                 .map(|kind| kind.label()),
-            Some(qsl_item.kind().to_wire())
+            Some(fsl_item.kind().to_wire())
         );
         let disposition = serde_json::to_value(
             &settlement
@@ -1488,7 +1488,7 @@ mod tests {
 
         let backend = driven.routed[0].backend();
         let stage = RequestStage::from_driven(&driven, backend, &manifests, 250)
-            .expect("the production writer selects this provider's routed QSL item");
+            .expect("the production writer selects this provider's routed FSL item");
         let wire = serde_json::to_value(stage).expect("FR-331 stage serializes");
         assert_eq!(
             URL_SAFE_NO_PAD
@@ -1505,25 +1505,25 @@ mod tests {
         );
         assert_eq!(
             wire["request"]["items"][0]["kind"],
-            qsl_item.kind().to_wire()
+            fsl_item.kind().to_wire()
         );
         assert_eq!(
             wire["request"]["items"][0]["claim"]["node"],
-            qsl_foundation::node_wire::node_key_to_json(qsl_item.node()).expect("the node encodes")
+            qsl_foundation::node_wire::node_key_to_json(fsl_item.node()).expect("the node encodes")
         );
         assert_eq!(
             wire["request"]["items"][0]["claim"]["occurrence"]["role"],
-            qsl_item.occurrence().origin().role().as_str()
+            fsl_item.occurrence().origin().role().as_str()
         );
         assert_eq!(
             wire["request"]["items"][0]["claim"]["occurrence"]["ordinal"],
-            qsl_item.occurrence().origin().ordinal()
+            fsl_item.occurrence().origin().ordinal()
         );
         assert_eq!(
             wire["request"]["items"][0]["kind"],
-            qsl_item.kind().to_wire()
+            fsl_item.kind().to_wire()
         );
-        match qsl_item.candidates() {
+        match fsl_item.candidates() {
             CandidateOutcome::Candidates(set) => {
                 let candidate_ids = set
                     .candidates()
@@ -1540,7 +1540,7 @@ mod tests {
                 );
             }
             CandidateOutcome::UnknownBackend(_) => {
-                panic!("a routed item must originate in a QSL candidate set")
+                panic!("a routed item must originate in a FSL candidate set")
             }
         }
         assert_eq!(wire["request"]["items"][0]["request_index"], request_index);
@@ -1560,7 +1560,7 @@ mod tests {
 
     /// Trace: IR-813-AC-5.
     #[test]
-    fn unsupported_qsl_candidate_does_not_create_a_process_request() {
+    fn unsupported_fsl_candidate_does_not_create_a_process_request() {
         let source_text = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
             "quire.value.complete/v1"
@@ -1593,7 +1593,7 @@ mod tests {
             None,
             GenerationInput::default(),
         )
-        .expect("QSL and CG return an unsupported disposition for the empty candidate set");
+        .expect("FSL and CG return an unsupported disposition for the empty candidate set");
 
         assert!(matches!(
             driven.request_items[0].candidates(),

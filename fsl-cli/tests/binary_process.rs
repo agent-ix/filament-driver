@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Integration checks for CLI run options and QSL results.
+//! Integration checks for CLI run options and FSL results.
 
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 use std::fs::File;
@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 use std::time::{Duration, Instant};
 
+use filament_driver::{execute, ExecutionEngine, ExecutionRequest, ObjectEnvironment};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::SourceIdentity;
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
@@ -25,7 +26,6 @@ use qsl_replay::spine::{
     default_accounting, Call, DependencyInput, SpineLimits, DEFAULT_WORK_UNITS,
 };
 use qsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
-use quire_driver::{execute, ExecutionEngine, ExecutionRequest, ObjectEnvironment};
 use quire_exact::Cancel;
 use quire_semantic_value::catalog::Category;
 use quire_semantic_value::supplied_stop::SuppliedLimits;
@@ -37,8 +37,8 @@ mod shared_units;
 #[path = "common/requests.rs"]
 mod requests;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
-const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
+const FSL: &str = env!("CARGO_BIN_EXE_fsl");
+const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
 
 const RUN_REQUEST: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -132,7 +132,7 @@ fn assert_tc018_refused_range_observation(path: &std::path::Path, source_path: &
     assert_eq!(
         observation["source_identity"],
         serde_json::json!({
-            "authority": "quire",
+            "authority": "filament",
             "identity": source_path,
         })
     );
@@ -147,13 +147,13 @@ fn assert_tc018_refused_range_observation(path: &std::path::Path, source_path: &
         observation["limits"]
             .as_str()
             .is_some_and(|limits| limits.contains("SpineLimits")),
-        "the observation retains the QSL limits: {observation}"
+        "the observation retains the FSL limits: {observation}"
     );
 }
 
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 fn expected_overflow_check_document(path: &str, bytes: &[u8]) -> Vec<u8> {
-    let source = SourceIdentity::new("quire", path);
+    let source = SourceIdentity::new("filament", path);
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let packages = std::collections::BTreeMap::new();
@@ -180,7 +180,7 @@ fn expected_overflow_check_document(path: &str, bytes: &[u8]) -> Vec<u8> {
     });
     OutcomeDocument::from_check(&result)
         .to_bytes()
-        .expect("QSL serializes the expected check refusal")
+        .expect("FSL serializes the expected check refusal")
 }
 
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
@@ -230,7 +230,7 @@ fn read_child_stderr(child: &mut ChildGuard) -> Vec<u8> {
 
 #[cfg(unix)]
 fn status_with_unwritable_stderr(arguments: &[&str], reserved_exit: bool) -> ExitStatus {
-    let mut command = Command::new(QUIRE);
+    let mut command = Command::new(FSL);
     command.args(arguments).stdout(Stdio::null());
     if reserved_exit {
         command.env("TC018_CASE", "reserved-exit");
@@ -239,15 +239,15 @@ fn status_with_unwritable_stderr(arguments: &[&str], reserved_exit: bool) -> Exi
         return command
             .stderr(Stdio::from(full))
             .status()
-            .expect("run quire with /dev/full as stderr");
+            .expect("run fsl with /dev/full as stderr");
     }
 
     let mut child = command
         .stderr(Stdio::piped())
         .spawn()
-        .expect("run quire with a pipe for stderr");
+        .expect("run fsl with a pipe for stderr");
     drop(child.stderr.take());
-    child.wait().expect("wait for quire after closing stderr")
+    child.wait().expect("wait for fsl after closing stderr")
 }
 
 fn expected_document_bytes(code: Code, message: &str) -> Vec<u8> {
@@ -256,7 +256,7 @@ fn expected_document_bytes(code: Code, message: &str) -> Vec<u8> {
             OutcomeDiagnostic::new(None, code.as_str(), None, message),
         ]);
     let mut bytes =
-        ix_cli_kit::json::encode_canonical(&document, false).expect("encode expected QSL document");
+        ix_cli_kit::json::encode_canonical(&document, false).expect("encode expected FSL document");
     bytes.push('\n');
     bytes.into_bytes()
 }
@@ -264,33 +264,33 @@ fn expected_document_bytes(code: Code, message: &str) -> Vec<u8> {
 /// Trace: FR-004-AC-1, omitted engine selects the linked interpreter.
 #[test]
 fn run_without_engine_executes_with_the_interpreter() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["run", RUN_REQUEST, "--format", "json"])
         .output()
-        .expect("run quire");
+        .expect("run fsl");
     assert_eq!(
         output.status.code(),
         Some(i32::from(Category::Success.exit_code()))
     );
 }
 
-/// Trace: FR-002-AC-13; unsupported QSL text renderers refuse before lifecycle execution.
+/// Trace: FR-002-AC-13; unsupported FSL text renderers refuse before lifecycle execution.
 #[test]
 fn unavailable_text_renderers_return_typed_unsupported_refusals() {
     let cases = [
-        vec!["parse", "issuer", "document", "missing-text-renderer.qsl"],
-        vec!["check", "missing-text-renderer.qsl"],
-        vec!["compile", "missing-text-renderer.qsl"],
+        vec!["parse", "issuer", "document", "missing-text-renderer.fsl"],
+        vec!["check", "missing-text-renderer.fsl"],
+        vec!["compile", "missing-text-renderer.fsl"],
         vec!["run", "missing-text-renderer.json"],
     ];
 
     for arguments in cases {
         let verb = arguments[0];
         for suffix in [vec![], vec!["--format", "text"]] {
-            let output = Command::new(QUIRE)
+            let output = Command::new(FSL)
                 .args(arguments.iter().copied().chain(suffix.iter().copied()))
                 .output()
-                .expect("run quire with unavailable typed text rendering");
+                .expect("run fsl with unavailable typed text rendering");
             assert_eq!(
                 output.status.code(),
                 Some(i32::from(Category::Unsupported.exit_code())),
@@ -314,13 +314,13 @@ fn unavailable_text_renderers_return_typed_unsupported_refusals() {
     }
 }
 
-/// Trace: FR-002-AC-3, FR-002-AC-9; JSON is the unchanged QSL outcome encoded by the kit.
+/// Trace: FR-002-AC-3, FR-002-AC-9; JSON is the unchanged FSL outcome encoded by the kit.
 #[test]
-fn machine_run_writes_the_canonical_qsl_outcome() {
-    let output = Command::new(QUIRE)
+fn machine_run_writes_the_canonical_fsl_outcome() {
+    let output = Command::new(FSL)
         .args(["run", RUN_REQUEST, "--format", "json"])
         .output()
-        .expect("run quire in machine mode");
+        .expect("run fsl in machine mode");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
 
@@ -346,23 +346,23 @@ fn machine_run_writes_the_canonical_qsl_outcome() {
         cancel: Cancel::new(),
         engine: ExecutionEngine::Interpreter,
     };
-    let result = execute(request).expect("obtain typed QSL result");
+    let result = execute(request).expect("obtain typed FSL result");
     let expected = ix_cli_kit::json::encode_canonical(&result.document, false)
         .expect("encode typed outcome through kit");
     assert_eq!(output.stdout, format!("{expected}\n").as_bytes());
-    let qsl_bytes = result
+    let fsl_bytes = result
         .outcome_bytes()
-        .expect("encode typed outcome through QSL");
+        .expect("encode typed outcome through FSL");
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("parse child outcome"),
-        serde_json::from_slice::<serde_json::Value>(&qsl_bytes).expect("parse QSL outcome bytes")
+        serde_json::from_slice::<serde_json::Value>(&fsl_bytes).expect("parse FSL outcome bytes")
     );
 }
 
-/// Trace: FR-002-AC-3, FR-002-AC-8, FR-002-AC-9; pre-QSL request refusals use QSL's catalog code.
+/// Trace: FR-002-AC-3, FR-002-AC-8, FR-002-AC-9; pre-FSL request refusals use FSL's catalog code.
 #[test]
-fn malformed_run_limit_emits_one_qsl_outcome_and_streams_diagnostic() {
-    let output = Command::new(QUIRE)
+fn malformed_run_limit_emits_one_fsl_outcome_and_streams_diagnostic() {
+    let output = Command::new(FSL)
         .args([
             "run",
             "missing-request.json",
@@ -372,7 +372,7 @@ fn malformed_run_limit_emits_one_qsl_outcome_and_streams_diagnostic() {
             "json",
         ])
         .output()
-        .expect("run quire with malformed limit");
+        .expect("run fsl with malformed limit");
     assert_eq!(output.status.code(), Some(20));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("s1.input_bytes=invalid"));
@@ -383,13 +383,13 @@ fn malformed_run_limit_emits_one_qsl_outcome_and_streams_diagnostic() {
     );
 }
 
-/// Trace: FR-002-AC-3, FR-002-AC-8, FR-002-AC-9; source I/O errors retain QSL's native code.
+/// Trace: FR-002-AC-3, FR-002-AC-8, FR-002-AC-9; source I/O errors retain FSL's native code.
 #[test]
-fn missing_source_emits_qsl_io_error_document_and_diagnostic() {
-    let output = Command::new(QUIRE)
+fn missing_source_emits_fsl_io_error_document_and_diagnostic() {
+    let output = Command::new(FSL)
         .args(["run", "missing-request.json", "--format", "json"])
         .output()
-        .expect("run quire with a missing source");
+        .expect("run fsl with a missing source");
     assert_eq!(output.status.code(), Some(20));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("cannot read missing-request.json:"));
@@ -408,12 +408,12 @@ fn missing_source_emits_qsl_io_error_document_and_diagnostic() {
 }
 
 fn run_with_provider_config(path: &std::path::Path) -> std::process::Output {
-    Command::new(QUIRE)
+    Command::new(FSL)
         .args(["run", RUN_REQUEST, "--provider-config"])
         .arg(path)
         .args(["--format", "json"])
         .output()
-        .expect("run quire with provider config")
+        .expect("run fsl with provider config")
 }
 
 fn assert_provider_config_refusal(path: &std::path::Path, expected: &str) {
@@ -530,12 +530,12 @@ fn empty_provider_config_executes_without_starting_a_provider() {
         std::process::id()
     ));
     std::fs::write(&path, r#"{"providers":[]}"#).expect("write empty provider config");
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["run", RUN_REQUEST, "--provider-config"])
         .arg(&path)
         .args(["--format", "json"])
         .output()
-        .expect("run quire with empty provider config");
+        .expect("run fsl with empty provider config");
     let _ = std::fs::remove_file(path);
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
@@ -608,14 +608,14 @@ fn configured_process_normal_exit_shuts_down_active_session() {
             ]),
         )),
     );
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .arg("run")
         .arg(request.as_str())
         .arg("--provider-config")
         .arg(&config_path)
         .args(["--format", "json"])
         .output()
-        .expect("run production quire binary");
+        .expect("run production fsl binary");
     assert_eq!(output.status.code(), Some(0));
     assert!(
         request_marker.is_file(),
@@ -702,14 +702,14 @@ fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() 
             ]),
         )),
     );
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .arg("run")
         .arg(request.as_str())
         .arg("--provider-config")
         .arg(&config_path)
         .args(["--format", "json"])
         .output()
-        .expect("run production quire binary with duplicate identities");
+        .expect("run production fsl binary with duplicate identities");
     let message = "configured process providers repeat admitted identity `agent-ix/provider/configured-duplicate`";
     assert_eq!(output.status.code(), Some(20));
     assert_eq!(
@@ -818,7 +818,7 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
             ]),
         )),
     );
-    let mut child = Command::new(QUIRE)
+    let mut child = Command::new(FSL)
         .arg("run")
         .arg(request.as_str())
         .arg("--provider-config")
@@ -827,17 +827,17 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("start production quire binary");
+        .expect("start production fsl binary");
     let deadline = started + Duration::from_secs(5);
     loop {
-        if child.try_wait().expect("poll quire child").is_some() {
+        if child.try_wait().expect("poll fsl child").is_some() {
             break;
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let output = child
                 .wait_with_output()
-                .expect("collect timed-out quire child");
+                .expect("collect timed-out fsl child");
             let _ = std::fs::write(&release_marker, b"release");
             panic!(
                 "production signal flow did not exit within its bound: status={:?}, stdout={}, stderr={}",
@@ -850,7 +850,7 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
     }
     let output = child
         .wait_with_output()
-        .expect("collect signalled quire child");
+        .expect("collect signalled fsl child");
     let _ = std::fs::write(&release_marker, b"release");
 
     assert!(
@@ -889,10 +889,10 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
 /// Trace: FR-002-AC-1, FR-002-AC-8; root argv refusals name the rejected argument.
 #[test]
 fn root_argv_refusal_names_invalid_format_without_result_output() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["run", RUN_REQUEST, "--format", "dot"])
         .output()
-        .expect("run quire with an invalid root format");
+        .expect("run fsl with an invalid root format");
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("dot"));
@@ -902,10 +902,10 @@ fn root_argv_refusal_names_invalid_format_without_result_output() {
 #[test]
 fn non_run_verb_refuses_and_names_run_only_option() {
     for option in ["--engine", "--limit"] {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(["check", option, "gpu"])
             .output()
-            .expect("run quire with a run-only option on check");
+            .expect("run fsl with a run-only option on check");
         assert_eq!(output.status.code(), Some(20), "{option}");
         assert!(output.stdout.is_empty(), "{option}");
         assert!(
@@ -919,7 +919,7 @@ fn non_run_verb_refuses_and_names_run_only_option() {
 #[test]
 fn unavailable_engines_are_not_substituted() {
     for engine in ["aot", "jit"] {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args([
                 "run",
                 "missing-request.json",
@@ -929,7 +929,7 @@ fn unavailable_engines_are_not_substituted() {
                 "json",
             ])
             .output()
-            .expect("run quire");
+            .expect("run fsl");
         assert_eq!(
             output.status.code(),
             Some(i32::from(Category::Unsupported.exit_code())),
@@ -940,7 +940,7 @@ fn unavailable_engines_are_not_substituted() {
             "typed unsupported refusal names {engine}"
         );
         let document: serde_json::Value =
-            serde_json::from_slice(&output.stdout).expect("unsupported result is QSL JSON");
+            serde_json::from_slice(&output.stdout).expect("unsupported result is FSL JSON");
         assert_eq!(document["category"], "unsupported");
         assert_eq!(
             document["diagnostics"][0]["code"],
@@ -952,10 +952,10 @@ fn unavailable_engines_are_not_substituted() {
 /// Trace: FR-004-AC-2, a value outside the engine set is refused.
 #[test]
 fn an_unknown_engine_is_a_refusal() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["run", "missing-request.json", "--engine", "gpu"])
         .output()
-        .expect("run quire");
+        .expect("run fsl");
     assert_eq!(
         output.status.code(),
         Some(i32::from(Category::Refusal.exit_code()))
@@ -963,10 +963,10 @@ fn an_unknown_engine_is_a_refusal() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("gpu"));
 }
 
-/// Trace: FR-003-AC-1, the exposed checking work bound reaches QSL unchanged.
+/// Trace: FR-003-AC-1, the exposed checking work bound reaches FSL unchanged.
 #[test]
 fn checking_work_limit_changes_the_call_outcome() {
-    let exhausted = Command::new(QUIRE)
+    let exhausted = Command::new(FSL)
         .args([
             "run",
             RUN_REQUEST,
@@ -982,7 +982,7 @@ fn checking_work_limit_changes_the_call_outcome() {
         Some(i32::from(Category::Incomplete.exit_code()))
     );
 
-    let sufficient = Command::new(QUIRE)
+    let sufficient = Command::new(FSL)
         .args([
             "run",
             RUN_REQUEST,
@@ -999,10 +999,10 @@ fn checking_work_limit_changes_the_call_outcome() {
     );
 }
 
-/// Trace: FR-003-AC-9, FR-003-AC-10. QSL-named accounting reaches QSL's call.
+/// Trace: FR-003-AC-9, FR-003-AC-10. FSL-named accounting reaches FSL's call.
 #[test]
-fn named_accounting_work_units_limit_reaches_qsl_call_accounting() {
-    let output = Command::new(QUIRE)
+fn named_accounting_work_units_limit_reaches_fsl_call_accounting() {
+    let output = Command::new(FSL)
         .args([
             "run",
             RUN_REQUEST,
@@ -1018,7 +1018,7 @@ fn named_accounting_work_units_limit_reaches_qsl_call_accounting() {
         Some(i32::from(Category::Incomplete.exit_code()))
     );
     let document: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("QSL writes an incomplete document");
+        serde_json::from_slice(&output.stdout).expect("FSL writes an incomplete document");
     assert_eq!(document["category"], "incomplete");
     assert_eq!(document["result"]["kind"], "incomplete");
     assert_eq!(
@@ -1027,10 +1027,10 @@ fn named_accounting_work_units_limit_reaches_qsl_call_accounting() {
     );
 }
 
-/// Trace: FR-003-AC-3 / TC-010, a lifecycle stage limit uses QSL's exit code.
+/// Trace: FR-003-AC-3 / TC-010, a lifecycle stage limit uses FSL's exit code.
 #[test]
 fn lifecycle_stage_limit_uses_incomplete_exit_code() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args([
             "run",
             RUN_REQUEST,
@@ -1048,7 +1048,7 @@ fn lifecycle_stage_limit_uses_incomplete_exit_code() {
 
     let source_bytes = std::fs::read(SOURCE).expect("read fixture to set exact source bound");
     let bound = format!("s1.input_bytes={}", source_bytes.len());
-    let raised = Command::new(QUIRE)
+    let raised = Command::new(FSL)
         .args(["run", RUN_REQUEST, "--limit", &bound, "--format", "json"])
         .output()
         .expect("run with the source bound raised to the fixture length");
@@ -1060,19 +1060,19 @@ fn lifecycle_stage_limit_uses_incomplete_exit_code() {
 
 /// Trace: FR-003-AC-2, FR-003-AC-7, FR-003-AC-8.
 #[test]
-fn qsl_rejects_unknown_malformed_and_duplicate_limits_before_source_read() {
+fn fsl_rejects_unknown_malformed_and_duplicate_limits_before_source_read() {
     for operand in [
-        "work_units=0", // A bare counter is not a setting (QSL FR-255 Behavior 8).
+        "work_units=0", // A bare counter is not a setting (FSL FR-255 Behavior 8).
         "normalization.work_units=1",
         "s1.input_bytes=invalid",
         "s1.input_bytes=1", // duplicated below using the same option twice
     ] {
-        let mut command = Command::new(QUIRE);
+        let mut command = Command::new(FSL);
         command.args(["run", "missing-request.json", "--limit", operand]);
         if operand == "s1.input_bytes=1" {
             command.args(["--limit", operand]);
         }
-        let output = command.output().expect("run with invalid QSL limit");
+        let output = command.output().expect("run with invalid FSL limit");
         assert_eq!(
             output.status.code(),
             Some(i32::from(Category::Refusal.exit_code())),
@@ -1091,10 +1091,10 @@ fn qsl_rejects_unknown_malformed_and_duplicate_limits_before_source_read() {
     }
 }
 
-/// Trace: FR-003-AC-5, QSL-recognized settings absent from run bounds are distinct refusals.
+/// Trace: FR-003-AC-5, FSL-recognized settings absent from run bounds are distinct refusals.
 #[test]
 fn recognized_setting_unavailable_for_run_is_named_before_source_read() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args([
             "run",
             "missing-request.json",
@@ -1125,7 +1125,7 @@ fn recognized_setting_unavailable_for_run_is_named_before_source_read() {
 /// Trace: FR-003-AC-2, parser refusals take precedence over operation bounds.
 #[test]
 fn invalid_operand_precedes_recognized_but_unavailable_setting() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args([
             "run",
             "missing-request.json",
@@ -1155,7 +1155,7 @@ fn refusal_keeps_its_exit_code_when_stderr_is_unwritable() {
     assert_eq!(status.code(), Some(20));
 }
 
-/// Trace: FR-002-AC-14; a broken primary stdout pipe preserves the QSL category result.
+/// Trace: FR-002-AC-14; a broken primary stdout pipe preserves the FSL category result.
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 #[test]
 fn fifo_broken_pipe_keeps_refusal_exit_without_output_failure_diagnostic() {
@@ -1175,23 +1175,23 @@ fn fifo_broken_pipe_keeps_refusal_exit_without_output_failure_diagnostic() {
         expected
             .windows(b"undefined_expression".len())
             .any(|window| window == b"undefined_expression"),
-        "the shared overflow fixture must retain its QSL refusal code"
+        "the shared overflow fixture must retain its FSL refusal code"
     );
     assert!(
         expected
             .windows(b"unproved-range".len())
             .any(|window| window == b"unproved-range"),
-        "the shared overflow fixture must retain its QSL refusal cause"
+        "the shared overflow fixture must retain its FSL refusal cause"
     );
 
-    let child = Command::new(QUIRE)
+    let child = Command::new(FSL)
         .args(["check", source_text, "--format", "json"])
         .env("TC018_CASE", "refused-range")
         .env("TC018_REQUEST_PATH", &request_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn quire check with piped stdout");
+        .expect("spawn fsl check with piped stdout");
     let mut child = ChildGuard::new(child);
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut writer = open_fifo_writer_until(&source_path, &mut child, deadline);
@@ -1208,7 +1208,7 @@ fn fifo_broken_pipe_keeps_refusal_exit_without_output_failure_diagnostic() {
     assert_eq!(
         status.code(),
         Some(i32::from(Category::Refusal.exit_code())),
-        "broken pipe preserves the independently computed QSL category exit"
+        "broken pipe preserves the independently computed FSL category exit"
     );
     assert!(
         !stderr.contains("OutputFailure"),
@@ -1231,21 +1231,21 @@ fn full_stdout_device_selects_internal_failure_and_output_failure_diagnostic() {
         expected
             .windows(b"undefined_expression".len())
             .any(|window| window == b"undefined_expression"),
-        "the shared overflow fixture must retain its QSL refusal code"
+        "the shared overflow fixture must retain its FSL refusal code"
     );
 
     let full = std::fs::OpenOptions::new()
         .write(true)
         .open("/dev/full")
         .expect("open Linux full device");
-    let child = Command::new(QUIRE)
+    let child = Command::new(FSL)
         .args(["check", source_text, "--format", "json"])
         .env("TC018_CASE", "refused-range")
         .env("TC018_REQUEST_PATH", &request_path)
         .stdout(Stdio::from(full))
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn quire check with /dev/full as stdout");
+        .expect("spawn fsl check with /dev/full as stdout");
     let mut child = ChildGuard::new(child);
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = wait_for_child_until(&mut child, deadline);
@@ -1263,15 +1263,15 @@ fn full_stdout_device_selects_internal_failure_and_output_failure_diagnostic() {
     );
 }
 
-/// Trace: FR-002-AC-6, the reserved QSL result falls back without stdout output.
+/// Trace: FR-002-AC-6, the reserved FSL result falls back without stdout output.
 #[cfg(feature = "tc018-test-adapter")]
 #[test]
 fn reserved_exit_code_uses_internal_failure_fallback() {
-    let version = Command::new(QUIRE)
+    let version = Command::new(FSL)
         .arg("--version")
         .env("TC018_CASE", "reserved-exit")
         .output()
-        .expect("run the test-built quire binary with --version");
+        .expect("run the test-built `fsl` binary with --version");
     assert_eq!(version.status.code(), Some(30));
     assert!(version.stdout.is_empty());
     assert_eq!(
@@ -1280,11 +1280,11 @@ fn reserved_exit_code_uses_internal_failure_fallback() {
     );
 
     for format in ["text", "json"] {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(["run", RUN_REQUEST, "--format", format])
             .env("TC018_CASE", "reserved-exit")
             .output()
-            .expect("run the test-built quire binary with a valid verb");
+            .expect("run the test-built `fsl` binary with a valid verb");
         assert_eq!(output.status.code(), Some(30), "{format}");
         assert!(output.stdout.is_empty(), "{format}");
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1321,14 +1321,14 @@ fn reserved_exit_code_uses_internal_failure_fallback() {
 #[cfg(not(feature = "tc018-test-adapter"))]
 #[test]
 fn default_binary_does_not_enable_the_test_exit_seam() {
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["check", SOURCE, "--format", "json"])
         .env("TC018_CASE", "reserved-exit")
         .output()
-        .expect("run the default-feature quire binary");
+        .expect("run the default-feature fsl binary");
     assert_eq!(output.status.code(), Some(0));
     let document: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("check writes a QSL outcome");
+        serde_json::from_slice(&output.stdout).expect("check writes a FSL outcome");
     assert_eq!(document["operation"], "check");
     assert!(output.stderr.is_empty());
 }

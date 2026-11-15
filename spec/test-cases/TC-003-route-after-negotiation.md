@@ -3,7 +3,7 @@ id: TC-003
 title: "route runs after negotiation, for supported items only"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-003: route runs after negotiation, for supported items only

@@ -8,15 +8,15 @@ use std::process::{Command, Output, Stdio};
 use ix_trace_rs::trace;
 use quire_semantic_value::catalog::Category;
 
-const QUIRE: &str = env!("CARGO_BIN_EXE_fsl");
-const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.qsl");
+const FSL: &str = env!("CARGO_BIN_EXE_fsl");
+const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
 const INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/parse-invalid.qsl"
+    "/tests/fixtures/parse-invalid.fsl"
 );
 const MISSING_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/missing-source.qsl"
+    "/tests/fixtures/missing-source.fsl"
 );
 
 const RUN_REQUEST: &str = concat!(
@@ -44,11 +44,8 @@ fn tool_failure_code() -> i32 {
     i32::from(Category::InternalFailure.exit_code())
 }
 
-fn quire(arguments: &[&str]) -> Output {
-    Command::new(QUIRE)
-        .args(arguments)
-        .output()
-        .expect("run quire")
+fn fsl(arguments: &[&str]) -> Output {
+    Command::new(FSL).args(arguments).output().expect("run fsl")
 }
 
 /// Assert a refusal that wrote nothing to stdout and did not panic.
@@ -66,21 +63,21 @@ fn missing_and_extra_operands_are_refused_before_any_file_is_read() {
     let cases: [(&str, &[&str]); 8] = [
         ("run", &["run"]),
         ("run", &["run", "missing.json", "extra"]),
-        ("run", &["run", "missing.qsl", "yes", "extra"]),
+        ("run", &["run", "missing.fsl", "yes", "extra"]),
         ("compile", &["compile"]),
-        ("compile", &["compile", "missing.qsl", "extra"]),
+        ("compile", &["compile", "missing.fsl", "extra"]),
         ("parse", &["parse", "issuer", "document"]),
         (
             "parse",
-            &["parse", "issuer", "document", "missing.qsl", "extra"],
+            &["parse", "issuer", "document", "missing.fsl", "extra"],
         ),
         (
             "format",
-            &["format", "issuer", "document", "missing.qsl", "extra"],
+            &["format", "issuer", "document", "missing.fsl", "extra"],
         ),
     ];
     for (verb, arguments) in cases {
-        let output = quire(arguments);
+        let output = fsl(arguments);
         assert_refused_quietly(&output, &format!("{arguments:?}"));
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
@@ -92,7 +89,7 @@ fn missing_and_extra_operands_are_refused_before_any_file_is_read() {
             "{arguments:?} opened its path: {stderr}"
         );
     }
-    let output = quire(&["format", "issuer", "document"]);
+    let output = fsl(&["format", "issuer", "document"]);
     assert_refused_quietly(&output, "format without an operand");
     for verb in ["parse", "format"] {
         for (authority, identity, label) in [
@@ -100,7 +97,7 @@ fn missing_and_extra_operands_are_refused_before_any_file_is_read() {
             ("issuer", "\u{3000}", "identity"),
             (" ", "", "authority"),
         ] {
-            let output = quire(&[
+            let output = fsl(&[
                 verb,
                 authority,
                 identity,
@@ -235,7 +232,7 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
     ];
     for (valid, invalid) in verbs {
         for (arguments, expected_error) in invalid {
-            let output = quire(arguments);
+            let output = fsl(arguments);
             assert_refused_quietly(&output, &format!("{arguments:?}"));
             let stderr = String::from_utf8_lossy(&output.stderr);
             assert!(stderr.contains(expected_error), "{arguments:?}: {stderr}");
@@ -243,7 +240,7 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
                 !stderr.contains("could not read") && !stderr.contains("cannot read"),
                 "{arguments:?} opened its path: {stderr}"
             );
-            let output = quire(valid);
+            let output = fsl(valid);
             assert_eq!(
                 output.status.code(),
                 Some(i32::from(Category::Success.exit_code())),
@@ -289,10 +286,10 @@ fn non_utf8_commands_and_labels_refuse_but_raw_file_paths_parse() {
         ]);
     }
     for arguments in cases {
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(&arguments)
             .output()
-            .expect("run quire with invalid command or label encoding");
+            .expect("run fsl with invalid command or label encoding");
         assert_refused_quietly(&output, &format!("{arguments:?}"));
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("UTF-8"), "{arguments:?}: {stderr}");
@@ -302,15 +299,15 @@ fn non_utf8_commands_and_labels_refuse_but_raw_file_paths_parse() {
         );
     }
     let directory = TestDirectory(
-        std::env::temp_dir().join(format!("quire-frontend-raw-path-{}", std::process::id())),
+        std::env::temp_dir().join(format!("filament-frontend-raw-path-{}", std::process::id())),
     );
     std::fs::create_dir_all(&directory.0).expect("create raw-path directory");
     let mut filename = OsString::from("source-");
     filename.push(invalid_os_string());
-    filename.push(".qsl");
+    filename.push(".fsl");
     let path = directory.0.join(filename);
     std::fs::copy(SOURCE, &path).expect("create source at raw OS path");
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .args(["parse", "issuer", "document"])
         .arg(&path)
         .args(["--format", "json"])
@@ -353,11 +350,11 @@ fn stdout_write_failure_exits_30() {
             .write(true)
             .open("/dev/full")
             .expect("open /dev/full");
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(arguments)
             .stdout(Stdio::from(full))
             .output()
-            .expect("run quire with a full stdout");
+            .expect("run fsl with a full stdout");
         assert_eq!(
             output.status.code(),
             Some(tool_failure_code()),
@@ -419,11 +416,11 @@ fn closed_stdout_pipe_keeps_the_outcome_exit_code_and_stays_quiet() {
         // always meets a closed pipe.
         let (reader, writer) = std::io::pipe().expect("create stdout pipe");
         drop(reader);
-        let output = Command::new(QUIRE)
+        let output = Command::new(FSL)
             .args(arguments)
             .stdout(Stdio::from(writer))
             .output()
-            .expect("run quire with a closed stdout reader");
+            .expect("run fsl with a closed stdout reader");
         assert_eq!(output.status.code(), Some(expected), "{arguments:?}");
         assert!(
             output.stderr.is_empty(),
@@ -445,9 +442,9 @@ impl Drop for TestDirectory {
 #[trace("TC-1262", "FR-287-AC-9")]
 #[test]
 fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
+    use filament_driver::{execute, ExecutionEngine, ExecutionRequest, ObjectEnvironment};
     use qsl_command::command::{compile_outcome, prepare_run, PreparedRun, RunLimits};
     use qsl_replay::Operation;
-    use quire_driver::{execute, ExecutionEngine, ExecutionRequest, ObjectEnvironment};
     let fixtures = std::path::Path::new(RUN_REQUEST)
         .parent()
         .expect("fixture directory");
@@ -494,14 +491,14 @@ fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
             ix_cli_kit::json::encode_canonical(&document, false).expect("producer document")
         );
         let path = std::path::Path::new(request);
-        let relative = Command::new(QUIRE)
+        let relative = Command::new(FSL)
             .current_dir(fixtures)
             .arg(verb)
             .arg(path.file_name().expect("request name"))
             .args(["--format", "json"])
             .output()
             .expect("relative request");
-        let absolute = Command::new(QUIRE)
+        let absolute = Command::new(FSL)
             .current_dir(&elsewhere)
             .args([verb, request, "--format", "json"])
             .output()
@@ -531,7 +528,7 @@ fn request_byte_options_reach_owner_limits_and_compile_accepts_none() {
         ("--dependent-bytes", "dependent_bytes", source_bytes),
     ] {
         let too_small = (size - 1).to_string();
-        let output = quire(&["run", RUN_REQUEST, option, &too_small, "--format", "json"]);
+        let output = fsl(&["run", RUN_REQUEST, option, &too_small, "--format", "json"]);
         assert_eq!(
             output.status.code(),
             Some(i32::from(Category::Incomplete.exit_code()))
@@ -541,7 +538,7 @@ fn request_byte_options_reach_owner_limits_and_compile_accepts_none() {
         assert!(stderr.contains(&too_small), "{stderr}");
         assert!(stderr.contains(option), "{stderr}");
         let exact = size.to_string();
-        let output = quire(&["run", RUN_REQUEST, option, &exact, "--format", "json"]);
+        let output = fsl(&["run", RUN_REQUEST, option, &exact, "--format", "json"]);
         assert_eq!(
             output.status.code(),
             Some(0),
@@ -549,9 +546,9 @@ fn request_byte_options_reach_owner_limits_and_compile_accepts_none() {
             String::from_utf8_lossy(&output.stderr)
         );
         let maximum = usize::MAX.to_string();
-        let output = quire(&["run", RUN_REQUEST, option, &maximum, "--format", "json"]);
+        let output = fsl(&["run", RUN_REQUEST, option, &maximum, "--format", "json"]);
         assert_eq!(output.status.code(), Some(0));
-        let output = quire(&[
+        let output = fsl(&[
             "compile",
             MISSING_SOURCE,
             option,
@@ -573,7 +570,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     use qsl_replay::spine::ClauseRunSelection;
     use qsl_replay::{OutcomeDocument, OutcomeStage};
     let directory =
-        TestDirectory(std::env::temp_dir().join(format!("quire-clause-{}", std::process::id())));
+        TestDirectory(std::env::temp_dir().join(format!("filament-clause-{}", std::process::id())));
     std::fs::create_dir_all(&directory.0).expect("clause directory");
     let observation = serde_json::json!({"format":"quire.state.snapshot/v1",
         "identity":{"authority":"issuer","identity":"current"},"observation":"current"});
@@ -598,7 +595,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     let document =
         OutcomeDocument::from_clause_runs(Some(OutcomeStage::S4), [(name.as_str(), &report)])
             .expect("core producer");
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .arg("run")
         .arg(&request_path)
         .args(["--format", "json"])
@@ -621,7 +618,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
         "argv":[],"deadline_ms":1024,"limits":{"max_frame_bytes":262144,"max_total_bytes":1048576,
             "max_stderr_bytes":4096,"cancellation_grace_ms":500}}]});
     std::fs::write(&config_path, config.to_string()).expect("provider config");
-    let output = Command::new(QUIRE)
+    let output = Command::new(FSL)
         .arg("run")
         .arg(&request_path)
         .arg("--provider-config")

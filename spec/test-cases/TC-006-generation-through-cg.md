@@ -3,14 +3,14 @@ id: TC-006
 title: "E5 admits the emitted package and CG generates for the routed items"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-001
+  - target: ix://agent-ix/filament-driver/FR-001
     type: verifies
 ---
 # TC-006: E5 admits the emitted package and CG generates for the routed items
 
 ## Description
 
-Verify the E5 hand-off and step 7 against the real QSL, IR and CG
+Verify the E5 hand-off and step 7 against the real FSL, IR and CG
 functions. Kani is not run; generation only produces its output.
 
 Scope: FR-001-AC-6 through FR-001-AC-8, and FR-001-AC-12 through
@@ -54,7 +54,7 @@ application, in occurrence-key order.
 10. Drive `function unreachable_branch using v(x: Int[0, 9]): Int[0, 10]
     pure { if x > 20 then x + 100 else 0 }`. The unit's `if` guard
     (`x > 20`) is itself a scalar comparison, so this writes two
-    requirement records in ascending QSL occurrence-key order: the guard
+    requirement records in ascending FSL occurrence-key order: the guard
     `>` at index 0 and the `+` at index 1.
     Neither item has a selected conversion context, so both settle as
     unsupported before routing or generation.
@@ -71,7 +71,7 @@ application, in occurrence-key order.
     requirement and node in the exact admitted checked package, matched by
     occurrence.
 13. Planned; not exercised by the current test suite: using the same checked rational form, exercise three candidate controls
-    with candidate sets produced by QSL from their registered descriptors,
+    with candidate sets produced by FSL from their registered descriptors,
     not authored by the test: (a) no candidate; (b) two valid candidates and
     no named backend; and (c) one Kani candidate that passes candidate
     validation but advertises `bounded` only for an unbounded item whose
@@ -80,20 +80,20 @@ application, in occurrence-key order.
     lowerability/refusal value or derive the form from display/debug text.
 14. Drive the RR-16 source with `g(p: Int[0, 10])`, `h(q: Int[0, 20])`, and
     `f(x: Int[0, 9]) { g(x + 1) and h(x + 1) }`, with Kani registered.
-    Compare each typed form and context root with its corresponding QSL
-    requirement occurrence and the exact admitted package. Verify each QSL
+    Compare each typed form and context root with its corresponding FSL
+    requirement occurrence and the exact admitted package. Verify each FSL
     requirement's exact application occurrence and direct narrow occurrence
     with the driver's alternating `[add, narrow]` roots; the shared add node
     produces two routed items and the two narrow roots remain attached to
     their original occurrences through CG generation.
-15. Planned production-path regression: pass the RR-16 QSL source through the
+15. Planned production-path regression: pass the RR-16 FSL source through the
     driver's scalar-generation composition with the actual `Call` for `f`
     (`x = 3`), its `ObjectEnvironment`, and the caller's `Cancel`. Verify that
-    QSL compiles/emits the package once, IR admits those exact emitted bytes,
+    FSL compiles/emits the package once, IR admits those exact emitted bytes,
     and the driver binds each selected `RequirementItem` using its exact
     occurrence key and the same `Call`. Check that the two bindings retain
     distinct occurrence keys for the shared `add` node, each returns
-    `[3, 1]` in QSL operand order, and each sidecar entry is keyed by its
+    `[3, 1]` in FSL operand order, and each sidecar entry is keyed by its
     corresponding request index. No argument/operand positional zip or
     node-only occurrence lookup is used.
 16. For step 15, inspect the complete CG position vector in FR-330 accounting
@@ -103,12 +103,12 @@ application, in occurrence-key order.
     claim, or output. CG receives the exact admitted `ContractPackageV1`, that
     position vector, the routed items and generation context. Verify two CG
     outputs retain their own request indices and direct-narrow selections,
-    while the driver sidecar retains the exact QSL `Call`, occurrence and
+    while the driver sidecar retains the exact FSL `Call`, occurrence and
     bound operands for each.
 17. Planned negative controls on the same production boundary: a source with
     no selected scalar item performs no scalar binding or native execution
-    and selects no fallback; a QSL item with no conversion context supplies
-    no conversion root; a call/occurrence function mismatch preserves QSL's
+    and selects no fallback; a FSL item with no conversion context supplies
+    no conversion root; a call/occurrence function mismatch preserves FSL's
     typed `BindRefusal` without an accepted scalar context; and an admitted
     package/position mismatch preserves the owning IR/CG typed refusal or the
     driver's typed `runtime_invariant` fault. No native execution or replay
@@ -151,7 +151,7 @@ the rational projection or candidate-control cases.
 - Step 4's generation output equals the direct `generate_routed` call over
   the same routed item, whatever CG settles it.
 - Step 5: E5 admits both packages. A float
-  profile unit is not covered: no float parameter form this QSL revision
+  profile unit is not covered: no float parameter form this FSL revision
   admits was found.
 - Step 6: both items route and generate; nothing is rejected, and the
   generation output is keyed by request index, ascending: `items[0]` is
@@ -174,20 +174,20 @@ the rational projection or candidate-control cases.
   node's own type is the plain scalar type, and only the declared
   context's narrowing `conversion` consumes it, so IR-302 reads the
   conversion's own `[10, 29]` bound as the `+` node's result bound.
-- Step 9's unit does not compile: QSL's own checker proves `x + 100`'s
+- Step 9's unit does not compile: FSL's own checker proves `x + 100`'s
   every exact result (`[100, 109]`) is disjoint from the declared `[0,
   10]` result bound and refuses at the check stage
   (`undefined_expression`/`unproved-range`), before CG is ever called.
   CG's own `ResultBoundUnreachable` refusal names the identical
   disjoint-interval fact (confirmed against CG's own fixture test,
   `quire-contract-codegen`'s
-  `tc_033_qsl_shaped_literal_and_consumer_refusals_have_no_harness`). This
+  `tc_033_fsl_shaped_literal_and_consumer_refusals_have_no_harness`). This
   is one shape, not a general guarantee that the refusal is unreachable:
   step 10 reaches it.
-- Step 10's unit compiles: QSL's `Facts::walk` proves `x > 20` is never
+- Step 10's unit compiles: FSL's `Facts::walk` proves `x > 20` is never
   true over `x: Int[0, 9]` and never discharges the dead branch's
   coercion, so the checked package still emits. Neither item has a selected
-  conversion context. In QSL occurrence-key order, the guard at index 0
+  conversion context. In FSL occurrence-key order, the guard at index 0
   settles as
   `Unsupported`/`OperationNotRendered`; the `+` at index 1 settles as
   `Unsupported`/`ResultBoundUnreachable` (`quire.op.integer.add`, result
@@ -208,16 +208,16 @@ the rational projection or candidate-control cases.
   settle with the exact typed refusal in its TC-030 Planned row before the
   unbounded/bounded-only `requires-bound` result. These future tests should
   fail if the driver alters, drops or replaces the checked form, edits a
-  QSL-produced candidate set, or decides lowerability/refusal itself. No
+  FSL-produced candidate set, or decides lowerability/refusal itself. No
   current test asserts these planned outcomes.
-- Step 14's application and conversion occurrence keys match QSL's two
+- Step 14's application and conversion occurrence keys match FSL's two
   requirement records exactly. Lowering positions are `[DriverItem(add,
   narrow-1), ContextRoot(narrow-1), DriverItem(add, narrow-2),
   ContextRoot(narrow-2)]`; the application occurrences and narrow roots
   differ, the add node is shared, and CG returns exactly the two routed items
   without swapping their contexts.
 - Planned expectations for steps 15 through 17: the production boundary binds
-  both QSL occurrences through `bind_scalar_operands` and retains each result
+  both FSL occurrences through `bind_scalar_operands` and retains each result
   beside the CG output under the matching request index. Both values are
   `[3, 1]`, while the occurrence and direct-narrow context remain distinct.
   The complete position vector contains no request-index shift from context
@@ -228,7 +228,7 @@ the rational projection or candidate-control cases.
   default occurrence, context or operand order is selected.
 
 The production call-to-CG regression in steps 15 and 16 verifies only the
-QSL binding, IR lowering and CG generation composition. It does not establish
+FSL binding, IR lowering and CG generation composition. It does not establish
 IR-773's same-artifact native execution, receipt authentication, replay
 settlement or FR-331 terminal behavior; those remain separately planned in
 TC-016.

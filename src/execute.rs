@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The driver's selected QSL execution engine (FR-004).
+//! The driver's selected FSL execution engine (FR-004).
 
 use qsl_foundation::Code;
 use qsl_foundation::SourceIdentity;
@@ -12,7 +12,7 @@ use quire_semantic_value::catalog::Category;
 /// The engine selected for one execution request.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ExecutionEngine {
-    /// QSL's linked interpreter.
+    /// FSL's linked interpreter.
     #[default]
     Interpreter,
     /// AOT execution, when linked into the binary.
@@ -48,11 +48,11 @@ impl std::fmt::Display for ExecutionEngine {
     }
 }
 
-/// One invocation of QSL's typed run operation.
+/// One invocation of FSL's typed run operation.
 pub struct ExecutionRequest<'a> {
     /// Source authority and revision labels.
     pub source: SourceIdentity,
-    /// Display path passed to QSL; the driver does not derive identity from it.
+    /// Display path passed to FSL; the driver does not derive identity from it.
     pub path: &'a str,
     /// Complete source bytes.
     pub bytes: &'a [u8],
@@ -66,7 +66,7 @@ pub struct ExecutionRequest<'a> {
     pub limits: SpineLimits,
     /// The named function and its admitted values.
     pub call: Call,
-    /// The caller-owned object context used unchanged by QSL evaluation.
+    /// The caller-owned object context used unchanged by FSL evaluation.
     pub object_environment: &'a ObjectEnvironment,
     /// The caller-owned cancellation handle for this run.
     pub cancel: Cancel,
@@ -77,14 +77,14 @@ pub struct ExecutionRequest<'a> {
 /// The selected interpreter's typed result.
 #[derive(Debug)]
 pub struct ExecutionResult {
-    /// QSL's unchanged typed execution outcome.
+    /// FSL's unchanged typed execution outcome.
     pub outcome: CallOutcome,
-    /// QSL's canonical document for the complete run.
+    /// FSL's canonical document for the complete run.
     pub document: OutcomeDocument,
 }
 
 impl ExecutionResult {
-    /// Serialize QSL's canonical `quire-outcome/1` document for this call.
+    /// Serialize FSL's canonical `quire-outcome/1` document for this call.
     /// The driver does not define or translate the document shape.
     pub fn outcome_bytes(&self) -> Result<Vec<u8>, OutcomeWriteError> {
         self.document.to_bytes()
@@ -97,18 +97,18 @@ pub enum ExecutionFailure {
     /// The requested engine is not linked into this binary.
     #[error("execution engine {0} is not linked into this binary")]
     UnsupportedEngine(ExecutionEngine),
-    /// QSL refused compilation or execution.
+    /// FSL refused compilation or execution.
     #[error("{refusal}")]
     Run {
-        /// QSL's unchanged typed run refusal.
+        /// FSL's unchanged typed run refusal.
         refusal: Box<RunRefusal>,
-        /// QSL's canonical document for that run refusal.
+        /// FSL's canonical document for that run refusal.
         document: Box<OutcomeDocument>,
     },
 }
 
 impl ExecutionFailure {
-    /// The QSL category for this failure.
+    /// The FSL category for this failure.
     pub fn category(&self) -> Category {
         match self {
             Self::UnsupportedEngine(_) => Category::Unsupported,
@@ -116,7 +116,7 @@ impl ExecutionFailure {
         }
     }
 
-    /// Consume the failure into QSL's native execute document.
+    /// Consume the failure into FSL's native execute document.
     pub fn into_document(self) -> OutcomeDocument {
         match self {
             Self::UnsupportedEngine(engine) => {
@@ -133,7 +133,7 @@ impl ExecutionFailure {
     }
 }
 
-/// Run only the selected engine. The current binary links QSL's interpreter;
+/// Run only the selected engine. The current binary links FSL's interpreter;
 /// AOT and JIT selections return Unsupported before compiling the source.
 pub fn execute(request: ExecutionRequest<'_>) -> Result<ExecutionResult, ExecutionFailure> {
     execute_using(request, |request, object_environment| {
@@ -208,9 +208,9 @@ mod tests {
 
     fn request(engine: ExecutionEngine, limits: SpineLimits) -> ExecutionRequest<'static> {
         ExecutionRequest {
-            source: SourceIdentity::new("quire-driver-test", "unit"),
+            source: SourceIdentity::new("filament-driver-test", "unit"),
             package_name: "unit",
-            path: "unit.qsl",
+            path: "unit.fsl",
             bytes: UNIT.as_bytes(),
             packages: &EMPTY_PACKAGES,
             dependencies: &NO_DEPENDENCIES,
@@ -268,12 +268,12 @@ mod tests {
              model M = \"driver/ir608-model\";\n\
              function query_present using v(p: Population<M::Thing>[1], r: M::Thing): M::Thing pure { lookup<M::Thing>(p, r) absent refused }\n\
              function query_absent using v(p: Population<M::Thing>[1], r: M::Thing): M::Thing pure { lookup<M::Thing>(p, r) absent undefined }\n";
-        let source_identity = SourceIdentity::new("quire-driver-test", "object-context");
+        let source_identity = SourceIdentity::new("filament-driver-test", "object-context");
         let cancel = Cancel::new();
         let parsed = qsl_replay::spine::parse(
             &qsl_replay::spine::ParseRequest {
                 source: &source_identity,
-                path: "object-context.qsl",
+                path: "object-context.fsl",
                 bytes: source.as_bytes(),
             },
             SpineLimits::default().source,
@@ -392,9 +392,9 @@ mod tests {
         reference: quire_exact::ObjectReference,
     ) -> ExecutionRequest<'a> {
         ExecutionRequest {
-            source: SourceIdentity::new("quire-driver-test", "object-context"),
+            source: SourceIdentity::new("filament-driver-test", "object-context"),
             package_name: "object-context",
-            path: "object-context.qsl",
+            path: "object-context.fsl",
             bytes: fixture.source.as_bytes(),
             packages: &fixture.packages,
             dependencies: &NO_DEPENDENCIES,
@@ -449,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_result_uses_qsl_outcome_document_serializer() {
+    fn execute_result_uses_fsl_outcome_document_serializer() {
         let request = request(ExecutionEngine::default(), SpineLimits::default());
         let expected_run = qsl_replay::spine::run(
             request.source.clone(),
@@ -466,16 +466,16 @@ mod tests {
         let expected_document = OutcomeDocument::from_run(&expected_run);
         let result = execute(request).expect("interpreter runs");
         assert_eq!(
-            result.outcome_bytes().expect("QSL encodes outcome"),
+            result.outcome_bytes().expect("FSL encodes outcome"),
             expected_document
                 .to_bytes()
-                .expect("QSL encodes direct run document")
+                .expect("FSL encodes direct run document")
         );
         assert_eq!(result.document.category(), Category::Success);
     }
 
     /// Trace: FR-004-AC-5, TC-011. The public caller's non-empty
-    /// unresolved-reference policy reaches QSL unchanged.
+    /// unresolved-reference policy reaches FSL unchanged.
     #[test]
     fn caller_object_environment_is_forwarded_unchanged() {
         let objects = ObjectEnvironment::default().with_unresolved_references();
@@ -499,17 +499,17 @@ mod tests {
         let actual = execute(request).expect("the public driver run completes");
         let expected_bytes = expected_document
             .to_bytes()
-            .expect("QSL serializes the direct run result");
+            .expect("FSL serializes the direct run result");
         assert_eq!(
             actual
                 .outcome_bytes()
-                .expect("QSL serializes the driver result"),
+                .expect("FSL serializes the driver result"),
             expected_bytes
         );
     }
 
     /// Trace: FR-004-AC-6, TC-011. The object member is admitted only by the
-    /// caller's populated environment, and the driver agrees with direct QSL
+    /// caller's populated environment, and the driver agrees with direct FSL
     /// for both that environment and the otherwise identical empty context.
     #[test]
     fn caller_object_context_controls_lookup_result() {
@@ -533,7 +533,7 @@ mod tests {
                 .expect("driver encodes the populated result"),
             populated_expected
                 .to_bytes()
-                .expect("direct QSL encodes the populated result")
+                .expect("direct FSL encodes the populated result")
         );
 
         let empty_request = model_request(
@@ -550,7 +550,7 @@ mod tests {
             document: empty_document,
         } = empty_failure
         else {
-            panic!("the empty object context must preserve QSL's typed refusal");
+            panic!("the empty object context must preserve FSL's typed refusal");
         };
         assert!(matches!(
             refusal.as_ref(),
@@ -563,21 +563,21 @@ mod tests {
             empty_bytes,
             empty_expected
                 .to_bytes()
-                .expect("direct QSL encodes the empty-context refusal")
+                .expect("direct FSL encodes the empty-context refusal")
         );
         assert_ne!(
             populated_expected
                 .to_bytes()
-                .expect("direct QSL encodes the populated result"),
+                .expect("direct FSL encodes the populated result"),
             empty_bytes,
-            "a caller-supplied object context changes the QSL result"
+            "a caller-supplied object context changes the FSL result"
         );
     }
 
-    /// Trace: FR-004-AC-7, TC-011. QSL defines this absent lookup as
+    /// Trace: FR-004-AC-7, TC-011. FSL defines this absent lookup as
     /// `Undefined`; the driver retains that outcome and its canonical document.
     #[test]
-    fn absent_undefined_lookup_matches_direct_qsl() {
+    fn absent_undefined_lookup_matches_direct_fsl() {
         let fixture = object_context_fixture();
         let request = model_request(
             &fixture,
@@ -597,17 +597,17 @@ mod tests {
         assert_eq!(
             actual
                 .outcome_bytes()
-                .expect("driver encodes QSL's undefined outcome"),
+                .expect("driver encodes FSL's undefined outcome"),
             expected
                 .to_bytes()
-                .expect("direct QSL encodes its undefined outcome")
+                .expect("direct FSL encodes its undefined outcome")
         );
     }
 
     /// Trace: FR-004-AC-8, TC-011. A caller population identity not present in
-    /// its environment keeps the exact typed QSL refusal and document.
+    /// its environment keeps the exact typed FSL refusal and document.
     #[test]
-    fn unresolved_population_identity_matches_direct_qsl_refusal() {
+    fn unresolved_population_identity_matches_direct_fsl_refusal() {
         let fixture = object_context_fixture();
         let environment = ObjectEnvironment::default();
         let request = model_request(
@@ -621,7 +621,7 @@ mod tests {
         let failure = execute(request).expect_err("the population identity is not admitted");
         assert_eq!(failure.category(), Category::Refusal);
         let ExecutionFailure::Run { refusal, document } = failure else {
-            panic!("the driver must preserve QSL's typed population refusal");
+            panic!("the driver must preserve FSL's typed population refusal");
         };
         assert!(matches!(
             refusal.as_ref(),
@@ -630,10 +630,10 @@ mod tests {
         assert_eq!(
             document
                 .to_bytes()
-                .expect("driver encodes QSL's population refusal"),
+                .expect("driver encodes FSL's population refusal"),
             expected
                 .to_bytes()
-                .expect("direct QSL encodes its population refusal")
+                .expect("direct FSL encodes its population refusal")
         );
     }
 
@@ -648,7 +648,7 @@ mod tests {
             assert_eq!(document.category(), Category::Unsupported);
             assert_eq!(document.category().exit_code(), 21);
             let json: serde_json::Value = serde_json::from_slice(
-                &document.to_bytes().expect("QSL encodes unsupported engine"),
+                &document.to_bytes().expect("FSL encodes unsupported engine"),
             )
             .expect("valid JSON document");
             assert_eq!(json["diagnostics"][0]["code"], "unimplemented_capability");
@@ -659,9 +659,9 @@ mod tests {
         }
     }
 
-    /// Trace: FR-004-AC-4, the linked interpreter preserves QSL's exact preparation refusal.
+    /// Trace: FR-004-AC-4, the linked interpreter preserves FSL's exact preparation refusal.
     #[test]
-    fn selected_interpreter_preparation_refusal_matches_direct_qsl_run() {
+    fn selected_interpreter_preparation_refusal_matches_direct_fsl_run() {
         let mut request = request(ExecutionEngine::Interpreter, SpineLimits::default());
         let mut source = request.limits.source;
         source.source_bytes = 1;
@@ -686,7 +686,7 @@ mod tests {
             document,
         } = failure
         else {
-            panic!("the driver must preserve the QSL preparation refusal");
+            panic!("the driver must preserve the FSL preparation refusal");
         };
         assert_eq!(
             format!("{actual:?}"),
@@ -698,9 +698,9 @@ mod tests {
         );
     }
 
-    /// Trace: FR-004-AC-4, caller cancellation and its QSL document pass through unchanged.
+    /// Trace: FR-004-AC-4, caller cancellation and its FSL document pass through unchanged.
     #[test]
-    fn pre_cancelled_caller_handle_preserves_qsl_refusal_and_document() {
+    fn pre_cancelled_caller_handle_preserves_fsl_refusal_and_document() {
         let request = request(ExecutionEngine::Interpreter, SpineLimits::default());
         request.cancel.cancel(CancelCause::Requested);
 
@@ -717,7 +717,7 @@ mod tests {
             &request.cancel,
         );
         let expected_document = OutcomeDocument::from_run(&expected_run);
-        let expected_refusal = expected_run.expect_err("QSL observes the caller's cancellation");
+        let expected_refusal = expected_run.expect_err("FSL observes the caller's cancellation");
         assert!(matches!(
             expected_refusal.as_ref(),
             RunRefusal::Cancelled(CancelCause::Requested)
@@ -726,7 +726,7 @@ mod tests {
         let failure = execute(request).expect_err("the same caller handle stops execution");
         assert_eq!(failure.category(), Category::Incomplete);
         let ExecutionFailure::Run { refusal, document } = failure else {
-            panic!("execute must preserve QSL's cancellation refusal");
+            panic!("execute must preserve FSL's cancellation refusal");
         };
         assert!(matches!(
             refusal.as_ref(),
@@ -735,9 +735,9 @@ mod tests {
         assert_eq!(format!("{refusal:?}"), format!("{expected_refusal:?}"));
         let expected_bytes = expected_document
             .to_bytes()
-            .expect("QSL encodes cancellation");
+            .expect("FSL encodes cancellation");
         assert_eq!(
-            document.to_bytes().expect("driver returns QSL document"),
+            document.to_bytes().expect("driver returns FSL document"),
             expected_bytes
         );
 
@@ -746,12 +746,12 @@ mod tests {
             failure
                 .into_document()
                 .to_bytes()
-                .expect("failure returns QSL document"),
+                .expect("failure returns FSL document"),
             expected_bytes
         );
     }
 
-    /// Trace: FR-003-AC-3, the driver wrapper preserves QSL limit metadata.
+    /// Trace: FR-003-AC-3, the driver wrapper preserves FSL limit metadata.
     #[test]
     fn caller_source_limit_preserves_configured_bound_and_field() {
         let mut limits = SpineLimits::default();
@@ -761,22 +761,22 @@ mod tests {
         let failure = execute(request(ExecutionEngine::Interpreter, limits))
             .expect_err("one byte source limit refuses");
         let ExecutionFailure::Run { refusal, .. } = failure else {
-            panic!("the selected engine must preserve QSL's typed limit error");
+            panic!("the selected engine must preserve FSL's typed limit error");
         };
         let RunRefusal::Compile(compile) = *refusal else {
             panic!("a source-byte ceiling is a compile-stage limit");
         };
         let CompileRefusal::Limit(limit) = *compile else {
-            panic!("the driver must not remap the QSL limit variant");
+            panic!("the driver must not remap the FSL limit variant");
         };
         assert_eq!(limit.configured_bound(), 1);
         assert_eq!(limit.setting(), Setting::S1InputBytes);
         assert!(limit.actual() > u128::from(limit.configured_bound()));
     }
 
-    /// Trace: FR-003-AC-3, QSL's stage-limit category reaches the caller unchanged.
+    /// Trace: FR-003-AC-3, FSL's stage-limit category reaches the caller unchanged.
     #[test]
-    fn qsl_stage_limit_refusal_uses_incomplete_category() {
+    fn fsl_stage_limit_refusal_uses_incomplete_category() {
         let mut limits = SpineLimits::default();
         let mut source = limits.source;
         source.source_bytes = 1;

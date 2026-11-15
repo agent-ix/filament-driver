@@ -3,13 +3,13 @@
 
 use std::{mem::size_of, sync::Arc};
 
+use filament_driver::{
+    monitor::MonitorPreparationLimits,
+    monitor_refusal::{copy_monitor_locus, MonitorLocusCopyError},
+};
 use ix_trace_rs::trace;
 use quire_contract_model::{
     CheckedNodeId, CheckedNodePathSegment as Segment, CheckedOccurrence, CheckedOccurrenceRole,
-};
-use quire_driver::{
-    monitor::MonitorPreparationLimits,
-    monitor_refusal::{copy_monitor_locus, MonitorLocusCopyError},
 };
 use quire_exact::{Cancel, CancelCause};
 

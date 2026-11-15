@@ -3,15 +3,15 @@ id: FR-017
 title: "Lower and retain one admitted native monitor program"
 type: FR
 relationships:
-  - target: ix://agent-ix/quire-driver/FR-015
+  - target: ix://agent-ix/filament-driver/FR-015
     type: depends_on
-  - target: ix://agent-ix/quire-driver/FR-016
+  - target: ix://agent-ix/filament-driver/FR-016
     type: references
-  - target: ix://agent-ix/quire-contract-ir/FR-354
+  - target: ix://agent-ix/filament-contract-ir/FR-354
     type: depends_on
-  - target: ix://agent-ix/quire-contract-ir/FR-357
+  - target: ix://agent-ix/filament-contract-ir/FR-357
     type: depends_on
-  - target: ix://agent-ix/quire-contract-runtime/FR-276
+  - target: ix://agent-ix/filament-contract-runtime/FR-276
     type: references
 ---
 # FR-017: Lower and retain one admitted native monitor program
@@ -33,9 +33,9 @@ The agreed full lowering handoff is:
 ```rust
 pub fn lower_monitor(
     selection: AdmittedMonitorSelection<'_>,
-    budget: &mut quire_contract_model::NativeJoinBudget,
-    cancel: &quire_exact::Cancel,
-) -> Result<std::rc::Rc<quire_contract_runtime::monitor::Program>, MonitorPreparationError>;
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    cancel: &filament_exact::Cancel,
+) -> Result<std::rc::Rc<filament_contract_runtime::monitor::Program>, MonitorPreparationError>;
 ```
 
 The lowerer SHALL consume the existing opaque selection by value. It SHALL
@@ -60,19 +60,19 @@ After success, the program SHALL retain no source/package/request/witness or
 temporary preparation borrow.
 
 The agreed preparer-independent public helper is
-`quire_driver::monitor::lowering::lower_scalar_functions`:
+`filament_driver::monitor::lowering::lower_scalar_functions`:
 
 ```rust
 pub fn lower_scalar_functions(
     package: &CheckedPackageV2,
     roots: &[CheckedNodeId],
     identities: &SelectedExactIdentities,
-    budget: &mut quire_contract_model::NativeJoinBudget,
-    cancel: &quire_exact::Cancel,
+    budget: &mut filament_contract_model::NativeJoinBudget,
+    cancel: &filament_exact::Cancel,
 ) -> Result<
-    (Vec<quire_contract_runtime::monitor::FunctionId>,
-     Vec<quire_contract_runtime::monitor::Function>,
-     Vec<quire_contract_runtime::monitor::Expression>),
+    (Vec<filament_contract_runtime::monitor::FunctionId>,
+     Vec<filament_contract_runtime::monitor::Function>,
+     Vec<filament_contract_runtime::monitor::Expression>),
     MonitorPreparationError,
 >;
 ```
@@ -134,7 +134,7 @@ paths retain actual admitted nonapplication terms/reference boundaries under
 
 The standalone helper SHALL accept only ordinary source functions whose native
 projected parameter, result and reached executable types are exactly
-`quire_exact::ValueType::Integer` or `ValueType::Boolean`. Bounded numeric,
+`filament_exact::ValueType::Integer` or `ValueType::Boolean`. Bounded numeric,
 nominal, composite and other types are outside this initial capability.
 Functions SHALL have no context or frame. Their executable bodies may be a
 reference to one of that callable's authenticated ordered parameters, a
@@ -310,13 +310,13 @@ separate Planned controls. No component observation closes IR-721 AC2.
 - [FR-015](FR-015-prepare-an-admitted-monitor-program.md) owns admission, token
   getters, shared budget/error API, manifest dependencies and orchestration.
 - [FR-016](FR-016-retain-monitor-refusal-loci.md) owns native diagnostic payloads.
-- [IR FR-354](ix://agent-ix/quire-contract-ir/FR-354) owns authentic callable and
+- [IR FR-354](ix://agent-ix/filament-contract-ir/FR-354) owns authentic callable and
   runtime-context reads; selective success-work and authenticated anonymous
   entry reads must be delivered by that owner rather than inferred here.
-- [IR FR-357](ix://agent-ix/quire-contract-ir/FR-357) owns complete generated-source
+- [IR FR-357](ix://agent-ix/filament-contract-ir/FR-357) owns complete generated-source
   closure authority. Existing selected facts alone establish no complete
   nominal environment or admitted order/progress association.
-- [RT FR-276](ix://agent-ix/quire-contract-runtime/FR-276) owns native program
+- [RT FR-276](ix://agent-ix/filament-contract-runtime/FR-276) owns native program
   validation, initialization and execution.
 - [TC-031](../test-cases/TC-031-monitor-native-lowering.md) separates scalar
   component evidence from complete monitor qualification.
