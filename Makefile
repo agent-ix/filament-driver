@@ -19,7 +19,8 @@ help:
 	@echo "  make deny             - cargo deny check licenses sources"
 	@echo "  make spec             - quire validate over spec/"
 	@echo "  make docs             - cargo doc, denying missing/broken doc links"
-	@echo "  make ci               - All CI gates locally (fmt-check + lint + test + deny + docs + spec)"
+	@echo "  make examples-gate    - Build fsl here and run the filament-examples suite (running + staged)"
+	@echo "  make ci               - All CI gates locally (fmt-check + lint + test + examples-gate + deny + docs + spec)"
 
 # =============================================================================
 # Format / Lint / Test
@@ -36,6 +37,7 @@ fmt-check:
 .PHONY: lint
 lint:
 	$(CARGO) clippy --all-targets --features fsl-cli/tc018-test-adapter -- -D warnings
+	$(CARGO) clippy -p filament-driver --test examples_gate -- -D warnings
 
 .PHONY: test
 test:
@@ -133,8 +135,29 @@ spec:
 	quire validate 'spec/**/*.md'
 
 # =============================================================================
+# Examples gate
+# =============================================================================
+
+# The filament-examples suite, following its main branch. tests/examples_gate.rs
+# builds fsl from this workspace and runs the suite's runner with it.
+EXAMPLES_REPO ?= https://github.com/agent-ix/filament-examples.git
+EXAMPLES_DIR ?= $(CURDIR)/target/filament-examples
+
+$(EXAMPLES_DIR)/.git:
+	git clone --quiet --branch main $(EXAMPLES_REPO) $(EXAMPLES_DIR)
+
+.PHONY: examples-fetch
+examples-fetch: $(EXAMPLES_DIR)/.git
+	git -C $(EXAMPLES_DIR) fetch --quiet $(EXAMPLES_REPO) main
+	git -C $(EXAMPLES_DIR) checkout --quiet --detach FETCH_HEAD
+
+.PHONY: examples-gate
+examples-gate: examples-fetch
+	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
+
+# =============================================================================
 # Composite
 # =============================================================================
 
 .PHONY: ci
-ci: fmt-check lint test deny docs spec
+ci: fmt-check lint test examples-gate deny docs spec

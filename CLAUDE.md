@@ -14,7 +14,8 @@ make clean          # cargo clean
 make tools          # install/check rustfmt, clippy, cargo-deny, and quire
 make deny           # cargo deny check licenses sources
 make spec           # quire validate 'spec/**/*.md'
-make ci             # fmt-check + lint + test + deny + docs + spec
+make examples-gate  # build fsl here, run the filament-examples suite (running + staged)
+make ci             # fmt-check + lint + test + examples-gate + deny + docs + spec
 ```
 
 The `fsl-cli` tests `signal_is_forwarded_after_active_cleanup_and_defaults_without_a_session`
