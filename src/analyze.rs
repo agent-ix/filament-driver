@@ -1,32 +1,51 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The driver's negotiation of `analyze` items (FSL FR-281 "Negotiated
-//! items", FR-620 "Resolving items").
+//! items", FR-620 "Resolving items", FSpec FR-711).
 //!
 //! FSL's `analyze` never negotiates: the caller settles each resolved item
-//! from the candidate set FSL computed over its registry, under FSpec
-//! FR-290's candidate table, and FSL routes a `supported` item to its one
-//! candidate. [`AnalyzeNegotiation`] is that caller-side settlement. It reads
-//! the candidate outcome through `fsl_route::settle_candidates`, the one
-//! statement of the table, and never chooses among several candidates.
+//! from the candidate set FSL computed over its registry. [`AnalyzeNegotiation`]
+//! is that caller-side settlement. It holds the FR-331 manifest of FSL's
+//! linked engines and settles every item through CG's one item entry,
+//! `negotiate_item`, then reads CG's disposition back as the disposition and
+//! diagnostic FSL takes. It applies no candidate rule of its own and never
+//! chooses among several candidates.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use filament_contract_codegen as cg;
 use filament_semantic_value::catalog::CatalogCode;
 use fsl_analyze::analyze::document::Negotiate;
-use fsl_analyze::analyze::{ClaimItem, Diagnostic, Payload};
+use fsl_analyze::analyze::{ClaimItem, Diagnostic, Engines, ItemForm, Payload};
+use fsl_foundation::BackendId;
 use fsl_route::routing::Disposition;
-use fsl_route::{settle_candidates, CandidateOutcome, NegotiationCause, NegotiationSettlement};
+use fsl_route::{Candidate, CandidateOutcome, RegistrationRefusal};
 use fsl_semantics::check::Capability;
 
-/// The FSpec FR-290 settlement the driver gives each `analyze` item.
-///
-/// | Candidate outcome | Disposition | Diagnostic |
-/// | --- | --- | --- |
-/// | exactly one candidate | `supported` on it | none |
-/// | no candidate | `unsupported` | `unsupported_projection`/`unsupported-requested-capability`, the item's kind |
-/// | several candidates, no backend named | `invalid-request` | `invalid_capability`/`ambiguous-backend` |
-/// | several candidates, a backend named | `invalid-request` | `invalid_capability`/`inconsistent-candidates`, the named backend |
-/// | a named backend the registry does not hold | `invalid-request` | `invalid_capability`/`unknown-backend`, the backend |
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct AnalyzeNegotiation;
+/// The settlement the driver gives each `analyze` item: CG's `negotiate_item`
+/// over the manifest of FSL's linked engines.
+#[derive(Clone, Debug)]
+pub struct AnalyzeNegotiation {
+    manifest: Vec<cg::BackendDescriptor>,
+}
+
+impl AnalyzeNegotiation {
+    /// The negotiation over the manifest of the engines FSL's `analyze` runs.
+    ///
+    /// # Errors
+    ///
+    /// The registry's refusal of an engine's own manifest.
+    pub fn fsl() -> Result<Self, RegistrationRefusal> {
+        let engines = Engines::fsl()?;
+        Ok(Self {
+            manifest: engines.registrations().map(manifest_entry).collect(),
+        })
+    }
+
+    /// The FR-331 manifest the negotiation settles over.
+    pub fn manifest(&self) -> &[cg::BackendDescriptor] {
+        &self.manifest
+    }
+}
 
 impl Negotiate for AnalyzeNegotiation {
     fn negotiate(
@@ -34,53 +53,300 @@ impl Negotiate for AnalyzeNegotiation {
         item: &ClaimItem,
         candidates: &CandidateOutcome,
     ) -> (Disposition, Option<Diagnostic>) {
-        settle(item.kind, candidates)
+        settle(&self.manifest, item, candidates)
     }
 }
 
-/// The settlement of an item of `kind` over `candidates`, as the table on
-/// [`AnalyzeNegotiation`] states.
-fn settle(kind: Capability, candidates: &CandidateOutcome) -> (Disposition, Option<Diagnostic>) {
-    let named = match candidates {
-        CandidateOutcome::Candidates(set) => set.requested_backend(),
-        CandidateOutcome::UnknownBackend(_) => None,
+/// CG's manifest entry for one linked engine's registration.
+fn manifest_entry(descriptor: &fsl_route::BackendDescriptor) -> cg::BackendDescriptor {
+    let mut advertised: Vec<_> = descriptor
+        .advertises()
+        .filter_map(|(kind, mode)| {
+            cg::CapabilityKind::from_label(kind.to_wire()).map(|kind| (kind, cg_mode(mode)))
+        })
+        .collect();
+    advertised.sort();
+    let profile = profile_of(descriptor);
+    cg::BackendDescriptor {
+        identity: descriptor.id().as_str().to_owned(),
+        advertised,
+        origin: match descriptor.origin() {
+            fsl_route::ProviderOrigin::Linked => cg::ProviderOrigin::Linked,
+            fsl_route::ProviderOrigin::Process => cg::ProviderOrigin::Process,
+        },
+        domains: descriptor.domains().cloned(),
+        bounds: descriptor
+            .max_cases()
+            .map(|cases| BTreeMap::from([("max_cases".to_owned(), cases.get())])),
+        profile,
+    }
+}
+
+/// What the registration declares beyond its modes and domains, as CG reads it.
+pub(crate) fn profile_of(descriptor: &fsl_route::BackendDescriptor) -> cg::BackendProfile {
+    cg::BackendProfile {
+        dynamics: descriptor
+            .dynamics()
+            .map(|kinds| {
+                kinds
+                    .iter()
+                    .map(|kind| match kind {
+                        fsl_route::DynamicsKind::Discrete => cg::Dynamics::Discrete,
+                        fsl_route::DynamicsKind::Hybrid => cg::Dynamics::Hybrid,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        fairness_kinds: descriptor
+            .fairness_kinds()
+            .iter()
+            .copied()
+            .map(cg_fairness)
+            .collect(),
+        state_graph_forms: descriptor
+            .state_graph_forms()
+            .iter()
+            .map(|form| match form {
+                fsl_route::StateGraphFormKind::Possible => cg::StateGraphForm::Possible,
+                fsl_route::StateGraphFormKind::AlwaysPossible => cg::StateGraphForm::AlwaysPossible,
+                fsl_route::StateGraphFormKind::UniquePath => cg::StateGraphForm::UniquePath,
+            })
+            .collect(),
+        reductions: descriptor
+            .reductions()
+            .iter()
+            .copied()
+            .map(cg_reduction)
+            .collect(),
+        obligation_forms: BTreeSet::new(),
+        evidence_kinds: descriptor
+            .evidence_kinds()
+            .iter()
+            .copied()
+            .map(cg_evidence)
+            .collect(),
+    }
+}
+
+fn cg_mode(mode: fsl_route::Mode) -> cg::Mode {
+    match mode {
+        fsl_route::Mode::Bounded => cg::Mode::Bounded,
+        fsl_route::Mode::Unbounded => cg::Mode::Unbounded,
+    }
+}
+
+fn route_mode(mode: cg::Mode) -> fsl_route::Mode {
+    match mode {
+        cg::Mode::Bounded => fsl_route::Mode::Bounded,
+        cg::Mode::Unbounded => fsl_route::Mode::Unbounded,
+    }
+}
+
+fn cg_fairness(kind: filament_semantic_value::fairness::FairnessKind) -> cg::FairnessKind {
+    match kind {
+        filament_semantic_value::fairness::FairnessKind::Weak => cg::FairnessKind::Weak,
+        filament_semantic_value::fairness::FairnessKind::Strong => cg::FairnessKind::Strong,
+    }
+}
+
+fn cg_reduction(kind: fsl_foundation::ReductionKind) -> cg::Reduction {
+    match kind {
+        fsl_foundation::ReductionKind::Symmetry => cg::Reduction::Symmetry,
+        fsl_foundation::ReductionKind::PartialOrder => cg::Reduction::PartialOrder,
+        fsl_foundation::ReductionKind::StateConstraint => cg::Reduction::Constraint,
+    }
+}
+
+fn cg_evidence(kind: fsl_route::EvidenceKind) -> cg::EvidenceKind {
+    match kind {
+        fsl_route::EvidenceKind::Statistical => cg::EvidenceKind::Statistical,
+        fsl_route::EvidenceKind::Exact => cg::EvidenceKind::Exact,
+    }
+}
+
+/// The request item CG settles for `item` over the candidates FSL computed.
+fn request_item(item: &ClaimItem, candidates: &CandidateOutcome) -> cg::RequestItem {
+    let (extent, finite_bound_available) = match item.extent {
+        fsl_route::request::ExtentClassification::Bounded => (cg::Mode::Bounded, false),
+        fsl_route::request::ExtentClassification::Unbounded {
+            finite_bound_available,
+        } => (cg::Mode::Unbounded, finite_bound_available),
     };
-    // FR-281 names CG's `negotiate_*` as the settlement point, but CG has no
-    // arm for linked FSL engines yet (QSL-2286), so the FR-290 table is read
-    // here without its extent rows.
-    match settle_candidates(candidates, kind, named) {
-        NegotiationSettlement::Single(backend) => (
-            Disposition::Supported(fsl_route::Candidate::new(backend)),
+    let mut requirements = cg::ItemRequirements::default();
+    let mut bounds = Vec::new();
+    match &item.form {
+        Some(ItemForm::Temporal(temporal)) => {
+            bounds.clone_from(&temporal.proof_bounds);
+            requirements.fairness = temporal
+                .fairness
+                .iter()
+                .map(|constraint| cg_fairness(constraint.kind()))
+                .collect();
+            requirements.reductions = temporal
+                .reductions
+                .selected()
+                .into_iter()
+                .map(cg_reduction)
+                .collect();
+        }
+        Some(ItemForm::Hybrid(hybrid)) => {
+            bounds.clone_from(&hybrid.proof_bounds);
+            requirements.hybrid_dynamics = true;
+        }
+        Some(ItemForm::Probabilistic(probabilistic)) => {
+            requirements.evidence = Some(cg::RequestedEvidence::Known(cg_evidence(
+                probabilistic.evidence,
+            )));
+        }
+        None => {}
+    }
+    let (named_backend, candidates) = match candidates {
+        CandidateOutcome::Candidates(set) => (
+            set.requested_backend().map(|id| id.as_str().to_owned()),
+            cg::Candidates::Set(
+                set.candidates()
+                    .iter()
+                    .map(|candidate| cg::Candidate {
+                        identity: candidate.id().as_str().to_owned(),
+                    })
+                    .collect(),
+            ),
+        ),
+        CandidateOutcome::UnknownBackend(id) => (
+            Some(id.as_str().to_owned()),
+            cg::Candidates::UnknownBackend(id.as_str().to_owned()),
+        ),
+    };
+    cg::RequestItem {
+        kind: cg::CapabilityKind::from_label(item.kind.to_wire()).map_or_else(
+            || cg::RequestedKind::Unknown(item.kind.to_wire().to_owned()),
+            cg::RequestedKind::Known,
+        ),
+        extent: Some(cg::ExtentClassification {
+            extent,
+            finite_bound_available,
+            domains: Vec::new(),
+            bounds,
+        }),
+        named_backend,
+        candidates,
+        kani_form: None,
+        requirements,
+    }
+}
+
+/// The settlement of `item` over `candidates` through CG's item entry.
+fn settle(
+    manifest: &[cg::BackendDescriptor],
+    item: &ClaimItem,
+    candidates: &CandidateOutcome,
+) -> (Disposition, Option<Diagnostic>) {
+    let request = request_item(item, candidates);
+    match cg::negotiate_item(manifest, &request) {
+        Ok(disposition) => read_back(manifest, item, &request, disposition),
+        Err(_) => (Disposition::InvalidRequest, Some(inconsistent(&request))),
+    }
+}
+
+fn inconsistent(request: &cg::RequestItem) -> Diagnostic {
+    Diagnostic {
+        code: CatalogCode::new("invalid_capability", "inconsistent-candidates"),
+        payload: request
+            .named_backend
+            .as_deref()
+            .map_or(Payload::None, |id| Payload::Backend(BackendId::new(id))),
+    }
+}
+
+/// CG's disposition as the disposition and diagnostic FSL takes.
+fn read_back(
+    manifest: &[cg::BackendDescriptor],
+    item: &ClaimItem,
+    request: &cg::RequestItem,
+    disposition: cg::Disposition,
+) -> (Disposition, Option<Diagnostic>) {
+    match disposition {
+        cg::Disposition::Supported { backend } => (
+            Disposition::Supported(Candidate::new(BackendId::new(backend))),
             None,
         ),
-        NegotiationSettlement::Inconsistent => (
-            Disposition::InvalidRequest,
-            Some(Diagnostic {
-                code: CatalogCode::new("invalid_capability", "inconsistent-candidates"),
-                payload: named.map_or(Payload::None, |id| Payload::Backend(id.clone())),
-            }),
+        cg::Disposition::RequiresBound { backend } => (
+            Disposition::RequiresBound,
+            Some(unbounded(manifest, item.kind, backend)),
         ),
-        NegotiationSettlement::Cause(cause) => {
-            let code = cause.code();
-            match cause {
-                NegotiationCause::UnknownBackend(backend) => (
-                    Disposition::InvalidRequest,
-                    Some(Diagnostic {
-                        code,
-                        payload: Payload::Backend(backend),
-                    }),
-                ),
-                NegotiationCause::AmbiguousBackend(_) => {
-                    (Disposition::InvalidRequest, Some(Diagnostic::new(code)))
-                }
-                NegotiationCause::UnsupportedRequestedCapability(kind, _) => (
-                    Disposition::Unsupported,
-                    Some(Diagnostic {
-                        code,
-                        payload: Payload::Kind(kind),
-                    }),
-                ),
-            }
+        cg::Disposition::Unsupported { cause } => (
+            Disposition::Unsupported,
+            Some(cause_diagnostic(manifest, item, request, cause)),
+        ),
+        cg::Disposition::InvalidRequest { cause } => (
+            Disposition::InvalidRequest,
+            Some(cause_diagnostic(manifest, item, request, cause)),
+        ),
+    }
+}
+
+/// The `unbounded-extent` diagnostic: the kind, the candidate and the modes
+/// its manifest advertises for the kind.
+fn unbounded(manifest: &[cg::BackendDescriptor], kind: Capability, backend: String) -> Diagnostic {
+    let modes = cg::CapabilityKind::from_label(kind.to_wire())
+        .and_then(|kind| {
+            manifest
+                .iter()
+                .find(|entry| entry.identity == backend)
+                .map(|entry| {
+                    entry
+                        .advertised
+                        .iter()
+                        .filter(|(advertised, _)| *advertised == kind)
+                        .map(|(_, mode)| route_mode(*mode))
+                        .collect()
+                })
+        })
+        .unwrap_or_default();
+    Diagnostic {
+        code: CatalogCode::new("unsupported_projection", "unbounded-extent"),
+        payload: Payload::Unbounded {
+            kind,
+            candidate: BackendId::new(backend),
+            modes,
+        },
+    }
+}
+
+/// The FR-272 code and payload CG's `cause` is reported under.
+fn cause_diagnostic(
+    manifest: &[cg::BackendDescriptor],
+    item: &ClaimItem,
+    request: &cg::RequestItem,
+    cause: cg::Cause,
+) -> Diagnostic {
+    let unsupported = |cause| Diagnostic {
+        code: CatalogCode::new("unsupported_projection", cause),
+        payload: Payload::Kind(item.kind),
+    };
+    let invalid = |cause| Diagnostic::new(CatalogCode::new("invalid_capability", cause));
+    match cause {
+        cg::Cause::UnknownBackend { backend } => Diagnostic {
+            code: CatalogCode::new("invalid_capability", "unknown-backend"),
+            payload: Payload::Backend(BackendId::new(backend)),
+        },
+        cg::Cause::AmbiguousBackend { .. } => invalid("ambiguous-backend"),
+        cg::Cause::InconsistentCandidates { .. } | cg::Cause::KaniFormInvalid { .. } => {
+            inconsistent(request)
+        }
+        cg::Cause::AbsentKind => invalid("absent-kind"),
+        cg::Cause::UnknownKind { .. } => invalid("unknown-kind"),
+        cg::Cause::AbsentExtent => invalid("absent-extent"),
+        cg::Cause::AbsentEvidenceKind => invalid("absent-evidence-kind"),
+        cg::Cause::UnknownEvidenceKind { .. } => invalid("unknown-evidence-kind"),
+        cg::Cause::UnboundedExtent { backend, .. } => unbounded(manifest, item.kind, backend),
+        cg::Cause::UnsupportedRequestedCapability { .. }
+        | cg::Cause::UnsupportedRequirement { .. }
+        | cg::Cause::UnsupportedDomain { .. }
+        | cg::Cause::UnsupportedKaniForm { .. }
+        | cg::Cause::KaniFormRefused { .. }
+        | cg::Cause::KaniStateFrameRefused { .. } => {
+            unsupported("unsupported-requested-capability")
         }
     }
 }
@@ -92,29 +358,67 @@ fn settle(kind: Capability, candidates: &CandidateOutcome) -> (Disposition, Opti
     reason = "a failed assertion is the test failure report"
 )]
 mod tests {
-    use fsl_foundation::BackendId;
-    use fsl_route::{BackendDescriptor, Candidate, Mode, ProviderOrigin, Registry};
+    use std::collections::BTreeSet;
+
+    use filament_exact::{NodeKey, Origin, PathSegment, Role};
+    use fsl_foundation::bound::DomainKind;
+    use fsl_foundation::source::provenance::OccurrenceKey;
+    use fsl_foundation::RequestIndex;
+    use fsl_route::request::ExtentClassification;
+    use fsl_route::{BackendDescriptor, Mode, ProviderOrigin, Registry};
     use ix_trace_rs::trace;
 
     use super::*;
 
     const KIND: Capability = Capability::TemporalSatisfaction;
 
-    /// A registry holding one unbounded temporal-satisfaction engine per id.
-    fn registry(ids: &[&str]) -> Registry {
+    fn descriptor(id: &str, modes: &[Mode]) -> BackendDescriptor {
+        BackendDescriptor::new(
+            Candidate::new(BackendId::new(id)),
+            ProviderOrigin::Linked,
+            modes.iter().map(|mode| (KIND, *mode)),
+            modes
+                .contains(&Mode::Bounded)
+                .then(|| BTreeSet::from([DomainKind::Collection])),
+            None,
+        )
+        .expect("a descriptor with domains for a bounded mode")
+    }
+
+    /// A registry and its CG manifest holding one engine per `(id, modes)`.
+    fn world(engines: &[(&str, &[Mode])]) -> (Registry, AnalyzeNegotiation) {
         let mut registry = Registry::new();
-        for id in ids {
-            let descriptor = BackendDescriptor::new(
-                Candidate::new(BackendId::new(*id)),
-                ProviderOrigin::Linked,
-                [(KIND, Mode::Unbounded)],
-                None,
-                None,
-            )
-            .expect("an unbounded descriptor needs no domains");
-            registry.register(descriptor).expect("a new identity");
+        for (id, modes) in engines {
+            registry
+                .register(descriptor(id, modes))
+                .expect("a new identity");
         }
-        registry
+        let manifest = registry.descriptors().map(manifest_entry).collect();
+        (registry, AnalyzeNegotiation { manifest })
+    }
+
+    fn item(extent: ExtentClassification, backend: Option<&str>) -> ClaimItem {
+        let node = NodeKey::new("test", vec![PathSegment::Text("claim".to_owned())], 0)
+            .expect("a valid node");
+        ClaimItem {
+            request_index: RequestIndex::new(0),
+            claim: OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0)),
+            kind: KIND,
+            extent,
+            backend: backend.map(BackendId::new),
+            candidates: Vec::new(),
+            options: fsl_analyze::analyze::ItemOptions::default(),
+            form: None,
+        }
+    }
+
+    fn settle_over(
+        registry: &Registry,
+        negotiation: &AnalyzeNegotiation,
+        item: &ClaimItem,
+    ) -> (Disposition, Option<Diagnostic>) {
+        let outcome = registry.candidates(KIND, item.backend.as_ref());
+        negotiation.negotiate(item, &outcome)
     }
 
     fn code(diagnostic: Option<&Diagnostic>) -> (&str, &str) {
@@ -122,12 +426,79 @@ mod tests {
         (diagnostic.code.code(), diagnostic.code.cause())
     }
 
-    /// FR-022-AC-8: one candidate is `supported` on that candidate, with no
-    /// diagnostic.
-    #[trace("TC-036", "FR-022-AC-8")]
+    const UNBOUNDED_BOUNDABLE: ExtentClassification = ExtentClassification::Unbounded {
+        finite_bound_available: true,
+    };
+    const UNBOUNDED_UNBOUNDABLE: ExtentClassification = ExtentClassification::Unbounded {
+        finite_bound_available: false,
+    };
+
+    /// FR-022-AC-8: an engine advertising both modes serves a bounded and an
+    /// unbounded item, `supported` on it with no diagnostic.
+    #[trace("TC-1741", "FSpec-FR-711-AC-1")]
     #[test]
-    fn one_candidate_is_supported_on_it() {
-        let (disposition, diagnostic) = settle(KIND, &registry(&["en-1"]).candidates(KIND, None));
+    fn a_both_mode_engine_serves_each_extent() {
+        let (registry, negotiation) = world(&[("en-1", &[Mode::Bounded, Mode::Unbounded])]);
+        for extent in [ExtentClassification::Bounded, UNBOUNDED_BOUNDABLE] {
+            let (disposition, diagnostic) =
+                settle_over(&registry, &negotiation, &item(extent, None));
+            assert_eq!(
+                disposition,
+                Disposition::Supported(Candidate::new(BackendId::new("en-1")))
+            );
+            assert!(diagnostic.is_none());
+        }
+    }
+
+    /// FSpec FR-290 extent row: an unbounded extent on a bounded-only engine
+    /// with a finite bound available is `requires-bound`.
+    #[trace("TC-1741", "FSpec-FR-711-AC-2")]
+    #[test]
+    fn an_unbounded_extent_with_a_bound_available_requires_a_bound() {
+        let (registry, negotiation) = world(&[("en-1", &[Mode::Bounded])]);
+        let (disposition, diagnostic) =
+            settle_over(&registry, &negotiation, &item(UNBOUNDED_BOUNDABLE, None));
+        assert_eq!(disposition, Disposition::RequiresBound);
+        assert_eq!(
+            code(diagnostic.as_ref()),
+            ("unsupported_projection", "unbounded-extent")
+        );
+        assert_eq!(
+            diagnostic.map(|d| d.payload),
+            Some(Payload::Unbounded {
+                kind: KIND,
+                candidate: BackendId::new("en-1"),
+                modes: vec![Mode::Bounded],
+            })
+        );
+    }
+
+    /// FSpec FR-290 extent row: an unbounded extent on a bounded-only engine
+    /// with no finite bound is `unsupported` `unbounded-extent`.
+    #[trace("TC-1741", "FSpec-FR-711-AC-2")]
+    #[test]
+    fn an_unbounded_extent_with_no_bound_is_unsupported() {
+        let (registry, negotiation) = world(&[("en-1", &[Mode::Bounded])]);
+        let (disposition, diagnostic) =
+            settle_over(&registry, &negotiation, &item(UNBOUNDED_UNBOUNDABLE, None));
+        assert_eq!(disposition, Disposition::Unsupported);
+        assert_eq!(
+            code(diagnostic.as_ref()),
+            ("unsupported_projection", "unbounded-extent")
+        );
+    }
+
+    /// FSpec FR-290 extent row: a bounded extent on a bounded-only engine is
+    /// `supported`.
+    #[trace("TC-1741", "FSpec-FR-711-AC-2")]
+    #[test]
+    fn a_bounded_extent_on_a_bounded_engine_is_supported() {
+        let (registry, negotiation) = world(&[("en-1", &[Mode::Bounded])]);
+        let (disposition, diagnostic) = settle_over(
+            &registry,
+            &negotiation,
+            &item(ExtentClassification::Bounded, None),
+        );
         assert_eq!(
             disposition,
             Disposition::Supported(Candidate::new(BackendId::new("en-1")))
@@ -135,11 +506,24 @@ mod tests {
         assert!(diagnostic.is_none());
     }
 
-    /// FR-022-AC-8: no candidate is `unsupported`, naming the item's kind.
-    #[trace("TC-036", "FR-022-AC-8")]
+    /// FSpec FR-290 extent row: an unbounded extent on an unbounded-only
+    /// engine is `supported`; a bounded extent on it is `unsupported`
+    /// `unsupported-requested-capability` naming the item's kind.
+    #[trace("TC-1741", "FSpec-FR-711-AC-2")]
     #[test]
-    fn no_candidate_is_unsupported_naming_the_kind() {
-        let (disposition, diagnostic) = settle(KIND, &registry(&[]).candidates(KIND, None));
+    fn an_unbounded_only_engine_settles_each_extent_by_the_mode_table() {
+        let (registry, negotiation) = world(&[("en-1", &[Mode::Unbounded])]);
+        let (disposition, _) =
+            settle_over(&registry, &negotiation, &item(UNBOUNDED_UNBOUNDABLE, None));
+        assert_eq!(
+            disposition,
+            Disposition::Supported(Candidate::new(BackendId::new("en-1")))
+        );
+        let (disposition, diagnostic) = settle_over(
+            &registry,
+            &negotiation,
+            &item(ExtentClassification::Bounded, None),
+        );
         assert_eq!(disposition, Disposition::Unsupported);
         assert_eq!(
             code(diagnostic.as_ref()),
@@ -148,28 +532,38 @@ mod tests {
         assert_eq!(diagnostic.map(|d| d.payload), Some(Payload::Kind(KIND)));
     }
 
-    /// FR-022-AC-8: several candidates with no named backend are an
-    /// ambiguous request; the driver never picks one.
-    #[trace("TC-036", "FR-022-AC-8")]
+    /// FR-022-AC-8: the candidate rows. No candidate is `unsupported` naming
+    /// the kind; several candidates are ambiguous with no named backend and
+    /// inconsistent with one; an unregistered named backend is
+    /// `unknown-backend`.
+    #[trace("TC-1741", "FSpec-FR-711-AC-1")]
     #[test]
-    fn several_candidates_are_ambiguous() {
-        let outcome = registry(&["en-1", "en-9"]).candidates(KIND, None);
-        let (disposition, diagnostic) = settle(KIND, &outcome);
+    fn the_candidate_rows_settle_as_the_table_states() {
+        let (empty, none) = world(&[]);
+        let extent = ExtentClassification::Bounded;
+        let (disposition, diagnostic) = settle_over(&empty, &none, &item(extent, None));
+        assert_eq!(disposition, Disposition::Unsupported);
+        assert_eq!(
+            code(diagnostic.as_ref()),
+            ("unsupported_projection", "unsupported-requested-capability")
+        );
+        assert_eq!(diagnostic.map(|d| d.payload), Some(Payload::Kind(KIND)));
+
+        let both = [Mode::Bounded, Mode::Unbounded];
+        let (registry, negotiation) = world(&[("en-1", &both), ("en-9", &both)]);
+        let (disposition, diagnostic) = settle_over(&registry, &negotiation, &item(extent, None));
         assert_eq!(disposition, Disposition::InvalidRequest);
         assert_eq!(
             code(diagnostic.as_ref()),
             ("invalid_capability", "ambiguous-backend")
         );
-    }
 
-    /// FR-022-AC-8: a named backend the registry does not hold is
-    /// `unknown-backend`, naming it; a held named backend is supported.
-    #[trace("TC-036", "FR-022-AC-8")]
-    #[test]
-    fn a_named_backend_settles_by_whether_it_is_held() {
-        let held = registry(&["en-1", "en-9"]);
         let missing = BackendId::new("no-such-backend");
-        let (disposition, diagnostic) = settle(KIND, &held.candidates(KIND, Some(&missing)));
+        let (disposition, diagnostic) = settle_over(
+            &registry,
+            &negotiation,
+            &item(extent, Some("no-such-backend")),
+        );
         assert_eq!(disposition, Disposition::InvalidRequest);
         assert_eq!(
             code(diagnostic.as_ref()),
@@ -179,9 +573,62 @@ mod tests {
             diagnostic.map(|d| d.payload),
             Some(Payload::Backend(missing))
         );
-        let named = BackendId::new("en-9");
-        let (disposition, diagnostic) = settle(KIND, &held.candidates(KIND, Some(&named)));
-        assert_eq!(disposition, Disposition::Supported(Candidate::new(named)));
+
+        let (disposition, diagnostic) =
+            settle_over(&registry, &negotiation, &item(extent, Some("en-9")));
+        assert_eq!(
+            disposition,
+            Disposition::Supported(Candidate::new(BackendId::new("en-9")))
+        );
         assert!(diagnostic.is_none());
+    }
+
+    /// FSpec FR-711-AC-5: for the real engines' manifest and each extent, the
+    /// driver's disposition equals the one CG's item entry returns for the
+    /// same manifest and request item.
+    #[trace("TC-1741", "FSpec-FR-711-AC-5")]
+    #[test]
+    fn analyze_dispositions_equal_the_item_entrys() {
+        let negotiation = AnalyzeNegotiation::fsl().expect("the engines register");
+        let mut registry = Registry::new();
+        for descriptor in Engines::fsl().expect("engines").registrations() {
+            registry
+                .register(descriptor.clone())
+                .expect("a new identity");
+        }
+        let kinds = [
+            Capability::TemporalSatisfaction,
+            Capability::ValueValidity,
+            Capability::OperationContract,
+            Capability::ProbabilisticSatisfaction,
+            Capability::Schedulability,
+        ];
+        let extents = [
+            ExtentClassification::Bounded,
+            UNBOUNDED_BOUNDABLE,
+            UNBOUNDED_UNBOUNDABLE,
+        ];
+        for kind in kinds {
+            for extent in extents {
+                for named in [None, Some("en-1"), Some("no-such-backend")] {
+                    let mut claim = item(extent, named);
+                    claim.kind = kind;
+                    let outcome = registry.candidates(kind, claim.backend.as_ref());
+                    let (disposition, _) = negotiation.negotiate(&claim, &outcome);
+                    let entry =
+                        cg::negotiate_item(negotiation.manifest(), &request_item(&claim, &outcome))
+                            .expect("no Kani form is read");
+                    let expected = match entry {
+                        cg::Disposition::Supported { backend } => {
+                            Disposition::Supported(Candidate::new(BackendId::new(backend)))
+                        }
+                        cg::Disposition::RequiresBound { .. } => Disposition::RequiresBound,
+                        cg::Disposition::Unsupported { .. } => Disposition::Unsupported,
+                        cg::Disposition::InvalidRequest { .. } => Disposition::InvalidRequest,
+                    };
+                    assert_eq!(disposition, expected, "{kind:?} {extent:?} {named:?}");
+                }
+            }
+        }
     }
 }

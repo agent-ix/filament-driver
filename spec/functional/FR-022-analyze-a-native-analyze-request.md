@@ -45,26 +45,11 @@ deviation below is closed.
 FSL's `analyze` never negotiates (FSL FR-281 "Negotiated items"). FSL builds
 the engine registry from `Engines::fsl()`, computes each resolved item's
 candidate set from it, and asks the caller to settle the item. The driver
-settles it under FSpec FR-290's candidate table, read through
-`fsl_route::settle_candidates`, and never chooses among several candidates.
+settles it through CG's one item entry, `negotiate_item` (FSpec FR-711), over the
+FR-331 manifest of the engines FSL registers, and never chooses among several
+candidates.
 Because the registry is the one FSL builds from its own engine set, an engine
 FSL registers is reachable through `fsl analyze` with no driver change.
-
-### Deviation: settlement through `settle_candidates`, not CG `negotiate_*`
-
-FSL FR-281 and FSpec AD-016 name CG's `negotiate_*` as the single
-negotiation point. CG's `negotiate_backend_provider` settles a candidate only
-through a `BackendKind` arm, and its arms are `Kani` and `Process`: a linked
-FSL engine such as `en-1` has no arm and settles `unknown-backend`, and each
-`RequestItem` requires a Kani-specific `KaniForm` an analyze item does not
-have. Until CG offers a negotiation arm for FSL's linked analysis engines
-(QSL-2286), the driver settles through `fsl_route::settle_candidates`. That settlement reads
-the candidate count only, so FSpec FR-290's extent rows (`requires-bound`, or
-`unsupported` with `unbounded-extent` for an unbounded extent on a
-bounded-only candidate) are not applied by the driver. Such an item reaches
-FSL as `supported` on its one candidate, and FSL refuses it with
-`invalid_capability`/`inconsistent-candidates` (FR-281 rule 4), so the user
-sees that refusal rather than `requires-bound` or `unbounded-extent`.
 
 ### Deviation: no `--provider-config` for `analyze` (QSL-2283)
 
@@ -114,8 +99,13 @@ message naming the missing registry.
   when the item has no name, followed by the first present of the record's
   diagnostic `code/cause`, its cause and its proof-basis type; then one line
   with the document category.
-- The driver SHALL settle each item FSL hands it as the table below states.
-  The settlement is a pure function of the candidate outcome FSL computed.
+- The driver SHALL settle each item FSL hands it through CG's `negotiate_item`
+  over the manifest of the engines FSL registers, and apply no candidate rule
+  of its own. The settlement is a pure function of that manifest and the
+  candidate outcome FSL computed. The table below states the rows that entry
+  settles by candidate outcome; an unbounded extent on a bounded-only candidate
+  settles `requires-bound`, or `unsupported` with `unsupported_projection`/`unbounded-extent`
+  when no finite bound is available.
 
   | Candidate outcome | Disposition | Diagnostic |
   | --- | --- | --- |

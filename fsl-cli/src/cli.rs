@@ -1483,11 +1483,13 @@ impl AnalyzeOptions {
 /// driver's negotiation, and keep FSL FR-621's document with its exit code,
 /// or FR-624's whole-request refusal.
 fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
-    let written = command::analyze(
-        &options.path,
-        &filament_driver::AnalyzeNegotiation,
-        &Cancel::new(),
-    );
+    let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
+        Ok(negotiation) => negotiation,
+        Err(error) => {
+            return CommandResult::failure(Category::InternalFailure, format!("{error:?}"))
+        }
+    };
+    let written = command::analyze(&options.path, &negotiation, &Cancel::new());
     match written {
         Ok(result) => analyze_result(result.value.as_value().clone(), result.exit_code, format),
         Err(error) => {
