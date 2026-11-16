@@ -12,7 +12,7 @@ publish = false
 [workspace]
 members = ["filament-cache", "fsl-cli", "filament-plugin-host"]
 default-members = [".", "filament-cache", "fsl-cli", "filament-plugin-host"]
-# make examples-gate fetches filament-examples, with its own runner crate, under target/.
+# make examples-check fetches filament-examples, with its own runner crate, under target/.
 exclude = ["target"]
 resolver = "2"
 
@@ -66,7 +66,7 @@ fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", br
 filament-checked = { git = "https://github.com/agent-ix/filament-eval", branch = "main" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
-# The filament-examples gate needs the fetched suite; `make examples-gate` runs it.
+# The filament-examples gate needs the fetched suite; `make examples-check` runs it.
 [[test]]
 name = "examples_gate"
 path = "tests/examples_gate.rs"

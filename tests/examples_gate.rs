@@ -3,11 +3,16 @@
 //! language revision Cargo.lock resolves, and runs the examples runner of a
 //! filament-examples checkout with it over every running and every staged case.
 //!
-//! `FSL_EXAMPLES_DIR` names the checkout; `make examples-gate` fetches it and
+//! `FSL_EXAMPLES_DIR` names the checkout; `make examples-check` fetches it and
 //! sets the variable. A missing checkout fails the gate. This target is not
 //! part of a plain `cargo test` (`test = false` in Cargo.toml) because it needs
 //! the fetched suite.
+//!
+//! With `FSL_LANGUAGE_DIR` naming a filament-spec-language checkout, `fsl` is
+//! built with every language package patched to that checkout's crates; the
+//! language repository's `make examples-check` runs the gate this way.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,7 +36,7 @@ fn examples_checkout(value: Option<OsString>) -> Result<PathBuf, String> {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| {
-            format!("{CHECKOUT_VAR} is not set; run `make examples-gate` to fetch the suite")
+            format!("{CHECKOUT_VAR} is not set; run `make examples-check` to fetch the suite")
         })?;
     if !dir.join("examples").is_dir() || !runner_manifest(&dir).is_file() {
         return Err(format!(
@@ -55,15 +60,18 @@ fn checkout() -> &'static Path {
     })
 }
 
-/// Builds the binary target `bin` with `cargo build --locked <args>` and
-/// returns the executable cargo reports for it.
-fn build_bin(args: &[&str], bin: &str) -> PathBuf {
+/// What one `cargo build` produced: the executable of the requested binary and
+/// the package id of every artifact the build reported.
+struct Built {
+    executable: PathBuf,
+    package_ids: Vec<String>,
+}
+
+/// Builds the binary target `bin` with `cargo build <args>` and returns the
+/// executable cargo reports for it with the package ids of every artifact.
+fn build_bin(args: &[String], bin: &str) -> Built {
     let output = Command::new(cargo())
-        .args([
-            "build",
-            "--locked",
-            "--message-format=json-render-diagnostics",
-        ])
+        .args(["build", "--message-format=json-render-diagnostics"])
         .args(args)
         .output()
         .unwrap_or_else(|e| panic!("cannot start cargo: {e}"));
@@ -72,24 +80,195 @@ fn build_bin(args: &[&str], bin: &str) -> PathBuf {
         "cargo build {args:?} failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8_lossy(&output.stdout)
+    let artifacts: Vec<Value> = String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|m| m["reason"] == "compiler-artifact" && m["target"]["name"] == bin)
+        .filter(|m| m["reason"] == "compiler-artifact")
+        .collect();
+    let executable = artifacts
+        .iter()
+        .filter(|m| m["target"]["name"] == bin)
         .find_map(|m| m["executable"].as_str().map(PathBuf::from))
-        .unwrap_or_else(|| panic!("cargo build {args:?} reported no executable for {bin}"))
+        .unwrap_or_else(|| panic!("cargo build {args:?} reported no executable for {bin}"));
+    let package_ids = artifacts
+        .iter()
+        .filter_map(|m| m["package_id"].as_str().map(str::to_owned))
+        .collect();
+    Built {
+        executable,
+        package_ids,
+    }
 }
 
-/// The `fsl` binary of this workspace's `fsl-cli` package.
-fn fsl() -> &'static Path {
-    static FSL: OnceLock<PathBuf> = OnceLock::new();
+fn owned(args: &[&str]) -> Vec<String> {
+    args.iter().map(|&a| a.to_owned()).collect()
+}
+
+/// The variable naming a filament-spec-language checkout to build `fsl` from.
+const LANGUAGE_VAR: &str = "FSL_LANGUAGE_DIR";
+/// The git source the driver's FSL language packages resolve from.
+const LANGUAGE_SOURCE: &str = "https://github.com/agent-ix/filament-spec-language";
+
+/// The language checkout named by `FSL_LANGUAGE_DIR`, if any, as an absolute
+/// path: cargo names path packages by it.
+fn language_checkout() -> Option<PathBuf> {
+    let dir = PathBuf::from(std::env::var_os(LANGUAGE_VAR).filter(|v| !v.is_empty())?);
+    Some(fs::canonicalize(&dir).unwrap_or_else(|e| panic!("{LANGUAGE_VAR}={}: {e}", dir.display())))
+}
+
+/// Runs `cargo metadata --format-version 1 <args>` and returns its document.
+fn metadata(args: &[&str]) -> Value {
+    let output = Command::new(cargo())
+        .args(["metadata", "--format-version", "1"])
+        .args(args)
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap_or_else(|e| panic!("cannot start cargo metadata: {e}"));
+    assert!(
+        output.status.success(),
+        "cargo metadata {args:?} failed:\n{}",
+        text(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|e| panic!("metadata: {e}"))
+}
+
+fn packages(metadata: &Value) -> impl Iterator<Item = &Value> {
+    metadata["packages"].as_array().into_iter().flatten()
+}
+
+/// Whether a cargo package id names a package of the language's git source.
+fn is_language_git_package(id: &str) -> bool {
+    id.starts_with(&format!("git+{LANGUAGE_SOURCE}"))
+}
+
+/// The `--config` arguments that patch every language package the driver's
+/// graph resolves from git to the same-named crate of the checkout `dir`.
+/// Each such package must exist in the checkout's workspace.
+fn language_patches(dir: &Path) -> Vec<String> {
+    let manifest = dir.join("Cargo.toml");
+    let language = metadata(&["--no-deps", "--manifest-path", &manifest.to_string_lossy()]);
+    let crates: BTreeMap<&str, &Path> = packages(&language)
+        .filter_map(|p| {
+            let name = p["name"].as_str()?;
+            let manifest = Path::new(p["manifest_path"].as_str()?);
+            Some((name, manifest.parent()?))
+        })
+        .collect();
+    let driver = metadata(&["--locked"]);
+    let names: BTreeSet<&str> = packages(&driver)
+        .filter(|p| p["id"].as_str().is_some_and(is_language_git_package))
+        .filter_map(|p| p["name"].as_str())
+        .collect();
+    assert!(
+        !names.is_empty(),
+        "the driver graph resolves no package from {LANGUAGE_SOURCE}"
+    );
+    names
+        .into_iter()
+        .flat_map(|name| {
+            let path = crates.get(name).unwrap_or_else(|| {
+                panic!(
+                    "{LANGUAGE_VAR}={} has no package {name}, which the driver uses",
+                    dir.display()
+                )
+            });
+            let path = serde_json::to_string(&path.to_string_lossy())
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            [
+                "--config".to_owned(),
+                format!("patch.\"{LANGUAGE_SOURCE}\".{name}.path={path}"),
+            ]
+        })
+        .collect()
+}
+
+/// Makes `to` a copy of the workspace tree `from`, without `.git` and
+/// `target`. A file whose bytes already match is left alone, so its
+/// modification time, and cargo's fingerprint of it, survive between runs.
+fn mirror(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap_or_else(|e| panic!("create {}: {e}", to.display()));
+    let entries = fs::read_dir(from).unwrap_or_else(|e| panic!("list {}: {e}", from.display()));
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| panic!("list {}: {e}", from.display()));
+        let name = entry.file_name();
+        if name == ".git" || name == "target" {
+            continue;
+        }
+        let (source, copy) = (entry.path(), to.join(&name));
+        if source.is_dir() {
+            mirror(&source, &copy);
+            continue;
+        }
+        let bytes = fs::read(&source).unwrap_or_else(|e| panic!("{}: {e}", source.display()));
+        if fs::read(&copy).ok().as_deref() != Some(bytes.as_slice()) {
+            fs::write(&copy, &bytes).unwrap_or_else(|e| panic!("{}: {e}", copy.display()));
+        }
+    }
+}
+
+/// The `fsl` the gate runs and where its language packages came from.
+struct Fsl {
+    executable: PathBuf,
+    /// The package ids of every artifact of the build.
+    package_ids: Vec<String>,
+    /// This checkout's `Cargo.lock` as it was before the build.
+    lock_before: Vec<u8>,
+}
+
+fn checkout_lock() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// The `fsl` binary of this workspace's `fsl-cli` package. With
+/// `FSL_LANGUAGE_DIR` set, every language package is patched to that
+/// checkout's crates. The patched build runs in a copy of this workspace under
+/// `CARGO_TARGET_TMPDIR`, whose `Cargo.lock` the patch rewrites, with the
+/// target directory `language-build` under this workspace's; the checkout's
+/// own `Cargo.lock` is never written.
+fn fsl_build() -> &'static Fsl {
+    static FSL: OnceLock<Fsl> = OnceLock::new();
     FSL.get_or_init(|| {
-        let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-        build_bin(
-            &["--manifest-path", manifest, "-p", "fsl-cli", "--bin", "fsl"],
-            "fsl",
-        )
+        let lock_before = checkout_lock();
+        let fsl_cli = owned(&["-p", "fsl-cli", "--bin", "fsl"]);
+        let built = match language_checkout() {
+            None => {
+                let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+                let args = owned(&["--locked", "--manifest-path", manifest]);
+                build_bin(&[args, fsl_cli].concat(), "fsl")
+            }
+            Some(dir) => {
+                let patches = language_patches(&dir);
+                // A target directory of its own under this workspace's, so a
+                // plain build in the same tree never swaps the gate's `fsl`;
+                // the gate runs the executable this build reports.
+                let target = metadata(&["--locked", "--no-deps"])["target_directory"]
+                    .as_str()
+                    .map(|t| Path::new(t).join("language-build"))
+                    .unwrap_or_else(|| panic!("metadata has no target_directory"));
+                let target_dir = target.to_string_lossy().into_owned();
+                let copy = Path::new(env!("CARGO_TARGET_TMPDIR")).join("language-build");
+                mirror(Path::new(env!("CARGO_MANIFEST_DIR")), &copy);
+                let manifest = copy.join("Cargo.toml").to_string_lossy().into_owned();
+                let args = vec![
+                    "--manifest-path".to_owned(),
+                    manifest,
+                    "--target-dir".to_owned(),
+                    target_dir,
+                ];
+                build_bin(&[patches, args, fsl_cli].concat(), "fsl")
+            }
+        };
+        Fsl {
+            executable: built.executable,
+            package_ids: built.package_ids,
+            lock_before,
+        }
     })
+}
+
+fn fsl() -> &'static Path {
+    &fsl_build().executable
 }
 
 /// The runner binary built from the checkout's `tools/fsl-examples` crate.
@@ -99,9 +278,16 @@ fn runner() -> &'static Path {
         let manifest = runner_manifest(checkout());
         let manifest = manifest.to_string_lossy();
         build_bin(
-            &["--manifest-path", &manifest, "--bin", "fsl-examples"],
+            &owned(&[
+                "--locked",
+                "--manifest-path",
+                &manifest,
+                "--bin",
+                "fsl-examples",
+            ]),
             "fsl-examples",
         )
+        .executable
     })
 }
 
@@ -434,37 +620,81 @@ fn missing_examples_checkout_is_an_error_not_a_skip() {
 #[trace("FR-021-AC-6")]
 #[test]
 fn the_gate_runs_the_fsl_of_this_workspace() {
-    let output = Command::new(cargo())
-        .args(["metadata", "--format-version", "1", "--locked", "--no-deps"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap_or_else(|e| panic!("cannot start cargo metadata: {e}"));
-    assert!(output.status.success(), "{}", text(&output.stderr));
-    let metadata: Value =
-        serde_json::from_slice(&output.stdout).unwrap_or_else(|e| panic!("metadata: {e}"));
-    let version = metadata["packages"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let fsl = fsl();
+    let metadata = metadata(&["--locked", "--no-deps"]);
+    let version = packages(&metadata)
         .find(|p| p["name"] == "fsl-cli")
         .and_then(|p| p["version"].as_str())
         .unwrap_or_else(|| panic!("no fsl-cli package in the workspace"))
         .to_owned();
 
-    let reported = Command::new(fsl())
+    let reported = Command::new(fsl)
         .arg("--version")
         .output()
-        .unwrap_or_else(|e| panic!("cannot start {}: {e}", fsl().display()));
+        .unwrap_or_else(|e| panic!("cannot start {}: {e}", fsl.display()));
     assert!(reported.status.success(), "{}", text(&reported.stderr));
     assert_eq!(text(&reported.stdout).trim_end(), version);
     let target_dir = metadata["target_directory"]
         .as_str()
         .unwrap_or_else(|| panic!("metadata has no target_directory"));
     assert!(
-        fsl().starts_with(target_dir),
+        fsl.starts_with(target_dir),
         "{} is not a build of this workspace ({target_dir})",
-        fsl().display()
+        fsl.display()
     );
+}
+
+#[trace("FR-021-AC-7")]
+#[test]
+fn the_language_packages_come_from_the_named_checkout_or_the_lock() {
+    let ids = &fsl_build().package_ids;
+    assert!(
+        checkout_lock() == fsl_build().lock_before,
+        "the fsl build changed this checkout's Cargo.lock"
+    );
+    let from_git: Vec<&String> = ids
+        .iter()
+        .filter(|id| is_language_git_package(id))
+        .collect();
+    match language_checkout() {
+        None => {
+            assert!(
+                !from_git.is_empty(),
+                "without {LANGUAGE_VAR} the language packages come from git: {ids:?}"
+            );
+            let workspace = format!("path+file://{}", env!("CARGO_MANIFEST_DIR"));
+            let foreign: Vec<&String> = ids
+                .iter()
+                .filter(|id| id.starts_with("path+") && !id.starts_with(&workspace))
+                .collect();
+            assert!(
+                foreign.is_empty(),
+                "without {LANGUAGE_VAR} no package comes from outside this workspace: {foreign:?}"
+            );
+        }
+        Some(dir) => {
+            assert!(
+                from_git.is_empty(),
+                "with {LANGUAGE_VAR} no language package comes from git: {from_git:?}"
+            );
+            let prefix = format!("path+file://{}/", dir.display());
+            assert!(
+                ids.iter().any(|id| id.starts_with(&prefix)),
+                "no package was built from {}: {ids:?}",
+                dir.display()
+            );
+            // The patch rewrote the copy's lock, not this checkout's.
+            let copied = Path::new(env!("CARGO_TARGET_TMPDIR")).join("language-build/Cargo.lock");
+            let copied = fs::read(&copied).unwrap_or_else(|e| panic!("{}: {e}", copied.display()));
+            assert!(
+                copied != fsl_build().lock_before,
+                "the patched build left the copy's Cargo.lock as the checkout's"
+            );
+            // The language repository's examples-check reads this line to
+            // know the gate built its checkout.
+            println!("fsl built from language checkout {}", dir.display());
+        }
+    }
 }
 
 #[trace("FR-021-AC-3", "FR-021-AC-4")]
