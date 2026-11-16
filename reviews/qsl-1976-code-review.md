@@ -23,3 +23,19 @@ APPROVE for the code lane, with one low finding. `fsl analyze` calls `fsl_comman
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Text mode labels an `invalid-request` disposition record with the item category (`refusal`), so `0 Bounded refusal invalid_capability/unknown-backend` is printed. FSL FR-621 gives a disposition record the label `invalid-request` (its aggregate `result` rule), and FR-621's text line is `<record label>`. Fix: when `record.result` is absent, use `invalid-request`, and amend FR-022's text-mode bullet ("the item category when a record has none") to match. | fsl-cli/src/cli.rs:1449-1455 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The new label rule takes any item whose `record` has no `result` to be `invalid-request`. An item with no `record` at all also matches, because `record.get("result")` on JSON null is `None`. FR-621 gives a `simulation` item FR-634's members in place of `record`. At dcf3165 a claimless simulation item still settles with an `unsupported` record, so nothing prints wrongly today. Once FR-634 items land, they will print as `invalid-request`. Fix: require `record` to be an object before applying the no-`result` rule, and use the item category otherwise. | fsl-cli/src/cli.rs:1461-1462 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At 608a922, `analyze_text` labels a record with no `result`, or whose cause code is `invalid-request` (the `declined` unknown-claim and unknown-backend records), as `invalid-request`. FR-022's text bullet says the same, and `analyze_text_mode_prints_item_lines` asserts `0 Bounded invalid-request invalid_capability/unknown-backend`. |
+
+## Verdict (disposition pass 1)
+
+APPROVE at 0fa4ea9. FND-001 is fixed. FND-002 is a latent low defect for a future item shape, and it does not block. The focused analyze tests pass (`cargo test -p fsl-cli --test frontend_cli analyze`: 10 passed).

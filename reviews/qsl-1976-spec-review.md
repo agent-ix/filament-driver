@@ -31,3 +31,22 @@ REQUEST CHANGES. FR-022 is well formed, and its ACs are testable and traced. Thr
 | FND-002 | medium | The settlement ignores the item's extent and mode. FR-281 (FSpec FR-290-AC-6) settles an unbounded extent on a candidate that advertises only `bounded` as `requires-bound`, or as `unsupported` with `unbounded-extent`. `settle()` reads only the candidate count and returns `Supported`. FSL then refuses with `inconsistent-candidates`, a different record. FR-022's table has no extent rows. Fix: add the two extent rows to FR-022's table, and in `settle()` read `item.extent` against the candidate's advertised modes, with a unit test per row. Alternatively, resolve this with FND-001 by settling through CG's `negotiate_*`. | spec/functional/FR-022-analyze-a-native-analyze-request.md:84-94; src/analyze.rs:43-48 |
 | FND-003 | medium | FSL FR-287 requires `--provider-config <file>` on `analyze` (FSpec FR-561), so that configured plugins register before negotiation (FR-635). FR-022 states "the driver adds no option of its own beyond `--format`", and `AnalyzeOptions::parse` refuses `--provider-config` as an unknown option. `command::analyze` takes no registry or engine set, so the driver cannot honour the option today. Fix: record the gap in FR-022 as a deviation naming a ticket for the FSL API (an analyze entry that takes the caller's registry or providers), and keep the refusal until then. Do not state that no other option exists. | spec/functional/FR-022-analyze-a-native-analyze-request.md:35-39; fsl-cli/src/cli.rs:1348-1359 |
 | FND-004 | low | FR-022 says the driver passes "a fresh cancellation handle" but does not say that nothing cancels it except `deadline_ms`. So FR-624's `cancelled`/`requested` cause cannot be reached from the CLI, and SIGINT ends the process by its default disposition with no document. The PR body records this deviation, but the spec does not. Fix: add one Behavior bullet stating that SIGINT and SIGTERM are not cancellation triggers for `fsl analyze` yet (spec.md section 5, CLI signal triggers planned), and naming the ticket that will wire them. | spec/functional/FR-022-analyze-a-native-analyze-request.md:68-69 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The `settle_candidates` deviation names the two extent rows not applied (`requires-bound`, and `unsupported` with `unbounded-extent`). It does not say what a user gets instead. The driver settles such an item `Supported`, and FSL's analyze then refuses it `invalid-request` with `invalid_capability`/`inconsistent-candidates` (FR-281 rule 4). The TM-001 row also says "awaits a CG arm" without naming QSL-2286. Fix: add the resulting record to the deviation paragraph, and name QSL-2286 in the tests.md FR-022 row. | spec/functional/FR-022-analyze-a-native-analyze-request.md:53-64; spec/tests.md:131 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | accepted-no-change | Lead ruling: CG's negotiation has only `Kani` and `Process` `BackendKind` arms and needs a `KaniForm`, so it cannot settle an analyze item for a linked FSL engine. FR-022 now carries a Deviation section naming QSL-2286, and src/analyze.rs:48-50 says the same. The wording is accurate. |
+| FND-002 | accepted-no-change | Accepted as part of the same deviation (QSL-2286, "negotiate_item with extent/mode"). FR-022 names both FR-290 extent rows the driver does not apply. The resulting record is not named; see FND-005. |
+| FND-003 | fixed | FR-022 replaces "no option beyond `--format`" with a Deviation section naming QSL-2283. `AnalyzeOptions::parse` refuses `--provider-config` with exit 20 and a message naming the missing caller registry, and `analyze_malformed_request_is_typed_refusal` asserts it. |
+| FND-004 | fixed | FR-022 Behavior now says only `deadline_ms` cancels the handle, that SIGINT and SIGTERM are not triggers yet (QSL-2284), that `requested` cannot be reached, and that a signal writes no document. |
+
+## Verdict (disposition pass 1)
+
+APPROVE at 0fa4ea9. The deviations are recorded with real tickets: QSL-2283, QSL-2284 and QSL-2286 exist in project "FSL analyze from the command line". `PATH= quire validate --scope . 'spec/**/*.md'` still exits 0. FND-005 is a low wording gap and does not block.
