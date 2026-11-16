@@ -61,7 +61,10 @@ have. Until CG offers a negotiation arm for FSL's linked analysis engines
 (QSL-2286), the driver settles through `fsl_route::settle_candidates`. That settlement reads
 the candidate count only, so FSpec FR-290's extent rows (`requires-bound`, or
 `unsupported` with `unbounded-extent` for an unbounded extent on a
-bounded-only candidate) are not applied by the driver.
+bounded-only candidate) are not applied by the driver. Such an item reaches
+FSL as `supported` on its one candidate, and FSL refuses it with
+`invalid_capability`/`inconsistent-candidates` (FR-281 rule 4), so the user
+sees that refusal rather than `requires-bound` or `unbounded-extent`.
 
 ### Deviation: no `--provider-config` for `analyze` (QSL-2283)
 

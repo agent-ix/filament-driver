@@ -1458,8 +1458,9 @@ fn analyze_text(document: &serde_json::Value, category: Category) -> String {
         // An `invalid-request` disposition record is labelled `invalid-request`
         // (FSL FR-621), whether it carries no `result` or the `declined`
         // result whose cause is `invalid-request`.
-        let invalid_request =
-            record.get("result").is_none() || record["cause"]["code"] == "invalid-request";
+        let invalid_request = record.as_object().is_some_and(|fields| {
+            !fields.contains_key("result") || record["cause"]["code"] == "invalid-request"
+        });
         let label = if invalid_request {
             "invalid-request"
         } else {

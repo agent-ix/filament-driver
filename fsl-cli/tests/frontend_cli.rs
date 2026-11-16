@@ -838,11 +838,11 @@ fn analyze_budget_exhausted_is_incomplete() {
 }
 
 /// FR-022-AC-5, FSL FR-624-AC-2: a program the checker refuses refuses the
-/// whole request at `check`, in both modes.
+/// whole request at the checker stage, which FSL names `S3`, in both modes.
 #[trace("TC-036", "FR-022-AC-5")]
 #[trace("TC-1584", "FR-624-AC-2")]
 #[test]
-fn analyze_checker_refusal_refuses_at_check() {
+fn analyze_checker_refusal_refuses_at_s3() {
     let request = AnalyzeRequest::new(
         "check-refusal",
         serde_json::json!([]),
