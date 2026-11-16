@@ -878,6 +878,87 @@ fn analyze_checker_refusal_refuses_at_s3() {
     );
 }
 
+/// Provenance: QSL-2153.
+/// FR-723-AC-1..3: the CLI retains the front end's timed-model refusal
+/// unchanged when a probabilistic timed-profile claim uses an untimed model.
+#[trace("TC-1765", "FR-723-AC-1")]
+#[trace("TC-1765", "FR-723-AC-2")]
+#[trace("TC-1765", "FR-723-AC-3")]
+#[test]
+fn timed_event_profile_cause_removed() {
+    let request = AnalyzeRequest::new(
+        "timed-profile-untimed-model",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    )
+    .with_file(
+        "/request/program/source/file",
+        "program.fsl",
+        b"language \"ix:native\" edition \"1-draft\";\n\
+          profile v = \"filament.value.complete/v1\";\n\
+          profile timed = \"filament.temporal.timed/v1\";\n\
+          model M = \"test/counter\";\n\
+          probabilistic Bounded using timed on M over (c: M::Counter) under every scheduler on origin {\n\
+            probability >= 0.9 [ eventually holds(c.value <= 3) ]\n\
+          }\n",
+    );
+    let frontend_error = fsl_command::command::analyze(
+        &request.path(),
+        &filament_driver::AnalyzeNegotiation,
+        &filament_exact::Cancel::new(),
+    )
+    .expect_err("the frontend refuses model time over an untimed model");
+    let frontend_document =
+        serde_json::to_value(frontend_error.outcome_document(fsl_replay::Operation::Analyze))
+            .expect("serialize the frontend refusal document");
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["operation"], "analyze");
+    assert_eq!(document["category"], "refusal");
+    assert_eq!(document["last_stage"], "S3", "{document}");
+    assert_eq!(document["items"], serde_json::json!([]), "{document}");
+
+    let diagnostics = document["diagnostics"]
+        .as_array()
+        .unwrap_or_else(|| panic!("diagnostic array: {document}"));
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "the driver adds no refusal causes: {document}"
+    );
+    let diagnostic = &diagnostics[0];
+    let frontend_diagnostic = &frontend_document["diagnostics"][0];
+    assert_eq!(
+        document, frontend_document,
+        "the CLI returns the frontend document unchanged"
+    );
+    assert_eq!(diagnostic["code"], "invalid_timed_model", "{diagnostic}");
+    assert_eq!(diagnostic["code"], frontend_diagnostic["code"]);
+    assert_eq!(
+        diagnostic["cause"], "model-time-on-untimed-model",
+        "{diagnostic}"
+    );
+    assert_eq!(diagnostic["cause"], frontend_diagnostic["cause"]);
+    assert!(
+        diagnostic["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("`M`")),
+        "the frontend refusal payload names the model: {diagnostic}"
+    );
+    assert_eq!(diagnostic["message"], frontend_diagnostic["message"]);
+    assert_eq!(diagnostic["locus"]["kind"], "region", "{diagnostic}");
+    assert_eq!(
+        diagnostic["locus"]["source"],
+        serde_json::json!({"authority": "test", "identity": "analyze-counter"}),
+        "the frontend source locus is retained: {diagnostic}"
+    );
+    assert_eq!(diagnostic["locus"], frontend_diagnostic["locus"]);
+    assert!(
+        !document.to_string().contains("timed-event-profile"),
+        "the driver does not add the old cause: {document}"
+    );
+}
+
 /// FR-022-AC-5, FSL FR-624-AC-3: a snapshot whose population the model
 /// does not declare refuses the whole request at the subject binding.
 #[trace("TC-036", "FR-022-AC-5")]
