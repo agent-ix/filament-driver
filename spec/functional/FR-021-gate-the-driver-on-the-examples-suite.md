@@ -50,7 +50,8 @@ first in the examples repository.
   resolves from the filament-spec-language git source patched, through cargo `--config`
   `patch` entries, to the same-named crate of that checkout. The patched
   build runs in a copy of this workspace under the test target's temporary
-  folder, with this workspace's target directory, so the patch rewrites only
+  folder, with the target directory `language-build` under this workspace's
+  target directory, so the patch rewrites only
   the copy's `Cargo.lock`; the gate SHALL never write the checkout's
   `Cargo.lock`. Once the build's package sources are checked,
   the gate SHALL print `fsl built from language checkout <path>` with the checkout's

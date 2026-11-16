@@ -223,9 +223,9 @@ fn checkout_lock() -> Vec<u8> {
 /// The `fsl` binary of this workspace's `fsl-cli` package. With
 /// `FSL_LANGUAGE_DIR` set, every language package is patched to that
 /// checkout's crates. The patched build runs in a copy of this workspace under
-/// `CARGO_TARGET_TMPDIR`, whose `Cargo.lock` the patch rewrites, with this
-/// workspace's target directory; the checkout's own `Cargo.lock` is never
-/// written.
+/// `CARGO_TARGET_TMPDIR`, whose `Cargo.lock` the patch rewrites, with the
+/// target directory `language-build` under this workspace's; the checkout's
+/// own `Cargo.lock` is never written.
 fn fsl_build() -> &'static Fsl {
     static FSL: OnceLock<Fsl> = OnceLock::new();
     FSL.get_or_init(|| {
@@ -239,10 +239,14 @@ fn fsl_build() -> &'static Fsl {
             }
             Some(dir) => {
                 let patches = language_patches(&dir);
-                let target_dir = metadata(&["--locked", "--no-deps"])["target_directory"]
+                // A target directory of its own under this workspace's, so a
+                // plain build in the same tree never swaps the gate's `fsl`;
+                // the gate runs the executable this build reports.
+                let target = metadata(&["--locked", "--no-deps"])["target_directory"]
                     .as_str()
-                    .unwrap_or_else(|| panic!("metadata has no target_directory"))
-                    .to_owned();
+                    .map(|t| Path::new(t).join("language-build"))
+                    .unwrap_or_else(|| panic!("metadata has no target_directory"));
+                let target_dir = target.to_string_lossy().into_owned();
                 let copy = Path::new(env!("CARGO_TARGET_TMPDIR")).join("language-build");
                 mirror(Path::new(env!("CARGO_MANIFEST_DIR")), &copy);
                 let manifest = copy.join("Cargo.toml").to_string_lossy().into_owned();

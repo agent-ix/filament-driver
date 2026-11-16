@@ -21,3 +21,15 @@ REQUEST CHANGES. `language_patches` derives the patch set from every package id 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Cargo.lock is restored only in `LockRestore::drop`. A SIGINT, SIGKILL or abort during the patched `cargo build` leaves the driver checkout with a rewritten lock. Until the build finishes, any concurrent `cargo --locked` in the same tree also reads the rewritten lock. Fix: never rewrite the checkout's lock. Run the patched build in a temporary copy of the workspace manifests and lock, with CARGO_TARGET_DIR set to this workspace's target dir. At minimum, journal the snapshot to `target/` before the build and restore it at the start of every gate run. | tests/examples_gate.rs:187-206,227-233 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The patched build from the copy shares this workspace's target dir. Cargo puts the final binary at the same `target/debug/fsl` as a plain build, so a concurrent unpatched driver build in the same tree can swap the binary between the build and the gate run, after the marker line's package check has passed. Fix: pass `--target-dir <target_directory>/language-build`. The binary still lies under the workspace target directory, so AC-6 holds. | tests/examples_gate.rs:241-254 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | At 730c2ee7, the patched build runs from a copy under CARGO_TARGET_TMPDIR (`mirror`, `--manifest-path <copy>`). The checkout's Cargo.lock is never written, and AC-7 now asserts it is byte for byte unchanged. An interrupt can only leave the copy's lock rewritten. |
