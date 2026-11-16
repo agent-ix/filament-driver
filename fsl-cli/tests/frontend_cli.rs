@@ -646,3 +646,455 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     assert!(stderr.contains("clause"), "{stderr}");
     assert!(!stderr.contains("could not start"), "{stderr}");
 }
+
+const ANALYZE_REQUEST: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/analyze-counter.json"
+);
+
+/// A `native-analyze/1` request over the Counter fixture with `items` and
+/// the extra request members `extra`, written in its own folder; the files
+/// it names are the fixtures, by absolute path.
+struct AnalyzeRequest {
+    directory: TestDirectory,
+}
+
+impl AnalyzeRequest {
+    fn new(name: &str, items: serde_json::Value, extra: serde_json::Value) -> Self {
+        let fixtures = std::path::Path::new(ANALYZE_REQUEST)
+            .parent()
+            .expect("fixture directory");
+        let mut document: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(ANALYZE_REQUEST).expect("the Counter analyze request"),
+        )
+        .expect("the request is JSON");
+        let request = &mut document["request"];
+        request["program"]["source"]["file"] = fixtures
+            .join("analyze-counter.fsl")
+            .to_string_lossy()
+            .into();
+        request["models"][0]["source"]["file"] = fixtures
+            .join("analyze-counter.semantic-ir.json")
+            .to_string_lossy()
+            .into();
+        request["documents"][0]["file"] = fixtures
+            .join("analyze-counter-start.json")
+            .to_string_lossy()
+            .into();
+        request["items"] = items;
+        for (member, value) in extra.as_object().expect("extra request members") {
+            request[member] = value.clone();
+        }
+        let directory = TestDirectory(
+            std::env::temp_dir().join(format!("fsl-analyze-{name}-{}", std::process::id())),
+        );
+        let _ = std::fs::remove_dir_all(&directory.0);
+        std::fs::create_dir_all(&directory.0).expect("a request folder");
+        std::fs::write(directory.0.join("analyze.json"), document.to_string())
+            .expect("the request file");
+        Self { directory }
+    }
+
+    /// Write `bytes` as `name` in the request folder and point the request
+    /// member at JSON pointer `member` (a `file` member) at it.
+    fn with_file(self, member: &str, name: &str, bytes: &[u8]) -> Self {
+        let path = self.directory.0.join(name);
+        std::fs::write(&path, bytes).expect("the replacement file");
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(self.path()).expect("the request"))
+                .expect("the request is JSON");
+        *document
+            .pointer_mut(member)
+            .unwrap_or_else(|| panic!("the request has {member}")) = path.to_string_lossy().into();
+        std::fs::write(self.path(), document.to_string()).expect("rewrite the request");
+        self
+    }
+
+    fn raw(name: &str, bytes: &[u8]) -> Self {
+        let directory = TestDirectory(
+            std::env::temp_dir().join(format!("fsl-analyze-{name}-{}", std::process::id())),
+        );
+        let _ = std::fs::remove_dir_all(&directory.0);
+        std::fs::create_dir_all(&directory.0).expect("a request folder");
+        std::fs::write(directory.0.join("analyze.json"), bytes).expect("the request file");
+        Self { directory }
+    }
+
+    fn path(&self) -> std::path::PathBuf {
+        self.directory.0.join("analyze.json")
+    }
+
+    fn run(&self, format: &str) -> Output {
+        Command::new(FSL)
+            .arg("analyze")
+            .arg(self.path())
+            .args(["--format", format])
+            .output()
+            .expect("run fsl analyze")
+    }
+
+    /// The machine-mode document and exit code.
+    fn json(&self) -> (serde_json::Value, Option<i32>) {
+        let output = self.run("json");
+        let document = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+            panic!(
+                "one outcome document ({error}); stderr {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+        });
+        (document, output.status.code())
+    }
+}
+
+fn one_item(claim: &str) -> serde_json::Value {
+    serde_json::json!([{ "claim": claim }])
+}
+
+/// FR-022-AC-1, FSL FR-621-AC-1: a holding item prints its `proved` record
+/// and exits 0.
+#[trace("TC-036", "FR-022-AC-1")]
+#[trace("TC-1581", "FR-621-AC-1")]
+#[test]
+fn analyze_holds_prints_result_and_exit_zero() {
+    let request = AnalyzeRequest::new("holds", one_item("Bounded"), serde_json::json!({}));
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(0), "{document}");
+    assert_eq!(document["operation"], "analyze");
+    assert_eq!(document["category"], "success");
+    assert_eq!(document["aggregate"]["status"], "complete");
+    let item = &document["items"][0];
+    assert_eq!(item["claim_name"], "Bounded");
+    assert_eq!(item["record"]["result"], "proved", "{item}");
+    assert_eq!(item["record"]["basis"]["type"], "exhaustive", "{item}");
+    assert!(item.get("counterexample").is_none(), "{item}");
+}
+
+/// FR-022-AC-2, FSL FR-621-AC-2 and AC-8: a refuted item carries a
+/// counterexample and the replay target that reproduced it, and exits 10.
+#[trace("TC-036", "FR-022-AC-2")]
+#[trace("TC-1581", "FR-621-AC-2")]
+#[trace("TC-2184", "FR-621-AC-8")]
+#[test]
+fn analyze_refuted_prints_counterexample() {
+    let request = AnalyzeRequest::new("refuted", one_item("BelowThree"), serde_json::json!({}));
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(10), "{document}");
+    assert_eq!(document["category"], "violation");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{item}");
+    assert!(item["counterexample"].is_object(), "{item}");
+    assert!(
+        item["counterexample"]
+            .to_string()
+            .contains(r#"{"type":"integer","value":"3"}"#),
+        "the counterexample reaches value 3: {item}"
+    );
+    assert_eq!(item["replay"]["reproduced"], true, "{item}");
+    let target = item["replay"]["target"]["state_clause"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a state-clause replay target: {item}"));
+    assert!(target.ends_with("BelowThree"), "{target}");
+}
+
+/// FR-022-AC-3, FSL FR-621-AC-3 and FR-620-AC-6: an exhausted state budget
+/// and a passed deadline each settle `incomplete`, exit 22.
+#[trace("TC-036", "FR-022-AC-3")]
+#[trace("TC-1581", "FR-621-AC-3")]
+#[trace("TC-1580", "FR-620-AC-6")]
+#[test]
+fn analyze_budget_exhausted_is_incomplete() {
+    let limited = AnalyzeRequest::new(
+        "limit",
+        serde_json::json!([{"claim": "Bounded", "temporal": {"limits": {"max_states": 1}}}]),
+        serde_json::json!({}),
+    );
+    let (document, exit) = limited.json();
+    assert_eq!(exit, Some(22), "{document}");
+    assert_eq!(document["category"], "incomplete");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "incomplete", "{item}");
+    assert!(
+        item["record"]["cause"].to_string().contains("max_states"),
+        "{item}"
+    );
+    assert!(item.get("counterexample").is_none(), "{item}");
+    assert_eq!(document["aggregate"]["status"], "incomplete");
+
+    let timed_out = AnalyzeRequest::new(
+        "deadline",
+        one_item("Bounded"),
+        serde_json::json!({"deadline_ms": 0}),
+    );
+    let (document, exit) = timed_out.json();
+    assert_eq!(exit, Some(22), "{document}");
+    assert_eq!(document["category"], "incomplete");
+    let record = &document["items"][0]["record"];
+    assert_eq!(record["result"], "incomplete", "{document}");
+    assert_eq!(
+        record["cause"],
+        serde_json::json!({"kind": "cancelled", "source": "deadline"}),
+        "{document}"
+    );
+}
+
+/// FR-022-AC-5, FSL FR-624-AC-2: a program the checker refuses refuses the
+/// whole request at the checker stage, which FSL names `S3`, in both modes.
+#[trace("TC-036", "FR-022-AC-5")]
+#[trace("TC-1584", "FR-624-AC-2")]
+#[test]
+fn analyze_checker_refusal_refuses_at_s3() {
+    let request = AnalyzeRequest::new(
+        "check-refusal",
+        serde_json::json!([]),
+        serde_json::json!({}),
+    )
+    .with_file(
+        "/request/program/source/file",
+        "program.fsl",
+        b"language \"ix:native\" edition \"1-draft\";\n\
+              profile v = \"filament.value.complete/v1\";\n\
+              model M = \"test/counter\";\n\
+              function Bad using v(): Boolean pure { 1 }\n",
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["operation"], "analyze");
+    assert_eq!(document["category"], "refusal");
+    // FSL names the checker stage `S3` in `last_stage`.
+    assert_eq!(document["last_stage"], "S3", "{document}");
+    assert_eq!(document["items"], serde_json::json!([]));
+    let code = document["diagnostics"][0]["code"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a coded diagnostic: {document}"))
+        .to_owned();
+    assert_ne!(code, "invalid-request", "the request itself is well formed");
+    let text = request.run("text");
+    assert_eq!(text.status.code(), Some(20));
+    assert!(text.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(
+        stderr.starts_with(&format!("fsl analyze: {code}: ")),
+        "{stderr}"
+    );
+}
+
+/// FR-022-AC-5, FSL FR-624-AC-3: a snapshot whose population the model
+/// does not declare refuses the whole request at the subject binding.
+#[trace("TC-036", "FR-022-AC-5")]
+#[trace("TC-1584", "FR-624-AC-3")]
+#[test]
+fn analyze_binding_refusal_refuses_the_request() {
+    let snapshot = serde_json::json!({
+        "format": "filament.state.snapshot/v1",
+        "identity": {"authority": "test", "identity": "start"},
+        "observation": "current", "model": {"identity": "test/counter"},
+        "anchor": {"kind": "initialization", "name": "start"},
+        "populations": [{"population": "ix://test/counter/nowhere", "complete": true,
+            "objects": []}],
+    });
+    let request = AnalyzeRequest::new(
+        "binding-refusal",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    )
+    .with_file(
+        "/request/documents/0/file",
+        "start.json",
+        snapshot.to_string().as_bytes(),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["category"], "refusal");
+    assert_eq!(document["items"], serde_json::json!([]));
+    let code = &document["diagnostics"][0]["code"];
+    assert!(code.is_string(), "{document}");
+    assert_ne!(code, "invalid-request", "the request is well formed");
+}
+
+/// FR-022-AC-4: an unknown backend is an `invalid-request` item and a kind
+/// no engine serves is an `unsupported` item; neither is empty output.
+#[trace("TC-036", "FR-022-AC-4")]
+#[trace("TC-1595", "FR-635-AC-3")]
+#[test]
+fn analyze_unsupported_item_is_typed() {
+    let unknown = AnalyzeRequest::new(
+        "unknown-backend",
+        serde_json::json!([{"claim": "Bounded", "backend": "no-such-backend"}]),
+        serde_json::json!({}),
+    );
+    let (document, exit) = unknown.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["items"][0]["category"], "refusal");
+    let diagnostic = &document["items"][0]["record"]["diagnostic"];
+    assert_eq!(diagnostic["code"], "invalid_capability", "{document}");
+    assert_eq!(diagnostic["cause"], "unknown-backend", "{document}");
+    assert!(
+        diagnostic.to_string().contains("no-such-backend"),
+        "{diagnostic}"
+    );
+
+    // With no `items`, FSL adds the subject's derived deadlock-freedom item,
+    // which no registered engine serves.
+    let unserved = AnalyzeRequest::new("unserved", serde_json::json!([]), serde_json::json!({}));
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(unserved.path()).expect("the request"))
+            .expect("JSON");
+    document["request"]
+        .as_object_mut()
+        .expect("request object")
+        .remove("items");
+    std::fs::write(unserved.path(), document.to_string()).expect("rewrite the request");
+    let output = unserved.run("json");
+    assert!(!output.stdout.is_empty(), "never empty output");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(output.status.code(), Some(21), "{document}");
+    assert_eq!(document["category"], "unsupported");
+    let derived = document["items"]
+        .as_array()
+        .and_then(|items| items.last())
+        .unwrap_or_else(|| panic!("items: {document}"));
+    assert_eq!(derived["record"]["result"], "unsupported", "{derived}");
+    assert_eq!(
+        derived["record"]["diagnostic"]["cause"], "unsupported-requested-capability",
+        "{derived}"
+    );
+    assert_eq!(
+        derived["request"]["temporal"]["item_kind"],
+        "deadlock-freedom"
+    );
+}
+
+/// FR-022-AC-8: the registry FSL builds from its engine set is the one the
+/// driver negotiates over, so the outcome lists FSL's registered engines.
+#[trace("TC-036", "FR-022-AC-8")]
+#[test]
+fn analyze_routes_through_engines_registry() {
+    let request = AnalyzeRequest::new("registry", one_item("Bounded"), serde_json::json!({}));
+    let (document, _) = request.json();
+    let backends: Vec<&str> = document["registry"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a registry member: {document}"))
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert!(backends.contains(&"en-1"), "{backends:?}");
+    assert_eq!(
+        document["items"][0]["request"]["candidates"]["backends"],
+        serde_json::json!(["en-1"]),
+        "{document}"
+    );
+}
+
+/// FR-022-AC-5, FSL FR-624-AC-1: a malformed request is a typed refusal in
+/// both modes; usage errors refuse before any file is read.
+#[trace("TC-036", "FR-022-AC-5")]
+#[trace("TC-1584", "FR-624-AC-1")]
+#[test]
+fn analyze_malformed_request_is_typed_refusal() {
+    let request = AnalyzeRequest::raw(
+        "malformed",
+        br#"{"format": "native-analyze/1", "request": 7}"#,
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["operation"], "analyze");
+    assert_eq!(document["category"], "refusal");
+    assert_eq!(document["items"], serde_json::json!([]));
+    assert_eq!(document["diagnostics"][0]["code"], "invalid-request");
+
+    let text = request.run("text");
+    assert_eq!(text.status.code(), Some(20));
+    assert!(text.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(
+        stderr.starts_with("fsl analyze: invalid-request:"),
+        "{stderr}"
+    );
+
+    for arguments in [
+        &["analyze"][..],
+        &["analyze", "missing.json", "extra"][..],
+        &["analyze", "missing.json", "--engine", "aot"][..],
+    ] {
+        let output = fsl(arguments);
+        assert_eq!(output.status.code(), Some(20), "{arguments:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("usage: fsl analyze") || stderr.contains("unknown analyze option"),
+            "{arguments:?}: {stderr}"
+        );
+        assert!(
+            !stderr.contains("could not read"),
+            "{arguments:?}: {stderr}"
+        );
+    }
+    // The option FSL FR-287 gives `analyze` is refused, naming the missing
+    // caller registry, before any file is read.
+    let output = fsl(&["analyze", "missing.json", "--provider-config", "p.json"]);
+    assert_eq!(output.status.code(), Some(20));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`--provider-config` is not available for `analyze` yet"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("caller registry"), "{stderr}");
+}
+
+/// FR-022-AC-6, FSL FR-621-AC-5: the binary's machine-mode document is the
+/// library's, byte for byte.
+#[trace("TC-036", "FR-022-AC-6")]
+#[trace("TC-1581", "FR-621-AC-5")]
+#[test]
+fn analyze_document_equals_the_library_document() {
+    let request = AnalyzeRequest::new("parity", one_item("BelowThree"), serde_json::json!({}));
+    let library = fsl_command::command::analyze(
+        &request.path(),
+        &filament_driver::AnalyzeNegotiation,
+        &filament_exact::Cancel::new(),
+    )
+    .unwrap_or_else(|_| panic!("the request is accepted"));
+    let expected = format!(
+        "{}\n",
+        ix_cli_kit::json::encode_canonical(library.value.as_value(), false)
+            .expect("canonical document")
+    );
+    let output = request.run("json");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), expected);
+    assert_eq!(output.status.code(), Some(i32::from(library.exit_code)));
+}
+
+/// FR-022-AC-7, FSL FR-621-AC-6: text mode prints one line per item, then
+/// the category, with the machine-mode exit code.
+#[trace("TC-036", "FR-022-AC-7")]
+#[trace("TC-1581", "FR-621-AC-6")]
+#[test]
+fn analyze_text_mode_prints_item_lines() {
+    let request = AnalyzeRequest::new("text", one_item("BelowThree"), serde_json::json!({}));
+    let output = request.run("text");
+    assert_eq!(output.status.code(), Some(10));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines
+            .first()
+            .is_some_and(|line| line.starts_with("0 BelowThree refuted")),
+        "{stdout}"
+    );
+    assert_eq!(lines.last(), Some(&"violation"), "{stdout}");
+
+    // An `invalid-request` disposition record is labelled `invalid-request`.
+    let refused = AnalyzeRequest::new(
+        "text-invalid",
+        serde_json::json!([{"claim": "Bounded", "backend": "no-such-backend"}]),
+        serde_json::json!({}),
+    );
+    let output = refused.run("text");
+    assert_eq!(output.status.code(), Some(20));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.lines().next(),
+        Some("0 Bounded invalid-request invalid_capability/unknown-backend"),
+        "{stdout}"
+    );
+}

@@ -1,0 +1,18 @@
+language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+profile t0 = "filament.temporal.infinite-trace/v1";
+model M = "test/counter";
+
+// A counter starts at 0 and counts up to 3.
+pre CanInc using v on M::Counter::inc { self.value < 3 }
+post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }
+
+// The counter never passes 3: holds over every behaviour.
+temporal Bounded using t0 over (c: M::Counter) clock "model-steps" on origin {
+  always holds(c.value <= 3)
+}
+
+// The counter never reaches 3: violated once it counts to 3.
+temporal BelowThree using t0 over (c: M::Counter) clock "model-steps" on origin {
+  always holds(c.value <= 2)
+}

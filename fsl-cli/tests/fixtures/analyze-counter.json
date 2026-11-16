@@ -1,0 +1,28 @@
+{
+  "format": "native-analyze/1",
+  "request": {
+    "program": {
+      "source": {
+        "file": "analyze-counter.fsl",
+        "authority": "test",
+        "identity": "analyze-counter",
+        "document": "AnalyzeCounter",
+        "formal_revision": 1
+      }
+    },
+    "models": [
+      {
+        "format": "semantic-ir/2.0.0",
+        "source": {
+          "file": "analyze-counter.semantic-ir.json",
+          "authority": "test",
+          "identity": "counter-model",
+          "document": "Counter",
+          "formal_revision": 1
+        }
+      }
+    ],
+    "documents": [{"file": "analyze-counter-start.json"}],
+    "items": [{"claim": "Bounded"}]
+  }
+}
