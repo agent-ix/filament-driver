@@ -612,6 +612,9 @@ mod tests {
                 arguments: Vec::new(),
                 unwind: 1,
                 solver: KaniSolver::Cadical,
+                tool_versions: filament_contract_codegen::KaniToolVersions::Unreported {
+                    reason: filament_contract_codegen::KaniToolVersionsAbsence::NotProbed,
+                },
                 exit_code: Some(0),
                 outcome,
                 success_checks: 3,
@@ -619,6 +622,7 @@ mod tests {
                 batch: None,
                 diagnostics: None,
                 failure_cause: None,
+                shadow_size: None,
                 proof_phase: None,
             }),
         }

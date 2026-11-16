@@ -1601,7 +1601,8 @@ fn envelope(
             extent,
             named_backend: named.map(|id| id.as_str().to_owned()),
             candidates,
-            kani_form,
+            kani_form: Some(kani_form),
+            requirements: cg::ItemRequirements::default(),
         });
     }
 
@@ -1726,6 +1727,7 @@ fn project_descriptor(
         origin,
         domains: descriptor.domains().cloned(),
         bounds: bounds.cloned(),
+        profile: crate::analyze::profile_of(descriptor),
     })
 }
 

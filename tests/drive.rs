@@ -434,7 +434,7 @@ impl Upstream for Recorder {
             items: envelope.items.len(),
         });
         *self.envelope.borrow_mut() = Some(envelope.clone());
-        if let Some(KaniForm::V2ScalarClaim { package, .. }) =
+        if let Some(Some(KaniForm::V2ScalarClaim { package, .. })) =
             envelope.items.first().map(|item| &item.kani_form)
         {
             self.source_matches
@@ -1160,6 +1160,9 @@ fn export_partition_withholds_b_and_preserves_a_and_c_indices() {
                     arguments: Vec::new(),
                     unwind: 1,
                     solver: KaniSolver::Cadical,
+                    tool_versions: filament_contract_codegen::KaniToolVersions::Unreported {
+                        reason: filament_contract_codegen::KaniToolVersionsAbsence::NotProbed,
+                    },
                     exit_code: Some(0),
                     outcome: KaniRunOutcome::Verified,
                     success_checks: 1,
@@ -1168,6 +1171,7 @@ fn export_partition_withholds_b_and_preserves_a_and_c_indices() {
                     diagnostics: None,
                     failure_cause: None,
                     proof_phase: None,
+                    shadow_size: None,
                 }),
             }
             .terminal_record()
@@ -1329,6 +1333,7 @@ fn routed_generation_item(
         origin: filament_contract_codegen::ProviderOrigin::Linked,
         domains: Some(std::collections::BTreeSet::from([DomainKind::Integer])),
         bounds: None,
+        profile: filament_contract_codegen::BackendProfile::default(),
     };
     RoutedGenerationItem::from_descriptor(request_index, node_id, backend, &descriptor)
         .expect("the Kani candidate matches its linked descriptor")
@@ -1859,13 +1864,13 @@ fn tc_006_x_plus_1_generation_passes_through_unchanged() {
     let (contract, positions) = recorder.generation_input();
     assert_eq!(
         envelope.items[0].kani_form,
-        KaniForm::V2ScalarClaim {
+        Some(KaniForm::V2ScalarClaim {
             package: Arc::new(driven.checked().clone()),
             contract: Box::new(contract.clone()),
             positions: positions.clone(),
             request_index: 0,
             node_id: add.clone(),
-        },
+        }),
         "CG receives the admitted package and the exact requirement node"
     );
 
@@ -1916,7 +1921,7 @@ fn tc_006_kani_form_projects_exact_package_and_selected_node() {
         [true, true],
         "negotiation and generation borrow the same original admitted source"
     );
-    let KaniForm::V2ScalarClaim { package, .. } = &envelope.items[0].kani_form else {
+    let Some(KaniForm::V2ScalarClaim { package, .. }) = &envelope.items[0].kani_form else {
         panic!("a scalar claim must retain its admitted source");
     };
     assert!(
@@ -1925,13 +1930,13 @@ fn tc_006_kani_form_projects_exact_package_and_selected_node() {
     );
     assert_eq!(
         envelope.items[0].kani_form,
-        KaniForm::V2ScalarClaim {
+        Some(KaniForm::V2ScalarClaim {
             package: Arc::new(driven.checked().clone()),
             contract: Box::new(contract),
             positions,
             request_index: 0,
             node_id: add,
-        },
+        }),
         "the typed form is projected from the admitted package and exact selected node"
     );
 }
@@ -2064,13 +2069,13 @@ fn tc_006_rr16_preserves_each_occurrence_conversion_context() {
     let envelope = recorder.envelope();
     assert_eq!(envelope.items.len(), 2);
     for (request_index, request) in envelope.items.iter().enumerate() {
-        let KaniForm::V2ScalarClaim {
+        let Some(KaniForm::V2ScalarClaim {
             package,
             contract,
             positions: form_positions,
             request_index: form_index,
             node_id,
-        } = &request.kani_form
+        }) = &request.kani_form
         else {
             panic!("expected a typed scalar claim, got {:?}", request.kani_form);
         };
@@ -3150,23 +3155,23 @@ fn tc_006_typed_form_refusal_preserves_supported_sibling() {
     assert_eq!(envelope.items.len(), 2);
     assert_eq!(
         envelope.items[0].kani_form,
-        KaniForm::V2ScalarClaim {
+        Some(KaniForm::V2ScalarClaim {
             package: Arc::new(driven.checked().clone()),
             contract: Box::new(contract.clone()),
             positions: positions.clone(),
             request_index: 0,
             node_id: eq.clone(),
-        }
+        })
     );
     assert_eq!(
         envelope.items[1].kani_form,
-        KaniForm::V2ScalarClaim {
+        Some(KaniForm::V2ScalarClaim {
             package: Arc::new(driven.checked().clone()),
             contract: Box::new(contract),
             positions,
             request_index: 1,
             node_id: neg.clone(),
-        }
+        })
     );
     assert!(matches!(
         &driven.settlements[0].backend.as_ref().expect("a lowered item settles").disposition,

@@ -1126,7 +1126,7 @@ fn analyze_document_equals_the_library_document() {
     let request = AnalyzeRequest::new("parity", one_item("BelowThree"), serde_json::json!({}));
     let library = fsl_command::command::analyze(
         &request.path(),
-        &filament_driver::AnalyzeNegotiation,
+        &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
         &filament_exact::Cancel::new(),
     )
     .unwrap_or_else(|_| panic!("the request is accepted"));
