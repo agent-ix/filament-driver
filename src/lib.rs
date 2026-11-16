@@ -46,6 +46,7 @@
 
 #![forbid(unsafe_code)]
 
+mod analyze;
 pub mod cache;
 mod drive;
 pub mod execute;
@@ -60,6 +61,7 @@ mod refusal;
 mod registry;
 mod upstream;
 
+pub use analyze::AnalyzeNegotiation;
 pub use cache::{
     run_cached, Cache, CacheCodecError, CacheEligibility, CacheExclusion, CacheFault, CacheLookup,
     CacheOperation, CacheRequest, CacheRequestError, CacheValueCodec, CacheWriteOutcome,

@@ -502,8 +502,12 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     let format_line = command_line("format");
     assert!(format_line.contains("Executes source formatting"));
     assert!(format_line.contains("text output is the default"));
+    let analyze_line = command_line("analyze");
+    assert!(analyze_line.contains("native-analyze/1"), "{analyze_line}");
+    // FSL FR-624 owes each unrouted verb a named outcome document, so this
+    // fixes only the exit code, never empty output.
     for command in [
-        "analyze", "monitor", "prove", "replay", "generate", "inspect", "render",
+        "monitor", "prove", "replay", "generate", "inspect", "render",
     ] {
         assert!(command_line(command).contains("unsupported-capability"));
         let unavailable = Command::new(FSL)
@@ -515,8 +519,6 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
             Some(i32::from(Category::Unsupported.exit_code())),
             "{command}"
         );
-        assert!(unavailable.stdout.is_empty(), "{command}");
-        assert!(unavailable.stderr.is_empty(), "{command}");
     }
 }
 

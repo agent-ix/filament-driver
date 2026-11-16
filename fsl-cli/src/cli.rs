@@ -212,8 +212,8 @@ impl Verb {
                 "Executes with --format json; default text output is unavailable."
             }
             Self::Format => "Executes source formatting; text output is the default.",
-            Self::Analyze
-            | Self::Monitor
+            Self::Analyze => "Executes a native-analyze/1 request; --format json or text.",
+            Self::Monitor
             | Self::Prove
             | Self::Replay
             | Self::Generate
@@ -638,6 +638,11 @@ struct CommandResult {
         reason = "keep provider results typed until QSL-655 defines their mapping"
     )]
     configured_run: Option<Result<ConfiguredRun, Box<ConfiguredRunFailure>>>,
+    /// The FSL FR-621 `analyze` document, written in machine mode in place
+    /// of `document`.
+    analyze_document: Option<serde_json::Value>,
+    /// One plain stderr line, written in place of the document diagnostics.
+    stderr_line: Option<String>,
 }
 
 impl CommandResult {
@@ -648,6 +653,8 @@ impl CommandResult {
             diagnostic: None,
             text_output: None,
             configured_run: None,
+            analyze_document: None,
+            stderr_line: None,
         }
     }
 
@@ -658,6 +665,8 @@ impl CommandResult {
             diagnostic: Some(message.into()),
             text_output: None,
             configured_run: None,
+            analyze_document: None,
+            stderr_line: None,
         }
     }
 
@@ -668,6 +677,8 @@ impl CommandResult {
             diagnostic: None,
             text_output,
             configured_run: None,
+            analyze_document: None,
+            stderr_line: None,
         }
     }
 
@@ -705,6 +716,8 @@ impl CommandResult {
             diagnostic: None,
             text_output: None,
             configured_run: Some(run),
+            analyze_document: None,
+            stderr_line: None,
         }
     }
 }
@@ -714,6 +727,9 @@ fn call_outcome_document(outcome: &CallOutcome) -> OutcomeDocument {
 }
 
 fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> io::Result<()> {
+    if let Some(line) = &result.stderr_line {
+        return writeln!(sink, "{line}");
+    }
     if let Some(message) = &result.diagnostic {
         return write_diagnostic(sink, "DriverDiagnostic", message);
     }
@@ -1319,8 +1335,167 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
     Ok(bytes)
 }
 
+/// The operands of `fsl analyze`: one `native-analyze/1` request file. The
+/// request document carries every analysis setting (FSL FR-620), so the verb
+/// takes no other option than `--format`.
+struct AnalyzeOptions {
+    path: PathBuf,
+}
+
+impl AnalyzeOptions {
+    const USAGE: &str = "usage: fsl analyze <request-file> [--format json|text]";
+
+    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+        let mut positionals = Vec::new();
+        let mut index = 0;
+        while index < arguments.len() {
+            let argument = &arguments[index];
+            if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
+                return Err(format!("unknown analyze option `{option}`"));
+            }
+            positionals.push(argument);
+            index += 1;
+        }
+        let [path] = positionals.as_slice() else {
+            return Err(Self::USAGE.to_owned());
+        };
+        Ok(Self {
+            path: PathBuf::from(*path),
+        })
+    }
+}
+
+/// Read the `native-analyze/1` request, have FSL analyze its items under the
+/// driver's negotiation, and keep FSL FR-621's document with its exit code,
+/// or FR-624's whole-request refusal.
+fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
+    let written = command::analyze(
+        &options.path,
+        &filament_driver::AnalyzeNegotiation,
+        &Cancel::new(),
+    );
+    match written {
+        Ok(result) => analyze_result(result.value.as_value().clone(), result.exit_code, format),
+        Err(error) => {
+            let document = error.outcome_document(Operation::Analyze);
+            if format == OutputFormat::Json {
+                return CommandResult::document(document);
+            }
+            let line = document.diagnostics().first().map_or_else(
+                || format!("fsl analyze: {}", document.category().as_str()),
+                |diagnostic| {
+                    format!(
+                        "fsl analyze: {}: {}",
+                        diagnostic.code(),
+                        diagnostic.message()
+                    )
+                },
+            );
+            let mut result = CommandResult::document(document);
+            result.stderr_line = Some(line);
+            result
+        }
+    }
+}
+
+/// The CLI result of an accepted analyze request: the document's category
+/// must be the one FSL's exit code names (FR-285), or the result is an
+/// internal failure rather than a guessed exit.
+fn analyze_result(
+    document: serde_json::Value,
+    exit_code: u8,
+    format: OutputFormat,
+) -> CommandResult {
+    let label = document["category"].as_str().unwrap_or_default();
+    let Some(category) = Category::ALL
+        .into_iter()
+        .find(|category| category.as_str() == label && category.exit_code() == exit_code)
+    else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!("the analyze document's category `{label}` does not give exit {exit_code}"),
+        );
+    };
+    let text_output = (format == OutputFormat::Text).then(|| analyze_text(&document, category));
+    CommandResult {
+        category,
+        document: None,
+        diagnostic: None,
+        text_output,
+        configured_run: None,
+        analyze_document: Some(document),
+        stderr_line: None,
+    }
+}
+
+/// FSL FR-621's text rendering: one line per item,
+/// `<request_index> <claim_name> <record label>` and the record's cause or
+/// proof basis when it has one, then the document category.
+fn analyze_text(document: &serde_json::Value, category: Category) -> String {
+    let mut text = String::new();
+    for item in document["items"].as_array().into_iter().flatten() {
+        let index = item["request_index"].as_u64().map_or_else(
+            || item["request_index"].to_string(),
+            |index| index.to_string(),
+        );
+        let name = item["claim_name"]
+            .as_str()
+            .filter(|name| !name.is_empty())
+            .unwrap_or("-");
+        let record = &item["record"];
+        // A disposition record carries no `result`; its label is the item's
+        // category, and its diagnostic stands for the cause.
+        let label = record["result"]
+            .as_str()
+            .or_else(|| item["category"].as_str())
+            .unwrap_or("-");
+        text.push_str(&format!("{index} {name} {label}"));
+        if let Some(detail) = analyze_detail(record) {
+            text.push(' ');
+            text.push_str(&detail);
+        }
+        text.push('\n');
+    }
+    text.push_str(category.as_str());
+    text.push('\n');
+    text
+}
+
+/// The record's disposition diagnostic, cause or proof basis, compactly.
+fn analyze_detail(record: &serde_json::Value) -> Option<String> {
+    if let Some(code) = record["diagnostic"]["code"].as_str() {
+        return Some(match record["diagnostic"]["cause"].as_str() {
+            Some(cause) => format!("{code}/{cause}"),
+            None => code.to_owned(),
+        });
+    }
+    if let Some(cause) = record.get("cause").filter(|cause| !cause.is_null()) {
+        return Some(compact_json(cause));
+    }
+    let basis = record.get("basis").filter(|basis| !basis.is_null())?;
+    Some(
+        basis["type"]
+            .as_str()
+            .map_or_else(|| compact_json(basis), str::to_owned),
+    )
+}
+
+fn compact_json(value: &serde_json::Value) -> String {
+    ix_cli_kit::json::encode_canonical(value, false).unwrap_or_else(|_| value.to_string())
+}
+
 /// Dispatch the root verb while preserving its FSL-owned result category.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
+    if verb == Verb::Analyze {
+        return match AnalyzeOptions::parse(raw_arguments) {
+            Ok(options) => analyze(&options, format),
+            Err(error) => CommandResult::input_refusal(Operation::Analyze, error),
+        };
+    }
     if verb == Verb::Run {
         return match RunOptions::parse(raw_arguments) {
             Ok(_options) if format == OutputFormat::Text => {
@@ -1401,6 +1576,8 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
         diagnostic: None,
         text_output: None,
         configured_run: None,
+        analyze_document: None,
+        stderr_line: None,
     }
 }
 
@@ -1422,12 +1599,15 @@ fn text_rendering_unavailable(operation: Operation, verb: &str) -> CommandResult
 /// Emit one result document with the kit's canonical JSON and stream APIs.
 fn emit_result(result: &CommandResult, format: OutputFormat) -> Category {
     let primary = if format == OutputFormat::Json {
-        match result
-            .document
-            .as_ref()
-            .map(|document| ix_cli_kit::json::encode_canonical(document, false))
-            .transpose()
-        {
+        let encoded = match &result.analyze_document {
+            Some(document) => ix_cli_kit::json::encode_canonical(document, false).map(Some),
+            None => result
+                .document
+                .as_ref()
+                .map(|document| ix_cli_kit::json::encode_canonical(document, false))
+                .transpose(),
+        };
+        match encoded {
             Ok(encoded) => encoded.map(|mut encoded| {
                 encoded.push('\n');
                 encoded
