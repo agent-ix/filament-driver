@@ -19,8 +19,8 @@ help:
 	@echo "  make deny             - cargo deny check licenses sources"
 	@echo "  make spec             - quire validate over spec/"
 	@echo "  make docs             - cargo doc, denying missing/broken doc links"
-	@echo "  make examples-gate    - Build fsl here and run the filament-examples suite (running + staged)"
-	@echo "  make ci               - All CI gates locally (fmt-check + lint + test + examples-gate + deny + docs + spec)"
+	@echo "  make examples-check   - Build fsl here and run the filament-examples suite (running + staged)"
+	@echo "  make ci               - All CI gates locally (fmt-check + lint + test + examples-check + deny + docs + spec)"
 
 # =============================================================================
 # Format / Lint / Test
@@ -151,8 +151,8 @@ examples-fetch: $(EXAMPLES_DIR)/.git
 	git -C $(EXAMPLES_DIR) fetch --quiet $(EXAMPLES_REPO) main
 	git -C $(EXAMPLES_DIR) checkout --quiet --detach FETCH_HEAD
 
-.PHONY: examples-gate
-examples-gate: examples-fetch
+.PHONY: examples-check
+examples-check: examples-fetch
 	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
 
 # =============================================================================
@@ -160,4 +160,4 @@ examples-gate: examples-fetch
 # =============================================================================
 
 .PHONY: ci
-ci: fmt-check lint test examples-gate deny docs spec
+ci: fmt-check lint test examples-check deny docs spec

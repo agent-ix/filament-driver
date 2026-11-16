@@ -14,11 +14,11 @@ Verify that the driver gate builds `fsl` from this workspace, runs every
 running and staged example case with it, and fails when any case changes or
 the suite is missing.
 
-Scope: FR-021-AC-1 through FR-021-AC-6.
+Scope: FR-021-AC-1 through FR-021-AC-7.
 
 ## Test Procedure
 
-1. `make examples-gate` fetches filament-examples `main` and runs
+1. `make examples-check` fetches filament-examples `main` and runs
    `tests/examples_gate.rs` with `FSL_EXAMPLES_DIR` set.
 2. Run `check` and `staged` over the whole suite with the built `fsl`; assert
    exit 0 and a summary of N passed, 0 failed with N above zero (AC-1, AC-2).
@@ -37,7 +37,12 @@ Scope: FR-021-AC-1 through FR-021-AC-6.
    and run the runner on an empty root (AC-5).
 7. Compare `fsl --version` with the `fsl-cli` version from `cargo metadata`
    and check that the binary lies under the workspace target directory; inspect
-   the `ci` target (AC-6).
+   the `ci` target; `tests/make_targets.rs::ci_includes_examples_check` reads
+   the `ci` and `examples-check` rules (AC-6).
+8. Check the language packages the `fsl` build reports: from the git source
+   without `FSL_LANGUAGE_DIR`; with it, none from git, at least one from the
+   named checkout, and `Cargo.lock` byte for byte unchanged after the build
+   (AC-7).
 
 ## Expected Results
 
@@ -45,3 +50,5 @@ Scope: FR-021-AC-1 through FR-021-AC-6.
 - An edited running record or a staged case that starts working fails the
   gate, naming the case.
 - A missing suite is an error, never a skip.
+- A named language checkout supplies the language crates without changing
+  `Cargo.lock`.
