@@ -766,7 +766,7 @@ fn valid_provider_config_reaches_the_known_runtime_offer_blocker() {
         "{stderr}"
     );
     assert!(
-        output.stdout.len() > 0,
+        !output.stdout.is_empty(),
         "the command has its current typed refusal"
     );
 }
