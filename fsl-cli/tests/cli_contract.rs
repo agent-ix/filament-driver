@@ -10,6 +10,7 @@ use std::process::Command;
 
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
+use fsl_command::command::{self, CheckInputs};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::{Code, Staged};
 use fsl_foundation::SourceIdentity;
@@ -33,6 +34,39 @@ const CHECK_INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/check-invalid.fsl"
 );
+const CHECK_MODEL_SOURCE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/check-with-model.fsl"
+);
+const CHECK_LIBRARY_SOURCE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/check-with-library.fsl"
+);
+const MODEL: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/population-model.semantic-ir.json"
+);
+
+struct TemporaryDirectory(std::path::PathBuf);
+
+impl TemporaryDirectory {
+    fn new(label: &str) -> Self {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is after the Unix epoch")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("fsl-cli-{label}-{}-{unique}", std::process::id()));
+        std::fs::create_dir(&path).expect("create isolated test directory");
+        Self(path)
+    }
+}
+
+impl Drop for TemporaryDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read parse fixture");
@@ -53,32 +87,8 @@ fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
 }
 
 fn check_outcome_bytes(path: &'static str) -> Vec<u8> {
-    let bytes = std::fs::read(path).expect("read check fixture");
-    let source = SourceIdentity::new("filament", path);
-    let limits = SpineLimits::default();
-    let cancel = Cancel::new();
-    let result = parse(
-        &ParseRequest {
-            source: &source,
-            path,
-            bytes: &bytes,
-        },
-        limits.source,
-        &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &Default::default(), limits.model, &cancel).and_then(|models| {
-            check(
-                parsed.value(),
-                path.to_owned(),
-                models.value(),
-                &DependencyInput::default(),
-                limits,
-                &cancel,
-            )
-        })
-    });
-    OutcomeDocument::from_check(&result)
+    command::check_outcome(Path::new(path), &CheckInputs::default())
+        .expect("FSL runs a check over the fixture")
         .to_bytes()
         .expect("FSL serializes its check outcome")
 }
@@ -178,6 +188,145 @@ fn check_emits_fsl_check_outcome_document() {
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
+}
+
+/// Trace: QSL-1972 / FR-866-AC-1; check supplies the selected domain model to FSL.
+#[test]
+fn check_with_model_checks_importing_unit() {
+    let directory = TemporaryDirectory::new("check-model");
+    let model = directory.0.join("model.json");
+    std::fs::copy(MODEL, &model).expect("copy model fixture");
+    let output = Command::new(FSL)
+        .arg("check")
+        .arg(CHECK_MODEL_SOURCE)
+        .arg("--model")
+        .arg(&model)
+        .arg("--dependent-bytes")
+        .arg("8192")
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("check unit with model");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty());
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits a JSON outcome");
+    assert_eq!(document["operation"], "check");
+    assert_eq!(document["category"], "success");
+}
+
+/// Trace: QSL-1972 / FR-866-AC-2; missing models preserve the selected identity and supplying flag.
+#[test]
+fn check_without_model_names_supplying_option() {
+    let output = Command::new(FSL)
+        .args(["check", CHECK_MODEL_SOURCE, "--format", "json"])
+        .output()
+        .expect("check importing unit without its model");
+    assert_eq!(output.status.code(), Some(20));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits a refusal outcome");
+    let serialized = document.to_string();
+    assert!(serialized.contains("driver/ir608-model"), "{serialized}");
+    assert!(serialized.contains("--model"), "{serialized}");
+}
+
+/// Trace: QSL-1972 / FR-866-AC-4; a model on a source with no model selection is refused.
+#[test]
+fn check_model_option_misuse_refused() {
+    let output = Command::new(FSL)
+        .arg("check")
+        .arg(SOURCE)
+        .arg("--model")
+        .arg(MODEL)
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("check source with unused model");
+    assert_eq!(output.status.code(), Some(20));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits a refusal outcome");
+    assert!(document.to_string().contains("--model"));
+}
+
+/// Trace: QSL-1972 / FR-866-AC-5; dependent-byte options bound supplied model files.
+#[test]
+fn check_dependent_byte_limit_is_applied() {
+    let output = Command::new(FSL)
+        .args([
+            "check",
+            CHECK_MODEL_SOURCE,
+            "--model",
+            MODEL,
+            "--dependent-bytes",
+            "0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check unit with zero dependent-byte allowance");
+    assert_eq!(output.status.code(), Some(22));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits a refusal outcome");
+    assert!(document.to_string().contains("dependent_bytes"));
+}
+
+/// Trace: QSL-1972 / FR-866-AC-5; each library path is offered for a source-selected identity.
+#[test]
+fn check_library_path_is_read_for_selected_import() {
+    let directory = TemporaryDirectory::new("check-library");
+    let missing_library = directory.0.join("library.native");
+    let output = Command::new(FSL)
+        .arg("check")
+        .arg(CHECK_LIBRARY_SOURCE)
+        .arg("--library")
+        .arg(&missing_library)
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("check unit with selected library path");
+    assert_eq!(output.status.code(), Some(20));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits a refusal outcome");
+    let serialized = document.to_string();
+    assert!(
+        serialized.contains(&missing_library.display().to_string()),
+        "{serialized}"
+    );
+}
+
+/// Trace: QSL-1972 / FR-866-AC-1; check links a supplied library selected by the source.
+#[test]
+fn check_with_library_checks_importing_unit() {
+    let directory = TemporaryDirectory::new("check-library-success");
+    let library = directory.0.join("library.native");
+    std::fs::write(
+        &library,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"filament.value.complete/v1\";\n\
+         predicate Ready using v (ready: Boolean): Boolean { ready }\n",
+    )
+    .expect("write library fixture");
+    let output = Command::new(FSL)
+        .arg("check")
+        .arg(CHECK_LIBRARY_SOURCE)
+        .arg("--library")
+        .arg(&library)
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("check unit with library");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty());
 }
 
 /// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.

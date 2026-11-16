@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parser and command handlers for the user-facing `fsl` binary.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -22,9 +22,7 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
-use fsl_replay::spine::{
-    check, parse, select, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits,
-};
+use fsl_replay::spine::{parse, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits};
 use fsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
@@ -477,20 +475,8 @@ struct CompileOptions {
 
 struct CheckOptions {
     path: String,
-    #[allow(
-        dead_code,
-        reason = "QSL-1972 awaits FSL's typed check-with-imports entrypoint"
-    )]
     model: Option<PathBuf>,
-    #[allow(
-        dead_code,
-        reason = "QSL-1972 awaits FSL's typed check-with-imports entrypoint"
-    )]
     libraries: Vec<PathBuf>,
-    #[allow(
-        dead_code,
-        reason = "QSL-1972 awaits FSL's typed check-with-imports entrypoint"
-    )]
     dependent_bytes: usize,
 }
 
@@ -1418,11 +1404,10 @@ fn check_source(options: CheckOptions) -> CommandResult {
         }
     };
     let source = SourceIdentity::new("filament", &options.path);
-    let packages = BTreeMap::new();
     let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
     tc018_record_check_request(&options, &source, &bytes, limits);
-    let result = parse(
+    let parsed = match parse(
         &ParseRequest {
             source: &source,
             path: &options.path,
@@ -1430,24 +1415,64 @@ fn check_source(options: CheckOptions) -> CommandResult {
         },
         limits.source,
         &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &packages, limits.model, &cancel).and_then(|models| {
-            check(
-                parsed.value(),
-                options.path.clone(),
-                models.value(),
-                &DependencyInput::default(),
+    ) {
+        Ok(parsed) => parsed,
+        Err(_failure) => {
+            let inputs = command::CheckInputs {
                 limits,
-                &cancel,
-            )
+                dependent_bytes: options.dependent_bytes,
+                ..command::CheckInputs::default()
+            };
+            return match command::check_outcome(Path::new(&options.path), &inputs) {
+                Ok(document) => CommandResult::document(document),
+                Err(error) => CommandResult::document(error.outcome_document(Operation::Check)),
+            };
+        }
+    };
+
+    // The CLI accepts files while the typed check API also requires each
+    // selected identity. Read those identities from the source first so
+    // unused model and library paths are refused before their files open.
+    let selected_models = &parsed.value().unit().selections().models;
+    let selected_libraries = &parsed.value().unit().selections().imports;
+    let models = options
+        .model
+        .map(|path| {
+            let identity = selected_models
+                .first()
+                .map(|selection| selection.identity.clone())
+                .unwrap_or_else(|| "unused-model".to_owned());
+            (identity, path)
         })
-    });
-    CommandResult::document(OutcomeDocument::from_check(&result))
+        .into_iter()
+        .collect();
+    let libraries = options
+        .libraries
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let identity = selected_libraries
+                .get(index)
+                .map(|selection| selection.identity.clone())
+                .unwrap_or_else(|| format!("unused-library-{index}"));
+            (identity, path)
+        })
+        .collect();
+    let inputs = command::CheckInputs {
+        models,
+        libraries,
+        limits,
+        dependent_bytes: options.dependent_bytes,
+        ..command::CheckInputs::default()
+    };
+    match command::check_outcome(Path::new(&options.path), &inputs) {
+        Ok(document) => CommandResult::document(document),
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Check)),
+    }
 }
 
 /// Observe the TC-018 refused-range selection at the typed check boundary.
-/// The normal FSL parse/select/check below supplies the result; argv parsing,
+/// The normal FSL parse/check outcome supplies the result; argv parsing,
 /// source reading, serialization and exit mapping remain the production paths.
 #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
 fn tc018_record_check_request(
@@ -2494,7 +2519,6 @@ mod configured_run_tests {
                     value: Value::Integer(Integer::from(3_i64)),
                 },
             ],
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: Default::default(),
             backend: Default::default(),
@@ -2665,7 +2689,6 @@ mod configured_run_tests {
                     value: Value::Integer(Integer::from(3_i64)),
                 },
             ],
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: Default::default(),
             backend: Default::default(),

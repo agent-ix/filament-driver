@@ -547,7 +547,6 @@ fn machine_run_writes_the_canonical_fsl_outcome() {
         call: Call {
             function: "yes".to_owned(),
             arguments: Vec::new(),
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: SuppliedLimits::default(),
             backend: Default::default(),

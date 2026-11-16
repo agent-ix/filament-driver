@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+language "ix:native" edition "1-draft";
+profile v = "filament.model.complete/v1";
+model M = "driver/ir608-model";
+function valid using v(): Boolean pure { true }
