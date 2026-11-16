@@ -45,6 +45,9 @@ fn settle(kind: Capability, candidates: &CandidateOutcome) -> (Disposition, Opti
         CandidateOutcome::Candidates(set) => set.requested_backend(),
         CandidateOutcome::UnknownBackend(_) => None,
     };
+    // FR-281 names CG's `negotiate_*` as the settlement point, but CG has no
+    // arm for linked FSL engines yet (QSL-2286), so the FR-290 table is read
+    // here without its extent rows.
     match settle_candidates(candidates, kind, named) {
         NegotiationSettlement::Single(backend) => (
             Disposition::Supported(fsl_route::Candidate::new(backend)),

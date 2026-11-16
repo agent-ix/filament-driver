@@ -57,8 +57,8 @@ negotiation point. CG's `negotiate_backend_provider` settles a candidate only
 through a `BackendKind` arm, and its arms are `Kani` and `Process`: a linked
 FSL engine such as `en-1` has no arm and settles `unknown-backend`, and each
 `RequestItem` requires a Kani-specific `KaniForm` an analyze item does not
-have. Until CG offers a negotiation arm for FSL's linked analysis engines, the
-driver settles through `fsl_route::settle_candidates`. That settlement reads
+have. Until CG offers a negotiation arm for FSL's linked analysis engines
+(QSL-2286), the driver settles through `fsl_route::settle_candidates`. That settlement reads
 the candidate count only, so FSpec FR-290's extent rows (`requires-bound`, or
 `unsupported` with `unbounded-extent` for an unbounded extent on a
 bounded-only candidate) are not applied by the driver.
