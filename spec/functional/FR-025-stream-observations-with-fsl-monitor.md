@@ -45,7 +45,9 @@ entry takes no providers parameter, so the driver refuses the option with exit
 
 SIGINT and SIGTERM are not cancellation triggers for `fsl monitor` yet; they
 end the process by their default disposition. The cancellation handle passed to
-FSL is never tripped.
+FSL is never tripped. QSL-2284 covers `fsl monitor` as well as `fsl analyze`: it
+wires both verbs' signals to their cancel handle, and removes this note when it
+lands.
 
 ## Inputs
 
@@ -65,6 +67,10 @@ FSL is never tripped.
 - The exit code of the summary (FR-285). A request refused before any record is
   read writes the command-error outcome document (machine mode) or its
   diagnostics on stderr (text mode), and exits 20.
+- If `command::monitor` fails after events were written, the driver appends the
+  `filament-outcome/1` document for that failure (machine mode) or its
+  diagnostics on stderr (text mode) and exits with the failure's FR-285 code,
+  20 for a refusal; the events already written stay.
 
 ## Behavior
 
@@ -90,10 +96,11 @@ clauses `Reaches` (`eventually holds(r.level = 2)`) and `Never`
 | FR-025-AC-1 | `fsl monitor` over `Reaches` and `Never` with levels 0, 1, 2, 1 then `{"end": true}` writes event lines then one summary line and exits 10, with a `settled` `violation` event for `Never` at record 2; over `Never` alone with levels 0, 1, 0 it exits 0. | Test (TC-039) |
 | FR-025-AC-2 | The lines the binary writes equal, byte for byte, the canonical encodings of the events and summary `command::monitor` hands back in process for the same request and records, and the exit code equals the summary's. | Test (TC-039) |
 | FR-025-AC-3 | A request naming a clause the program lacks, a request that is not JSON, and a missing operand each exit 20 before any record is read; the first writes only the `monitor` command-error document. | Test (TC-039) |
-| FR-025-AC-4 | `--provider-config` refuses with exit 20, names QSL-2132 and writes nothing to stdout. | Test (TC-039) |
+| FR-025-AC-4 | `--provider-config` refuses with exit 20 and names QSL-2132; in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty and the message is on stderr. | Test (TC-039) |
 | FR-025-AC-5 | A record with an unknown member between good records gives one `refusal` event naming that record, the summary counts it, the stream continues and the output equals `command::monitor`'s. | Test (TC-039) |
 | FR-025-AC-6 | With standard input held open, the event that settles `Never` is on standard output before the next record is sent or the input is closed. | Test (TC-039) |
-| FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20 and no stdout. | Test (TC-039) |
+| FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty. | Test (TC-039) |
+| FR-025-AC-8 | In text mode, over AC-1's fixture and records, stdout holds one event line `<record> <clause> <category> settled|pending` per event, then one `<clause> <category> settled|pending` line per clause and the line `records <n> refused <m>`, and the exit is 10. | Test (TC-039) |
 
 ## Dependencies
 

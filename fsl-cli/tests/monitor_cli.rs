@@ -82,6 +82,13 @@ fn fsl_with_stdin(arguments: &[&str], stdin: &str) -> Output {
         .take()
         .expect("stdin")
         .write_all(stdin.as_bytes())
+        .or_else(|error| {
+            if error.kind() == std::io::ErrorKind::BrokenPipe {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        })
         .expect("write records");
     child.wait_with_output().expect("fsl output")
 }
@@ -217,8 +224,26 @@ fn provider_config_is_refused_naming_qsl_2132() {
         &records(&[0]).join("\n"),
     );
     assert_eq!(output.status.code(), Some(20), "{output:?}");
-    assert!(output.stdout.is_empty());
+    assert!(output.stdout.is_empty(), "text mode writes no stdout");
     assert!(String::from_utf8_lossy(&output.stderr).contains("QSL-2132"));
+
+    let json = fsl_with_stdin(
+        &[
+            "monitor",
+            request.to_str().unwrap(),
+            "--provider-config",
+            config.to_str().unwrap(),
+            "--format",
+            "json",
+        ],
+        &records(&[0]).join("\n"),
+    );
+    assert_eq!(json.status.code(), Some(20), "{json:?}");
+    let lines = json_lines(&json);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0]["operation"], "monitor");
+    assert_eq!(lines[0]["category"], "refusal");
+    assert!(lines[0].to_string().contains("QSL-2132"), "{}", lines[0]);
 }
 
 #[trace("TC-039", "FR-025-AC-5")]
@@ -323,5 +348,50 @@ fn input_file_and_standard_input_give_the_same_stream() {
         .output()
         .expect("run fsl");
     assert_eq!(missing.status.code(), Some(20));
-    assert!(missing.stdout.is_empty());
+    assert!(missing.stdout.is_empty(), "text mode writes no stdout");
+
+    let missing = Command::new(FSL)
+        .args([
+            "monitor",
+            request.to_str().unwrap(),
+            "--format",
+            "json",
+            "--input",
+        ])
+        .arg(folder.path("absent.jsonl"))
+        .output()
+        .expect("run fsl");
+    assert_eq!(missing.status.code(), Some(20));
+    let lines = json_lines(&missing);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0]["operation"], "monitor");
+    assert_eq!(lines[0]["category"], "refusal");
+    assert!(
+        lines[0].to_string().contains("absent.jsonl"),
+        "{}",
+        lines[0]
+    );
+}
+
+#[trace("TC-039", "FR-025-AC-8")]
+#[test]
+fn text_mode_writes_event_lines_then_clause_lines_and_the_counts() {
+    let folder = Folder::new("text");
+    let request = folder.request("request.json", &["Reaches", "Never"]);
+    let output = fsl_with_stdin(
+        &["monitor", request.to_str().unwrap(), "--format", "text"],
+        &records(&[0, 1, 2, 1]).join("\n"),
+    );
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert_eq!(
+        stdout_lines(&output),
+        [
+            "0 Reaches pending pending",
+            "0 Never pending pending",
+            "2 Never violation settled",
+            "Reaches pending pending",
+            "Never violation settled",
+            "records 5 refused 0",
+        ]
+    );
 }

@@ -14,7 +14,7 @@ Verify that `fsl monitor` writes FSL's events as records arrive, then the
 summary, exits with the summary's code, and refuses a bad request, a bad
 option and a bad record as FR-025 states.
 
-Scope: FR-025-AC-1 through FR-025-AC-7. Ticket: QSL-2313, the driver half of QSL-1977.
+Scope: FR-025-AC-1 through FR-025-AC-8. Ticket: QSL-2313, the driver half of QSL-1977.
 
 ## Test Procedure
 
@@ -25,11 +25,12 @@ Scope: FR-025-AC-1 through FR-025-AC-7. Ticket: QSL-2313, the driver half of QSL
 3. Call `fsl_command::command::monitor` in process over the same records and
    compare its canonical lines with the binary's stdout (AC-2).
 4. Run an unknown-clause request, a non-JSON request and no operand (AC-3).
-5. Run with `--provider-config` (AC-4).
+5. Run with `--provider-config` in machine and text mode; assert the stdout of each (AC-4).
 6. Insert a record with an unknown member and compare with the library (AC-5).
 7. Keep stdin open, send levels 0 and 2 and read the settling event before
    closing stdin (AC-6).
-8. Run with `--input` and with stdin, then with a missing `--input` file (AC-7).
+8. Run with `--input` and with stdin, then with a missing `--input` file in machine and text mode (AC-7).
+9. Run the AC-1 records in text mode and assert each line and exit 10 (AC-8).
 
 ## Expected Results
 

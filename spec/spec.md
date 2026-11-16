@@ -1,5 +1,3 @@
-| [TC-039](test-cases/TC-039-stream-observations-with-fsl-monitor.md) | Stream observations with the fsl monitor verb |
-| [FR-025](functional/FR-025-stream-observations-with-fsl-monitor.md) | Stream observations through fsl monitor |
 ---
 type: master-requirements
 name: filament-driver
@@ -247,12 +245,14 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 | [FR-022](functional/FR-022-analyze-a-native-analyze-request.md) | Analyze a native-analyze/1 request from the command line |
 | [FR-023](functional/FR-023-supply-clock-configurations-with-clocks.md) | Supply clock configurations to compile and run with --clocks |
 | [FR-024](functional/FR-024-write-the-checked-package-with-output.md) | Write the checked package to a file with fsl compile --output |
+| [FR-025](functional/FR-025-stream-observations-with-fsl-monitor.md) | Stream observations through fsl monitor |
 | [TC-033](test-cases/TC-033-prepare-monitor-under-one-budget.md) | Prepare a monitor program from a plan root under one budget |
 | [TC-034](test-cases/TC-034-project-requirement-records-into-codegen.md) | Project FSL requirement records into CG's typed input |
 | [TC-035](test-cases/TC-035-examples-suite-gate.md) | Run the examples suite against the workspace-built fsl |
 | [TC-036](test-cases/TC-036-analyze-from-the-command-line.md) | Analyze a native-analyze/1 request with the fsl binary |
 | [TC-037](test-cases/TC-037-supply-clocks-from-the-command-line.md) | Supply clock configurations with --clocks on compile and run |
 | [TC-038](test-cases/TC-038-write-the-checked-package-from-the-command-line.md) | Write the checked package with fsl compile --output |
+| [TC-039](test-cases/TC-039-stream-observations-with-fsl-monitor.md) | Stream observations with the fsl monitor verb |
 | [TC-001](test-cases/TC-001-steps-run-in-order.md) | The steps run in ADR-011 T-13 order |
 | [TC-002](test-cases/TC-002-unknown-backend-refusal.md) | An unknown `BackendId` refuses the run before negotiation |
 | [TC-003](test-cases/TC-003-route-after-negotiation.md) | `route` runs after negotiation, for `supported` items only |
