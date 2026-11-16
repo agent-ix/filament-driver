@@ -1,3 +1,5 @@
+| [TC-039](test-cases/TC-039-stream-observations-with-fsl-monitor.md) | Stream observations with the fsl monitor verb |
+| [FR-025](functional/FR-025-stream-observations-with-fsl-monitor.md) | Stream observations through fsl monitor |
 ---
 type: master-requirements
 name: filament-driver
@@ -55,6 +57,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/filament-driver/FR-024
     type: contains
+  - target: ix://agent-ix/filament-driver/FR-025
+    type: contains
   - target: ix://agent-ix/filament-driver/TC-033
     type: contains
   - target: ix://agent-ix/filament-driver/TC-034
@@ -66,6 +70,8 @@ relationships:
   - target: ix://agent-ix/filament-driver/TC-037
     type: contains
   - target: ix://agent-ix/filament-driver/TC-038
+    type: contains
+  - target: ix://agent-ix/filament-driver/TC-039
     type: contains
   - target: ix://agent-ix/filament-driver/TC-001
     type: contains
@@ -279,8 +285,8 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 
 ## 5. Verification and Delivery Boundary
 
-[TM-001](tests.md) integrates FR-001 through FR-024, and TC-001 through
-TC-038.
+[TM-001](tests.md) integrates FR-001 through FR-025, and TC-001 through
+TC-039.
 It distinguishes existing orchestration tests from planned driver tests and
 records their verification owners. Cross-backend and CLI/library conformance
 formerly described by CG FR-005 and IR-337 feed IR-528's G5b gate exclusively

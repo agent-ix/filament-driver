@@ -1,0 +1,327 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! `fsl monitor` (FR-025, TC-039): the verb streams one event per clause status
+//! change as each record arrives, then the summary, and exits with FSL's code.
+
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
+
+use filament_exact::Cancel;
+use fsl_command::command::{monitor, RunLimits};
+use ix_trace_rs::trace;
+use serde_json::{json, Value};
+
+const FSL: &str = env!("CARGO_BIN_EXE_fsl");
+const INFINITE: &str = "filament.temporal.infinite-trace/v1";
+
+struct Folder(PathBuf);
+
+impl Folder {
+    fn new(name: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("fsl-monitor-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a test folder");
+        let unit = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile i = \"{INFINITE}\";\n\
+             record Reading {{ level: Int[0, 9]; }}\n\
+             temporal Reaches using i over (r: Reading) clock \"steps\" on origin {{ eventually holds(r.level = 2) }}\n\
+             temporal Never using i over (r: Reading) clock \"steps\" on origin {{ always holds(r.level < 2) }}\n"
+        );
+        std::fs::write(path.join("unit.native"), unit).expect("the unit");
+        Self(path)
+    }
+
+    fn path(&self, name: &str) -> PathBuf {
+        self.0.join(name)
+    }
+
+    /// A `native-monitor/1` request over the given clauses, written as `name`.
+    fn request(&self, name: &str, clauses: &[&str]) -> PathBuf {
+        let clauses: Vec<Value> = clauses.iter().map(|name| json!({"name": name})).collect();
+        let request = json!({"format": "native-monitor/1", "request": {
+            "models": [],
+            "program": {"source": {"file": "unit.native", "authority": "agent-ix",
+                "identity": "test:monitor-cli", "document": "MonitorCli",
+                "formal_revision": 1}},
+            "clauses": clauses, "trace": {"kind": "finite"}}});
+        let path = self.path(name);
+        std::fs::write(&path, request.to_string()).expect("a request");
+        path
+    }
+}
+
+impl Drop for Folder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn level(value: i64) -> String {
+    json!({"observation": {"sample": {"level": {"integer": value.to_string()}}}}).to_string()
+}
+
+fn records(levels: &[i64]) -> Vec<String> {
+    let mut lines: Vec<String> = levels.iter().copied().map(level).collect();
+    lines.push(json!({"end": true}).to_string());
+    lines
+}
+
+fn fsl_with_stdin(arguments: &[&str], stdin: &str) -> Output {
+    let mut child = Command::new(FSL)
+        .args(arguments)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn fsl");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(stdin.as_bytes())
+        .expect("write records");
+    child.wait_with_output().expect("fsl output")
+}
+
+fn json_lines(output: &Output) -> Vec<Value> {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap_or_else(|error| panic!("{error}: {line}")))
+        .collect()
+}
+
+/// The events and summary `command::monitor` gives in process, canonically encoded.
+fn library_lines(request: &Path, lines: &[String]) -> (Vec<String>, u8) {
+    let mut encoded = Vec::new();
+    let summary = monitor(
+        request,
+        lines.iter().map(|line| Ok(line.clone().into_bytes())),
+        &mut |event| encoded.push(canonical(event.as_value())),
+        RunLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the stream runs");
+    encoded.push(canonical(summary.as_value()));
+    (encoded, summary.exit_code)
+}
+
+fn canonical(value: &Value) -> String {
+    ix_cli_kit::json::encode_canonical(value, false).expect("canonical JSON")
+}
+
+fn stdout_lines(output: &Output) -> Vec<String> {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[trace("TC-039", "FR-025-AC-1")]
+#[test]
+fn a_recorded_trace_streams_events_then_the_summary_with_the_verdict_exit() {
+    let folder = Folder::new("verdict");
+    let violated = folder.request("violated.json", &["Reaches", "Never"]);
+    let output = fsl_with_stdin(
+        &["monitor", violated.to_str().unwrap(), "--format", "json"],
+        &records(&[0, 1, 2, 1]).join("\n"),
+    );
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    let lines = json_lines(&output);
+    let (summary, events) = lines.split_last().expect("lines");
+    assert_eq!(summary["format"], "filament.monitor-summary/1", "{summary}");
+    assert!(!events.is_empty());
+    assert!(events
+        .iter()
+        .all(|event| event["format"] == "filament.monitor-event/1"));
+    assert!(
+        events.iter().any(|event| event["clause"] == "Never"
+            && event["record"] == 2
+            && event["settled"] == true
+            && event["category"] == "violation"),
+        "{events:?}"
+    );
+
+    let holding = folder.request("holding.json", &["Never"]);
+    let output = fsl_with_stdin(
+        &["monitor", holding.to_str().unwrap(), "--format", "json"],
+        &records(&[0, 1, 0]).join("\n"),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let lines = json_lines(&output);
+    assert_eq!(
+        lines.last().unwrap()["format"],
+        "filament.monitor-summary/1"
+    );
+}
+
+#[trace("TC-039", "FR-025-AC-2")]
+#[test]
+fn the_events_and_summary_equal_command_monitor_byte_for_byte() {
+    let folder = Folder::new("parity");
+    let request = folder.request("request.json", &["Reaches", "Never"]);
+    let lines = records(&[0, 1, 2, 1]);
+    let (expected, expected_exit) = library_lines(&request, &lines);
+    let output = fsl_with_stdin(
+        &["monitor", request.to_str().unwrap(), "--format", "json"],
+        &lines.join("\n"),
+    );
+    assert_eq!(stdout_lines(&output), expected);
+    assert_eq!(output.status.code(), Some(i32::from(expected_exit)));
+}
+
+#[trace("TC-039", "FR-025-AC-3")]
+#[test]
+fn a_bad_request_is_refused_before_any_record_with_exit_20() {
+    let folder = Folder::new("refused");
+    let unknown = folder.request("unknown.json", &["Absent"]);
+    let output = fsl_with_stdin(
+        &["monitor", unknown.to_str().unwrap(), "--format", "json"],
+        &records(&[0, 1]).join("\n"),
+    );
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let lines = json_lines(&output);
+    assert_eq!(lines.len(), 1, "only the envelope: {lines:?}");
+    assert_eq!(lines[0]["operation"], "monitor", "{}", lines[0]);
+    assert_eq!(lines[0]["category"], "refusal", "{}", lines[0]);
+
+    std::fs::write(folder.path("garbage.json"), "not json").unwrap();
+    let output = fsl_with_stdin(
+        &["monitor", folder.path("garbage.json").to_str().unwrap()],
+        "",
+    );
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stdout.is_empty());
+
+    let missing = fsl_with_stdin(&["monitor"], "");
+    assert_eq!(missing.status.code(), Some(20));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("usage: fsl monitor"));
+}
+
+#[trace("TC-039", "FR-025-AC-4")]
+#[test]
+fn provider_config_is_refused_naming_qsl_2132() {
+    let folder = Folder::new("providers");
+    let request = folder.request("request.json", &["Never"]);
+    let config = folder.path("providers.json");
+    std::fs::write(&config, "{\"providers\": []}").unwrap();
+    let output = fsl_with_stdin(
+        &[
+            "monitor",
+            request.to_str().unwrap(),
+            "--provider-config",
+            config.to_str().unwrap(),
+        ],
+        &records(&[0]).join("\n"),
+    );
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("QSL-2132"));
+}
+
+#[trace("TC-039", "FR-025-AC-5")]
+#[test]
+fn a_bad_record_becomes_a_refusal_event_and_the_stream_continues() {
+    let folder = Folder::new("badrecord");
+    let request = folder.request("request.json", &["Reaches", "Never"]);
+    let mut lines = records(&[0, 1, 2]);
+    lines.insert(
+        1,
+        json!({"observation": {"sample": {"level": {"integer": "0"}}}, "bogus": 1}).to_string(),
+    );
+    let output = fsl_with_stdin(
+        &["monitor", request.to_str().unwrap(), "--format", "json"],
+        &lines.join("\n"),
+    );
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    let all = json_lines(&output);
+    let refusal = all
+        .iter()
+        .find(|event| event["category"] == "refusal")
+        .unwrap_or_else(|| panic!("a refusal event: {all:?}"));
+    assert_eq!(refusal["record"], 1, "{refusal}");
+    let summary = all.last().unwrap();
+    assert_eq!(summary["refused"], 1, "{summary}");
+    let (expected, _) = library_lines(&request, &lines);
+    assert_eq!(stdout_lines(&output), expected);
+}
+
+#[trace("TC-039", "FR-025-AC-6")]
+#[test]
+fn each_event_is_written_before_the_next_record_is_sent() {
+    let folder = Folder::new("live");
+    let request = folder.request("request.json", &["Never"]);
+    let mut child = Command::new(FSL)
+        .args(["monitor", request.to_str().unwrap(), "--format", "json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn fsl");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let stdout = child.stdout.take().expect("stdout");
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if sender.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let wait = Duration::from_secs(60);
+    // Record 1 settles `Never`; its event must arrive while stdin is still open.
+    for line in [level(0), level(2)] {
+        writeln!(stdin, "{line}").expect("send a record");
+    }
+    let mut settled = None;
+    while settled.is_none() {
+        let line = receiver
+            .recv_timeout(wait)
+            .expect("an event before stdin closes");
+        let event: Value = serde_json::from_str(&line).expect("an event line");
+        if event["clause"] == "Never" && event["settled"] == true {
+            settled = Some(event);
+        }
+    }
+    drop(stdin);
+    let summary: Value =
+        serde_json::from_str(&receiver.recv_timeout(wait).expect("the summary")).expect("json");
+    assert_eq!(summary["format"], "filament.monitor-summary/1");
+    assert_eq!(child.wait().expect("exit").code(), Some(10));
+}
+
+#[trace("TC-039", "FR-025-AC-7")]
+#[test]
+fn input_file_and_standard_input_give_the_same_stream() {
+    let folder = Folder::new("input");
+    let request = folder.request("request.json", &["Reaches", "Never"]);
+    let lines = records(&[0, 2]);
+    let file = folder.path("records.jsonl");
+    std::fs::write(&file, lines.join("\n")).unwrap();
+    let from_file = Command::new(FSL)
+        .args([
+            "monitor",
+            request.to_str().unwrap(),
+            "--format",
+            "json",
+            "--input",
+        ])
+        .arg(&file)
+        .output()
+        .expect("run fsl");
+    let from_stdin = fsl_with_stdin(
+        &["monitor", request.to_str().unwrap(), "--format", "json"],
+        &lines.join("\n"),
+    );
+    assert_eq!(from_file.stdout, from_stdin.stdout);
+    assert_eq!(from_file.status.code(), from_stdin.status.code());
+    let missing = Command::new(FSL)
+        .args(["monitor", request.to_str().unwrap(), "--input"])
+        .arg(folder.path("absent.jsonl"))
+        .output()
+        .expect("run fsl");
+    assert_eq!(missing.status.code(), Some(20));
+    assert!(missing.stdout.is_empty());
+}

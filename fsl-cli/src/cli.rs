@@ -214,12 +214,12 @@ impl Verb {
             }
             Self::Format => "Executes source formatting; text output is the default.",
             Self::Analyze => "Executes a native-analyze/1 request; --format json or text.",
-            Self::Monitor
-            | Self::Prove
-            | Self::Replay
-            | Self::Generate
-            | Self::Inspect
-            | Self::Render => "Recognized; currently returns an unsupported-capability result.",
+            Self::Monitor => {
+                "Executes a native-monitor/1 request over a record stream; --format json or text."
+            }
+            Self::Prove | Self::Replay | Self::Generate | Self::Inspect | Self::Render => {
+                "Recognized; currently returns an unsupported-capability result."
+            }
         }
     }
 }
@@ -1603,12 +1603,212 @@ fn compact_json(value: &serde_json::Value) -> String {
     ix_cli_kit::json::encode_canonical(value, false).unwrap_or_else(|_| value.to_string())
 }
 
+/// The operands of `fsl monitor` (FR-025): one `native-monitor/1` request file
+/// and the record stream's source, `--input <file>` or standard input.
+struct MonitorOptions {
+    path: PathBuf,
+    input: Option<PathBuf>,
+}
+
+impl MonitorOptions {
+    const USAGE: &str = "usage: fsl monitor <request-file> [--input <file>] [--format json|text]";
+
+    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+        let mut positionals = Vec::new();
+        let mut input = None;
+        let mut index = 0;
+        while index < arguments.len() {
+            let argument = &arguments[index];
+            if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--provider-config" {
+                return Err(
+                    "`--provider-config` is not available for `monitor` yet: configured \
+                     providers are not built (QSL-2132, FSL FR-635)"
+                        .to_owned(),
+                );
+            }
+            if argument == "--input" {
+                if input.is_some() {
+                    return Err("--input may be supplied only once".to_owned());
+                }
+                let value = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--input requires a path".to_owned())?;
+                input = Some(PathBuf::from(value));
+                index += 2;
+                continue;
+            }
+            if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
+                return Err(format!("unknown monitor option `{option}`"));
+            }
+            positionals.push(argument);
+            index += 1;
+        }
+        let [path] = positionals.as_slice() else {
+            return Err(Self::USAGE.to_owned());
+        };
+        Ok(Self {
+            path: PathBuf::from(*path),
+            input,
+        })
+    }
+}
+
+/// Writes monitor lines to standard output as they arrive. A closed pipe ends
+/// the writing quietly; any other failure is kept for the exit code.
+struct MonitorOutput {
+    format: OutputFormat,
+    closed: bool,
+    failure: Option<io::Error>,
+}
+
+impl MonitorOutput {
+    fn line(&mut self, value: &serde_json::Value, text: impl FnOnce() -> String) {
+        if self.closed || self.failure.is_some() {
+            return;
+        }
+        let mut line = if self.format == OutputFormat::Json {
+            match ix_cli_kit::json::encode_canonical(value, false) {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    self.failure = Some(io::Error::other(error.to_string()));
+                    return;
+                }
+            }
+        } else {
+            text()
+        };
+        line.push('\n');
+        match streams::write_primary_stdout(line.as_bytes()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => self.closed = true,
+            Err(error) => self.failure = Some(error),
+        }
+    }
+}
+
+fn monitor_status(settled: &serde_json::Value) -> &'static str {
+    if settled == &serde_json::Value::Bool(true) {
+        "settled"
+    } else {
+        "pending"
+    }
+}
+
+fn monitor_event_text(event: &serde_json::Value) -> String {
+    format!(
+        "{} {} {} {}",
+        event["record"],
+        event["clause"].as_str().unwrap_or("-"),
+        event["category"].as_str().unwrap_or("-"),
+        monitor_status(&event["settled"]),
+    )
+}
+
+fn monitor_summary_text(summary: &serde_json::Value) -> String {
+    let mut lines: Vec<String> = summary["clauses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|clause| {
+            format!(
+                "{} {} {}",
+                clause["clause"].as_str().unwrap_or("-"),
+                clause["category"].as_str().unwrap_or("-"),
+                monitor_status(&clause["settled"]),
+            )
+        })
+        .collect();
+    lines.push(format!(
+        "records {} refused {}",
+        summary["records"], summary["refused"]
+    ));
+    lines.join("\n")
+}
+
+/// Run the `native-monitor/1` request over its record stream, writing each
+/// event to standard output before the next record is read, then the summary.
+/// The exit code is FSL's. A refusal before any record is read is the
+/// command-error envelope.
+fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
+    let reader: Box<dyn io::BufRead> = match &options.input {
+        Some(path) => match File::open(path) {
+            Ok(file) => Box::new(io::BufReader::new(file)),
+            Err(error) => {
+                return CommandResult::input_refusal(
+                    Operation::Monitor,
+                    format!("could not open --input `{}`: {error}", path.display()),
+                )
+            }
+        },
+        None => Box::new(io::BufReader::new(io::stdin())),
+    };
+    let mut output = MonitorOutput {
+        format,
+        closed: false,
+        failure: None,
+    };
+    let summary = command::monitor(
+        &options.path,
+        io::BufRead::split(reader, b'\n'),
+        &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
+        RunLimits::default(),
+        &Cancel::new(),
+    );
+    let summary = match summary {
+        Ok(summary) => summary,
+        Err(error) => {
+            return CommandResult::document(error.outcome_document(Operation::Monitor));
+        }
+    };
+    output.line(summary.as_value(), || {
+        monitor_summary_text(summary.as_value())
+    });
+    if let Some(error) = output.failure {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!("could not write the monitor stream: {error}"),
+        );
+    }
+    let Some(category) = Category::ALL
+        .into_iter()
+        .find(|category| category.exit_code() == summary.exit_code)
+    else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!(
+                "the monitor exit code {} names no category",
+                summary.exit_code
+            ),
+        );
+    };
+    CommandResult {
+        category,
+        document: None,
+        diagnostic: None,
+        text_output: None,
+        configured_run: None,
+        analyze_document: None,
+        stderr_line: None,
+    }
+}
+
 /// Dispatch the root verb while preserving its FSL-owned result category.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
     if verb == Verb::Analyze {
         return match AnalyzeOptions::parse(raw_arguments) {
             Ok(options) => analyze(&options, format),
             Err(error) => CommandResult::input_refusal(Operation::Analyze, error),
+        };
+    }
+    if verb == Verb::Monitor {
+        return match MonitorOptions::parse(raw_arguments) {
+            Ok(options) => monitor(&options, format),
+            Err(error) => CommandResult::input_refusal(Operation::Monitor, error),
         };
     }
     if verb == Verb::Run {

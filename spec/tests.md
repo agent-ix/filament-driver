@@ -11,7 +11,7 @@ This authored verification inventory integrates FR-001 and SP-D1 through
 SP-D9 (FR-002 through FR-010) from IR-527, FR-011 from IR-616, FR-012 for
 the downstream cache component, FR-013 for the process plugin host, and FR-014
 for the CLI package boundary, and planned FR-015 for admitted monitor program
-preparation. It covers FR-001 through FR-024 and TC-001 through TC-038.
+preparation. It covers FR-001 through FR-025 and TC-001 through TC-039.
 Discrete FR and TC artifacts remain authoritative;
 this matrix is their index, not a computed implementation-coverage report.
 
@@ -132,6 +132,8 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-023 | FR-023-AC-1..FR-023-AC-7 | TC-037 | 🚧 `fsl-cli/tests/clocks_flag.rs` runs the `fsl` binary with `--clocks`. The replay-document refusal has no driver code path until QSL-2292 adds `fsl replay`. |
 | TC-038 | Write the checked package with fsl compile --output | Integration | FR-024-AC-1..FR-024-AC-6 | ✅ See the FR-024 row. |
 | FR-024 | FR-024-AC-1..FR-024-AC-6 | TC-038 | ✅ `fsl-cli/tests/output_flag.rs` runs the `fsl` binary with `--output`; the write itself is FSL's (FSL FR-810). |
+| TC-039 | Stream observations with the fsl monitor verb | Integration | FR-025-AC-1..FR-025-AC-7 | ✅ See the FR-025 row. |
+| FR-025 | FR-025-AC-1..FR-025-AC-7 | TC-039 | 🚧 `fsl-cli/tests/monitor_cli.rs` runs the `fsl` binary over a Reaches/Never stream; `--provider-config` awaits QSL-2132; signal cancellation awaits QSL-2284. Ticket QSL-2313 (driver half of QSL-1977). |
 
 ## Test Case Summary
 

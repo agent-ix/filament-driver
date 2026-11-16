@@ -506,9 +506,9 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     assert!(analyze_line.contains("native-analyze/1"), "{analyze_line}");
     // FSL FR-624 owes each unrouted verb a named outcome document, so this
     // fixes only the exit code, never empty output.
-    for command in [
-        "monitor", "prove", "replay", "generate", "inspect", "render",
-    ] {
+    let monitor_line = command_line("monitor");
+    assert!(monitor_line.contains("native-monitor/1"), "{monitor_line}");
+    for command in ["prove", "replay", "generate", "inspect", "render"] {
         assert!(command_line(command).contains("unsupported-capability"));
         let unavailable = Command::new(FSL)
             .args([command, "--format", "json"])
