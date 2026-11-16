@@ -26,3 +26,14 @@ REQUEST CHANGES, through FND-001. The driver code is sound. `clocks::read` caps 
 | --- | --- | --- | --- |
 | FND-001 | high | FSL's outcome document records the both-given refusal (`ClocksGivenTwice`) with `last_stage` null and `cause` null, while FR-640 and FR-640-AC-14 require stage `request`. FSL's `output::error` maps the same cause to `Stage::Request`, so FSL's two projections disagree, and only the `value()` one is tested. Language-side defect; the driver forwards the document unchanged. Fix (language): in `outcome_document`, give `ClocksGivenTwice` (and the other request-stage causes `output.rs` maps to `Stage::Request`, including clocks-member `Json` errors) `Some(Stage::Request)`, and assert `outcome_document` in `request_overrides.rs`. Then bump the driver lock and assert `last_stage == "request"` (see the gap-analysis SR, FND-001). | filament-spec-language fsl-command/src/command.rs:498-513, fsl-command/src/command/output.rs:114, fsl-cli/src/cli.rs:840 |
 | FND-002 | medium | An oversize `--clocks` file refuses `invalid-request`, exit 20, cause `clocks-file-too-large`. An oversize request file refuses `resource_exhausted`, category `incomplete`, exit 22 (`request_bytes limit 100 exceeded; raise --request-bytes`). Both are bounded by the same `--request-bytes` value on `run`, so one limit gives two different categories. On `compile`, the driver uses `RunLimits::default().request_bytes` (FSL's fixed 1 MiB), and nothing tells the user what bound applies. Fix: refuse the oversize file as FSL refuses an oversize request (`resource_exhausted`, naming `--clocks` and the limit), or justify `invalid-request` in FR-023. Either way, state the bound per verb. | fsl-cli/src/clocks.rs:45-50, fsl-cli/src/cli.rs:826, fsl-cli/src/cli.rs:1238 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | rejected | Withdrawn: not a language defect. The outcome document's `last_stage` is an ADR-011 `OutcomeStage`, which has no `request` value; FSL FR-286 and FR-287-AC-11 require `last_stage` null for request-intake refusals, and fsl-command `tests/it/prepared_command.rs::intake_failures_have_their_original_codes_and_no_invented_stage` asserts it. FR-640's "stage `request`" is the refusal envelope's stage (`output::error`), which already emits `request`. QSL-2298 is cancelled; W5 is clarifying FR-640-AC-13/14. |
+| FND-002 | fixed | At 8a514fa, `clocks::read` refuses an oversize file `Code::ResourceExhausted` (category incomplete, exit 22), cause `clocks-file-too-large`, with message "--clocks: <path> exceeds the <limit> byte limit; raise --request-bytes" on `run` and no raise hint on `compile`, whose bound is FSL's fixed 1,048,576 bytes. FR-023 states the bound per verb. |
+
+## Verdict (disposition pass 1)
+
+APPROVE at 8a514fa. FND-001 is withdrawn, and FND-002 is fixed. No new findings. `cargo test -p fsl-cli --test clocks_flag --test frontend_cli --test cli_contract` gave 7, 17 and 19 passed.
