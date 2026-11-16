@@ -435,9 +435,8 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
     assert_fsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
 }
 
-/// Blocked QSL-2192 criterion: this payload conflicts with FR-002-AC-3 pass-through.
+/// Trace: QSL-2192; the library owns formatted text and the CLI passes it through unchanged.
 #[test]
-#[ignore = "QSL-2192: this conflicts with FR-002-AC-3's unchanged filament-outcome contract; awaiting planner ruling"]
 fn format_json_result_carries_text() {
     let text = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE])
@@ -452,6 +451,7 @@ fn format_json_result_carries_text() {
         .expect("format source as JSON");
     assert_eq!(json.status.code(), Some(0));
     assert!(json.stderr.is_empty());
+    assert_fsl_document(&json.stdout, &format_outcome_bytes(SOURCE));
     let document: serde_json::Value =
         serde_json::from_slice(&json.stdout).expect("format emits a JSON document");
     assert_eq!(document["result"]["kind"], "formatted");
