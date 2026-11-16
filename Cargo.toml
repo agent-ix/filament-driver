@@ -12,6 +12,8 @@ publish = false
 [workspace]
 members = ["filament-cache", "fsl-cli", "filament-plugin-host"]
 default-members = [".", "filament-cache", "fsl-cli", "filament-plugin-host"]
+# make examples-gate fetches filament-examples, with its own runner crate, under target/.
+exclude = ["target"]
 resolver = "2"
 
 [workspace.lints.rust]

@@ -150,8 +150,10 @@ fn assert_all_passed(output: &Output, name: &str) -> usize {
 struct CaseLines {
     id: String,
     status: String,
-    expect_exit: Option<String>,
-    ready_exit_line: Option<usize>,
+    /// The `expect_exit` line number and value.
+    expect_exit: Option<(usize, String)>,
+    /// The `ready_exit` line number and value.
+    ready_exit: Option<(usize, String)>,
 }
 
 /// Reads the `[[case]]` tables of an `example.toml`. Only the keys the
@@ -165,7 +167,7 @@ fn case_lines(manifest: &str) -> Vec<CaseLines> {
                 id: String::new(),
                 status: String::new(),
                 expect_exit: None,
-                ready_exit_line: None,
+                ready_exit: None,
             });
             continue;
         }
@@ -176,8 +178,8 @@ fn case_lines(manifest: &str) -> Vec<CaseLines> {
         match key {
             "id" => case.id = value,
             "status" => case.status = value,
-            "expect_exit" => case.expect_exit = Some(value),
-            "ready_exit" => case.ready_exit_line = Some(n),
+            "expect_exit" => case.expect_exit = Some((n, value)),
+            "ready_exit" => case.ready_exit = Some((n, value)),
             _ => {}
         }
     }
@@ -278,17 +280,21 @@ fn a_staged_case_that_starts_working_fails_the_gate() {
     let (suite, dir) = copied_system(&system);
     let path = dir.join("example.toml");
     let manifest = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let (Some(exit), Some(line)) = (&case.expect_exit, case.ready_exit_line) else {
+    let (Some((expect_line, exit)), Some((ready_line, ready))) =
+        (&case.expect_exit, &case.ready_exit)
+    else {
         panic!("staged case {} has no expect_exit or ready_exit", case.id);
     };
-    // The staged case's recorded failing exit becomes its ready exit, as if
-    // the driver now did what the case waits for.
+    // The two exits swap: the exit the case gives today becomes its ready
+    // exit, as if the driver now did what the case waits for.
     let edited: Vec<String> = manifest
         .lines()
         .enumerate()
         .map(|(n, l)| {
-            if n == line {
+            if n == *ready_line {
                 format!("ready_exit = {exit}")
+            } else if n == *expect_line {
+                format!("expect_exit = {ready}")
             } else {
                 l.to_owned()
             }
