@@ -1520,15 +1520,20 @@ fn start_analyze_providers(
             filament_driver::ProcessProviderSession::manifest(session).clone(),
         )
     });
-    let manifest = match build_linked_providers(&[]).and_then(|mut linked| {
-        linked.register_admitted(admissions)?;
-        Ok(linked.manifest_snapshot())
-    }) {
+    let registered = build_linked_providers(&[])
+        .map_err(|error| format!("{error:?}"))
+        .and_then(|mut linked| {
+            linked
+                .register_admitted(admissions)
+                .map_err(|error| format!("{error:?}"))?;
+            Ok(linked.manifest_snapshot())
+        });
+    let manifest = match registered {
         Ok(manifest) => std::sync::Arc::<[filament_driver::ProviderManifest]>::from(manifest),
         Err(error) => {
             shut(started);
             return Err(format!(
-                "configured process providers did not register: {error:?}"
+                "configured process providers did not register: {error}"
             ));
         }
     };
