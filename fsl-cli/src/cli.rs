@@ -293,16 +293,16 @@ type CliProviderError = crate::process_provider::AdapterError<
     String,
     serde_json::Value,
 >;
-type CliProviderEncode =
+pub(crate) type CliProviderEncode =
     for<'a> fn(ProcessProviderRequest<'a>) -> Result<crate::backend_provider::RequestStage, String>;
-type CliProviderValidate =
+pub(crate) type CliProviderValidate =
     fn(&crate::backend_provider::ManifestStage, &serde_json::Value) -> Result<(), String>;
-type CliProviderConvert =
+pub(crate) type CliProviderConvert =
     fn(
         serde_json::Value,
     )
         -> Result<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>, String>;
-type CliProviderSession = crate::process_provider::HostProcessSession<
+pub(crate) type CliProviderSession = crate::process_provider::HostProcessSession<
     crate::backend_provider::ManifestStage,
     crate::backend_provider::RequestStage,
     serde_json::Value,
@@ -1055,32 +1055,7 @@ fn run_configured_providers(
     let mut active = Vec::with_capacity(config.providers.len());
     for configured in config.providers {
         let provider_name = configured.executable.display().to_string();
-        let max_frame_bytes = configured.limits.max_frame_bytes;
-        let provider = crate::process_provider::HostProcessProvider::new(
-            signals.clone(),
-            move |manifest: &crate::backend_provider::ManifestStage| {
-                manifest
-                    .admit_process(max_frame_bytes)
-                    .map(|admitted| (admitted.descriptor().clone(), admitted.manifest().clone()))
-            },
-            crate::process_provider::encode_fr331_request as CliProviderEncode,
-            crate::process_provider::validate_fr331_response as CliProviderValidate,
-            crate::process_provider::convert_fr331_response as CliProviderConvert,
-        );
-        let arguments = configured
-            .argv
-            .into_iter()
-            .map(OsString::from)
-            .collect::<Vec<_>>();
-        let process_limits = ProcessProviderLimits {
-            max_frame_bytes: configured.limits.max_frame_bytes,
-            max_total_bytes: configured.limits.max_total_bytes,
-            max_stderr_bytes: configured.limits.max_stderr_bytes,
-            cancellation_grace: std::time::Duration::from_millis(
-                configured.limits.cancellation_grace_ms,
-            ),
-        };
-        match provider.start(&configured.executable, &arguments, process_limits, &cancel) {
+        match start_configured_provider(&configured, &signals, &cancel) {
             Ok(session) => active.push(ActiveConfiguredProvider {
                 deadline_ms: configured.deadline_ms,
                 session,
@@ -1437,18 +1412,22 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
     Ok(bytes)
 }
 
-/// The operands of `fsl analyze`: one `native-analyze/1` request file. The
-/// request document carries every analysis setting (FSL FR-620), so the verb
-/// takes no other option than `--format`.
+/// The operands of `fsl analyze`: one `native-analyze/1` request file and an
+/// optional `--provider-config` file. The request document carries every
+/// analysis setting (FSL FR-620); the provider configuration names the
+/// process providers registered beside FSL's engines (FSL FR-287, FR-635).
 struct AnalyzeOptions {
     path: PathBuf,
+    provider_config: Option<PathBuf>,
 }
 
 impl AnalyzeOptions {
-    const USAGE: &str = "usage: fsl analyze <request-file> [--format json|text]";
+    const USAGE: &str =
+        "usage: fsl analyze <request-file> [--provider-config <path>] [--format json|text]";
 
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
+        let mut provider_config = None;
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
@@ -1457,12 +1436,14 @@ impl AnalyzeOptions {
                 continue;
             }
             if argument == "--provider-config" {
-                return Err(
-                    "`--provider-config` is not available for `analyze` yet: FSL's \
-                            analyze entry takes no caller registry, so configured providers \
-                            cannot be registered before negotiation"
-                        .to_owned(),
-                );
+                let path = arguments
+                    .get(index + 1)
+                    .ok_or_else(|| "--provider-config requires a path".to_owned())?;
+                if provider_config.replace(PathBuf::from(path)).is_some() {
+                    return Err("--provider-config may be supplied only once".to_owned());
+                }
+                index += 2;
+                continue;
             }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
                 return Err(format!("unknown analyze option `{option}`"));
@@ -1475,21 +1456,202 @@ impl AnalyzeOptions {
         };
         Ok(Self {
             path: PathBuf::from(*path),
+            provider_config,
         })
     }
+}
+
+/// The started process providers of one analyze run: FSL's engines over
+/// them, the sessions the driver shuts down after the run, and their
+/// admitted descriptors for the driver's negotiation.
+struct AnalyzeProviders {
+    engines: Vec<fsl_analyze::analyze::Engine>,
+    sessions: Vec<crate::analyze_provider::SharedSession>,
+    descriptors: Vec<fsl_route::BackendDescriptor>,
+}
+
+impl AnalyzeProviders {
+    /// Shut every started session down, whether or not FSL called it.
+    fn close(self) {
+        drop(self.engines);
+        for session in self.sessions {
+            let taken = session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(session) = taken {
+                let _ = filament_driver::ProcessProviderSession::shutdown(session);
+            }
+        }
+    }
+}
+
+/// Start each configured provider and admit its `hello` manifest with
+/// `Process` origin (FSL FR-635 "Where provider manifests come from"). A
+/// provider that does not start, or whose manifest does not advertise
+/// (`value-validity`, `unbounded`), is a registration failure naming the
+/// entry's executable; the providers already started are shut down.
+fn start_analyze_providers(
+    config: crate::provider_config::ProviderConfig,
+    signals: &crate::signals::SignalContext,
+    cancel: &Cancel,
+) -> Result<AnalyzeProviders, String> {
+    let mut started: Vec<(u64, CliProviderSession)> = Vec::new();
+    let shut = |started: Vec<(u64, CliProviderSession)>| {
+        for (_, session) in started {
+            let _ = filament_driver::ProcessProviderSession::shutdown(session);
+        }
+    };
+    for configured in config.providers {
+        let name = configured.executable.display().to_string();
+        match start_configured_provider(&configured, signals, cancel) {
+            Ok(session) => started.push((configured.deadline_ms, session)),
+            Err(error) => {
+                shut(started);
+                return Err(format!(
+                    "process provider `{name}` did not register: {error:?}"
+                ));
+            }
+        }
+    }
+    let admissions = started.iter().map(|(_, session)| {
+        (
+            filament_driver::ProcessProviderSession::descriptor(session).clone(),
+            filament_driver::ProcessProviderSession::manifest(session).clone(),
+        )
+    });
+    let manifest = match build_linked_providers(&[]).and_then(|mut linked| {
+        linked.register_admitted(admissions)?;
+        Ok(linked.manifest_snapshot())
+    }) {
+        Ok(manifest) => std::sync::Arc::<[filament_driver::ProviderManifest]>::from(manifest),
+        Err(error) => {
+            shut(started);
+            return Err(format!(
+                "configured process providers did not register: {error:?}"
+            ));
+        }
+    };
+    let mut providers = AnalyzeProviders {
+        engines: Vec::new(),
+        sessions: Vec::new(),
+        descriptors: Vec::new(),
+    };
+    let mut refusal = None;
+    for (deadline_ms, session) in started {
+        let descriptor = filament_driver::ProcessProviderSession::descriptor(&session).clone();
+        let shared = std::sync::Arc::new(std::sync::Mutex::new(Some(session)));
+        providers.sessions.push(std::sync::Arc::clone(&shared));
+        if refusal.is_some() {
+            continue;
+        }
+        let provider = crate::analyze_provider::SessionProvider {
+            session: shared,
+            manifest: std::sync::Arc::clone(&manifest),
+            deadline_ms,
+        };
+        match fsl_analyze::analyze::Engine::external(descriptor.clone(), Box::new(provider)) {
+            Ok(engine) => {
+                providers.engines.push(engine);
+                providers.descriptors.push(descriptor);
+            }
+            Err(error) => refusal = Some(format!("process provider did not register: {error}")),
+        }
+    }
+    match refusal {
+        Some(refusal) => {
+            providers.close();
+            Err(refusal)
+        }
+        None => Ok(providers),
+    }
+}
+
+/// Start one configured process provider and admit its `hello`.
+fn start_configured_provider(
+    configured: &crate::provider_config::ProcessProviderConfig,
+    signals: &crate::signals::SignalContext,
+    cancel: &Cancel,
+) -> Result<CliProviderSession, CliProviderError> {
+    let max_frame_bytes = configured.limits.max_frame_bytes;
+    let provider = crate::process_provider::HostProcessProvider::new(
+        signals.clone(),
+        move |manifest: &crate::backend_provider::ManifestStage| {
+            manifest
+                .admit_process(max_frame_bytes)
+                .map(|admitted| (admitted.descriptor().clone(), admitted.manifest().clone()))
+        },
+        crate::process_provider::encode_fr331_request as CliProviderEncode,
+        crate::process_provider::validate_fr331_response as CliProviderValidate,
+        crate::process_provider::convert_fr331_response as CliProviderConvert,
+    );
+    let arguments = configured
+        .argv
+        .iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    let limits = ProcessProviderLimits {
+        max_frame_bytes: configured.limits.max_frame_bytes,
+        max_total_bytes: configured.limits.max_total_bytes,
+        max_stderr_bytes: configured.limits.max_stderr_bytes,
+        cancellation_grace: std::time::Duration::from_millis(
+            configured.limits.cancellation_grace_ms,
+        ),
+    };
+    provider.start(&configured.executable, &arguments, limits, cancel)
 }
 
 /// Read the `native-analyze/1` request, have FSL analyze its items under the
 /// driver's negotiation, and keep FSL FR-621's document with its exit code,
 /// or FR-624's whole-request refusal.
+///
+/// The run is one signal-reporting session: SIGINT or SIGTERM cancels FSL's
+/// handle with cause `requested`, and the verb writes the outcome FSL settles
+/// for it (FSL FR-624 `cancelled`, exit 22) rather than dying by the signal.
 fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
-    let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
-        Ok(negotiation) => negotiation,
+    let config = match options.provider_config.as_deref() {
+        Some(path) => match crate::provider_config::load(path) {
+            Ok(config) => config,
+            Err(error) => {
+                return CommandResult::input_refusal(
+                    Operation::Analyze,
+                    format!("invalid process-provider configuration: {error}"),
+                );
+            }
+        },
+        None => crate::provider_config::ProviderConfig::default(),
+    };
+    let path = options.path.clone();
+    let ran = crate::signals::run(move |signals| {
+        let cancel = Cancel::new();
+        let _reporting = signals.activate_reporting(cancel.clone());
+        let mut providers = match start_analyze_providers(config, &signals, &cancel) {
+            Ok(providers) => providers,
+            Err(message) => return Err(message),
+        };
+        let negotiation =
+            match filament_driver::AnalyzeNegotiation::with_providers(&providers.descriptors) {
+                Ok(negotiation) => negotiation,
+                Err(error) => {
+                    providers.close();
+                    return Err(format!("{error:?}"));
+                }
+            };
+        let engines = std::mem::take(&mut providers.engines);
+        let written = command::analyze_with_providers(&path, &negotiation, engines, &cancel);
+        providers.close();
+        Ok(written)
+    });
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Analyze, message),
         Err(error) => {
-            return CommandResult::failure(Category::InternalFailure, format!("{error:?}"))
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
         }
     };
-    let written = command::analyze(&options.path, &negotiation, &Cancel::new());
     match written {
         Ok(result) => analyze_result(result.value.as_value().clone(), result.exit_code, format),
         Err(error) => {
@@ -1732,12 +1894,57 @@ fn monitor_summary_text(summary: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+/// The monitor's record stream, read on its own thread so a cancelled run
+/// ends the stream without waiting for a blocked read (FR-025).
+struct CancellableRecords {
+    records: std::sync::mpsc::Receiver<io::Result<Vec<u8>>>,
+    cancel: Cancel,
+}
+
+impl CancellableRecords {
+    /// How often a waiting read looks at the cancellation handle.
+    const POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
+    fn new(reader: Box<dyn io::BufRead + Send>, cancel: Cancel) -> Self {
+        let (sender, records) = std::sync::mpsc::sync_channel(1);
+        // The reader thread ends at end of stream, or when the receiver is
+        // gone; a read still blocked then ends with the process.
+        let _ = std::thread::Builder::new()
+            .name("fsl-monitor-records".to_owned())
+            .spawn(move || {
+                for record in io::BufRead::split(reader, b'\n') {
+                    if sender.send(record).is_err() {
+                        break;
+                    }
+                }
+            });
+        Self { records, cancel }
+    }
+}
+
+impl Iterator for CancellableRecords {
+    type Item = io::Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.cancel.cause().is_some() {
+                return None;
+            }
+            match self.records.recv_timeout(Self::POLL) {
+                Ok(record) => return Some(record),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+            }
+        }
+    }
+}
+
 /// Run the `native-monitor/1` request over its record stream, writing each
 /// event to standard output before the next record is read, then the summary.
 /// The exit code is FSL's. A refusal before any record is read is the
 /// command-error envelope.
 fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
-    let reader: Box<dyn io::BufRead> = match &options.input {
+    let reader: Box<dyn io::BufRead + Send> = match &options.input {
         Some(path) => match File::open(path) {
             Ok(file) => Box::new(io::BufReader::new(file)),
             Err(error) => {
@@ -1749,18 +1956,45 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         },
         None => Box::new(io::BufReader::new(io::stdin())),
     };
-    let mut output = MonitorOutput {
-        format,
-        closed: false,
-        failure: None,
+    let path = options.path.clone();
+    // The run is one signal-reporting session: SIGINT or SIGTERM cancels the
+    // handle with cause `requested`, the record stream ends at once even
+    // while a read blocks, and FSL settles the cancelled session (exit 22).
+    let ran = crate::signals::run(move |signals| {
+        let cancel = Cancel::new();
+        let _reporting = signals.activate_reporting(cancel.clone());
+        let mut output = MonitorOutput {
+            format,
+            closed: false,
+            failure: None,
+        };
+        let records = CancellableRecords::new(reader, cancel.clone());
+        let summary = command::monitor(
+            &path,
+            records,
+            &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
+            RunLimits::default(),
+            &cancel,
+        );
+        // A stream the cancellation ended is not the complete stream, so its
+        // summary does not stand: the run is FSL's cancelled monitor run.
+        let summary = match summary {
+            Ok(_) if cancel.cause().is_some() => Err(Box::new(command::RunError {
+                cause: command::RunCause::MonitorCancelled,
+            })),
+            summary => summary,
+        };
+        (summary, output)
+    });
+    let (summary, mut output) = match ran {
+        Ok(ran) => ran,
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
+        }
     };
-    let summary = command::monitor(
-        &options.path,
-        io::BufRead::split(reader, b'\n'),
-        &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
-        RunLimits::default(),
-        &Cancel::new(),
-    );
     let summary = match summary {
         Ok(summary) => summary,
         Err(error) => {

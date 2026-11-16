@@ -618,7 +618,7 @@ pub enum CandidateWire {
 impl RequestItem {
     /// Project one FSL-produced item without re-deriving its claim,
     /// classification, named backend, or candidate result.
-    fn from_fsl(
+    pub(crate) fn from_fsl(
         item: &RequirementItem,
         routed_backend: &fsl_foundation::BackendId,
     ) -> Result<Self, RequestStageError> {

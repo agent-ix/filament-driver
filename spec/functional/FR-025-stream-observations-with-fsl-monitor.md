@@ -41,13 +41,15 @@ FSL FR-635's rule. Configured providers are not built yet, and the library
 entry takes no providers parameter, so the driver refuses the option with exit
 20 naming QSL-2132.
 
-### Deviation: signals do not cancel `monitor` (QSL-2284)
+### Decision: a signal ends the stream as a cancelled run
 
-SIGINT and SIGTERM are not cancellation triggers for `fsl monitor` yet; they
-end the process by their default disposition. The cancellation handle passed to
-FSL is never tripped. QSL-2284 covers `fsl monitor` as well as `fsl analyze`: it
-wires both verbs' signals to their cancel handle, and removes this note when it
-lands.
+`fsl monitor` runs as one signal-reporting session, as `fsl analyze` does
+([FR-022](FR-022-analyze-a-native-analyze-request.md)). SIGINT and SIGTERM
+cancel the handle passed to FSL with cause `requested`. The record stream is
+read on its own thread, so the cancellation ends the stream at once even while a
+read of standard input blocks; no further record is read, and the run is FSL's
+cancelled monitor run (FSL FR-624, exit 22), its outcome document the last line
+written. The signal is consumed, not re-raised.
 
 ## Inputs
 
@@ -101,6 +103,7 @@ clauses `Reaches` (`eventually holds(r.level = 2)`) and `Never`
 | FR-025-AC-6 | With standard input held open, the event that settles `Never` is on standard output before the next record is sent or the input is closed. | Test (TC-039) |
 | FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty. | Test (TC-039) |
 | FR-025-AC-8 | In text mode, over AC-1's fixture and records, stdout holds one event line `<record> <clause> <category> settled|pending` per event, then one `<clause> <category> settled|pending` line per clause and the line `records <n> refused <m>`, and the exit is 10. | Test (TC-039) |
+| FR-025-AC-9 | SIGTERM or SIGINT while standard input is still open ends the run with no further record read: the last line written is an outcome document with category `incomplete`, and the process exits 22. | Test (TC-039) |
 
 ## Dependencies
 

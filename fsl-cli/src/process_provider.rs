@@ -465,6 +465,36 @@ where
     }
 }
 
+impl<M, Q, R, F, A, V, I, E, Encode, Validate, Convert>
+    HostProcessSession<M, Q, R, F, A, V, I, E, Encode, Validate, Convert>
+where
+    M: DeserializeOwned,
+    Q: Serialize,
+    R: DeserializeOwned,
+    F: DeserializeOwned,
+    Validate: Fn(&M, &R) -> Result<(), V>,
+    Convert: Fn(R) -> Result<ProviderResults<I, E>, V>,
+{
+    /// Send one already-written FR-331 request body over this session and
+    /// read its result as [`ProcessProviderSession::invoke`] reads one. The
+    /// analyze verb writes the body from FSL's provider request, which is
+    /// not a CG-routed generation (FSL FR-635).
+    pub(crate) fn exchange(
+        &mut self,
+        body: &Q,
+        cancel: &Cancel,
+    ) -> Result<ProviderResults<I, E>, AdapterError<A, V, F>> {
+        let _request_active = self.signals.activate(cancel.clone());
+        let result = self
+            .host
+            .request(body, cancel, |manifest, result| {
+                (self.validate)(manifest, result)
+            })
+            .map_err(AdapterError::Request)?;
+        (self.convert)(result).map_err(AdapterError::Convert)
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
