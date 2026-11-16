@@ -48,8 +48,13 @@ first in the examples repository.
 - When `FSL_LANGUAGE_DIR` names a filament-spec-language checkout,
   the gate SHALL instead build `fsl` with every package the driver graph
   resolves from the filament-spec-language git source patched, through cargo `--config`
-  `patch` entries, to the same-named crate of that checkout, and SHALL leave
-  the driver's `Cargo.lock` byte for byte as it was. The language repository's
+  `patch` entries, to the same-named crate of that checkout. The patched
+  build runs in a copy of this workspace under the test target's temporary
+  folder, with this workspace's target directory, so the patch rewrites only
+  the copy's `Cargo.lock`; the gate SHALL never write the checkout's
+  `Cargo.lock`. Once the build's package sources are checked,
+  the gate SHALL print `fsl built from language checkout <path>` with the checkout's
+  absolute path. The language repository's
   `make examples-check` runs the gate this way, so a language change is gated
   on the suite before it reaches the driver's lock. A package the driver uses
   that the checkout lacks fails the gate.
@@ -71,7 +76,7 @@ first in the examples repository.
 | FR-021-AC-4 | In a copy of one system whose staged case now gives its ready exit, `staged` exits 1 and prints `promote <system>/<case>` for that case. | Test (TC-035) |
 | FR-021-AC-5 | An unset `FSL_EXAMPLES_DIR`, or one naming a folder without `examples/` and `tools/fsl-examples`, is an error naming the cause; the runner given a root with no `examples/` exits 2 rather than passing zero cases. | Test (TC-035) |
 | FR-021-AC-6 | The binary the gate runs prints, for `fsl --version`, the version of this workspace's `fsl-cli` package and lies in this workspace's target directory; `make ci` runs `examples-check`. | Test (TC-035), Inspection |
-| FR-021-AC-7 | Without `FSL_LANGUAGE_DIR`, the `fsl` build reports language packages from the filament-spec-language git source and no path package outside this workspace; with it, the build reports no package from that git source and at least one from the named checkout, and `Cargo.lock` is unchanged after the build. | Test (TC-035) |
+| FR-021-AC-7 | Without `FSL_LANGUAGE_DIR`, the `fsl` build reports language packages from the filament-spec-language git source and no path package outside this workspace; with it, the build reports no package from that git source and at least one from the named checkout, the workspace copy's `Cargo.lock` differs from the checkout's, the gate prints `fsl built from language checkout <path>`, and in both modes the checkout's `Cargo.lock` is byte for byte what it was before the build. | Test (TC-035) |
 
 ## Dependencies
 

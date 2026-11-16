@@ -182,25 +182,26 @@ fn language_patches(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Puts the driver's `Cargo.lock` back as it was when dropped. A patched
-/// build rewrites the lock; the checkout must not keep that rewrite.
-struct LockRestore {
-    path: PathBuf,
-    bytes: Vec<u8>,
-}
-
-impl LockRestore {
-    fn take() -> Self {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
-        let bytes = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        Self { path, bytes }
-    }
-}
-
-impl Drop for LockRestore {
-    fn drop(&mut self) {
-        if let Err(e) = fs::write(&self.path, &self.bytes) {
-            eprintln!("cannot restore {}: {e}", self.path.display());
+/// Makes `to` a copy of the workspace tree `from`, without `.git` and
+/// `target`. A file whose bytes already match is left alone, so its
+/// modification time, and cargo's fingerprint of it, survive between runs.
+fn mirror(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap_or_else(|e| panic!("create {}: {e}", to.display()));
+    let entries = fs::read_dir(from).unwrap_or_else(|e| panic!("list {}: {e}", from.display()));
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| panic!("list {}: {e}", from.display()));
+        let name = entry.file_name();
+        if name == ".git" || name == "target" {
+            continue;
+        }
+        let (source, copy) = (entry.path(), to.join(&name));
+        if source.is_dir() {
+            mirror(&source, &copy);
+            continue;
+        }
+        let bytes = fs::read(&source).unwrap_or_else(|e| panic!("{}: {e}", source.display()));
+        if fs::read(&copy).ok().as_deref() != Some(bytes.as_slice()) {
+            fs::write(&copy, &bytes).unwrap_or_else(|e| panic!("{}: {e}", copy.display()));
         }
     }
 }
@@ -210,33 +211,54 @@ struct Fsl {
     executable: PathBuf,
     /// The package ids of every artifact of the build.
     package_ids: Vec<String>,
+    /// This checkout's `Cargo.lock` as it was before the build.
+    lock_before: Vec<u8>,
+}
+
+fn checkout_lock() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// The `fsl` binary of this workspace's `fsl-cli` package. With
 /// `FSL_LANGUAGE_DIR` set, every language package is patched to that
-/// checkout's crates, and the driver's `Cargo.lock` is left as it was.
+/// checkout's crates. The patched build runs in a copy of this workspace under
+/// `CARGO_TARGET_TMPDIR`, whose `Cargo.lock` the patch rewrites, with this
+/// workspace's target directory; the checkout's own `Cargo.lock` is never
+/// written.
 fn fsl_build() -> &'static Fsl {
     static FSL: OnceLock<Fsl> = OnceLock::new();
     FSL.get_or_init(|| {
-        let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-        let target = owned(&["--manifest-path", manifest, "-p", "fsl-cli", "--bin", "fsl"]);
+        let lock_before = checkout_lock();
+        let fsl_cli = owned(&["-p", "fsl-cli", "--bin", "fsl"]);
         let built = match language_checkout() {
-            None => build_bin(&[owned(&["--locked"]), target].concat(), "fsl"),
+            None => {
+                let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+                let args = owned(&["--locked", "--manifest-path", manifest]);
+                build_bin(&[args, fsl_cli].concat(), "fsl")
+            }
             Some(dir) => {
                 let patches = language_patches(&dir);
-                let restore = LockRestore::take();
-                let built = build_bin(&[patches, target].concat(), "fsl");
-                let original = restore.bytes.clone();
-                drop(restore);
-                let now = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock"))
-                    .unwrap_or_else(|e| panic!("Cargo.lock: {e}"));
-                assert!(now == original, "Cargo.lock was not restored");
-                built
+                let target_dir = metadata(&["--locked", "--no-deps"])["target_directory"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("metadata has no target_directory"))
+                    .to_owned();
+                let copy = Path::new(env!("CARGO_TARGET_TMPDIR")).join("language-build");
+                mirror(Path::new(env!("CARGO_MANIFEST_DIR")), &copy);
+                let manifest = copy.join("Cargo.toml").to_string_lossy().into_owned();
+                let args = vec![
+                    "--manifest-path".to_owned(),
+                    manifest,
+                    "--target-dir".to_owned(),
+                    target_dir,
+                ];
+                build_bin(&[patches, args, fsl_cli].concat(), "fsl")
             }
         };
         Fsl {
             executable: built.executable,
             package_ids: built.package_ids,
+            lock_before,
         }
     })
 }
@@ -594,8 +616,6 @@ fn missing_examples_checkout_is_an_error_not_a_skip() {
 #[trace("FR-021-AC-6")]
 #[test]
 fn the_gate_runs_the_fsl_of_this_workspace() {
-    // Build first: a patched build rewrites Cargo.lock until it finishes,
-    // and the `--locked` read below must see the restored lock.
     let fsl = fsl();
     let metadata = metadata(&["--locked", "--no-deps"]);
     let version = packages(&metadata)
@@ -624,6 +644,10 @@ fn the_gate_runs_the_fsl_of_this_workspace() {
 #[test]
 fn the_language_packages_come_from_the_named_checkout_or_the_lock() {
     let ids = &fsl_build().package_ids;
+    assert!(
+        checkout_lock() == fsl_build().lock_before,
+        "the fsl build changed this checkout's Cargo.lock"
+    );
     let from_git: Vec<&String> = ids
         .iter()
         .filter(|id| is_language_git_package(id))
@@ -655,6 +679,16 @@ fn the_language_packages_come_from_the_named_checkout_or_the_lock() {
                 "no package was built from {}: {ids:?}",
                 dir.display()
             );
+            // The patch rewrote the copy's lock, not this checkout's.
+            let copied = Path::new(env!("CARGO_TARGET_TMPDIR")).join("language-build/Cargo.lock");
+            let copied = fs::read(&copied).unwrap_or_else(|e| panic!("{}: {e}", copied.display()));
+            assert!(
+                copied != fsl_build().lock_before,
+                "the patched build left the copy's Cargo.lock as the checkout's"
+            );
+            // The language repository's examples-check reads this line to
+            // know the gate built its checkout.
+            println!("fsl built from language checkout {}", dir.display());
         }
     }
 }

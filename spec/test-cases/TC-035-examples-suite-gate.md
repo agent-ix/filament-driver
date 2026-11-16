@@ -41,7 +41,8 @@ Scope: FR-021-AC-1 through FR-021-AC-7.
    the `ci` and `examples-check` rules (AC-6).
 8. Check the language packages the `fsl` build reports: from the git source
    without `FSL_LANGUAGE_DIR`; with it, none from git, at least one from the
-   named checkout, and `Cargo.lock` byte for byte unchanged after the build
+   named checkout, the copy's lock rewritten, the marker line printed, and
+   the checkout's `Cargo.lock` byte for byte unchanged after the build
    (AC-7).
 
 ## Expected Results
