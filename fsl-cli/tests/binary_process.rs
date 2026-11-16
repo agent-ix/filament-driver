@@ -633,15 +633,36 @@ fn assert_provider_config_refusal(path: &std::path::Path, expected: &str) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("provider configuration"), "{stderr}");
     assert!(stderr.contains(expected), "{stderr}");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("provider refusal is a typed outcome");
+    assert_eq!(document["format"], "filament-outcome/1", "{document}");
+    assert_eq!(document["operation"], "execute", "{document}");
+    assert_eq!(document["category"], "refusal", "{document}");
+    let diagnostic = &document["diagnostics"][0];
     assert!(
-        output.stdout.is_empty(),
-        "provider config refusal wrote stdout"
+        diagnostic["message"]
+            .as_str()
+            .is_some_and(|message| message.contains(path.display().to_string().as_str())),
+        "the refusal names `{}`: {document}",
+        path.display()
     );
+    if expected == "unknown_wire/unsupported-wire" {
+        assert_eq!(diagnostic["code"], "unknown_wire", "{document}");
+        assert_eq!(diagnostic["cause"], "unsupported-wire", "{document}");
+    } else {
+        assert_eq!(diagnostic["code"], "invalid-request", "{document}");
+        assert!(
+            diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(expected)),
+            "{document}"
+        );
+    }
 }
 
-/// Trace: FSpec FR-561 / FSL FR-287; named config errors exit 20 without stdout.
+/// Trace: QSL-2192 / FR-006-AC-24; missing members and paths retain typed execute refusals.
 #[test]
-fn provider_config_file_and_schema_errors_refuse_without_stdout() {
+fn provider_config_missing_member_refused() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is after the Unix epoch")

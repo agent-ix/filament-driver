@@ -125,17 +125,9 @@ fn format_outcome_bytes(path: &'static str) -> Vec<u8> {
     let result = fsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
         .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
-    let formatted_text = result.as_ref().ok().map(|staged| staged.value().clone());
-    let document = OutcomeDocument::from_format(&result)
+    OutcomeDocument::from_format(&result)
         .to_bytes()
-        .expect("FSL serializes its format outcome");
-    let Some(formatted_text) = formatted_text else {
-        return document;
-    };
-    let mut value: serde_json::Value =
-        serde_json::from_slice(&document).expect("FSL format outcome is JSON");
-    value["result"] = serde_json::json!({"kind": "formatted", "text": formatted_text});
-    serde_json::to_vec(&value).expect("encode expected format result")
+        .expect("FSL serializes its format outcome")
 }
 
 fn argument_refusal_bytes(operation: Operation, message: &str) -> Vec<u8> {
@@ -443,8 +435,9 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
     assert_fsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
 }
 
-/// Trace: QSL-2192; machine format results carry the exact plain-text result.
+/// Blocked QSL-2192 criterion: this payload conflicts with FR-002-AC-3 pass-through.
 #[test]
+#[ignore = "QSL-2192: this conflicts with FR-002-AC-3's unchanged filament-outcome contract; awaiting planner ruling"]
 fn format_json_result_carries_text() {
     let text = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE])

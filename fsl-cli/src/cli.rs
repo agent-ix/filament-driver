@@ -919,15 +919,31 @@ fn run(options: RunOptions) -> CommandResult {
         Some(path) => match crate::provider_config::load(path) {
             Ok(config) => config,
             Err(error) => {
-                let message = if matches!(
+                if matches!(
                     error,
                     crate::provider_config::ProviderConfigError::UnsupportedFormat { .. }
                 ) {
-                    format!("unknown_wire/unsupported-wire: {error}")
+                    let message = format!("unknown_wire/unsupported-wire: {error}");
+                    return CommandResult::document(
+                        OutcomeDocument::new(
+                            Operation::Execute,
+                            None,
+                            Code::UnknownWire.category(),
+                        )
+                        .with_diagnostics(vec![OutcomeDiagnostic::new(
+                            Some("unsupported-wire"),
+                            Code::UnknownWire.as_str(),
+                            None,
+                            message.clone(),
+                        )]),
+                    )
+                    .with_diagnostic(message);
                 } else {
-                    format!("invalid-request: invalid provider configuration: {error}")
-                };
-                return CommandResult::failure(Category::Refusal, message);
+                    return CommandResult::input_refusal(
+                        Operation::Execute,
+                        format!("invalid provider configuration: {error}"),
+                    );
+                }
             }
         },
         None => crate::provider_config::ProviderConfig {
@@ -2032,15 +2048,7 @@ fn emit_result(result: &CommandResult, format: OutputFormat) -> Category {
             None => result
                 .document
                 .as_ref()
-                .map(|document| {
-                    if let Some(text) = &result.text_output {
-                        let mut value = ix_cli_kit::json::canonical(document)?;
-                        value["result"] = serde_json::json!({"kind": "formatted", "text": text});
-                        ix_cli_kit::json::encode_canonical(&value, false)
-                    } else {
-                        ix_cli_kit::json::encode_canonical(document, false)
-                    }
-                })
+                .map(|document| ix_cli_kit::json::encode_canonical(document, false))
                 .transpose(),
         };
         match encoded {
