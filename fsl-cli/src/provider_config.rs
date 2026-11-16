@@ -1,92 +1,110 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Strict caller-selected process-provider configuration for FR-006.
+//! Strict caller-selected provider configuration from FSpec FR-561.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-/// The complete provider configuration file named by `--provider-config`.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub(crate) const FORMAT: &str = "filament.provider-config/v1";
+
+/// The complete provider document named by `--provider-config`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProviderConfig {
-    /// Process providers to admit before routing.
-    pub providers: Vec<ProcessProviderConfig>,
+    pub format: String,
+    pub providers: Vec<ProviderEntry>,
 }
 
-/// One caller-selected process provider and its configured limits.
+/// One configured executable and its verbatim argument vector.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ProcessProviderConfig {
-    /// Executable path to start.
+pub(crate) struct ProviderEntry {
+    pub path: PathBuf,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+}
+
+/// Runtime limits remain a caller option and are deliberately not part of FR-561.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
+pub(crate) struct RuntimeProviderConfig {
     pub executable: PathBuf,
-    /// Arguments passed verbatim to the executable.
     pub argv: Vec<String>,
-    /// Caller-owned FR-331 request deadline in milliseconds.
-    #[serde(deserialize_with = "deserialize_deadline")]
     pub deadline_ms: u64,
-    /// Required framing and cleanup limits.
-    pub limits: ProcessProviderLimitsConfig,
+    pub limits: RuntimeProviderLimitsConfig,
 }
 
-/// Strict JSON representation of `ProcessProviderLimits`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ProcessProviderLimitsConfig {
-    /// Maximum encoded frame size in bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
+pub(crate) struct RuntimeProviderLimitsConfig {
     pub max_frame_bytes: u64,
-    /// Maximum encoded session size in bytes.
     pub max_total_bytes: u64,
-    /// Maximum captured stderr size in bytes.
     pub max_stderr_bytes: u64,
-    /// Cancellation grace period in milliseconds.
     pub cancellation_grace_ms: u64,
-}
-
-fn deserialize_deadline<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = u64::deserialize(deserializer)?;
-    if (1..=9_007_199_254_740_991).contains(&value) {
-        Ok(value)
-    } else {
-        Err(serde::de::Error::custom(
-            "deadline_ms must be in 1..=9007199254740991",
-        ))
-    }
 }
 
 /// Why an explicitly selected provider configuration could not be loaded.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ProviderConfigError {
-    /// The named file could not be read as UTF-8 text.
     #[error("could not read `{path}` as UTF-8 JSON: {source}")]
     Read {
         path: String,
         #[source]
         source: std::io::Error,
     },
-    /// The named file did not satisfy the strict provider configuration shape.
-    #[error("`{path}` does not match the provider configuration schema: {source}")]
+    #[error("`{path}` has invalid provider configuration: {source}")]
     Json {
         path: String,
         #[source]
         source: serde_json::Error,
     },
+    #[error("`{path}` has unsupported provider configuration format `{format}`")]
+    UnsupportedFormat { path: String, format: String },
+    #[error("`{path}` provider entry {index} has a blank path")]
+    BlankPath { path: String, index: usize },
 }
 
-/// Read only the caller-named strict JSON file.
+/// Read and validate only the caller-named FR-561 JSON document.
 pub(crate) fn load(path: &Path) -> Result<ProviderConfig, ProviderConfigError> {
     let display_path = path.display().to_string();
     let contents = fs::read_to_string(path).map_err(|source| ProviderConfigError::Read {
         path: display_path.clone(),
         source,
     })?;
-    serde_json::from_str(&contents).map_err(|source| ProviderConfigError::Json {
-        path: display_path,
-        source,
-    })
+    let config: ProviderConfig =
+        serde_json::from_str(&contents).map_err(|source| ProviderConfigError::Json {
+            path: display_path.clone(),
+            source,
+        })?;
+    if config.format != FORMAT {
+        return Err(ProviderConfigError::UnsupportedFormat {
+            path: display_path,
+            format: config.format,
+        });
+    }
+    for (index, provider) in config.providers.iter().enumerate() {
+        if provider.path.to_string_lossy().trim().is_empty() {
+            return Err(ProviderConfigError::BlankPath {
+                path: display_path,
+                index,
+            });
+        }
+    }
+    let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut config = config;
+    for provider in &mut config.providers {
+        if provider.path.is_relative() {
+            provider.path = config_dir.join(&provider.path);
+        }
+    }
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -98,123 +116,80 @@ mod tests {
     use super::*;
 
     const VALID: &str = r#"{
-        "providers": [{
-            "executable": "/tmp/provider",
-            "argv": [],
-            "deadline_ms": 250,
-            "limits": {
-                "max_frame_bytes": 1024,
-                "max_total_bytes": 4096,
-                "max_stderr_bytes": 256,
-                "cancellation_grace_ms": 500
-            }
-        }]
+        "format":"filament.provider-config/v1",
+        "providers":[{"path":"/tmp/provider", "arguments":["--mode", "test"]}]
     }"#;
 
-    /// Trace: FR-006-AC-24, FR-014-AC-6; parse the exact required config fields.
     #[test]
-    fn parses_provider_config_with_explicit_empty_arguments() {
-        let config: ProviderConfig = serde_json::from_str(VALID).expect("valid provider config");
-        assert_eq!(config.providers.len(), 1);
-        assert_eq!(
-            config.providers[0].executable,
-            PathBuf::from("/tmp/provider")
-        );
-        assert!(config.providers[0].argv.is_empty());
-        assert_eq!(config.providers[0].deadline_ms, 250);
-        assert_eq!(config.providers[0].limits.max_frame_bytes, 1024);
+    fn parses_optional_arguments_and_empty_provider_list() {
+        let config: ProviderConfig = serde_json::from_str(VALID).expect("valid config");
+        assert_eq!(config.format, FORMAT);
+        assert_eq!(config.providers[0].path, PathBuf::from("/tmp/provider"));
+        assert_eq!(config.providers[0].arguments, ["--mode", "test"]);
+        let no_arguments: ProviderConfig = serde_json::from_str(
+            r#"{"format":"filament.provider-config/v1","providers":[{"path":"p"}]}"#,
+        )
+        .expect("arguments are optional");
+        assert!(no_arguments.providers[0].arguments.is_empty());
+        let empty: ProviderConfig =
+            serde_json::from_str(r#"{"format":"filament.provider-config/v1","providers":[]}"#)
+                .expect("empty providers are valid");
+        assert!(empty.providers.is_empty());
     }
 
-    /// Trace: FR-006-AC-24; removed CPU and RSS fields are rejected as unknown.
     #[test]
-    fn rejects_removed_cpu_and_rss_budget_fields() {
-        for removed_field in ["max_process_memory_bytes", "max_process_cpu_time_ms"] {
-            let invalid = VALID.replace(
-                "\"cancellation_grace_ms\": 500",
-                &format!("\"cancellation_grace_ms\": 500, \"{removed_field}\": 1"),
-            );
-            assert!(
-                serde_json::from_str::<ProviderConfig>(&invalid).is_err(),
-                "accepted removed field {removed_field}"
-            );
-        }
-    }
-
-    /// Trace: FR-006-AC-24; missing or wrongly typed required fields fail closed.
-    #[test]
-    fn rejects_missing_or_wrongly_typed_required_fields() {
+    fn rejects_missing_members_unknown_members_bad_paths_and_wrong_arguments() {
         for malformed in [
-            "{}".to_owned(),
-            VALID.replace("\"providers\": [", "\"providers\": null, \"unused\": ["),
-            VALID.replace("\"argv\": [],", ""),
-            VALID.replace("\"executable\": \"/tmp/provider\",", ""),
-            VALID.replace("\"limits\": {", "\"limits\": null, \"ignored\": {"),
-            VALID.replace("\"max_total_bytes\": 4096,", ""),
-            VALID.replace("\"max_frame_bytes\": 1024", "\"max_frame_bytes\": \"1024\""),
-            VALID.replace("\"argv\": []", "\"argv\": \"\""),
+            r#"{"providers":[]}"#,
+            r#"{"format":"filament.provider-config/v1"}"#,
+            r#"{"format":"filament.provider-config/v1","providers":[],"extra":1}"#,
+            r#"{"format":"filament.provider-config/v1","providers":[{}]}"#,
+            r#"{"format":"filament.provider-config/v1","providers":[{"path":"p","arguments":[1]}]}"#,
+            r#"{"format":"filament.provider-config/v1","providers":[{"path":"p","extra":true}]}"#,
+            "{ malformed",
         ] {
-            assert!(serde_json::from_str::<ProviderConfig>(&malformed).is_err());
-        }
-    }
-
-    /// Trace: FR-006-AC-24; accept both positive safe-integer boundaries only.
-    #[test]
-    fn provider_deadline_accepts_safe_integer_boundaries_and_rejects_outside_values() {
-        for deadline in [1, 9_007_199_254_740_991] {
-            let config: ProviderConfig = serde_json::from_str(&VALID.replace(
-                "\"deadline_ms\": 250",
-                &format!("\"deadline_ms\": {deadline}"),
-            ))
-            .expect("boundary deadline is valid");
-            assert_eq!(config.providers[0].deadline_ms, deadline);
-        }
-        for deadline in ["0", "-1", "1.5", "null", "\"1\"", "9007199254740992"] {
-            let invalid = VALID.replace(
-                "\"deadline_ms\": 250",
-                &format!("\"deadline_ms\": {deadline}"),
-            );
             assert!(
-                serde_json::from_str::<ProviderConfig>(&invalid).is_err(),
-                "accepted deadline {deadline}"
+                serde_json::from_str::<ProviderConfig>(malformed).is_err(),
+                "{malformed}"
             );
         }
-        let missing = VALID.replace("\"deadline_ms\": 250,", "");
-        assert!(serde_json::from_str::<ProviderConfig>(&missing).is_err());
     }
 
-    /// Trace: FR-006-AC-24; unknown fields and identity overrides are rejected at all levels.
     #[test]
-    fn rejects_unknown_fields_at_every_object_level() {
-        for malformed in [
-            VALID.replace("\"providers\":", "\"identity\": \"caller\", \"providers\":"),
-            VALID.replace(
-                "\"executable\":",
-                "\"identity\": \"caller\", \"executable\":",
-            ),
-            VALID.replace("\"limits\": {", "\"limits\": { \"other\": 1,"),
-        ] {
-            assert!(serde_json::from_str::<ProviderConfig>(&malformed).is_err());
-        }
-    }
-
-    /// Trace: FR-006-AC-24; load only the explicitly named file and fail on absent or malformed data.
-    #[test]
-    fn named_file_loader_reports_missing_and_malformed_files() {
-        let missing = load(Path::new("this-provider-config-file-does-not-exist.json"))
-            .expect_err("a missing named file is refused");
+    fn named_file_loader_reports_missing_malformed_and_unsupported_format() {
+        let directory = tempfile::tempdir().expect("create isolated config directory");
+        let missing = load(&directory.path().join("missing.json"))
+            .expect_err("missing named file is refused");
         assert!(missing.to_string().contains("could not read"));
 
-        let path = std::env::temp_dir().join(format!(
-            "filament-provider-config-{}-{}.json",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock after Unix epoch")
-                .as_nanos()
-        ));
+        let path = directory.path().join("config.json");
         fs::write(&path, "{ malformed").expect("write malformed JSON");
-        let malformed = load(&path).expect_err("malformed JSON is refused");
-        let _ = fs::remove_file(path);
-        assert!(malformed.to_string().contains("schema"));
+        assert!(load(&path)
+            .expect_err("malformed data is refused")
+            .to_string()
+            .contains("invalid"));
+
+        fs::write(&path, r#"{"format":"future","providers":[]}"#)
+            .expect("write a different format");
+        assert!(load(&path)
+            .expect_err("different format is refused")
+            .to_string()
+            .contains("unsupported"));
+    }
+
+    #[test]
+    fn provider_paths_are_resolved_from_the_config_file_directory() {
+        let directory = tempfile::tempdir().expect("create isolated config directory");
+        let path = directory.path().join("providers.json");
+        fs::write(
+            &path,
+            r#"{"format":"filament.provider-config/v1","providers":[{"path":"bin/provider"}]}"#,
+        )
+        .expect("write config");
+        let config = load(&path).expect("load config");
+        assert_eq!(
+            config.providers[0].path,
+            directory.path().join("bin/provider")
+        );
     }
 }

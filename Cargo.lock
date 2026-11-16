@@ -761,6 +761,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "signal-hook",
+ "tempfile",
  "thiserror",
 ]
 

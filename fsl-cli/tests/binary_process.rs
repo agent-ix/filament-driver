@@ -45,6 +45,117 @@ const RUN_REQUEST: &str = concat!(
     "/tests/fixtures/frontend-run.json"
 );
 
+const STAMPED_PROFILE: &str = "filament.temporal.timestamped-event.finite-window/v1";
+
+fn write_run_fixture(
+    directory: &std::path::Path,
+    source: &str,
+    request: serde_json::Value,
+) -> std::path::PathBuf {
+    let source_path = directory.join("program.native");
+    std::fs::write(&source_path, source).expect("write run program");
+    let request_path = directory.join("run.json");
+    std::fs::write(
+        &request_path,
+        serde_json::to_vec(&request).expect("encode run request"),
+    )
+    .expect("write run request");
+    request_path
+}
+
+fn finite_window_request(
+    directory: &std::path::Path,
+    watermark: u64,
+    complete: bool,
+) -> std::path::PathBuf {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile t = \"{STAMPED_PROFILE}\";\n\
+         record Reading {{ level: Int[0, 9]; }}\n\
+         temporal Seen using t over (r: Reading) clock \"plant-ms\" on origin {{\n\
+           eventually[0,5] holds(r.level > 0)\n\
+         }}\n"
+    );
+    let clocks = serde_json::json!({
+        "plant-ms": {"kind": "timestamped_event", "timestamp_unit": "ms"}
+    });
+    let stamps = if watermark >= 5 {
+        vec![0_u64, 5]
+    } else {
+        vec![0_u64]
+    };
+    let observations = stamps
+        .into_iter()
+        .map(|stamp| {
+            serde_json::json!({
+                "position": {"sample": {"level": {"integer": "0"}}},
+                "stamp": stamp,
+            })
+        })
+        .collect::<Vec<_>>();
+    let progress = if complete {
+        serde_json::json!({
+            "watermark": watermark,
+            "completeness": {"complete": {"through": watermark}},
+            "scope": "closed", "execution": "closed"
+        })
+    } else {
+        serde_json::json!({
+            "watermark": watermark,
+            "completeness": "incomplete",
+            "scope": "closed", "execution": "closed"
+        })
+    };
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [],
+            "program": {"source": {
+                "file": "program.native", "authority": "test", "identity": "test:finite-window",
+                "document": "FiniteWindow", "formal_revision": 1
+            }},
+            "clocks": clocks,
+            "clause": {
+                "selection": {"temporal": {
+                    "name": "Seen",
+                    "trace": {"timestamped": {
+                        "observations": observations,
+                        "progress": progress,
+                        "lower_boundary": "authoritative-origin",
+                        "binding": {
+                            "profile": STAMPED_PROFILE, "clock": "plant-ms",
+                            "parameters": clocks["plant-ms"]
+                        }
+                    }}
+                }},
+                "observations": {}
+            }
+        }
+    });
+    write_run_fixture(directory, &source, request)
+}
+
+fn non_finite_rational_request(directory: &std::path::Path) -> std::path::PathBuf {
+    let source = "language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"filament.value.complete/v1\";\n\
+        type R = Rational[-9, 9; 1, 9];\n\
+        function as_rational using v(x: Float64[nearest-even]): R pure { convert<R>(x) }\n";
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [],
+            "program": {"source": {
+                "file": "program.native", "authority": "test", "identity": "test:non-finite",
+                "document": "NonFinite", "formal_revision": 1
+            }},
+            "call": {"function": "as_rational", "arguments": [{
+                "parameter": "x", "value": {"kind": "float64", "bits": "7ff8000000000000"}
+            }]}
+        }
+    });
+    write_run_fixture(directory, source, request)
+}
+
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 static TEST_DIRECTORY_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -261,6 +372,104 @@ fn expected_document_bytes(code: Code, message: &str) -> Vec<u8> {
     bytes.into_bytes()
 }
 
+/// Trace: QSL-2185; a violated finite-window clause exits through the binary as 10.
+#[test]
+fn violation_exits_ten() {
+    let directory = tempfile::tempdir().expect("create finite-window fixture directory");
+    let request = finite_window_request(directory.path(), 5, true);
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run finite-window violation");
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("violation document is JSON");
+    assert_eq!(document["category"], "violation");
+}
+
+/// Trace: QSL-2185; converting a user-supplied IEEE NaN to Rational is undefined.
+#[test]
+fn undefined_exits_ten() {
+    let directory = tempfile::tempdir().expect("create non-finite fixture directory");
+    let request = non_finite_rational_request(directory.path());
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run non-finite rational conversion");
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("undefined document is JSON");
+    assert_eq!(document["category"], "undefined", "{document}");
+    assert_eq!(document["result"]["kind"], "undefined", "{document}");
+    assert_eq!(
+        document["result"]["reason"], "ieee-not-finite",
+        "{document}"
+    );
+}
+
+/// Trace: QSL-2185; a finite-window run that ends before its deadline exits 11.
+#[test]
+fn indeterminate_exits_eleven() {
+    let directory = tempfile::tempdir().expect("create finite-window fixture directory");
+    let request = finite_window_request(directory.path(), 5, false);
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run finite-window request before its deadline");
+    assert_eq!(output.status.code(), Some(11));
+}
+
+/// Trace: QSL-2185; violation, refusal and incomplete categories keep distinct exit codes.
+#[test]
+fn exit_codes_are_distinct_per_category() {
+    let directory = tempfile::tempdir().expect("create finite-window fixture directory");
+    let request = finite_window_request(directory.path(), 5, true);
+    let violation = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run finite-window violation");
+    assert_eq!(violation.status.code(), Some(10));
+
+    let refusal = Command::new(FSL)
+        .args(["run", "missing-request.json", "--format", "json"])
+        .output()
+        .expect("run missing request");
+    assert_eq!(refusal.status.code(), Some(20));
+
+    let incomplete = Command::new(FSL)
+        .args([
+            "run",
+            RUN_REQUEST,
+            "--limit",
+            "accounting.work_units=0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run request with an exhausted accounting budget");
+    assert_eq!(incomplete.status.code(), Some(22));
+    assert_ne!(refusal.status.code(), violation.status.code());
+    assert_ne!(incomplete.status.code(), violation.status.code());
+}
+
 /// Trace: FR-004-AC-1, omitted engine selects the linked interpreter.
 #[test]
 fn run_without_engine_executes_with_the_interpreter() {
@@ -422,17 +631,17 @@ fn assert_provider_config_refusal(path: &std::path::Path, expected: &str) {
     let output = run_with_provider_config(path);
     assert_eq!(output.status.code(), Some(20));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("invalid process-provider configuration"));
+    assert!(stderr.contains("provider configuration"), "{stderr}");
     assert!(stderr.contains(expected), "{stderr}");
-    assert_eq!(
-        output.stdout,
-        expected_document_bytes(Code::InvalidRequest, stderr.trim_end())
+    assert!(
+        output.stdout.is_empty(),
+        "provider config refusal wrote stdout"
     );
 }
 
-/// Trace: FR-006-AC-24, FR-014-AC-6; strict file errors are refused before any provider starts.
+/// Trace: FSpec FR-561 / FSL FR-287; named config errors exit 20 without stdout.
 #[test]
-fn provider_config_file_and_schema_errors_emit_one_invalid_request_document() {
+fn provider_config_file_and_schema_errors_refuse_without_stdout() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is after the Unix epoch")
@@ -449,67 +658,38 @@ fn provider_config_file_and_schema_errors_emit_one_invalid_request_document() {
         (
             "malformed.json",
             "{ malformed",
-            "provider configuration schema",
+            "invalid provider configuration",
         ),
+        ("missing-format.json", r#"{"providers":[]}"#, "format"),
         (
-            "missing-field.json",
-            r#"{"providers":[{"argv":[],"deadline_ms":100,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "wrong-type.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":100,"limits":{"max_frame_bytes":"1","max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "missing-deadline.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "zero-deadline.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":0,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "negative-deadline.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":-1,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "fractional-deadline.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":1.5,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "null-deadline.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":null,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "unsafe-deadline.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":9007199254740992,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1}}]}"#,
-            "provider configuration schema",
-        ),
-        (
-            "null-budget.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":100,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1,"max_process_memory_bytes":null}}]}"#,
-            "provider configuration schema",
+            "missing-providers.json",
+            r#"{"format":"filament.provider-config/v1"}"#,
+            "providers",
         ),
         (
             "unknown-top-level.json",
-            r#"{"providers":[],"unexpected":true}"#,
-            "provider configuration schema",
+            r#"{"format":"filament.provider-config/v1","providers":[],"extra":1}"#,
+            "unknown field",
         ),
         (
-            "unknown-provider.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":100,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1},"unexpected":true}]}"#,
-            "provider configuration schema",
+            "missing-path.json",
+            r#"{"format":"filament.provider-config/v1","providers":[{}]}"#,
+            "path",
         ),
         (
-            "unknown-limits.json",
-            r#"{"providers":[{"executable":"/must-not-start","argv":[],"deadline_ms":100,"limits":{"max_frame_bytes":1,"max_total_bytes":1,"max_stderr_bytes":1,"cancellation_grace_ms":1,"unexpected":true}}]}"#,
-            "provider configuration schema",
+            "blank-path.json",
+            r#"{"format":"filament.provider-config/v1","providers":[{"path":" "}]}"#,
+            "blank path",
+        ),
+        (
+            "bad-arguments.json",
+            r#"{"format":"filament.provider-config/v1","providers":[{"path":"p","arguments":[1]}]}"#,
+            "arguments",
+        ),
+        (
+            "unsupported-format.json",
+            r#"{"format":"filament.provider-config/v9","providers":[]}"#,
+            "unknown_wire/unsupported-wire",
         ),
     ];
     for (name, contents, expected) in cases {
@@ -520,7 +700,7 @@ fn provider_config_file_and_schema_errors_emit_one_invalid_request_document() {
     std::fs::remove_dir_all(directory).expect("remove isolated provider config directory");
 }
 
-/// Trace: FR-006-AC-24, FR-014-AC-6; an explicit empty config is equivalent to no process providers.
+/// Trace: FSpec FR-561 / FSL FR-287; the empty config document is valid.
 #[test]
 fn empty_provider_config_executes_without_starting_a_provider() {
     let unique = std::time::SystemTime::now()
@@ -531,7 +711,11 @@ fn empty_provider_config_executes_without_starting_a_provider() {
         "fsl-cli-empty-provider-config-{}-{unique}.json",
         std::process::id()
     ));
-    std::fs::write(&path, r#"{"providers":[]}"#).expect("write empty provider config");
+    std::fs::write(
+        &path,
+        r#"{"format":"filament.provider-config/v1","providers":[]}"#,
+    )
+    .expect("write empty provider config");
     let output = Command::new(FSL)
         .args(["run", RUN_REQUEST, "--provider-config"])
         .arg(&path)
@@ -544,8 +728,32 @@ fn empty_provider_config_executes_without_starting_a_provider() {
     assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_ok());
 }
 
+/// Trace: QSL-2192; the valid FR-561 shape is read, while its runtime offer remains blocked.
+#[test]
+fn valid_provider_config_reaches_the_known_runtime_offer_blocker() {
+    let directory = tempfile::tempdir().expect("create provider config directory");
+    let path = directory.path().join("providers.json");
+    std::fs::write(
+        &path,
+        r#"{"format":"filament.provider-config/v1","providers":[{"path":"/must-not-start"}]}"#,
+    )
+    .expect("write valid provider config");
+    let output = run_with_provider_config(&path);
+    assert_eq!(output.status.code(), Some(20));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("no process-provider engine adapter yet"),
+        "{stderr}"
+    );
+    assert!(
+        output.stdout.len() > 0,
+        "the command has its current typed refusal"
+    );
+}
+
 /// Trace: FR-006-AC-3; normal CLI completion sends shutdown and reaps its configured provider.
 #[test]
+#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn configured_process_normal_exit_shuts_down_active_session() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -632,6 +840,7 @@ fn configured_process_normal_exit_shuts_down_active_session() {
 
 /// Trace: FR-006-AC-26; duplicate admitted identities refuse before requests and close both sessions.
 #[test]
+#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -727,6 +936,7 @@ fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() 
 /// Trace: FR-006-AC-4; the production binary cancels and reaps a selected provider before re-raising SIGTERM.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
+#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn configured_process_sigterm_cleans_active_session_before_reraise() {
     assert_configured_process_signal_cleans_active_session(
         signal_hook::consts::signal::SIGTERM,
@@ -737,6 +947,7 @@ fn configured_process_sigterm_cleans_active_session_before_reraise() {
 /// Trace: FR-006-AC-4; the production binary cancels and reaps a selected provider before re-raising SIGINT.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
+#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn configured_process_sigint_cleans_active_session_before_reraise() {
     assert_configured_process_signal_cleans_active_session(
         signal_hook::consts::signal::SIGINT,

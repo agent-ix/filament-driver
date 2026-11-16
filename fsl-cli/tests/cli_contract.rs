@@ -125,9 +125,17 @@ fn format_outcome_bytes(path: &'static str) -> Vec<u8> {
     let result = fsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
         .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
-    OutcomeDocument::from_format(&result)
+    let formatted_text = result.as_ref().ok().map(|staged| staged.value().clone());
+    let document = OutcomeDocument::from_format(&result)
         .to_bytes()
-        .expect("FSL serializes its format outcome")
+        .expect("FSL serializes its format outcome");
+    let Some(formatted_text) = formatted_text else {
+        return document;
+    };
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&document).expect("FSL format outcome is JSON");
+    value["result"] = serde_json::json!({"kind": "formatted", "text": formatted_text});
+    serde_json::to_vec(&value).expect("encode expected format result")
 }
 
 fn argument_refusal_bytes(operation: Operation, message: &str) -> Vec<u8> {
@@ -283,6 +291,31 @@ fn compile_refusal_emits_fsl_package_outcome_document() {
     assert_fsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
 }
 
+/// Trace: QSL-2192; an empty compile program is an invalid package value.
+#[test]
+fn compile_empty_program_is_invalid_package() {
+    let directory = tempfile::tempdir().expect("create compile request directory");
+    let request = directory.path().join("empty-program.json");
+    std::fs::write(
+        &request,
+        r#"{"format":"native-compile/1","request":{"models":[],"program":[]}}"#,
+    )
+    .expect("write empty compile request");
+
+    let output = Command::new(FSL)
+        .arg("compile")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run compile with an empty program");
+    assert_eq!(output.status.code(), Some(20));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits a refusal document");
+    assert_eq!(document["category"], "refusal");
+    assert_eq!(document["diagnostics"][0]["code"], "invalid_package");
+    assert_eq!(document["diagnostics"][0]["cause"], "invalid-value");
+}
+
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
 #[test]
 fn check_semantic_refusal_emits_fsl_check_outcome_document() {
@@ -408,6 +441,54 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
     assert!(output.stderr.is_empty());
 
     assert_fsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
+}
+
+/// Trace: QSL-2192; machine format results carry the exact plain-text result.
+#[test]
+fn format_json_result_carries_text() {
+    let text = Command::new(FSL)
+        .args(["format", "issuer", "document", SOURCE])
+        .output()
+        .expect("format source as text");
+    assert_eq!(text.status.code(), Some(0));
+    assert!(text.stderr.is_empty());
+
+    let json = Command::new(FSL)
+        .args(["format", "issuer", "document", SOURCE, "--format", "json"])
+        .output()
+        .expect("format source as JSON");
+    assert_eq!(json.status.code(), Some(0));
+    assert!(json.stderr.is_empty());
+    let document: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("format emits a JSON document");
+    assert_eq!(document["result"]["kind"], "formatted");
+    assert_eq!(
+        document["result"]["text"].as_str().map(str::as_bytes),
+        Some(text.stdout.as_slice())
+    );
+}
+
+/// Trace: QSL-2192; formatting an already formatted file is idempotent.
+#[test]
+fn format_json_is_idempotent() {
+    let first = Command::new(FSL)
+        .args(["format", "issuer", "document", SOURCE])
+        .output()
+        .expect("format original source");
+    assert_eq!(first.status.code(), Some(0));
+    let directory = tempfile::tempdir().expect("create formatter directory");
+    let formatted = directory.path().join("formatted.fsl");
+    std::fs::write(&formatted, &first.stdout).expect("write canonical text");
+
+    let second = Command::new(FSL)
+        .arg("format")
+        .arg("issuer")
+        .arg("document")
+        .arg(&formatted)
+        .output()
+        .expect("format canonical source");
+    assert_eq!(second.status.code(), Some(0));
+    assert_eq!(second.stdout, first.stdout);
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; formatter refusals retain FSL diagnostics.
