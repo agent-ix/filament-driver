@@ -902,6 +902,15 @@ fn timed_event_profile_cause_removed() {
             probability >= 0.9 [ eventually holds(c.value <= 3) ]\n\
           }\n",
     );
+    let frontend_error = fsl_command::command::analyze(
+        &request.path(),
+        &filament_driver::AnalyzeNegotiation,
+        &filament_exact::Cancel::new(),
+    )
+    .expect_err("the frontend refuses model time over an untimed model");
+    let frontend_document =
+        serde_json::to_value(frontend_error.outcome_document(fsl_replay::Operation::Analyze))
+            .expect("serialize the frontend refusal document");
     let (document, exit) = request.json();
     assert_eq!(exit, Some(20), "{document}");
     assert_eq!(document["operation"], "analyze");
@@ -918,23 +927,32 @@ fn timed_event_profile_cause_removed() {
         "the driver adds no refusal causes: {document}"
     );
     let diagnostic = &diagnostics[0];
+    let frontend_diagnostic = &frontend_document["diagnostics"][0];
+    assert_eq!(
+        document, frontend_document,
+        "the CLI returns the frontend document unchanged"
+    );
     assert_eq!(diagnostic["code"], "invalid_timed_model", "{diagnostic}");
+    assert_eq!(diagnostic["code"], frontend_diagnostic["code"]);
     assert_eq!(
         diagnostic["cause"], "model-time-on-untimed-model",
         "{diagnostic}"
     );
+    assert_eq!(diagnostic["cause"], frontend_diagnostic["cause"]);
     assert!(
         diagnostic["message"]
             .as_str()
             .is_some_and(|message| message.contains("`M`")),
         "the frontend refusal payload names the model: {diagnostic}"
     );
+    assert_eq!(diagnostic["message"], frontend_diagnostic["message"]);
     assert_eq!(diagnostic["locus"]["kind"], "region", "{diagnostic}");
     assert_eq!(
         diagnostic["locus"]["source"],
         serde_json::json!({"authority": "test", "identity": "analyze-counter"}),
         "the frontend source locus is retained: {diagnostic}"
     );
+    assert_eq!(diagnostic["locus"], frontend_diagnostic["locus"]);
     assert!(
         !document.to_string().contains("timed-event-profile"),
         "the driver does not add the old cause: {document}"
