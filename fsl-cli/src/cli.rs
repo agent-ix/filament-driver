@@ -126,7 +126,8 @@ fn help_exit_code() -> ExitCode {
         "\nSource operands:\n",
         "  parse <authority> <identity> <file> [--format json|text]\n",
         "  format <authority> <identity> <file> [--format json|text]\n",
-        "  compile <request-file> [--clocks <json-file>] [--format json|text]\n",
+        "  compile <request-file> [--clocks <json-file>] [--output <file>]\n",
+        "      [--format json|text]\n",
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
         "      [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>]\n",
         "      [--clocks <json-file>] [--format json|text]\n",
@@ -433,6 +434,7 @@ fn configured_failure_after_call(
 struct CompileOptions {
     path: PathBuf,
     clocks: Option<PathBuf>,
+    output: Option<PathBuf>,
 }
 
 struct CheckOptions {
@@ -486,6 +488,7 @@ impl CompileOptions {
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
         let mut clocks = None;
+        let mut output: Option<PathBuf> = None;
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
@@ -498,6 +501,11 @@ impl CompileOptions {
                 index += 2;
                 continue;
             }
+            if argument == "--output" {
+                output = Some(output_operand(arguments.get(index + 1), output.is_some())?);
+                index += 2;
+                continue;
+            }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
                 return Err(format!("unknown compile option `{option}`"));
             }
@@ -506,13 +514,14 @@ impl CompileOptions {
         }
         let [path] = positionals.as_slice() else {
             return Err(
-                "usage: fsl compile <request-file> [--clocks <json-file>] [--format json|text]"
+                "usage: fsl compile <request-file> [--clocks <json-file>] [--output <file>] [--format json|text]"
                     .to_owned(),
             );
         };
         Ok(Self {
             path: PathBuf::from(*path),
             clocks,
+            output,
         })
     }
 }
@@ -770,6 +779,17 @@ fn clocks_operand(operand: Option<&OsString>, repeated: bool) -> Result<PathBuf,
         .ok_or_else(|| "--clocks requires a path".to_owned())
 }
 
+/// The path operand of `--output`, refused when missing or repeated.
+fn output_operand(operand: Option<&OsString>, repeated: bool) -> Result<PathBuf, String> {
+    if repeated {
+        return Err("--output may be supplied only once".to_owned());
+    }
+    operand
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| "--output requires a path".to_owned())
+}
+
 /// Record a refused `--clocks` as FSL records an invalid request: no stage
 /// reached, the catalog code and the cause naming the flag.
 fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -> CommandResult {
@@ -837,6 +857,7 @@ fn run(options: RunOptions) -> CommandResult {
     };
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
+        ..command::RequestOverrides::default()
     };
     let prepared =
         match command::prepare_run_with_overrides(&options.path, options.intake_limits, &overrides)
@@ -926,9 +947,9 @@ fn run_clause_request(
     }
     let name = match &request.selection {
         ClauseRunSelection::Clause(selection) => selection.name.clone(),
-        ClauseRunSelection::Function { name, .. } | ClauseRunSelection::Temporal { name, .. } => {
-            name.clone()
-        }
+        ClauseRunSelection::Function { name, .. }
+        | ClauseRunSelection::Temporal { name, .. }
+        | ClauseRunSelection::SampledTemporal { name, .. } => name.clone(),
         ClauseRunSelection::Frame { operation, .. } => operation.to_string(),
     };
     let report = match fsl_replay::spine::run_clause(request) {
@@ -1249,6 +1270,7 @@ fn compile(options: CompileOptions) -> CommandResult {
     };
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
+        output: options.output.as_deref(),
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
         Ok(outcome) => CommandResult::document(outcome.document().clone()),

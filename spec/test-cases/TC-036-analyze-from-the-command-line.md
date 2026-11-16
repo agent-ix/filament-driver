@@ -31,8 +31,8 @@ Scope: FR-022-AC-1 through FR-022-AC-8.
 4. Run `Bounded` with `temporal.limits.max_states` 1, and with
    `deadline_ms` 0; assert `incomplete`, the cause, no counterexample and
    exit 22 (AC-3).
-5. Run an item naming `no-such-backend`, and the request without `items`,
-   whose derived deadlock-freedom item no engine serves; assert the per-item
+5. Run an item naming `no-such-backend`, and an item naming backend `en-6`,
+   which serves no temporal-satisfaction form; assert the per-item
    settlement and diagnostic, and the `registry` member (AC-4, AC-8).
 6. Run a malformed request in machine and text mode, a program the checker
    refuses, a snapshot the subject binding refuses, and the verb with no

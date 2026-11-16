@@ -933,36 +933,31 @@ fn analyze_unsupported_item_is_typed() {
         "{diagnostic}"
     );
 
-    // With no `items`, FSL adds the subject's derived deadlock-freedom item,
-    // which no registered engine serves.
-    let unserved = AnalyzeRequest::new("unserved", serde_json::json!([]), serde_json::json!({}));
-    let mut document: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(unserved.path()).expect("the request"))
-            .expect("JSON");
-    document["request"]
-        .as_object_mut()
-        .expect("request object")
-        .remove("items");
-    std::fs::write(unserved.path(), document.to_string()).expect("rewrite the request");
+    // EN-6 lists no temporal-satisfaction form, so the item no registered
+    // engine serves settles `unsupported` (QSL-2122 made EN-1 serve the
+    // derived deadlock-freedom item this case used before).
+    let unserved = AnalyzeRequest::new(
+        "unserved",
+        serde_json::json!([{"claim": "Bounded", "backend": "en-6"}]),
+        serde_json::json!({}),
+    );
     let output = unserved.run("json");
     assert!(!output.stdout.is_empty(), "never empty output");
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("one outcome document");
     assert_eq!(output.status.code(), Some(21), "{document}");
     assert_eq!(document["category"], "unsupported");
-    let derived = document["items"]
-        .as_array()
-        .and_then(|items| items.last())
-        .unwrap_or_else(|| panic!("items: {document}"));
-    assert_eq!(derived["record"]["result"], "unsupported", "{derived}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "unsupported", "{item}");
     assert_eq!(
-        derived["record"]["diagnostic"]["cause"], "unsupported-requested-capability",
-        "{derived}"
+        item["record"]["diagnostic"]["code"], "unsupported_projection",
+        "{item}"
     );
     assert_eq!(
-        derived["request"]["temporal"]["item_kind"],
-        "deadlock-freedom"
+        item["record"]["diagnostic"]["cause"], "unsupported-requested-capability",
+        "{item}"
     );
+    assert_eq!(item["request"]["temporal"]["item_kind"], "formula");
 }
 
 /// FR-022-AC-8: the registry FSL builds from its engine set is the one the
