@@ -1,0 +1,96 @@
+{
+  "contractVersion": "2.0.0",
+  "canonicalization": {
+    "algorithm": "rfc8785-v1"
+  },
+  "source": {
+    "identity": "ix://driver/ir608/model",
+    "version": "1.0.0",
+    "dialect": "spec-bundle"
+  },
+  "package": {
+    "identity": "driver/ir608-model",
+    "version": "1.0.0",
+    "mappingVersions": [],
+    "profileVersions": []
+  },
+  "occurrences": [],
+  "extensions": [],
+  "constructs": [
+    {
+      "kind": {
+        "module": "driver/ir608-model",
+        "name": "entity"
+      },
+      "moduleVersion": "1.0.0",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {},
+        "meaning": "filament.meaning.model.object-type/v1"
+      }
+    },
+    {
+      "kind": {
+        "module": "driver/ir608-model",
+        "name": "population"
+      },
+      "moduleVersion": "1.0.0",
+      "construct": {
+        "identity": "none",
+        "shape": "record",
+        "members": {},
+        "meaning": "filament.meaning.model.population/v1"
+      }
+    }
+  ],
+  "types": [
+    {
+      "identity": "ix://driver/ir608-model/Thing",
+      "displayName": "Thing",
+      "kind": {
+        "module": "driver/ir608-model",
+        "name": "entity"
+      },
+      "roles": [],
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://driver/ir608/model",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://driver/ir608-model/Thing"
+          ]
+        }
+      },
+      "constraints": [],
+      "extensions": [],
+      "unknownPolicy": "reject",
+      "supertypes": [],
+      "fields": [],
+      "operations": []
+    }
+  ],
+  "populations": [
+    {
+      "identity": "ix://driver/ir608-model/Fleet",
+      "displayName": "Fleet",
+      "kind": {
+        "module": "driver/ir608-model",
+        "name": "population"
+      },
+      "members": [
+        "ix://driver/ir608-model/Thing"
+      ],
+      "extent": "closed",
+      "origin": {
+        "generated": {
+          "generatorIdentity": "ix://driver/ir608-model/Fleet",
+          "generatorVersion": "1.0.0",
+          "inputIdentities": [
+            "ix://driver/ir608-model/Fleet"
+          ]
+        }
+      }
+    }
+  ]
+}

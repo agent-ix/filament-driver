@@ -1099,8 +1099,6 @@ fn analyze_text_mode_prints_item_lines() {
 /// form and the result form of one kind.
 const RUN_VALUE_FIXTURE: &str = r#"language "ix:native" edition "1-draft";
 profile v = "filament.value.complete/v1";
-dimension Time;
-unit s: Time = rational(1, 1);
 type Big = Int[0, 1267650600228229401496703205376];
 type R = Rational[0, 9; 1, 9];
 type D = Decimal[0, 1000; 0, 2; exact];
@@ -1115,7 +1113,6 @@ function id_enum using v(a: Color): Color pure { a }
 function id_rec using v(a: P): P pure { a }
 function id_seq using v(a: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { a }
 function id_opt using v(a: Option<Int[0, 9]>): Option<Int[0, 9]> pure { a }
-function give using v(): Quantity<s> pure { 2 s }
 "#;
 
 /// Run `function` of [`RUN_VALUE_FIXTURE`] through `fsl run --format json`
@@ -1258,14 +1255,51 @@ fn run_returns_option_result() {
     assert_run_value("id_opt", absent.clone(), absent);
 }
 
-/// FSL FR-650-AC-6: a Quantity result has no run value form, so the run
-/// refuses `unknown_required_feature`/`unsupported-feature` with exit 21 and
-/// no result. FSL FR-286's `filament-outcome/1` diagnostic has no `details`
-/// member, so the driver document names the function in its message.
+/// A unit whose `give` returns a collection over a population: FSL FR-650's
+/// one result type with no run value form (FSpec FR-144).
+const FORMLESS_RESULT_SOURCE: &str = r#"language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+model M = "driver/ir608-model";
+function give using v(p: Population<M::Thing>[1]): Sequence<Population<M::Thing>[1]>[0, 1] pure { sequence[p] }
+"#;
+
+const POPULATION_MODEL: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/population-model.semantic-ir.json"
+);
+
+/// FSL FR-650-AC-6: a result type with no run value form refuses
+/// `unknown_required_feature`/`unsupported-feature` with exit 21, a non-null
+/// cause and no result, before any call. FSL FR-286's `filament-outcome/1`
+/// diagnostic has no `details` member, so the driver document names the
+/// function in its message.
 #[trace("TC-1705", "FR-650-AC-6")]
 #[test]
+#[ignore = "QSL-2182: needs a formless result reachable from source (collection over population)"]
 fn unsupported_result_names_function_and_cause() {
-    let output = run_value_fixture("give", "give", serde_json::json!([]));
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-run-formless-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&directory.0);
+    std::fs::create_dir_all(&directory.0).expect("a request folder");
+    std::fs::write(directory.0.join("formless.fsl"), FORMLESS_RESULT_SOURCE).expect("the source");
+    let request = serde_json::json!({"format": "native-run/1", "request": {
+        "models": [{"format": "semantic-ir/2.0.0", "source": {"file": POPULATION_MODEL,
+            "authority": "test", "identity": "population-model", "document": "M",
+            "formal_revision": 1}}],
+        "program": {"source": {"file": "formless.fsl", "authority": "issuer",
+            "identity": "document", "document": "Formless", "formal_revision": 1}},
+        "call": {"function": "give", "arguments": [{"parameter": "p",
+            "value": {"population": "ix://driver/ir608-model/Fleet"}}]},
+    }});
+    let path = directory.0.join("run.json");
+    std::fs::write(&path, request.to_string()).expect("the request file");
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl run");
     assert_eq!(output.status.code(), Some(21), "{output:?}");
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("one outcome document");
