@@ -823,7 +823,13 @@ fn run(options: RunOptions) -> CommandResult {
     let clocks = match options
         .clocks
         .as_deref()
-        .map(|path| crate::clocks::read(path, options.intake_limits.request_bytes))
+        .map(|path| {
+            crate::clocks::read(
+                path,
+                options.intake_limits.request_bytes,
+                Some("--request-bytes"),
+            )
+        })
         .transpose()
     {
         Ok(clocks) => clocks,
@@ -1235,7 +1241,7 @@ fn compile(options: CompileOptions) -> CommandResult {
     let clocks = match options
         .clocks
         .as_deref()
-        .map(|path| crate::clocks::read(path, RunLimits::default().request_bytes))
+        .map(|path| crate::clocks::read(path, RunLimits::default().request_bytes, None))
         .transpose()
     {
         Ok(clocks) => clocks,

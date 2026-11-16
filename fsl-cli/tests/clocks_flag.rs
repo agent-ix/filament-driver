@@ -179,7 +179,8 @@ fn a_clocks_file_that_is_not_one_object_refuses_invalid_request() {
 }
 
 /// FR-023-AC-5: both `clocks` in the request and `--clocks` refuse, as FSL
-/// refuses them (FR-640): `invalid-request` at stage `request`, naming both.
+/// refuses them (FR-640): `invalid-request`, exit 20, naming both, with
+/// `last_stage` null (FR-286, FR-287-AC-11).
 #[trace("TC-037", "FR-023-AC-5")]
 #[test]
 fn clocks_in_the_request_and_on_the_command_line_refuse() {
@@ -191,6 +192,7 @@ fn clocks_in_the_request_and_on_the_command_line_refuse() {
         let output = fsl(verb, &request, &[&file]);
         assert_eq!(output.status.code(), Some(refusal_code()), "{output:?}");
         let document = document(&output);
+        assert_eq!(document["last_stage"], Value::Null, "{document}");
         let diagnostic = &document["diagnostics"][0];
         assert_eq!(diagnostic["code"], "invalid-request", "{document}");
         let text = diagnostic["message"].as_str().expect("a message");
@@ -201,35 +203,97 @@ fn clocks_in_the_request_and_on_the_command_line_refuse() {
     }
 }
 
-/// FR-023-AC-6: the file's members are read as a request's own: an unknown
-/// `kind` and a repeated member name refuse at FSL's request reader.
+/// A refusal's diagnostic code, cause, stage and message up to FSL's
+/// ` at line` position suffix.
+fn refusal_fields(output: &Output) -> (Value, Value, Value, String) {
+    let document = document(output);
+    let diagnostic = &document["diagnostics"][0];
+    let message = diagnostic["message"].as_str().expect("a message");
+    let message = message.split(" at line").next().unwrap_or(message);
+    (
+        diagnostic["code"].clone(),
+        diagnostic["cause"].clone(),
+        document["last_stage"].clone(),
+        message.to_owned(),
+    )
+}
+
+/// FR-023-AC-6: a file member FSL refuses refuses as the same object does as
+/// the request's own `clocks` member (code, cause, stage and message), and a
+/// repeated member name reaches FSL and is refused naming the clock.
 #[trace("TC-037", "FR-023-AC-6")]
 #[test]
 fn the_file_members_are_read_as_request_members() {
     let folder = Folder::new("members");
-    let unknown = folder.write("unknown.json", r#"{"plant-ms": {"kind": "sundial"}}"#);
+    let unknown = json!({"plant-ms": {"kind": "sundial"}});
+    let file = folder.write("unknown.json", &unknown.to_string());
     let repeated = folder.write(
         "repeated.json",
         r#"{"plant-ms": {"kind": "timestamped_event", "timestamp_unit": "ms"},
             "plant-ms": {"kind": "timestamped_event", "timestamp_unit": "s"}}"#,
     );
-    for file in [&unknown, &repeated] {
-        for verb in ["run", "compile"] {
-            let request = folder.request(verb, &format!("{verb}.json"), None);
-            let output = fsl(verb, &request, &[file]);
-            assert_eq!(output.status.code(), Some(refusal_code()), "{output:?}");
-            let document = document(&output);
-            assert_eq!(
-                document["diagnostics"][0]["code"], "invalid-request",
-                "{document}"
-            );
-            let message = document["diagnostics"][0]["message"]
-                .as_str()
-                .expect("a message");
-            assert!(
-                message.contains("plant-ms") || message.contains("clocks"),
-                "{message}"
-            );
-        }
+    for verb in ["run", "compile"] {
+        let bare = folder.request(verb, &format!("{verb}.json"), None);
+        let member = folder.request(verb, &format!("{verb}-member.json"), Some(&unknown));
+        let flagged = fsl(verb, &bare, &[&file]);
+        let in_request = fsl(verb, &member, &[]);
+        assert_eq!(flagged.status.code(), Some(refusal_code()), "{flagged:?}");
+        assert_eq!(flagged.status.code(), in_request.status.code());
+        let (code, cause, stage, message) = refusal_fields(&flagged);
+        assert_eq!(code, "invalid-request");
+        assert_eq!((code, cause, stage, message), refusal_fields(&in_request));
+        let output = fsl(verb, &bare, &[&repeated]);
+        assert_eq!(output.status.code(), Some(refusal_code()), "{output:?}");
+        let (code, _, _, message) = refusal_fields(&output);
+        assert_eq!(code, "invalid-request");
+        assert!(message.contains("plant-ms"), "{message}");
     }
+}
+
+/// FR-023-AC-7: a `--clocks` file over the request byte limit refuses
+/// `resource_exhausted` (incomplete, exit 22) naming `--clocks` and the limit,
+/// as FSL refuses an oversize request: `run` follows `--request-bytes`.
+#[trace("TC-037", "FR-023-AC-7")]
+#[test]
+fn an_oversize_clocks_file_refuses_resource_exhausted() {
+    let folder = Folder::new("oversize");
+    let file = folder.write("clocks.json", &stamped().to_string());
+    assert!(std::fs::metadata(&file).expect("clocks file").len() > 30);
+    let request = folder.request("run", "run.json", None);
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--request-bytes", "30", "--format", "json"])
+        .arg("--clocks")
+        .arg(&file)
+        .output()
+        .expect("run fsl");
+    let incomplete = i32::from(Category::Incomplete.exit_code());
+    assert_eq!(output.status.code(), Some(incomplete), "{output:?}");
+    let document = document(&output);
+    assert_eq!(document["last_stage"], Value::Null, "{document}");
+    let diagnostic = &document["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "resource_exhausted", "{document}");
+    assert_eq!(diagnostic["cause"], "clocks-file-too-large", "{document}");
+    let message = diagnostic["message"].as_str().expect("a message");
+    assert!(
+        message.contains("--clocks")
+            && message.contains("30")
+            && message.contains("--request-bytes"),
+        "{message}"
+    );
+    // `compile` has no limit flag; FSL's fixed 1,048,576 bytes applies.
+    let large = folder.write(
+        "large.json",
+        &format!("{{\"a\": \"{}\"}}", "x".repeat(1_048_576)),
+    );
+    let request = folder.request("compile", "compile.json", None);
+    let output = fsl("compile", &request, &[&large]);
+    assert_eq!(output.status.code(), Some(incomplete), "{output:?}");
+    let document = self::document(&output);
+    let diagnostic = &document["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "resource_exhausted", "{document}");
+    assert_eq!(diagnostic["cause"], "clocks-file-too-large", "{document}");
+    let message = diagnostic["message"].as_str().expect("a message");
+    assert!(message.contains("1048576"), "{message}");
 }

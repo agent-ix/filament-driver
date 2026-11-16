@@ -32,7 +32,11 @@ impl ClocksRefusal {
 
 /// Read the `--clocks` file as one JSON object, keeping its text as written
 /// so a repeated member name reaches FSL's own reader.
-pub(crate) fn read(path: &Path, limit: usize) -> Result<Box<RawValue>, ClocksRefusal> {
+pub(crate) fn read(
+    path: &Path,
+    limit: usize,
+    option: Option<&str>,
+) -> Result<Box<RawValue>, ClocksRefusal> {
     let mut bytes = Vec::new();
     let cap = u64::try_from(limit).unwrap_or(u64::MAX).saturating_add(1);
     std::fs::File::open(path)
@@ -43,10 +47,15 @@ pub(crate) fn read(path: &Path, limit: usize) -> Result<Box<RawValue>, ClocksRef
             message: format!("--clocks: could not read {}: {error}", path.display()),
         })?;
     if bytes.len() > limit {
-        return Err(ClocksRefusal::invalid(
-            "clocks-file-too-large",
-            format!("--clocks: {} is over {limit} bytes", path.display()),
-        ));
+        let raise = option.map_or_else(String::new, |option| format!("; raise {option}"));
+        return Err(ClocksRefusal {
+            code: Code::ResourceExhausted,
+            cause: "clocks-file-too-large",
+            message: format!(
+                "--clocks: {} exceeds the {limit} byte limit{raise}",
+                path.display()
+            ),
+        });
     }
     let not_an_object = || {
         ClocksRefusal::invalid(

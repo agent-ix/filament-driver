@@ -129,8 +129,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-020 | FR-020-AC-1..FR-020-AC-15 | TC-034 | ✅ AC-1 to AC-9 and AC-11 to AC-15 run, tagged, in `tests/drive.rs` and `src/refusal.rs` against CG main; AC-14's guard-node case uses FSL's `test-support` constructors. AC-10 is retired by CG IR-304 slice (b). Driver ticket IR-1494. |
 | FR-021 | FR-021-AC-1..FR-021-AC-7 | TC-035 | ✅ `tests/examples_gate.rs`, run by `make examples-check` from `make ci` against a fetched filament-examples checkout, and by the language repository's `make examples-check` with `FSL_LANGUAGE_DIR` set; `tests/make_targets.rs` checks the `ci` target. |
 | FR-022 | FR-022-AC-1..FR-022-AC-8 | TC-036 | 🚧 `fsl-cli/tests/frontend_cli.rs` runs the `fsl` binary over the Counter analyze fixture; `src/analyze.rs` unit-tests the negotiation table. Settlement through CG `negotiate_*` awaits a CG arm for linked FSL engines (QSL-2286); until then an unbounded extent on a bounded-only candidate is refused `inconsistent-candidates`; `--provider-config` awaits QSL-2283; signal cancellation awaits QSL-2284. |
-| TC-037 | Supply clock configurations with --clocks on compile and run | Integration | FR-023-AC-1..FR-023-AC-6 | See the FR-023 row. |
-| FR-023 | FR-023-AC-1..FR-023-AC-6 | TC-037 | `fsl-cli/tests/frontend_cli.rs` runs the `fsl` binary with `--clocks`. The replay-document refusal has no driver code path until a replay verb exists. |
+| FR-023 | FR-023-AC-1..FR-023-AC-7 | TC-037 | 🚧 `fsl-cli/tests/clocks_flag.rs` runs the `fsl` binary with `--clocks`. The replay-document refusal has no driver code path until QSL-2292 adds `fsl replay`. |
 
 ## Test Case Summary
 
@@ -167,6 +166,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | TC-034 | Project FSL requirement records into CG's typed input | Integration | FR-020-AC-1..FR-020-AC-15 | ✅ See the FR-020 row. |
 | TC-035 | Run the examples suite against the workspace-built fsl | Integration | FR-021-AC-1..FR-021-AC-7 | ✅ See the FR-021 row. |
 | TC-036 | Analyze a native-analyze/1 request with the fsl binary | Integration | FR-022-AC-1..FR-022-AC-8 | ✅ See the FR-022 row. |
+| TC-037 | Supply clock configurations with --clocks on compile and run | Integration | FR-023-AC-1..FR-023-AC-7 | 🚧 See the FR-023 row. |
 
 ## Integration Test Matrix
 

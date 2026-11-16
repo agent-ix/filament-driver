@@ -37,23 +37,29 @@ unchanged, and FSL itself refuses a request that carries `clocks` as well.
 
 ## Behavior
 
-- An unreadable `--clocks` file SHALL refuse with code `io-error`, cause
-  `clocks-file-unreadable`, naming the path, with no stage reached.
-- A `--clocks` file that is not UTF-8 JSON whose whole content is one object
-  SHALL refuse with code `invalid-request`, cause `clocks-file-not-an-object`,
-  naming `--clocks`, with no stage reached.
+- If the `--clocks` file is unreadable, `fsl` SHALL refuse it with code
+  `io-error`, cause `clocks-file-unreadable`, naming the path, with no stage
+  reached.
+- If the `--clocks` file is not UTF-8 JSON whose whole content is one object,
+  `fsl` SHALL refuse it with code `invalid-request`, cause
+  `clocks-file-not-an-object`, naming `--clocks`, with no stage reached.
 - A request document that carries a `clocks` member while `--clocks` is given
-  is refused by FSL (FSL FR-640) `invalid-request` at stage `request`, naming
-  `clocks` and `--clocks`; the driver adds no check of its own.
+  is refused by FSL (FSL FR-640) `invalid-request`, exit 20, naming `clocks` and
+  `--clocks`. FR-640's "stage `request`" is the refusal envelope's stage; the
+  outcome document's `last_stage` is null (FSL FR-286, FR-287-AC-11). The driver
+  adds no check of its own.
 - A replay request document has no `clocks` member (FSL FR-640-AC-8): replay
   reads its clocks from the proving package. A driver reader of a replay
   request document SHALL refuse a `clocks` member there `invalid-request` at
   stage `request`. The driver has no replay verb yet, so this obligation has
-  no code path and no test until that verb lands.
-- A `--clocks` file over the request byte limit SHALL refuse
-  `invalid-request` with cause `clocks-file-too-large`.
+  no code path and no test until QSL-2292 adds that verb.
+- If the `--clocks` file is larger than the request byte limit, `fsl` SHALL
+  refuse it with code `resource_exhausted` (category incomplete, exit 22), cause
+  `clocks-file-too-large`, naming `--clocks` and the limit, as FSL refuses an
+  oversize request. The limit is `--request-bytes` on `run` and FSL's fixed
+  1,048,576 bytes on `compile`, which has no such flag.
 - A refusal records no stage because none was reached: the outcome document's
-  `stage` is null, as for every other refusal before FSL runs.
+  `last_stage` is null, as for every other request-intake refusal.
 
 ## Acceptance Criteria
 
@@ -63,8 +69,9 @@ unchanged, and FSL itself refuses a request that carries `clocks` as well.
 | FR-023-AC-2 | `fsl compile <request> --clocks <file>` on that unit writes the document the request carrying the member gives, and the same request with no clocks refuses `missing-clock-selection`. | Test (TC-037) |
 | FR-023-AC-3 | An unreadable `--clocks` file refuses `io-error`, cause `clocks-file-unreadable`, stage null, exit 20 on `run` and `compile`. | Test (TC-037) |
 | FR-023-AC-4 | A `--clocks` file that is an array, not JSON, or has trailing content refuses `invalid-request`, cause `clocks-file-not-an-object`, naming `--clocks`, stage null. | Test (TC-037) |
-| FR-023-AC-5 | A request carrying `clocks` with `--clocks` refuses `invalid-request` (FSL's refusal), naming `clocks` and `--clocks`, exit 20, on `run` and `compile`. | Test (TC-037) |
-| FR-023-AC-6 | A member FSL refuses (unknown `kind`) in the file refuses as the same member in the request does, and a repeated member name in the file reaches FSL and refuses. | Test (TC-037) |
+| FR-023-AC-5 | A request carrying `clocks` with `--clocks` refuses `invalid-request` (FSL's refusal, FR-640), naming `clocks` and `--clocks`, exit 20, with the outcome's `last_stage` null (FR-286, FR-287-AC-11), on `run` and `compile`. | Test (TC-037) |
+| FR-023-AC-6 | A member FSL refuses (unknown `kind`) in the file refuses with the code, cause, stage and message the same object gives as the request's `clocks` member, and a repeated member name in the file reaches FSL and is refused naming the clock. | Test (TC-037) |
+| FR-023-AC-7 | A `--clocks` file over the request byte limit refuses `resource_exhausted`, cause `clocks-file-too-large`, stage null, exit 22, naming `--clocks` and the limit: `--request-bytes` on `run`, 1,048,576 bytes on `compile`. | Test (TC-037) |
 
 ## Dependencies
 
