@@ -1,0 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+import "driver/check-library" as L;
+function valid using v(): Boolean pure { L::Ready(true) }

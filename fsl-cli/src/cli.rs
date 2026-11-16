@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parser and command handlers for the user-facing `fsl` binary.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -22,9 +22,7 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
-use fsl_replay::spine::{
-    check, parse, select, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits,
-};
+use fsl_replay::spine::{parse, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits};
 use fsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
@@ -126,6 +124,8 @@ fn help_exit_code() -> ExitCode {
         "\nSource operands:\n",
         "  parse <authority> <identity> <file> [--format json|text]\n",
         "  format <authority> <identity> <file> [--format json|text]\n",
+        "  check <source-path> [--model <file>] [--library <file>]...\n",
+        "      [--dependent-bytes <bytes>] [--format json|text]\n",
         "  compile <request-file> [--clocks <json-file>] [--output <file>]\n",
         "      [--format json|text]\n",
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
@@ -293,15 +293,31 @@ type CliProviderError = crate::process_provider::AdapterError<
     String,
     serde_json::Value,
 >;
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 type CliProviderEncode =
     for<'a> fn(ProcessProviderRequest<'a>) -> Result<crate::backend_provider::RequestStage, String>;
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 type CliProviderValidate =
     fn(&crate::backend_provider::ManifestStage, &serde_json::Value) -> Result<(), String>;
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 type CliProviderConvert =
     fn(
         serde_json::Value,
     )
         -> Result<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>, String>;
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 type CliProviderSession = crate::process_provider::HostProcessSession<
     crate::backend_provider::ManifestStage,
     crate::backend_provider::RequestStage,
@@ -316,12 +332,20 @@ type CliProviderSession = crate::process_provider::HostProcessSession<
     CliProviderConvert,
 >;
 
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 struct ActiveConfiguredProvider {
     deadline_ms: u64,
     session: CliProviderSession,
 }
 
 #[derive(Debug)]
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 struct ConfiguredCall {
     package_name: String,
     outcome: CallOutcome,
@@ -385,6 +409,10 @@ struct ConfiguredRunFailure {
     cleanup_failures: Vec<CliProviderError>,
 }
 
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 struct ConfiguredRunRequest<'a> {
     path: &'a str,
     package_name: &'a str,
@@ -394,10 +422,14 @@ struct ConfiguredRunRequest<'a> {
     call: Call,
     packages: fsl_semantics::model::intake::PackageInput,
     dependencies: DependencyInput,
-    config: crate::provider_config::ProviderConfig,
+    config: Vec<crate::provider_config::RuntimeProviderConfig>,
     signals: crate::signals::SignalContext,
 }
 
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 fn close_configured_providers(
     sessions: Vec<ActiveConfiguredProvider>,
 ) -> (
@@ -415,6 +447,10 @@ fn close_configured_providers(
     (diagnostics, failures)
 }
 
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 fn configured_failure_after_call(
     call: ConfiguredCall,
     kind: ConfiguredRunErrorKind,
@@ -439,6 +475,9 @@ struct CompileOptions {
 
 struct CheckOptions {
     path: String,
+    model: Option<PathBuf>,
+    libraries: Vec<PathBuf>,
+    dependent_bytes: usize,
 }
 
 struct SourceOptions {
@@ -527,14 +566,56 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
+    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--format json|text]";
+
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
+        let mut model = None;
+        let mut libraries = Vec::new();
+        let mut dependent_bytes = RunLimits::default().dependent_bytes;
+        let mut dependent_bytes_supplied = false;
         let mut index = 0;
         while index < arguments.len() {
             let argument = arguments[index]
                 .to_str()
                 .ok_or_else(|| "check arguments must be valid UTF-8".to_owned())?;
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--model" {
+                let path = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--model requires a path".to_owned())?;
+                if model.replace(PathBuf::from(path)).is_some() {
+                    return Err("--model may be supplied only once".to_owned());
+                }
+                index += 2;
+                continue;
+            }
+            if argument == "--library" {
+                let path = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--library requires a path".to_owned())?;
+                libraries.push(PathBuf::from(path));
+                index += 2;
+                continue;
+            }
+            if argument == "--dependent-bytes" {
+                if dependent_bytes_supplied {
+                    return Err("--dependent-bytes may be supplied only once".to_owned());
+                }
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .ok_or_else(|| {
+                        "--dependent-bytes requires a non-negative byte count".to_owned()
+                    })?;
+                dependent_bytes = value;
+                dependent_bytes_supplied = true;
                 index += 2;
                 continue;
             }
@@ -545,10 +626,13 @@ impl CheckOptions {
             index += 1;
         }
         if positionals.len() != 1 {
-            return Err("usage: fsl check <source-path> [--format json|text]".to_owned());
+            return Err(Self::USAGE.to_owned());
         }
         Ok(Self {
             path: positionals.remove(0),
+            model,
+            libraries,
+            dependent_bytes,
         })
     }
 }
@@ -729,6 +813,10 @@ impl CommandResult {
         self
     }
 
+    #[allow(
+        dead_code,
+        reason = "provider execution awaits the provider-limit CLI ruling"
+    )]
     fn configured(run: Result<ConfiguredRun, Box<ConfiguredRunFailure>>) -> Self {
         let document = match &run {
             Ok(completed) => Some(call_outcome_document(&completed.call.outcome)),
@@ -749,6 +837,10 @@ impl CommandResult {
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 fn call_outcome_document(outcome: &CallOutcome) -> OutcomeDocument {
     OutcomeDocument::from_call(outcome)
 }
@@ -813,13 +905,37 @@ fn run(options: RunOptions) -> CommandResult {
         Some(path) => match crate::provider_config::load(path) {
             Ok(config) => config,
             Err(error) => {
-                return CommandResult::input_refusal(
-                    Operation::Execute,
-                    format!("invalid process-provider configuration: {error}"),
-                );
+                if matches!(
+                    error,
+                    crate::provider_config::ProviderConfigError::UnsupportedFormat { .. }
+                ) {
+                    let message = format!("unknown_wire/unsupported-wire: {error}");
+                    return CommandResult::document(
+                        OutcomeDocument::new(
+                            Operation::Execute,
+                            None,
+                            Code::UnknownWire.category(),
+                        )
+                        .with_diagnostics(vec![OutcomeDiagnostic::new(
+                            Some("unsupported-wire"),
+                            Code::UnknownWire.as_str(),
+                            None,
+                            message.clone(),
+                        )]),
+                    )
+                    .with_diagnostic(message);
+                } else {
+                    return CommandResult::input_refusal(
+                        Operation::Execute,
+                        format!("invalid provider configuration: {error}"),
+                    );
+                }
             }
         },
-        None => crate::provider_config::ProviderConfig::default(),
+        None => crate::provider_config::ProviderConfig {
+            format: crate::provider_config::FORMAT.to_owned(),
+            providers: Vec::new(),
+        },
     };
     if options.engine != ExecutionEngine::Interpreter {
         let failure = ExecutionFailure::UnsupportedEngine(options.engine);
@@ -871,10 +987,9 @@ fn run(options: RunOptions) -> CommandResult {
         PreparedRun::Function(prepared) => prepared.into_input(),
         PreparedRun::Clause(request) => {
             if !provider_config.providers.is_empty() {
-                return CommandResult::catalog_failure_for(
-                    Operation::Monitor,
-                    Code::UnimplementedCapability,
-                    "process-provider composition for clause requests is unavailable",
+                return CommandResult::input_refusal(
+                    Operation::Execute,
+                    "valid FR-561 providers are loaded, but the driver has no process-provider engine adapter yet",
                 );
             }
             return run_clause_request(*request, &options.limits);
@@ -893,27 +1008,10 @@ fn run(options: RunOptions) -> CommandResult {
     }
     let identity = source.identity().clone();
     if !provider_config.providers.is_empty() {
-        let configured = crate::signals::run(move |signals| {
-            run_configured_providers(ConfiguredRunRequest {
-                path: source.path(),
-                package_name: &package_name,
-                bytes: source.text().as_bytes(),
-                source: identity,
-                limits,
-                call,
-                packages,
-                dependencies,
-                config: provider_config,
-                signals,
-            })
-        });
-        return match configured {
-            Ok(configured) => CommandResult::configured(configured),
-            Err(error) => CommandResult::failure(
-                Category::InternalFailure,
-                format!("could not initialize process signal handling: {error}"),
-            ),
-        };
+        return CommandResult::input_refusal(
+            Operation::Execute,
+            "valid FR-561 providers are loaded, but the driver has no process-provider engine adapter yet",
+        );
     }
     match execute(ExecutionRequest {
         source: identity,
@@ -988,6 +1086,10 @@ fn run_clause_request(
     CommandResult::document(document)
 }
 
+#[allow(
+    dead_code,
+    reason = "provider execution awaits the provider-limit CLI ruling"
+)]
 fn run_configured_providers(
     request: ConfiguredRunRequest<'_>,
 ) -> Result<ConfiguredRun, Box<ConfiguredRunFailure>> {
@@ -1052,8 +1154,8 @@ fn run_configured_providers(
     };
 
     // Start and admit every configured process before the driver's negotiation.
-    let mut active = Vec::with_capacity(config.providers.len());
-    for configured in config.providers {
+    let mut active = Vec::with_capacity(config.len());
+    for configured in config {
         let provider_name = configured.executable.display().to_string();
         let max_frame_bytes = configured.limits.max_frame_bytes;
         let provider = crate::process_provider::HostProcessProvider::new(
@@ -1274,6 +1376,19 @@ fn compile(options: CompileOptions) -> CommandResult {
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
         Ok(outcome) => CommandResult::document(outcome.document().clone()),
+        Err(error) if matches!(error.cause, command::RunCause::EmptyCompileProgram) => {
+            let code = Code::InvalidPackage;
+            CommandResult::document(
+                OutcomeDocument::new(Operation::Package, None, code.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        Some("invalid-value"),
+                        code.as_str(),
+                        None,
+                        error.to_string(),
+                    )],
+                ),
+            )
+        }
         Err(error) => CommandResult::document(error.outcome_document(Operation::Package)),
     }
 }
@@ -1289,11 +1404,10 @@ fn check_source(options: CheckOptions) -> CommandResult {
         }
     };
     let source = SourceIdentity::new("filament", &options.path);
-    let packages = BTreeMap::new();
     let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
     tc018_record_check_request(&options, &source, &bytes, limits);
-    let result = parse(
+    let parsed = match parse(
         &ParseRequest {
             source: &source,
             path: &options.path,
@@ -1301,24 +1415,64 @@ fn check_source(options: CheckOptions) -> CommandResult {
         },
         limits.source,
         &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &packages, limits.model, &cancel).and_then(|models| {
-            check(
-                parsed.value(),
-                options.path.clone(),
-                models.value(),
-                &DependencyInput::default(),
+    ) {
+        Ok(parsed) => parsed,
+        Err(_failure) => {
+            let inputs = command::CheckInputs {
                 limits,
-                &cancel,
-            )
+                dependent_bytes: options.dependent_bytes,
+                ..command::CheckInputs::default()
+            };
+            return match command::check_outcome(Path::new(&options.path), &inputs) {
+                Ok(document) => CommandResult::document(document),
+                Err(error) => CommandResult::document(error.outcome_document(Operation::Check)),
+            };
+        }
+    };
+
+    // The CLI accepts files while the typed check API also requires each
+    // selected identity. Read those identities from the source first so
+    // unused model and library paths are refused before their files open.
+    let selected_models = &parsed.value().unit().selections().models;
+    let selected_libraries = &parsed.value().unit().selections().imports;
+    let models = options
+        .model
+        .map(|path| {
+            let identity = selected_models
+                .first()
+                .map(|selection| selection.identity.clone())
+                .unwrap_or_else(|| "unused-model".to_owned());
+            (identity, path)
         })
-    });
-    CommandResult::document(OutcomeDocument::from_check(&result))
+        .into_iter()
+        .collect();
+    let libraries = options
+        .libraries
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let identity = selected_libraries
+                .get(index)
+                .map(|selection| selection.identity.clone())
+                .unwrap_or_else(|| format!("unused-library-{index}"));
+            (identity, path)
+        })
+        .collect();
+    let inputs = command::CheckInputs {
+        models,
+        libraries,
+        limits,
+        dependent_bytes: options.dependent_bytes,
+        ..command::CheckInputs::default()
+    };
+    match command::check_outcome(Path::new(&options.path), &inputs) {
+        Ok(document) => CommandResult::document(document),
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Check)),
+    }
 }
 
 /// Observe the TC-018 refused-range selection at the typed check boundary.
-/// The normal FSL parse/select/check below supplies the result; argv parsing,
+/// The normal FSL parse/check outcome supplies the result; argv parsing,
 /// source reading, serialization and exit mapping remain the production paths.
 #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
 fn tc018_record_check_request(
@@ -2066,9 +2220,11 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        parse_invocation, read_source, ExecutionEngine, Invocation, OutputFormat, RunOptions, Verb,
+        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OutputFormat,
+        RunOptions, Verb,
     };
     use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
 
     /// Trace: FR-002-AC-1, root command surface.
     #[test]
@@ -2139,6 +2295,56 @@ mod tests {
             parse_invocation(&args),
             Ok(Invocation::Operation { raw_arguments, .. }) if raw_arguments == args[1..]
         ));
+    }
+
+    /// Trace: QSL-1972 / FR-866-AC-5; check parses its named model and library inputs.
+    #[test]
+    fn check_options_accept_model_libraries_and_dependent_byte_limit() {
+        let args = vec![
+            OsString::from("unit.fsl"),
+            OsString::from("--model"),
+            OsString::from("model.json"),
+            OsString::from("--library"),
+            OsString::from("geometry.native"),
+            OsString::from("--library"),
+            OsString::from("units.native"),
+            OsString::from("--dependent-bytes"),
+            OsString::from("1234"),
+        ];
+        let options = CheckOptions::parse(&args).expect("valid check inputs");
+        assert_eq!(options.path, "unit.fsl");
+        assert_eq!(options.model.as_deref(), Some(Path::new("model.json")));
+        assert_eq!(
+            options.libraries,
+            [
+                PathBuf::from("geometry.native"),
+                PathBuf::from("units.native")
+            ]
+        );
+        assert_eq!(options.dependent_bytes, 1234);
+    }
+
+    /// Trace: QSL-1972 / FR-866-AC-5; malformed named check inputs refuse during argv parsing.
+    #[test]
+    fn check_options_reject_missing_or_duplicate_model_and_invalid_byte_limit() {
+        for args in [
+            vec![OsString::from("unit.fsl"), OsString::from("--model")],
+            vec![OsString::from("unit.fsl"), OsString::from("--library")],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--dependent-bytes"),
+                OsString::from("many"),
+            ],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--model"),
+                OsString::from("one.json"),
+                OsString::from("--model"),
+                OsString::from("two.json"),
+            ],
+        ] {
+            assert!(CheckOptions::parse(&args).is_err(), "accepted {args:?}");
+        }
     }
 
     /// Trace: FR-003-AC-1 / FR-004-AC-1, parse both options into the run call.
@@ -2313,7 +2519,6 @@ mod configured_run_tests {
                     value: Value::Integer(Integer::from(3_i64)),
                 },
             ],
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: Default::default(),
             backend: Default::default(),
@@ -2337,7 +2542,7 @@ mod configured_run_tests {
             .zip(&markers)
             .zip(capabilities)
             .map(
-                |((identity, marker), capability)| crate::provider_config::ProcessProviderConfig {
+                |((identity, marker), capability)| crate::provider_config::RuntimeProviderConfig {
                     executable: executable.clone(),
                     argv: vec![
                         fixture.display().to_string(),
@@ -2346,7 +2551,7 @@ mod configured_run_tests {
                         capability.to_owned(),
                     ],
                     deadline_ms: 4096,
-                    limits: crate::provider_config::ProcessProviderLimitsConfig {
+                    limits: crate::provider_config::RuntimeProviderLimitsConfig {
                         max_frame_bytes: 262_144,
                         max_total_bytes: 1_048_576,
                         max_stderr_bytes: 4096,
@@ -2365,7 +2570,7 @@ mod configured_run_tests {
             call,
             packages,
             dependencies,
-            config: crate::provider_config::ProviderConfig { providers },
+            config: providers,
             signals: crate::signals::SignalContext::default(),
         }) {
             Ok(configured) => configured,
@@ -2484,7 +2689,6 @@ mod configured_run_tests {
                     value: Value::Integer(Integer::from(3_i64)),
                 },
             ],
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: Default::default(),
             backend: Default::default(),
@@ -2506,7 +2710,7 @@ mod configured_run_tests {
             .iter()
             .zip(shutdown_markers.iter())
             .map(
-                |(marker, shutdown)| crate::provider_config::ProcessProviderConfig {
+                |(marker, shutdown)| crate::provider_config::RuntimeProviderConfig {
                     executable: executable.clone(),
                     argv: vec![
                         fixture.display().to_string(),
@@ -2517,7 +2721,7 @@ mod configured_run_tests {
                         shutdown.display().to_string(),
                     ],
                     deadline_ms: 4096,
-                    limits: crate::provider_config::ProcessProviderLimitsConfig {
+                    limits: crate::provider_config::RuntimeProviderLimitsConfig {
                         max_frame_bytes: 262_144,
                         max_total_bytes: 1_048_576,
                         max_stderr_bytes: 4096,
@@ -2536,7 +2740,7 @@ mod configured_run_tests {
             call,
             packages: std::collections::BTreeMap::new(),
             dependencies: fsl_replay::spine::DependencyInput::default(),
-            config: crate::provider_config::ProviderConfig { providers },
+            config: providers,
             signals: crate::signals::SignalContext::default(),
         }) {
             Err(failure) => failure,

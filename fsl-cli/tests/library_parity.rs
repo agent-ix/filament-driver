@@ -144,7 +144,6 @@ fn library_execute(
         call: Call {
             function: function.to_owned(),
             arguments,
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: SuppliedLimits::default(),
             backend: Default::default(),
