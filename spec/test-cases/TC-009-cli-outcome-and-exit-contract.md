@@ -61,7 +61,7 @@ FR-002-AC-17, plus FR-014-AC-4.
     arguments and separately with each of `--help`, `-h` and `help` as its
     sole argument. Capture stdout, stderr and process status. Verify the help
     content specified by FR-002-AC-17, including the distinction between
-    executable verbs and recognized verbs that return unsupported-capability
+    executable verbs and recognized verbs this build does not route and that return `unsupported_operation`
     results. Compare the advertised commands and format restrictions with the
     parser and dispatch surface; verify that these invocations do not read
     source input or dispatch a lifecycle operation.

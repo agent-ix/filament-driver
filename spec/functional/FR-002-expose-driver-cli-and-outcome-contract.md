@@ -124,7 +124,7 @@ the fallback when that function returns reserved value `5`.
   lifecycle verb names, the `--format text|json|dot` option with the `inspect`
   restriction on `dot`, and the `--version`/`-V` version options.
 - The root help SHALL distinguish lifecycle verbs that execute operations
-  from verbs that currently return an unsupported-capability result, and
+  from verbs the build accepts but does not route, which return an `unsupported_operation` result, and
   identify any default text-output restriction for executable verbs.
 - When root help is written successfully, the CLI SHALL return FSL's success
   exit result and write no stderr output.
@@ -158,7 +158,7 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-14 | For a `BrokenPipe` while writing or flushing primary stdout, the process status equals the completed operation's FSL category exit result and stderr is empty, including for a refused operation with nonempty diagnostics when stdout is writable. No output-failure category is selected and no `OutputFailure` diagnostic is emitted. | Test |
 | FR-002-AC-15 | If writing or flushing primary stdout returns an I/O error other than `BrokenPipe`, the process exits with FSL's `Category::InternalFailure` exit result. The criterion makes no assertion that stdout is empty or complete. | Test (TC-018) |
 | FR-002-AC-16 | If a non-`BrokenPipe` primary stdout write or flush fails and stderr is writable, stderr contains an `OutputFailure` diagnostic that identifies the failed output. | Test (TC-018) |
-| FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs that currently return unsupported-capability results and identifies executable verbs whose default text output is unavailable. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
+| FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results and identifies executable verbs whose default text output is unavailable. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
 
 ## Dependencies
 

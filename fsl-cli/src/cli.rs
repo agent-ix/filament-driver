@@ -218,7 +218,7 @@ impl Verb {
                 "Executes a native-monitor/1 request over a record stream; --format json or text."
             }
             Self::Prove | Self::Replay | Self::Generate | Self::Inspect | Self::Render => {
-                "Recognized; currently returns an unsupported-capability result."
+                "Recognized; this build does not route it and returns an unsupported_operation result."
             }
         }
     }
@@ -1885,15 +1885,66 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             format!("option `{option}` is only accepted by `run`"),
         );
     }
-    CommandResult {
-        category: Category::Unsupported,
-        document: None,
-        diagnostic: None,
-        text_output: None,
-        configured_run: None,
-        analyze_document: None,
-        stderr_line: None,
+    unrouted_verb(verb, format)
+}
+
+/// The library operation an accepted but unrouted verb names, `None` for a
+/// routed verb.
+fn unrouted_operation(verb: Verb) -> Option<Operation> {
+    match verb {
+        Verb::Prove => Some(Operation::Prove),
+        Verb::Replay => Some(Operation::Replay),
+        Verb::Generate => Some(Operation::Generate),
+        Verb::Inspect => Some(Operation::Inspect),
+        Verb::Render => Some(Operation::Render),
+        Verb::Parse
+        | Verb::Format
+        | Verb::Check
+        | Verb::Compile
+        | Verb::Run
+        | Verb::Analyze
+        | Verb::Monitor => None,
     }
+}
+
+/// Refuse a verb this build accepts but does not route (FSpec FR-522): an
+/// `unsupported_operation` document with cause `operation-not-routed` whose
+/// detail names the verb under machine output, or the named stderr line
+/// otherwise. Neither stream stays empty.
+fn unrouted_verb(verb: Verb, format: OutputFormat) -> CommandResult {
+    const CODE: &str = "unsupported_operation";
+    const CAUSE: &str = "operation-not-routed";
+    let Some(operation) = unrouted_operation(verb) else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!("verb `{}` reached the unrouted-verb refusal", verb.name()),
+        );
+    };
+    let name = verb.name();
+    let line = format!("fsl {name}: this build does not route the {name} operation ({CODE})");
+    let document =
+        OutcomeDocument::new(operation, None, Category::Unsupported).with_diagnostics(vec![
+            OutcomeDiagnostic::new(Some(CAUSE), CODE, None, line.clone()),
+        ]);
+    let mut result = CommandResult::document(document.clone());
+    if format != OutputFormat::Json {
+        result.stderr_line = Some(line);
+        return result;
+    }
+    match unrouted_wire(&document, name) {
+        Some(wire) => result.analyze_document = Some(wire),
+        None => result.stderr_line = Some(line),
+    }
+    result
+}
+
+/// The wire form of `document` with the verb as the first diagnostic's
+/// `detail` payload.
+fn unrouted_wire(document: &OutcomeDocument, verb: &str) -> Option<serde_json::Value> {
+    let mut wire = serde_json::to_value(document).ok()?;
+    let diagnostic = wire.get_mut("diagnostics")?.get_mut(0)?.as_object_mut()?;
+    diagnostic.insert("detail".to_owned(), serde_json::json!({ "verb": verb }));
+    Some(wire)
 }
 
 /// Refuse a text selection whose FSL outcome renderer is not available.
