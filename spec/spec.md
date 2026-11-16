@@ -47,9 +47,13 @@ relationships:
     type: contains
   - target: ix://agent-ix/filament-driver/FR-020
     type: contains
+  - target: ix://agent-ix/filament-driver/FR-021
+    type: contains
   - target: ix://agent-ix/filament-driver/TC-033
     type: contains
   - target: ix://agent-ix/filament-driver/TC-034
+    type: contains
+  - target: ix://agent-ix/filament-driver/TC-035
     type: contains
   - target: ix://agent-ix/filament-driver/TC-001
     type: contains
@@ -221,8 +225,10 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 | [FR-015](functional/FR-015-prepare-an-admitted-monitor-program.md) | Prepare one admitted monitor program for the runtime (planned until IR-721 lands) |
 | [FR-019](functional/FR-019-prepare-the-complete-monitor-program-under-one-budget.md) | Prepare the complete monitor program from one plan root under one preparation budget |
 | [FR-020](functional/FR-020-project-requirement-records-into-codegen-input.md) | Project each FSL requirement record into CG's typed routed-generation input |
+| [FR-021](functional/FR-021-gate-the-driver-on-the-examples-suite.md) | Gate the driver on the examples suite |
 | [TC-033](test-cases/TC-033-prepare-monitor-under-one-budget.md) | Prepare a monitor program from a plan root under one budget |
 | [TC-034](test-cases/TC-034-project-requirement-records-into-codegen.md) | Project FSL requirement records into CG's typed input |
+| [TC-035](test-cases/TC-035-examples-suite-gate.md) | Run the examples suite against the workspace-built fsl |
 | [TC-001](test-cases/TC-001-steps-run-in-order.md) | The steps run in ADR-011 T-13 order |
 | [TC-002](test-cases/TC-002-unknown-backend-refusal.md) | An unknown `BackendId` refuses the run before negotiation |
 | [TC-003](test-cases/TC-003-route-after-negotiation.md) | `route` runs after negotiation, for `supported` items only |
@@ -255,8 +261,8 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 
 ## 5. Verification and Delivery Boundary
 
-[TM-001](tests.md) integrates FR-001 through FR-020, and TC-001 through
-TC-034.
+[TM-001](tests.md) integrates FR-001 through FR-021, and TC-001 through
+TC-035.
 It distinguishes existing orchestration tests from planned driver tests and
 records their verification owners. Cross-backend and CLI/library conformance
 formerly described by CG FR-005 and IR-337 feed IR-528's G5b gate exclusively

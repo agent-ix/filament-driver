@@ -11,7 +11,7 @@ This authored verification inventory integrates FR-001 and SP-D1 through
 SP-D9 (FR-002 through FR-010) from IR-527, FR-011 from IR-616, FR-012 for
 the downstream cache component, FR-013 for the process plugin host, and FR-014
 for the CLI package boundary, and planned FR-015 for admitted monitor program
-preparation. It covers FR-001 through FR-020 and TC-001 through TC-034.
+preparation. It covers FR-001 through FR-021 and TC-001 through TC-035.
 Discrete FR and TC artifacts remain authoritative;
 this matrix is their index, not a computed implementation-coverage report.
 
@@ -127,6 +127,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-018 | FR-018-AC-1..FR-018-AC-5 | TC-032 | 🚧 Evidence as recorded in TC-032. |
 | FR-019 | FR-019-AC-1..FR-019-AC-10 | TC-033 | 🚧 Planned: one-budget preparation from a genuine plan root; producer criteria run in `filament-integration`. |
 | FR-020 | FR-020-AC-1..FR-020-AC-15 | TC-034 | ✅ AC-1 to AC-9 and AC-11 to AC-15 run, tagged, in `tests/drive.rs` and `src/refusal.rs` against CG main; AC-14's guard-node case uses FSL's `test-support` constructors. AC-10 is retired by CG IR-304 slice (b). Driver ticket IR-1494. |
+| FR-021 | FR-021-AC-1..FR-021-AC-6 | TC-035 | ✅ `tests/examples_gate.rs`, run by `make examples-gate` from `make ci` against a fetched filament-examples checkout. |
 
 ## Test Case Summary
 
@@ -161,6 +162,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | TC-027 | Run plugin-host tests and dependency checks from a clean cache | Integration | FR-013-AC-12, FR-013-AC-13 | 🚧 Python prerequisite message is tested; clean-cache fetch, offline metadata, and full gate evidence remain planned. |
 | TC-028 | Keep the CLI package separate from the driver and compose cache and process host | Integration | FR-002-AC-3, FR-002-AC-7, FR-006-AC-1, FR-006-AC-3..FR-006-AC-4, FR-006-AC-24..FR-006-AC-27, FR-013-AC-11, FR-013-AC-14..FR-013-AC-15, FR-014-AC-1, FR-014-AC-2, FR-014-AC-4..FR-014-AC-6 | 🚧 Partial: `fsl-cli` tests cover explicit-option parsing, the empty configuration, strict invalid-file/deadline outcomes, selected-provider composition with typed-result retention, production duplicate-identity refusal, and active-request SIGTERM cleanup. Later-start/hello failure cleanup remains untested. Package-boundary tests cover target ownership, layout and the direct CLI-to-host edge. Adapter lifecycle/signal tests are partial; AC-14 kill-on-close is deferred to IR-674 and has no implementation or test in this PR; it requires native Windows evidence when resumed. |
 | TC-034 | Project FSL requirement records into CG's typed input | Integration | FR-020-AC-1..FR-020-AC-15 | ✅ See the FR-020 row. |
+| TC-035 | Run the examples suite against the workspace-built fsl | Integration | FR-021-AC-1..FR-021-AC-6 | ✅ See the FR-021 row. |
 
 ## Integration Test Matrix
 
