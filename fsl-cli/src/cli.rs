@@ -1354,6 +1354,14 @@ impl AnalyzeOptions {
                 index += 2;
                 continue;
             }
+            if argument == "--provider-config" {
+                return Err(
+                    "`--provider-config` is not available for `analyze` yet: FSL's \
+                            analyze entry takes no caller registry, so configured providers \
+                            cannot be registered before negotiation"
+                        .to_owned(),
+                );
+            }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
                 return Err(format!("unknown analyze option `{option}`"));
             }
@@ -1447,12 +1455,16 @@ fn analyze_text(document: &serde_json::Value, category: Category) -> String {
             .filter(|name| !name.is_empty())
             .unwrap_or("-");
         let record = &item["record"];
-        // A disposition record carries no `result`; its label is the item's
-        // category, and its diagnostic stands for the cause.
-        let label = record["result"]
-            .as_str()
-            .or_else(|| item["category"].as_str())
-            .unwrap_or("-");
+        // An `invalid-request` disposition record is labelled `invalid-request`
+        // (FSL FR-621), whether it carries no `result` or the `declined`
+        // result whose cause is `invalid-request`.
+        let invalid_request =
+            record.get("result").is_none() || record["cause"]["code"] == "invalid-request";
+        let label = if invalid_request {
+            "invalid-request"
+        } else {
+            record["result"].as_str().unwrap_or("-")
+        };
         text.push_str(&format!("{index} {name} {label}"));
         if let Some(detail) = analyze_detail(record) {
             text.push(' ');

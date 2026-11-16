@@ -695,6 +695,21 @@ impl AnalyzeRequest {
         Self { directory }
     }
 
+    /// Write `bytes` as `name` in the request folder and point the request
+    /// member at JSON pointer `member` (a `file` member) at it.
+    fn with_file(self, member: &str, name: &str, bytes: &[u8]) -> Self {
+        let path = self.directory.0.join(name);
+        std::fs::write(&path, bytes).expect("the replacement file");
+        let mut document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(self.path()).expect("the request"))
+                .expect("the request is JSON");
+        *document
+            .pointer_mut(member)
+            .unwrap_or_else(|| panic!("the request has {member}")) = path.to_string_lossy().into();
+        std::fs::write(self.path(), document.to_string()).expect("rewrite the request");
+        self
+    }
+
     fn raw(name: &str, bytes: &[u8]) -> Self {
         let directory = TestDirectory(
             std::env::temp_dir().join(format!("fsl-analyze-{name}-{}", std::process::id())),
@@ -813,10 +828,87 @@ fn analyze_budget_exhausted_is_incomplete() {
     let (document, exit) = timed_out.json();
     assert_eq!(exit, Some(22), "{document}");
     assert_eq!(document["category"], "incomplete");
-    assert!(
-        document.to_string().contains("deadline"),
-        "the deadline is the named cause: {document}"
+    let record = &document["items"][0]["record"];
+    assert_eq!(record["result"], "incomplete", "{document}");
+    assert_eq!(
+        record["cause"],
+        serde_json::json!({"kind": "cancelled", "source": "deadline"}),
+        "{document}"
     );
+}
+
+/// FR-022-AC-5, FSL FR-624-AC-2: a program the checker refuses refuses the
+/// whole request at `check`, in both modes.
+#[trace("TC-036", "FR-022-AC-5")]
+#[trace("TC-1584", "FR-624-AC-2")]
+#[test]
+fn analyze_checker_refusal_refuses_at_check() {
+    let request = AnalyzeRequest::new(
+        "check-refusal",
+        serde_json::json!([]),
+        serde_json::json!({}),
+    )
+    .with_file(
+        "/request/program/source/file",
+        "program.fsl",
+        b"language \"ix:native\" edition \"1-draft\";\n\
+              profile v = \"filament.value.complete/v1\";\n\
+              model M = \"test/counter\";\n\
+              function Bad using v(): Boolean pure { 1 }\n",
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["operation"], "analyze");
+    assert_eq!(document["category"], "refusal");
+    // FSL names the checker stage `S3` in `last_stage`.
+    assert_eq!(document["last_stage"], "S3", "{document}");
+    assert_eq!(document["items"], serde_json::json!([]));
+    let code = document["diagnostics"][0]["code"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a coded diagnostic: {document}"))
+        .to_owned();
+    assert_ne!(code, "invalid-request", "the request itself is well formed");
+    let text = request.run("text");
+    assert_eq!(text.status.code(), Some(20));
+    assert!(text.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(
+        stderr.starts_with(&format!("fsl analyze: {code}: ")),
+        "{stderr}"
+    );
+}
+
+/// FR-022-AC-5, FSL FR-624-AC-3: a snapshot whose population the model
+/// does not declare refuses the whole request at the subject binding.
+#[trace("TC-036", "FR-022-AC-5")]
+#[trace("TC-1584", "FR-624-AC-3")]
+#[test]
+fn analyze_binding_refusal_refuses_the_request() {
+    let snapshot = serde_json::json!({
+        "format": "filament.state.snapshot/v1",
+        "identity": {"authority": "test", "identity": "start"},
+        "observation": "current", "model": {"identity": "test/counter"},
+        "anchor": {"kind": "initialization", "name": "start"},
+        "populations": [{"population": "ix://test/counter/nowhere", "complete": true,
+            "objects": []}],
+    });
+    let request = AnalyzeRequest::new(
+        "binding-refusal",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    )
+    .with_file(
+        "/request/documents/0/file",
+        "start.json",
+        snapshot.to_string().as_bytes(),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert_eq!(document["category"], "refusal");
+    assert_eq!(document["items"], serde_json::json!([]));
+    let code = &document["diagnostics"][0]["code"];
+    assert!(code.is_string(), "{document}");
+    assert_ne!(code, "invalid-request", "the request is well formed");
 }
 
 /// FR-022-AC-4: an unknown backend is an `invalid-request` item and a kind
@@ -937,6 +1029,16 @@ fn analyze_malformed_request_is_typed_refusal() {
             "{arguments:?}: {stderr}"
         );
     }
+    // The option FSL FR-287 gives `analyze` is refused, naming the missing
+    // caller registry, before any file is read.
+    let output = fsl(&["analyze", "missing.json", "--provider-config", "p.json"]);
+    assert_eq!(output.status.code(), Some(20));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`--provider-config` is not available for `analyze` yet"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("caller registry"), "{stderr}");
 }
 
 /// FR-022-AC-6, FSL FR-621-AC-5: the binary's machine-mode document is the
@@ -980,4 +1082,19 @@ fn analyze_text_mode_prints_item_lines() {
         "{stdout}"
     );
     assert_eq!(lines.last(), Some(&"violation"), "{stdout}");
+
+    // An `invalid-request` disposition record is labelled `invalid-request`.
+    let refused = AnalyzeRequest::new(
+        "text-invalid",
+        serde_json::json!([{"claim": "Bounded", "backend": "no-such-backend"}]),
+        serde_json::json!({}),
+    );
+    let output = refused.run("text");
+    assert_eq!(output.status.code(), Some(20));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.lines().next(),
+        Some("0 Bounded invalid-request invalid_capability/unknown-backend"),
+        "{stdout}"
+    );
 }

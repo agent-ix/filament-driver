@@ -128,7 +128,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-019 | FR-019-AC-1..FR-019-AC-10 | TC-033 | 🚧 Planned: one-budget preparation from a genuine plan root; producer criteria run in `filament-integration`. |
 | FR-020 | FR-020-AC-1..FR-020-AC-15 | TC-034 | ✅ AC-1 to AC-9 and AC-11 to AC-15 run, tagged, in `tests/drive.rs` and `src/refusal.rs` against CG main; AC-14's guard-node case uses FSL's `test-support` constructors. AC-10 is retired by CG IR-304 slice (b). Driver ticket IR-1494. |
 | FR-021 | FR-021-AC-1..FR-021-AC-7 | TC-035 | ✅ `tests/examples_gate.rs`, run by `make examples-check` from `make ci` against a fetched filament-examples checkout, and by the language repository's `make examples-check` with `FSL_LANGUAGE_DIR` set; `tests/make_targets.rs` checks the `ci` target. |
-| FR-022 | FR-022-AC-1..FR-022-AC-8 | TC-036 | ✅ `fsl-cli/tests/frontend_cli.rs` runs the `fsl` binary over the Counter analyze fixture; `src/analyze.rs` unit-tests the negotiation table. |
+| FR-022 | FR-022-AC-1..FR-022-AC-8 | TC-036 | 🚧 `fsl-cli/tests/frontend_cli.rs` runs the `fsl` binary over the Counter analyze fixture; `src/analyze.rs` unit-tests the negotiation table. Settlement through CG `negotiate_*` awaits a CG arm for linked FSL engines; `--provider-config` awaits QSL-2283; signal cancellation awaits QSL-2284. |
 
 ## Test Case Summary
 

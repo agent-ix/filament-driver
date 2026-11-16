@@ -34,13 +34,14 @@ Scope: FR-022-AC-1 through FR-022-AC-8.
 5. Run an item naming `no-such-backend`, and the request without `items`,
    whose derived deadlock-freedom item no engine serves; assert the per-item
    settlement and diagnostic, and the `registry` member (AC-4, AC-8).
-6. Run a malformed request in machine and text mode, and the verb with no
-   operand and with an unknown option (AC-5).
+6. Run a malformed request in machine and text mode, a program the checker
+   refuses, a snapshot the subject binding refuses, and the verb with no
+   operand, an unknown option and `--provider-config` (AC-5).
 7. Call `fsl_command::command::analyze` in process with
    `filament_driver::AnalyzeNegotiation` for the AC-2 request and compare
    its canonical encoding with the binary's stdout (AC-6).
-8. Run the AC-2 request in text mode and assert its first and last lines and
-   exit code (AC-7).
+8. Run the AC-2 request and an unknown-backend item in text mode and assert
+   their lines and exit codes (AC-7).
 9. Unit-test the negotiation over each candidate-outcome shape (AC-8).
 
 ## Expected Results
