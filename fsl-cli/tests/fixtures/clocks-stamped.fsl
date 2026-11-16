@@ -1,0 +1,6 @@
+language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+profile t = "filament.temporal.timestamped-event.finite-window/v1";
+record Reading { level: Int[0, 9]; }
+temporal Deadline using t over (r: Reading) clock "plant-ms" on origin { eventually[0,5] holds(r.level > 0) }
+function seven using v(): Int[0, 9] pure { 7 }
