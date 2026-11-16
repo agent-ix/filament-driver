@@ -218,6 +218,7 @@ mod tests {
             call: Call {
                 function: "yes".to_owned(),
                 arguments: Vec::new(),
+                wire_arguments: Vec::new(),
                 accounting: default_accounting(10),
                 supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
                 backend: Default::default(),
@@ -412,6 +413,7 @@ mod tests {
                         value: Value::Reference(reference),
                     },
                 ],
+                wire_arguments: Vec::new(),
                 accounting: default_accounting(10),
                 supplied: Default::default(),
                 backend: Default::default(),

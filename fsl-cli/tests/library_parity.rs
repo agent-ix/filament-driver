@@ -144,6 +144,7 @@ fn library_execute(
         call: Call {
             function: function.to_owned(),
             arguments,
+            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: SuppliedLimits::default(),
             backend: Default::default(),
@@ -225,7 +226,10 @@ fn binary_outcomes_equal_the_library_outcomes_for_one_value_source() {
     assert_parity(&output, &executed, "run p x=3");
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run prints one JSON document");
-    assert_eq!(document["result"]["value"]["value"], true);
+    assert_eq!(
+        document["result"]["value"],
+        serde_json::json!({"boolean": true})
+    );
     assert_eq!(output.stdout, fsl(&["run", p_request.as_str()]).stdout);
 
     // The second function of the source takes the same path.
