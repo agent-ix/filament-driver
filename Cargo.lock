@@ -559,7 +559,6 @@ dependencies = [
  "quire-canonical",
  "serde",
  "serde_json",
- "tempfile",
  "thiserror",
 ]
 

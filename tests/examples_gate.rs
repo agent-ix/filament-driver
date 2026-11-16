@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
+use ix_trace_rs::trace;
 use serde_json::Value;
 
 /// The variable naming the filament-examples checkout.
@@ -147,6 +148,7 @@ fn assert_all_passed(output: &Output, name: &str) -> usize {
 }
 
 /// One `[[case]]` table of a manifest, as line positions in its text.
+#[derive(Debug)]
 struct CaseLines {
     id: String,
     status: String,
@@ -156,13 +158,27 @@ struct CaseLines {
     ready_exit: Option<(usize, String)>,
 }
 
-/// Reads the `[[case]]` tables of an `example.toml`. Only the keys the
-/// negative tests edit are read.
-fn case_lines(manifest: &str) -> Vec<CaseLines> {
+/// The keys the negative tests select by or edit.
+const READ_KEYS: [&str; 4] = ["id", "status", "expect_exit", "ready_exit"];
+
+/// Reads the `[[case]]` tables of an `example.toml`. The structure is the one
+/// the suite uses: top-level `key = value` lines, then `[[case]]` tables of
+/// `key = value` lines, with whole-line comments only. Anything else is an
+/// error, so an edit never lands on a line the gate misread.
+fn case_lines(manifest: &str) -> Result<Vec<CaseLines>, String> {
     let mut cases: Vec<CaseLines> = Vec::new();
-    for (n, line) in manifest.lines().enumerate() {
-        let line = line.trim();
-        if line == "[[case]]" {
+    for (n, raw) in manifest.lines().enumerate() {
+        let line = raw.trim();
+        let at = n + 1;
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') {
+            if line != "[[case]]" {
+                return Err(format!(
+                    "line {at}: unexpected table `{line}`; only [[case]] tables are expected"
+                ));
+            }
             cases.push(CaseLines {
                 id: String::new(),
                 status: String::new(),
@@ -171,24 +187,58 @@ fn case_lines(manifest: &str) -> Vec<CaseLines> {
             });
             continue;
         }
-        let (Some(case), Some((key, value))) = (cases.last_mut(), line.split_once(" = ")) else {
+        let Some((key, value)) = line.split_once(" = ") else {
+            return Err(format!("line {at}: `{line}` is not a `key = value` line"));
+        };
+        let Some(case) = cases.last_mut() else {
             continue;
         };
+        if !READ_KEYS.contains(&key) {
+            continue;
+        }
+        if value.contains('#') {
+            return Err(format!("line {at}: inline comment on `{key}`"));
+        }
         let value = value.trim_matches('"').to_owned();
-        match key {
-            "id" => case.id = value,
-            "status" => case.status = value,
-            "expect_exit" => case.expect_exit = Some((n, value)),
-            "ready_exit" => case.ready_exit = Some((n, value)),
-            _ => {}
+        let duplicate = match key {
+            "id" => !std::mem::replace(&mut case.id, value).is_empty(),
+            "status" => !std::mem::replace(&mut case.status, value).is_empty(),
+            "expect_exit" => case.expect_exit.replace((n, value)).is_some(),
+            _ => case.ready_exit.replace((n, value)).is_some(),
+        };
+        if duplicate {
+            return Err(format!("line {at}: `{key}` is repeated in one case"));
         }
     }
-    cases
+    match cases
+        .iter()
+        .position(|c| c.id.is_empty() || c.status.is_empty())
+    {
+        Some(i) => Err(format!("case table {} has no id or no status", i + 1)),
+        None => Ok(cases),
+    }
+}
+
+/// The one case of `manifest` with the id `id`.
+fn case_by_id(manifest: &str, id: &str) -> Result<CaseLines, String> {
+    let mut hits = case_lines(manifest)?.into_iter().filter(|c| c.id == id);
+    match (hits.next(), hits.next()) {
+        (Some(case), None) => Ok(case),
+        (None, _) => Err(format!("no case {id}")),
+        (Some(_), Some(_)) => Err(format!("more than one case {id}")),
+    }
+}
+
+/// Reads the manifest at `path` and returns its case `id`.
+fn manifest_case(path: &Path, id: &str) -> (String, CaseLines) {
+    let manifest = fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let case = case_by_id(&manifest, id).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    (manifest, case)
 }
 
 /// The first system of the checkout, sorted by folder name, with a case of
-/// `status`, and that case.
-fn first_system_with(status: &str) -> (String, CaseLines) {
+/// `status`, and that case's id.
+fn first_system_with(status: &str) -> (String, String) {
     let mut systems: Vec<PathBuf> = fs::read_dir(checkout().join("examples"))
         .unwrap_or_else(|e| panic!("cannot list examples/: {e}"))
         .map(|entry| entry.map(|e| e.path()))
@@ -197,15 +247,16 @@ fn first_system_with(status: &str) -> (String, CaseLines) {
     systems.sort();
     systems
         .iter()
-        .filter_map(|dir| {
-            let manifest = fs::read_to_string(dir.join("example.toml")).ok()?;
-            let case = case_lines(&manifest)
-                .into_iter()
-                .find(|c| c.status == status)?;
+        .filter(|dir| dir.join("example.toml").is_file())
+        .find_map(|dir| {
+            let path = dir.join("example.toml");
+            let manifest =
+                fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            let cases = case_lines(&manifest).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            let id = cases.into_iter().find(|c| c.status == status)?.id;
             let name = dir.file_name()?.to_string_lossy().into_owned();
-            Some((name, case))
+            Some((name, id))
         })
-        .next()
         .unwrap_or_else(|| panic!("no example system has a {status} case"))
 }
 
@@ -224,31 +275,66 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-/// Copies the system `name` into a fresh suite and returns the suite and the
-/// copied system folder.
-fn copied_system(name: &str) -> (tempfile::TempDir, PathBuf) {
-    let suite = tempfile::tempdir().unwrap_or_else(|e| panic!("tempdir: {e}"));
+/// The folder of one test under `CARGO_TARGET_TMPDIR`, removed when dropped.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    /// A new empty folder for the test `test`.
+    fn new(test: &str) -> Self {
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join("examples_gate")
+            .join(test);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("remove {}: {e}", dir.display()));
+        }
+        fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("create {}: {e}", dir.display()));
+        Self(dir)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        // Best effort: a folder left behind is replaced by the next run of the test.
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Copies the system `name` into a fresh suite for the test `test` and
+/// returns the suite and the copied system folder.
+fn copied_system(test: &str, name: &str) -> (Scratch, PathBuf) {
+    let suite = Scratch::new(test);
     let dir = suite.path().join("examples").join(name);
     copy_tree(&checkout().join("examples").join(name), &dir);
     (suite, dir)
 }
 
+#[trace("FR-021-AC-1")]
 #[test]
 fn all_running_cases_pass_on_the_built_binary() {
     let output = run_runner(checkout(), &["check"]);
     assert_all_passed(&output, "check");
 }
 
+#[trace("FR-021-AC-2")]
 #[test]
 fn all_staged_cases_still_fail_as_recorded() {
     let output = run_runner(checkout(), &["staged"]);
     assert_all_passed(&output, "staged");
 }
 
+#[trace("FR-021-AC-3")]
 #[test]
 fn a_changed_verdict_in_a_running_case_fails_the_gate() {
-    let (system, case) = first_system_with("running");
-    let (suite, dir) = copied_system(&system);
+    let (system, id) = first_system_with("running");
+    let (suite, dir) = copied_system(
+        "a_changed_verdict_in_a_running_case_fails_the_gate",
+        &system,
+    );
+    let (_, case) = manifest_case(&dir.join("example.toml"), &id);
     let path = dir.join("expected").join(format!("{}.json", case.id));
     let recorded = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut structure: Value =
@@ -274,12 +360,13 @@ fn a_changed_verdict_in_a_running_case_fails_the_gate() {
     );
 }
 
+#[trace("FR-021-AC-4")]
 #[test]
 fn a_staged_case_that_starts_working_fails_the_gate() {
-    let (system, case) = first_system_with("staged");
-    let (suite, dir) = copied_system(&system);
+    let (system, id) = first_system_with("staged");
+    let (suite, dir) = copied_system("a_staged_case_that_starts_working_fails_the_gate", &system);
     let path = dir.join("example.toml");
-    let manifest = fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let (manifest, case) = manifest_case(&path, &id);
     let (Some((expect_line, exit)), Some((ready_line, ready))) =
         (&case.expect_exit, &case.ready_exit)
     else {
@@ -316,12 +403,13 @@ fn a_staged_case_that_starts_working_fails_the_gate() {
     );
 }
 
+#[trace("FR-021-AC-5")]
 #[test]
 fn missing_examples_checkout_is_an_error_not_a_skip() {
     let unset = examples_checkout(None).expect_err("an unset variable is an error");
     assert!(unset.contains(CHECKOUT_VAR), "{unset}");
 
-    let empty = tempfile::tempdir().unwrap_or_else(|e| panic!("tempdir: {e}"));
+    let empty = Scratch::new("missing_examples_checkout_is_an_error_not_a_skip");
     let absent = empty.path().join("filament-examples");
     let missing = examples_checkout(Some(absent.clone().into_os_string()))
         .expect_err("an absent checkout is an error");
@@ -343,6 +431,7 @@ fn missing_examples_checkout_is_an_error_not_a_skip() {
     );
 }
 
+#[trace("FR-021-AC-6")]
 #[test]
 fn the_gate_runs_the_fsl_of_this_workspace() {
     let output = Command::new(cargo())
@@ -376,4 +465,48 @@ fn the_gate_runs_the_fsl_of_this_workspace() {
         "{} is not a build of this workspace ({target_dir})",
         fsl().display()
     );
+}
+
+#[trace("FR-021-AC-3", "FR-021-AC-4")]
+#[test]
+fn the_manifest_reader_refuses_a_structure_it_does_not_expect() {
+    let case = "[[case]]\nid = \"a\"\nstatus = \"staged\"\nexpect_exit = 20\nready_exit = 0\n";
+    let read = case_by_id(&format!("name = \"s\"\n{case}"), "a").expect("the suite's own shape");
+    assert_eq!(read.status, "staged");
+    assert_eq!(read.expect_exit, Some((4, "20".to_owned())));
+    assert_eq!(read.ready_exit, Some((5, "0".to_owned())));
+
+    let refusals = [
+        (
+            format!("{case}[extra]\nkey = 1\n"),
+            "a",
+            "unexpected table `[extra]`",
+        ),
+        (
+            case.replace("= 20", "= 20 # was 21"),
+            "a",
+            "inline comment on `expect_exit`",
+        ),
+        (
+            format!("{case}id = \"b\"\n"),
+            "a",
+            "`id` is repeated in one case",
+        ),
+        (
+            format!("{case}\"\"\"\n"),
+            "a",
+            "is not a `key = value` line",
+        ),
+        (
+            "[[case]]\nid = \"a\"\n".to_owned(),
+            "a",
+            "has no id or no status",
+        ),
+        (case.to_owned(), "b", "no case b"),
+        (format!("{case}{case}"), "a", "more than one case a"),
+    ];
+    for (manifest, id, reason) in refusals {
+        let error = case_by_id(&manifest, id).expect_err(reason);
+        assert!(error.contains(reason), "`{error}` does not say `{reason}`");
+    }
 }

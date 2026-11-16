@@ -65,7 +65,6 @@ fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", br
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
 filament-checked = { git = "https://github.com/agent-ix/filament-eval", branch = "main" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
-tempfile = "3.27.0"
 
 # The filament-examples gate needs the fetched suite; `make examples-gate` runs it.
 [[test]]
