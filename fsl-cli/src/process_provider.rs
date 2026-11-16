@@ -523,6 +523,7 @@ mod tests {
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: Default::default(),
+            clocks: Default::default(),
         };
         let objects = fsl_semantics::model::object_environment::ObjectEnvironment::default();
         let call_run = fsl_replay::run_with_requirements(

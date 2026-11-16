@@ -123,6 +123,7 @@ mod tests {
             accounting: default_accounting(100),
             supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
             backend: Default::default(),
+            clocks: Default::default(),
         }
     }
 
@@ -149,6 +150,7 @@ mod tests {
             limits: SpineLimits::default(),
             observation_limits: fsl_replay::ObservationLimits::default(),
             accounting: default_accounting(17),
+            clocks: Default::default(),
         }
     }
 
