@@ -41,6 +41,24 @@ impl AnalyzeNegotiation {
         })
     }
 
+    /// The negotiation over the manifest of FSL's engines and the caller's
+    /// configured process providers, `descriptors` their admitted `Process`
+    /// descriptors (FSL FR-635): the same registry FSL builds when they are
+    /// handed to `analyze_with_providers`.
+    ///
+    /// # Errors
+    ///
+    /// The registry's refusal of an engine's own manifest.
+    pub fn with_providers<'a>(
+        descriptors: impl IntoIterator<Item = &'a fsl_route::BackendDescriptor>,
+    ) -> Result<Self, RegistrationRefusal> {
+        let mut negotiation = Self::fsl()?;
+        negotiation
+            .manifest
+            .extend(descriptors.into_iter().map(manifest_entry));
+        Ok(negotiation)
+    }
+
     /// The FR-331 manifest the negotiation settles over.
     pub fn manifest(&self) -> &[cg::BackendDescriptor] {
         &self.manifest

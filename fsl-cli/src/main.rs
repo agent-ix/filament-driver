@@ -5,6 +5,7 @@
     dead_code,
     reason = "FR-331 request members await the remaining FSL projection support"
 )]
+mod analyze_provider;
 mod backend_provider;
 mod cli;
 mod clocks;

@@ -1024,16 +1024,214 @@ fn analyze_malformed_request_is_typed_refusal() {
             "{arguments:?}: {stderr}"
         );
     }
-    // The option FSL FR-287 gives `analyze` is refused, naming the missing
-    // caller registry, before any file is read.
-    let output = fsl(&["analyze", "missing.json", "--provider-config", "p.json"]);
+    // `--provider-config` takes one path, once, before any file is read.
+    for arguments in [
+        &["analyze", "missing.json", "--provider-config"][..],
+        &[
+            "analyze",
+            "missing.json",
+            "--provider-config",
+            "a.json",
+            "--provider-config",
+            "b.json",
+        ][..],
+    ] {
+        let output = fsl(arguments);
+        assert_eq!(output.status.code(), Some(20), "{arguments:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("--provider-config"),
+            "{arguments:?}: {stderr}"
+        );
+    }
+}
+
+const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
+const PROVIDER_BACKEND: &str = "fsl.test-process-provider";
+
+/// The Counter program with the value-validity function `Even` added.
+fn even_program() -> Vec<u8> {
+    let fixtures = std::path::Path::new(ANALYZE_REQUEST)
+        .parent()
+        .expect("fixture directory");
+    let mut program =
+        std::fs::read_to_string(fixtures.join("analyze-counter.fsl")).expect("the Counter program");
+    program.push_str("\nfunction Even using v(n: Integer): Boolean pure { n * 2 - n = n }\n");
+    program.into_bytes()
+}
+
+/// A `--provider-config` file in `request`'s folder starting the test
+/// provider with `arguments`.
+fn provider_config(request: &AnalyzeRequest, arguments: &[&str]) -> std::path::PathBuf {
+    let path = request.directory.0.join("providers.json");
+    let config = serde_json::json!({"providers": [{"executable": TEST_PROVIDER,
+        "argv": arguments, "deadline_ms": 10_000,
+        "limits": {"max_frame_bytes": 16_777_216, "max_total_bytes": 67_108_864,
+            "max_stderr_bytes": 4096, "cancellation_grace_ms": 500}}]});
+    std::fs::write(&path, config.to_string()).expect("the provider configuration");
+    path
+}
+
+fn analyze_with_config(request: &AnalyzeRequest, config: &std::path::Path) -> Output {
+    Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(config)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl analyze --provider-config")
+}
+
+/// FSL FR-287, FR-635: a `--provider-config` provider registers beside FSL's
+/// engines before negotiation; an item naming it is sent to the started
+/// process as one FR-331 request and settles `proved` with certification
+/// `trusted`; the registry lists it; and an item that does not negotiate to
+/// it is byte-equal to the run without it. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_config_settles_an_item_on_the_process_provider() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND},
+        {"claim": "Bounded"}]);
+    let request = AnalyzeRequest::new("provider-proved", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let log = request.directory.0.join("request.json");
+    let log_text = log.to_string_lossy().into_owned();
+    let config = provider_config(
+        &request,
+        &[PROVIDER_BACKEND, "unbounded", "proved", &log_text],
+    );
+    let output = analyze_with_config(&request, &config);
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+        panic!(
+            "a document; stderr {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(item["record"]["certification"], "trusted", "{document}");
+    let registry: Vec<&str> = document["registry"]
+        .as_array()
+        .expect("registry")
+        .iter()
+        .filter_map(|entry| entry["backend"].as_str())
+        .collect();
+    assert!(registry.contains(&PROVIDER_BACKEND), "{registry:?}");
+    assert!(registry.contains(&"en-1"), "{registry:?}");
+    let sent: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&log).expect("the provider saw a request"))
+            .expect("the request body");
+    assert_eq!(sent["request"]["items"][0]["request_index"], 0, "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["backend"], PROVIDER_BACKEND,
+        "{sent}"
+    );
+    let (without, _) = request.json();
+    assert_eq!(document["items"][1], without["items"][1]);
+}
+
+/// FSL FR-281: a provider result that is not a verdict settles the item
+/// `inconclusive`, never `proved`. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_without_a_verdict_is_inconclusive() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-unknown", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "failed"]);
+    let output = analyze_with_config(&request, &config);
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("a document");
+    assert_eq!(
+        document["items"][0]["record"]["result"], "inconclusive",
+        "{document}"
+    );
+}
+
+/// FSL FR-624: SIGTERM or SIGINT during `fsl analyze` cancels the run with
+/// cause `requested`: the open item settles `incomplete` with
+/// `{"kind": "cancelled", "source": "requested"}`, the document is written,
+/// and the process exits 22 rather than by the signal. The test provider
+/// sends the signal while its request is open. QSL-2284.
+#[trace("TC-036", "FR-022-AC-10")]
+#[test]
+fn analyze_signal_cancels_with_cause_requested() {
+    for signal in ["term", "int"] {
+        let items = serde_json::json!([
+            {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND},
+            {"claim": "Bounded"}]);
+        let request =
+            AnalyzeRequest::new(&format!("signal-{signal}"), items, serde_json::json!({}))
+                .with_file("/request/program/source/file", "even.fsl", &even_program());
+        let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", signal]);
+        let output = analyze_with_config(&request, &config);
+        assert_eq!(output.status.code(), Some(22), "{signal}: {output:?}");
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("a document");
+        for index in [0, 1] {
+            let record = &document["items"][index]["record"];
+            assert_eq!(record["result"], "incomplete", "{signal}: {document}");
+            assert_eq!(
+                record["cause"],
+                serde_json::json!({"kind": "cancelled", "source": "requested"}),
+                "{signal}: {document}"
+            );
+        }
+    }
+}
+
+/// FSL FR-635-AC-4: a provider whose `hello` does not advertise
+/// (`value-validity`, `unbounded`) is refused at registration, exit 20,
+/// naming its backend, and no item runs. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_config_refuses_a_misadvertising_provider() {
+    let request = AnalyzeRequest::new(
+        "provider-bounded",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "bounded", "proved"]);
+    let output = analyze_with_config(&request, &config);
     assert_eq!(output.status.code(), Some(20));
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("`--provider-config` is not available for `analyze` yet"),
-        "{stderr}"
+        stdout.contains(PROVIDER_BACKEND) || stderr.contains(PROVIDER_BACKEND),
+        "{stdout} {stderr}"
     );
-    assert!(stderr.contains("caller registry"), "{stderr}");
+}
+
+/// FSL FR-287: an unreadable or malformed `--provider-config` refuses with
+/// exit 20 and starts no provider. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_config_refuses_an_invalid_file() {
+    let request = AnalyzeRequest::new(
+        "provider-invalid",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    );
+    let missing = request.directory.0.join("absent.json");
+    let malformed = request.directory.0.join("malformed.json");
+    std::fs::write(&malformed, b"{\"providers\": 3}").expect("malformed configuration");
+    for config in [missing, malformed] {
+        let output = analyze_with_config(&request, &config);
+        assert_eq!(output.status.code(), Some(20), "{}", config.display());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("process-provider configuration"),
+            "{stderr}"
+        );
+    }
 }
 
 /// FR-022-AC-6, FSL FR-621-AC-5: the binary's machine-mode document is the

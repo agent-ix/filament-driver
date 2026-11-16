@@ -395,3 +395,53 @@ fn text_mode_writes_event_lines_then_clause_lines_and_the_counts() {
         ]
     );
 }
+
+/// FR-025, FSL FR-624: SIGTERM or SIGINT while the record stream is still
+/// open ends the run at once, with no further record read, as FSL's
+/// cancelled monitor run: its outcome document is the last line and the
+/// process exits 22 rather than by the signal. QSL-2284.
+#[trace("TC-039", "FR-025-AC-9")]
+#[test]
+fn a_signal_ends_an_open_stream_as_a_cancelled_run() {
+    for signal in ["-TERM", "-INT"] {
+        let folder = Folder::new(&format!("signal{signal}"));
+        let request = folder.request("request.json", &["Never"]);
+        let mut child = Command::new(FSL)
+            .args(["monitor", request.to_str().unwrap(), "--format", "json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn fsl");
+        let mut stdin = child.stdin.take().expect("stdin");
+        let stdout = child.stdout.take().expect("stdout");
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let wait = Duration::from_secs(60);
+        for line in [level(0), level(2)] {
+            writeln!(stdin, "{line}").expect("send a record");
+        }
+        // The first event shows the run is live; stdin stays open.
+        receiver.recv_timeout(wait).expect("an event");
+        let killed = Command::new("kill")
+            .args([signal, &child.id().to_string()])
+            .status()
+            .expect("send the signal");
+        assert!(killed.success());
+        let status = child.wait().expect("exit");
+        drop(stdin);
+        assert_eq!(status.code(), Some(22), "{signal}");
+        let last = receiver
+            .iter()
+            .last()
+            .expect("an outcome document after the signal");
+        let document: Value = serde_json::from_str(&last).expect("json");
+        assert_eq!(document["category"], "incomplete", "{signal}: {document}");
+    }
+}

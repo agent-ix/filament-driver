@@ -37,34 +37,50 @@ The verb is the command-line encoding of FSL's in-process entry
 setting: the program, models, supplied documents, subject, items with their
 engines, fairness, reductions and limits, the shared limits and the deadline.
 The driver therefore reads no analysis setting from options; `--format`
-selects the output mode, and `--provider-config` is refused until the
-deviation below is closed.
+selects the output mode, and `--provider-config` names the process providers
+registered beside FSL's engines (FSL FR-287, FR-635).
 
 ### Decision: the driver negotiates, FSL computes the candidates
 
 FSL's `analyze` never negotiates (FSL FR-281 "Negotiated items"). FSL builds
-the engine registry from `Engines::fsl()`, computes each resolved item's
-candidate set from it, and asks the caller to settle the item. The driver
-settles it through CG's one item entry, `negotiate_item` (FSpec FR-711), over the
-FR-331 manifest of the engines FSL registers, and never chooses among several
-candidates.
+the engine registry from `Engines::fsl()` and the caller's process providers,
+computes each resolved item's candidate set from it, and asks the caller to
+settle the item. The driver settles it through CG's one item entry,
+`negotiate_item` (FSpec FR-711), over the FR-331 manifest of that same
+registry, and never chooses among several candidates.
 Because the registry is the one FSL builds from its own engine set, an engine
 FSL registers is reachable through `fsl analyze` with no driver change.
 
-### Deviation: no `--provider-config` for `analyze` (QSL-2283)
+### Decision: configured providers are started by the driver
 
-FSL FR-287 gives `analyze` the `--provider-config <file>` option, so that
-configured providers register before negotiation (FR-635).
-`fsl_command::command::analyze` builds its registry from `Engines::fsl()` and
-takes no caller registry, so the driver cannot register a configured
-provider. QSL-2283 adds a language analyze entry that takes the caller's
-registry; until then the driver refuses the option with exit 20 and a
-message naming the missing registry.
+FSL's analyze entry reads no provider configuration (FSL FR-635 "One rule for
+every provider-routing entry"). The driver reads `--provider-config`, starts
+each entry's executable as a `filament.plugin-wire/v1` process, admits its
+`hello` manifest with origin `Process`, and hands FSL one external engine per
+provider through `fsl_command::command::analyze_with_providers`. An item FSL
+settles on a provider is sent to that process as one FR-331 request: the
+package's v2 bytes, the registry's manifest snapshot and the item at FSL's
+request index, under the entry's `deadline_ms`. The provider's `proved`
+settles `proved` (certification `trusted`); its `refuted` carries its
+`counterexamples` assignment, which FSL replays before the item can settle
+`refuted`; any other result, or an exchange that fails, leaves the claim
+undecided and settles `inconclusive`, never `proved`.
+
+### Decision: a signal is reported, not re-raised
+
+`fsl analyze` runs as one signal-reporting session. SIGINT and SIGTERM cancel
+the run's handle with cause `requested`; FSL settles the open and later items
+`incomplete` with `{"kind": "cancelled", "source": "requested"}` (FSL FR-624),
+and the driver writes that document and exits 22. Unlike a configured `fsl
+run` (FR-006-AC-4), the signal is consumed once the run ends rather than
+re-raised, because FSL FR-624 gives the cancellation an outcome.
 
 ## Inputs
 
 - One request-file operand, resolved as `fsl run` resolves its operand; files
   the request names resolve against the request file's folder (FSL FR-026).
+- `--provider-config <path>`, at most once: FSpec FR-561's provider
+  configuration in the driver's FR-014 shape, read before the request.
 - `--format json` (machine mode) or `--format text` (the default).
 
 ## Outputs
@@ -78,12 +94,16 @@ message naming the missing registry.
 
 ## Behavior
 
-- The driver SHALL call `fsl_command::command::analyze` with the request
-  path, the driver's negotiation and a fresh cancellation handle.
-- Only the request's `deadline_ms` cancels that handle. SIGINT and SIGTERM are
-  not cancellation triggers for `fsl analyze` yet (QSL-2284), so FSL FR-624's
-  `cancelled` cause `requested` cannot be reached from the CLI; a signal ends
-  the process by its default disposition and writes no document.
+- The driver SHALL call `fsl_command::command::analyze_with_providers` with
+  the request path, the driver's negotiation, the started providers (none
+  without `--provider-config`) and the run's cancellation handle.
+- The request's `deadline_ms`, SIGINT and SIGTERM cancel that handle; a signal
+  cancels it with cause `requested` and the driver writes the document FSL
+  returns.
+- A `--provider-config` file that cannot be read or does not match its shape,
+  a provider that does not start, and a provider whose manifest does not
+  advertise (`value-validity`, `unbounded`) SHALL refuse with exit 20 before
+  any item runs; every started provider is shut down.
 - For an accepted request the driver SHALL write FSL's document unchanged in
   machine mode, and exit with FSL's exit code. When the document's `category`
   is not the category that exit code names, the driver SHALL exit with the
@@ -115,9 +135,10 @@ message naming the missing registry.
   | several candidates, a backend named | `invalid-request` | `invalid_capability`/`inconsistent-candidates`, payload the named backend |
   | a named backend the registry does not hold | `invalid-request` | `invalid_capability`/`unknown-backend`, payload the backend |
 
-- A missing or extra operand, or an option other than `--format`, SHALL
-  refuse with exit 20 before any file is read, naming the usage;
-  `--provider-config` is refused naming the missing caller registry.
+- When an operand is missing or extra, an option is neither `--format` nor
+  `--provider-config`, or `--provider-config` has no path or is given twice,
+  the driver SHALL refuse with exit 20 before any file is read, naming the
+  usage.
 - No `fsl analyze` invocation SHALL exit without writing a document to stdout
   in machine mode or a line to stdout or stderr in text mode.
 
@@ -134,10 +155,12 @@ with counter `a` at 0.
 | FR-022-AC-2 | The item `{"claim": "BelowThree"}` gives an item whose record is `refuted`, with a `counterexample` entry and `replay` `{"target": {"state_clause": Q}, "reproduced": true}`, `Q` ending in `BelowThree`, category `violation`, and exit 10. | Test (TC-036) |
 | FR-022-AC-3 | A request whose item sets `temporal.limits.max_states` to 1 gives an `incomplete` record whose cause names `max_states`, with no `counterexample`, and exit 22; a request with `deadline_ms` 0 gives an `incomplete` record whose cause is `{"kind": "cancelled", "source": "deadline"}`, and exit 22. | Test (TC-036) |
 | FR-022-AC-4 | An item naming a backend the registry does not hold settles with category `refusal` and the record diagnostic `invalid_capability`/`unknown-backend` naming the backend, exit 20; an item over the Counter fixture naming backend `en-6`, which lists no temporal-satisfaction form, settles `unsupported` with `unsupported_projection`/`unsupported-requested-capability`, exit 21 (the item kind is incidental: EN-1 serves derived deadlock-freedom since QSL-2122, and a state-graph claim over a timed subject stays unsupported until QSL-2305); neither writes empty output. | Test (TC-036) |
-| FR-022-AC-5 | A malformed `native-analyze/1` document gives, in machine mode, a document with `operation` `analyze`, category `refusal`, empty `items` and one `invalid-request` diagnostic, and in text mode one stderr line starting `fsl analyze: invalid-request:`; both exit 20. A program the checker refuses gives a document whose `last_stage` is the checker stage FSL names (`S3`), empty `items` and that refusal's code, and the text line `fsl analyze: <code>: `; a snapshot naming a population the model does not declare gives the binding refusal's code with empty `items`; each exits 20. A missing operand, an unknown option, or `--provider-config` refuses with exit 20 naming the usage or the missing caller registry, before any file is read. | Test (TC-036) |
+| FR-022-AC-5 | A malformed `native-analyze/1` document gives, in machine mode, a document with `operation` `analyze`, category `refusal`, empty `items` and one `invalid-request` diagnostic, and in text mode one stderr line starting `fsl analyze: invalid-request:`; both exit 20. A program the checker refuses gives a document whose `last_stage` is the checker stage FSL names (`S3`), empty `items` and that refusal's code, and the text line `fsl analyze: <code>: `; a snapshot naming a population the model does not declare gives the binding refusal's code with empty `items`; each exits 20. A missing operand, an unknown option, or a `--provider-config` with no path or given twice refuses with exit 20 naming the usage, before any file is read. | Test (TC-036) |
 | FR-022-AC-6 | The machine-mode stdout for the AC-2 request is byte-equal to the canonical encoding of the document `fsl_command::command::analyze` returns in process for the same request, followed by one newline. | Test (TC-036) |
 | FR-022-AC-7 | In text mode the AC-2 request prints `0 BelowThree refuted` at the start of its first line, `violation` as its last line, and exits 10; an item naming an unregistered backend prints `0 Bounded invalid-request invalid_capability/unknown-backend`. | Test (TC-036) |
 | FR-022-AC-8 | Each settlement row of the table holds for the driver's negotiation over a candidate outcome of that shape, except the several-candidates-with-a-named-backend row, which FSL's candidate computation does not produce; the `registry` member of an outcome lists the engines FSL registers (`en-1` among them), and the `Bounded` item's candidates are `["en-1"]`. | Test (TC-036) |
+| FR-022-AC-9 | With `--provider-config` starting a process provider whose `hello` advertises (`value-validity`, `unbounded`), an item naming its backend is sent to it as one FR-331 request at the item's request index and settles `proved` with certification `trusted` when the provider answers `proved`, and `inconclusive` when it answers anything else; the document's `registry` lists the provider and `en-1`; another item is unchanged by it. A provider advertising only `bounded`, an unreadable configuration and a malformed one each refuse with exit 20. | Test (TC-036) |
+| FR-022-AC-10 | SIGTERM or SIGINT while an item runs gives a document whose open and later items are `incomplete` with cause `{"kind": "cancelled", "source": "requested"}`, and exit 22. | Test (TC-036) |
 
 ## Dependencies
 
