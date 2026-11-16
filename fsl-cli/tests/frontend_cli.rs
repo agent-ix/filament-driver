@@ -1093,3 +1093,190 @@ fn analyze_text_mode_prints_item_lines() {
         "{stdout}"
     );
 }
+
+/// FSL FR-650's identity fixture, cut to the kinds the driver's `run` checks
+/// here: each function returns its argument, so one call checks the argument
+/// form and the result form of one kind.
+const RUN_VALUE_FIXTURE: &str = r#"language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+dimension Time;
+unit s: Time = rational(1, 1);
+type Big = Int[0, 1267650600228229401496703205376];
+type R = Rational[0, 9; 1, 9];
+type D = Decimal[0, 1000; 0, 2; exact];
+enum Color { Red, Green }
+record P { x: Int[0, 9]; y: Int[0, 9]; }
+function id_bool using v(a: Boolean): Boolean pure { a }
+function id_big using v(a: Big): Big pure { a }
+function id_rat using v(a: R): R pure { a }
+function id_dec using v(a: D): D pure { a }
+function id_str using v(a: String): String pure { a }
+function id_enum using v(a: Color): Color pure { a }
+function id_rec using v(a: P): P pure { a }
+function id_seq using v(a: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { a }
+function id_opt using v(a: Option<Int[0, 9]>): Option<Int[0, 9]> pure { a }
+function give using v(): Quantity<s> pure { 2 s }
+"#;
+
+/// Run `function` of [`RUN_VALUE_FIXTURE`] through `fsl run --format json`
+/// with `arguments`, from a request written in its own folder.
+fn run_value_fixture(label: &str, function: &str, arguments: serde_json::Value) -> Output {
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-run-value-{label}-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&directory.0);
+    std::fs::create_dir_all(&directory.0).expect("a request folder");
+    std::fs::write(directory.0.join("run-values.fsl"), RUN_VALUE_FIXTURE).expect("the source");
+    let request = serde_json::json!({"format": "native-run/1", "request": {
+        "models": [],
+        "program": {"source": {"file": "run-values.fsl", "authority": "issuer",
+            "identity": "document", "document": "RunValues", "formal_revision": 1}},
+        "call": {"function": function, "arguments": arguments},
+    }});
+    let path = directory.0.join("run.json");
+    std::fs::write(&path, request.to_string()).expect("the request file");
+    Command::new(FSL)
+        .arg("run")
+        .arg(&path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl run")
+}
+
+/// Assert `function(a = argument)` completes with `expected`, exit 0.
+fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde_json::Value) {
+    let output = run_value_fixture(
+        function,
+        function,
+        serde_json::json!([{"parameter": "a", "value": argument}]),
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{function}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(document["category"], "success", "{document}");
+    assert_eq!(
+        document["result"],
+        serde_json::json!({"kind": "completed", "value": expected}),
+        "{function}: {document}"
+    );
+}
+
+/// FSL FR-650-AC-1: a Boolean result is `{"boolean": b}`, from the Boolean
+/// form and from the bare integer `1`.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_boolean_result() {
+    let expected = serde_json::json!({"boolean": true});
+    assert_run_value(
+        "id_bool",
+        serde_json::json!({"boolean": true}),
+        expected.clone(),
+    );
+    assert_run_value("id_bool", serde_json::json!(1), expected);
+}
+
+/// FSL FR-650-AC-1, FR-650-AC-2: an integer result is `{"integer": "<decimal>"}`
+/// at any magnitude, from a bare JSON integer too.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[trace("TC-1701", "FR-650-AC-2")]
+#[test]
+fn run_returns_integer_result() {
+    assert_run_value(
+        "id_big",
+        serde_json::json!(7),
+        serde_json::json!({"integer": "7"}),
+    );
+    let big = serde_json::json!({"integer": "1267650600228229401496703205376"});
+    assert_run_value("id_big", big.clone(), big);
+}
+
+/// FSL FR-650-AC-1: a Rational result is normalized.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_rational_result() {
+    assert_run_value(
+        "id_rat",
+        serde_json::json!({"kind": "rational", "numerator": "4", "denominator": "6"}),
+        serde_json::json!({"kind": "rational", "numerator": "2", "denominator": "3"}),
+    );
+}
+
+/// FSL FR-650-AC-1: a Decimal result keeps its coefficient and scale.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_decimal_result() {
+    let value = serde_json::json!({"kind": "decimal", "coefficient": "150", "scale": "2"});
+    assert_run_value("id_dec", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: a String result keeps its text.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_string_result() {
+    let value = serde_json::json!({"kind": "string", "text": "abc"});
+    assert_run_value("id_str", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: an enumeration result is the variant form.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_enum_result() {
+    let value = serde_json::json!({"variant": {"type": "Color", "case": "Green"}});
+    assert_run_value("id_enum", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: a record result carries every field.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_record_result() {
+    let value = serde_json::json!({"record": {"type": "P", "fields": {
+        "x": {"integer": "1"}, "y": {"integer": "2"}}}});
+    assert_run_value("id_rec", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: a Sequence result keeps its order and repeats.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_sequence_result() {
+    let value =
+        serde_json::json!({"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]});
+    assert_run_value("id_seq", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: an Option result is `present` or `absent`.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_option_result() {
+    let present = serde_json::json!({"present": {"integer": "3"}});
+    assert_run_value("id_opt", present.clone(), present);
+    let absent = serde_json::json!({"absent": {}});
+    assert_run_value("id_opt", absent.clone(), absent);
+}
+
+/// FSL FR-650-AC-6: a Quantity result has no run value form, so the run
+/// refuses `unknown_required_feature`/`unsupported-feature` with exit 21 and
+/// no result. FSL FR-286's `filament-outcome/1` diagnostic has no `details`
+/// member, so the driver document names the function in its message.
+#[trace("TC-1705", "FR-650-AC-6")]
+#[test]
+fn unsupported_result_names_function_and_cause() {
+    let output = run_value_fixture("give", "give", serde_json::json!([]));
+    assert_eq!(output.status.code(), Some(21), "{output:?}");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(document["category"], "unsupported", "{document}");
+    assert_eq!(document["operation"], "execute", "{document}");
+    assert!(document["result"].is_null(), "{document}");
+    let diagnostics = document["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(diagnostics.len(), 1, "{document}");
+    let diagnostic = &diagnostics[0];
+    assert_eq!(diagnostic["code"], "unknown_required_feature", "{document}");
+    assert_eq!(diagnostic["cause"], "unsupported-feature", "{document}");
+    let message = diagnostic["message"].as_str().expect("a message");
+    assert!(message.contains("function give"), "{message}");
+}

@@ -520,6 +520,7 @@ mod tests {
                     value: Value::Integer(Integer::from(3_i64)),
                 },
             ],
+            wire_arguments: Vec::new(),
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: Default::default(),

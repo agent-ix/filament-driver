@@ -2187,6 +2187,7 @@ fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
             parameter: "x".to_owned(),
             value: Value::Integer(Integer::from(3_i64)),
         }],
+        wire_arguments: Vec::new(),
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: Default::default(),
@@ -2310,6 +2311,7 @@ fn tc_006_no_selected_scalar_item_skips_binding_and_native_execution() {
     let call = FslCall {
         function: "f".to_owned(),
         arguments: Vec::new(),
+        wire_arguments: Vec::new(),
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: Default::default(),
