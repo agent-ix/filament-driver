@@ -341,6 +341,7 @@ fn machine_run_writes_the_canonical_fsl_outcome() {
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: SuppliedLimits::default(),
             backend: Default::default(),
+            clocks: Default::default(),
         },
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),

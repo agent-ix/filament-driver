@@ -36,7 +36,7 @@ filament-exact = { git = "https://github.com/agent-ix/filament-exact", branch = 
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
 filament-plugin-host = { path = "../filament-plugin-host" }
 serde = { version = "=1.0.228", features = ["derive", "rc"] }
-serde_json = "=1.0.151"
+serde_json = { version = "=1.0.151", features = ["raw_value"] }
 thiserror = "=2.0.20"
 serde_path_to_error = "=0.1.20"
 

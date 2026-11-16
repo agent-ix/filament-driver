@@ -2190,6 +2190,7 @@ fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: Default::default(),
+        clocks: Default::default(),
     };
     let environment = ObjectEnvironment::default()
         .with_population_sizes(BTreeMap::from([("rr16-marker".to_owned(), 2)]));
@@ -2312,6 +2313,7 @@ fn tc_006_no_selected_scalar_item_skips_binding_and_native_execution() {
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: Default::default(),
+        clocks: Default::default(),
     };
     let environment = ObjectEnvironment::default();
     let mut generation = kani_input();

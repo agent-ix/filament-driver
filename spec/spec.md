@@ -51,6 +51,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/filament-driver/FR-022
     type: contains
+  - target: ix://agent-ix/filament-driver/FR-023
+    type: contains
   - target: ix://agent-ix/filament-driver/TC-033
     type: contains
   - target: ix://agent-ix/filament-driver/TC-034
@@ -58,6 +60,8 @@ relationships:
   - target: ix://agent-ix/filament-driver/TC-035
     type: contains
   - target: ix://agent-ix/filament-driver/TC-036
+    type: contains
+  - target: ix://agent-ix/filament-driver/TC-037
     type: contains
   - target: ix://agent-ix/filament-driver/TC-001
     type: contains
@@ -231,10 +235,12 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 | [FR-020](functional/FR-020-project-requirement-records-into-codegen-input.md) | Project each FSL requirement record into CG's typed routed-generation input |
 | [FR-021](functional/FR-021-gate-the-driver-on-the-examples-suite.md) | Gate the driver on the examples suite |
 | [FR-022](functional/FR-022-analyze-a-native-analyze-request.md) | Analyze a native-analyze/1 request from the command line |
+| [FR-023](functional/FR-023-supply-clock-configurations-with-clocks.md) | Supply clock configurations to compile and run with --clocks |
 | [TC-033](test-cases/TC-033-prepare-monitor-under-one-budget.md) | Prepare a monitor program from a plan root under one budget |
 | [TC-034](test-cases/TC-034-project-requirement-records-into-codegen.md) | Project FSL requirement records into CG's typed input |
 | [TC-035](test-cases/TC-035-examples-suite-gate.md) | Run the examples suite against the workspace-built fsl |
 | [TC-036](test-cases/TC-036-analyze-from-the-command-line.md) | Analyze a native-analyze/1 request with the fsl binary |
+| [TC-037](test-cases/TC-037-supply-clocks-from-the-command-line.md) | Supply clock configurations with --clocks on compile and run |
 | [TC-001](test-cases/TC-001-steps-run-in-order.md) | The steps run in ADR-011 T-13 order |
 | [TC-002](test-cases/TC-002-unknown-backend-refusal.md) | An unknown `BackendId` refuses the run before negotiation |
 | [TC-003](test-cases/TC-003-route-after-negotiation.md) | `route` runs after negotiation, for `supported` items only |
@@ -267,8 +273,8 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 
 ## 5. Verification and Delivery Boundary
 
-[TM-001](tests.md) integrates FR-001 through FR-022, and TC-001 through
-TC-036.
+[TM-001](tests.md) integrates FR-001 through FR-023, and TC-001 through
+TC-037.
 It distinguishes existing orchestration tests from planned driver tests and
 records their verification owners. Cross-backend and CLI/library conformance
 formerly described by CG FR-005 and IR-337 feed IR-528's G5b gate exclusively

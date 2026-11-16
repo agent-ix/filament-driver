@@ -126,10 +126,10 @@ fn help_exit_code() -> ExitCode {
         "\nSource operands:\n",
         "  parse <authority> <identity> <file> [--format json|text]\n",
         "  format <authority> <identity> <file> [--format json|text]\n",
-        "  compile <request-file> [--format json|text]\n",
+        "  compile <request-file> [--clocks <json-file>] [--format json|text]\n",
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
         "      [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>]\n",
-        "      [--format json|text]\n",
+        "      [--clocks <json-file>] [--format json|text]\n",
         "\nOptions:\n",
         "  --format text|json|dot  Select output format (default: text).\n",
         "                         dot is accepted only for inspect.\n",
@@ -284,6 +284,7 @@ struct RunOptions {
     limits: LimitOverrides,
     engine: ExecutionEngine,
     provider_config: Option<std::path::PathBuf>,
+    clocks: Option<PathBuf>,
 }
 
 type CliProviderError = crate::process_provider::AdapterError<
@@ -431,6 +432,7 @@ fn configured_failure_after_call(
 
 struct CompileOptions {
     path: PathBuf,
+    clocks: Option<PathBuf>,
 }
 
 struct CheckOptions {
@@ -483,10 +485,16 @@ impl SourceOptions {
 impl CompileOptions {
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
+        let mut clocks = None;
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--clocks" {
+                clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
                 index += 2;
                 continue;
             }
@@ -497,10 +505,14 @@ impl CompileOptions {
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err("usage: fsl compile <request-file> [--format json|text]".to_owned());
+            return Err(
+                "usage: fsl compile <request-file> [--clocks <json-file>] [--format json|text]"
+                    .to_owned(),
+            );
         };
         Ok(Self {
             path: PathBuf::from(*path),
+            clocks,
         })
     }
 }
@@ -533,7 +545,7 @@ impl CheckOptions {
 }
 
 impl RunOptions {
-    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>] [--format json|text]";
+    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>] [--clocks <json-file>] [--format json|text]";
 
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
@@ -542,6 +554,7 @@ impl RunOptions {
         let mut intake_limits = RunLimits::default();
         let mut byte_options = BTreeSet::new();
         let mut provider_config: Option<std::path::PathBuf> = None;
+        let mut clocks: Option<PathBuf> = None;
         let mut index = 0;
         while index < arguments.len() {
             let arg = arguments[index].to_str();
@@ -597,6 +610,10 @@ impl RunOptions {
                         return Err("--provider-config may be supplied only once".to_owned());
                     }
                 }
+                Some("--clocks") => {
+                    clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
+                    index += 1;
+                }
                 Some("--format" | "--color") => {
                     index += 1;
                     if arguments
@@ -623,6 +640,7 @@ impl RunOptions {
             limits: LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?,
             engine: engine.unwrap_or_default(),
             provider_config,
+            clocks,
         })
     }
 }
@@ -741,6 +759,34 @@ fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> i
     Ok(())
 }
 
+/// The path operand of `--clocks`, refused when missing or repeated.
+fn clocks_operand(operand: Option<&OsString>, repeated: bool) -> Result<PathBuf, String> {
+    if repeated {
+        return Err("--clocks may be supplied only once".to_owned());
+    }
+    operand
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| "--clocks requires a path".to_owned())
+}
+
+/// Record a refused `--clocks` as FSL records an invalid request: no stage
+/// reached, the catalog code and the cause naming the flag.
+fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -> CommandResult {
+    let message = refusal.message;
+    CommandResult::document(
+        OutcomeDocument::new(operation, None, refusal.code.category()).with_diagnostics(vec![
+            OutcomeDiagnostic::new(
+                Some(refusal.cause),
+                refusal.code.as_str(),
+                None,
+                message.clone(),
+            ),
+        ]),
+    )
+    .with_diagnostic(message)
+}
+
 /// Run one complete-V1 function through FSL's interpreter.
 fn run(options: RunOptions) -> CommandResult {
     let provider_config = match options.provider_config.as_deref() {
@@ -774,10 +820,32 @@ fn run(options: RunOptions) -> CommandResult {
             }
         }
     }
-    let prepared = match command::prepare_run(&options.path, options.intake_limits) {
-        Ok(prepared) => prepared,
-        Err(error) => return CommandResult::document(error.outcome_document(Operation::Execute)),
+    let clocks = match options
+        .clocks
+        .as_deref()
+        .map(|path| {
+            crate::clocks::read(
+                path,
+                options.intake_limits.request_bytes,
+                Some("--request-bytes"),
+            )
+        })
+        .transpose()
+    {
+        Ok(clocks) => clocks,
+        Err(refusal) => return clocks_refusal(Operation::Execute, refusal),
     };
+    let overrides = command::RequestOverrides {
+        clocks: clocks.as_deref(),
+    };
+    let prepared =
+        match command::prepare_run_with_overrides(&options.path, options.intake_limits, &overrides)
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return CommandResult::document(error.outcome_document(Operation::Execute))
+            }
+        };
     let input = match prepared {
         PreparedRun::Function(prepared) => prepared.into_input(),
         PreparedRun::Clause(request) => {
@@ -1170,7 +1238,19 @@ fn run_configured_providers(
 
 /// Compile a request through its owner and retain the actual package outcome.
 fn compile(options: CompileOptions) -> CommandResult {
-    match command::compile_outcome(&options.path) {
+    let clocks = match options
+        .clocks
+        .as_deref()
+        .map(|path| crate::clocks::read(path, RunLimits::default().request_bytes, None))
+        .transpose()
+    {
+        Ok(clocks) => clocks,
+        Err(refusal) => return clocks_refusal(Operation::Package, refusal),
+    };
+    let overrides = command::RequestOverrides {
+        clocks: clocks.as_deref(),
+    };
+    match command::compile_outcome_with_overrides(&options.path, &overrides) {
         Ok(outcome) => CommandResult::document(outcome.document().clone()),
         Err(error) => CommandResult::document(error.outcome_document(Operation::Package)),
     }
@@ -2014,6 +2094,7 @@ mod configured_run_tests {
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: Default::default(),
             backend: Default::default(),
+            clocks: Default::default(),
         };
         let executable = python_path();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2183,6 +2264,7 @@ mod configured_run_tests {
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: Default::default(),
             backend: Default::default(),
+            clocks: Default::default(),
         };
         let executable = python_path();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
