@@ -284,7 +284,6 @@ struct RunOptions {
     intake_limits: RunLimits,
     limits: LimitOverrides,
     engine: ExecutionEngine,
-    provider_config: Option<std::path::PathBuf>,
     clocks: Option<PathBuf>,
 }
 
@@ -315,121 +314,6 @@ pub(crate) type CliProviderSession = crate::process_provider::HostProcessSession
     CliProviderValidate,
     CliProviderConvert,
 >;
-
-struct ActiveConfiguredProvider {
-    deadline_ms: u64,
-    session: CliProviderSession,
-}
-
-#[derive(Debug)]
-struct ConfiguredCall {
-    package_name: String,
-    outcome: CallOutcome,
-    requirements: fsl_replay::CallRequirements,
-}
-
-/// The configured run retains both compositions until FSL settlement owns the
-/// provider result mapping. No provider result is converted to a terminal.
-#[allow(
-    dead_code,
-    reason = "QSL-655 settlement will consume the retained typed composition"
-)]
-struct ConfiguredRun {
-    call: ConfiguredCall,
-    driven: Driven,
-    provider_results: Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    diagnostics: Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
-}
-
-#[allow(
-    dead_code,
-    reason = "typed configured-run failures remain unmapped until their FSL contracts land"
-)]
-#[derive(Debug)]
-enum ConfiguredRunErrorKind {
-    Call(Box<RunRefusal>),
-    DuplicateIdentity {
-        backend: String,
-    },
-    Start {
-        provider: String,
-        source: CliProviderError,
-    },
-    Register(filament_driver::DriverRefusal),
-    Drive(filament_driver::DriverRefusal),
-    PackageMismatch,
-    Pairing(crate::process_provider::CallItemProjectionError),
-    Invoke {
-        provider: String,
-        source: CliProviderError,
-        partial_results:
-            Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    },
-    Shutdown {
-        partial_results:
-            Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    },
-}
-
-#[allow(
-    dead_code,
-    reason = "QSL-655 settlement will consume typed failure and cleanup details"
-)]
-#[derive(Debug)]
-struct ConfiguredRunFailure {
-    call: Option<ConfiguredCall>,
-    document: OutcomeDocument,
-    kind: ConfiguredRunErrorKind,
-    cleanup_diagnostics:
-        Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
-    cleanup_failures: Vec<CliProviderError>,
-}
-
-struct ConfiguredRunRequest<'a> {
-    path: &'a str,
-    package_name: &'a str,
-    bytes: &'a [u8],
-    source: SourceIdentity,
-    limits: SpineLimits,
-    call: Call,
-    packages: fsl_semantics::model::intake::PackageInput,
-    dependencies: DependencyInput,
-    config: crate::provider_config::ProviderConfig,
-    signals: crate::signals::SignalContext,
-}
-
-fn close_configured_providers(
-    sessions: Vec<ActiveConfiguredProvider>,
-) -> (
-    Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
-    Vec<CliProviderError>,
-) {
-    let mut diagnostics = Vec::new();
-    let mut failures = Vec::new();
-    for active in sessions {
-        match active.session.shutdown() {
-            Ok(finished) => diagnostics.push(finished),
-            Err(error) => failures.push(error),
-        }
-    }
-    (diagnostics, failures)
-}
-
-fn configured_failure_after_call(
-    call: ConfiguredCall,
-    kind: ConfiguredRunErrorKind,
-    sessions: Vec<ActiveConfiguredProvider>,
-) -> Box<ConfiguredRunFailure> {
-    let document = call_outcome_document(&call.outcome);
-    let (cleanup_diagnostics, cleanup_failures) = close_configured_providers(sessions);
-    Box::new(ConfiguredRunFailure {
-        call: Some(call),
-        document,
-        kind,
-        cleanup_diagnostics,
-        cleanup_failures,
-    })
-}
 
 struct CompileOptions {
     path: PathBuf,
@@ -554,7 +438,7 @@ impl CheckOptions {
 }
 
 impl RunOptions {
-    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>] [--clocks <json-file>] [--format json|text]";
+    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--format json|text]";
 
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
@@ -562,7 +446,6 @@ impl RunOptions {
         let mut engine = None;
         let mut intake_limits = RunLimits::default();
         let mut byte_options = BTreeSet::new();
-        let mut provider_config: Option<std::path::PathBuf> = None;
         let mut clocks: Option<PathBuf> = None;
         let mut index = 0;
         while index < arguments.len() {
@@ -606,19 +489,6 @@ impl RunOptions {
                     }
                     engine = Some(ExecutionEngine::parse(value)?);
                 }
-                Some("--provider-config") => {
-                    index += 1;
-                    let path = arguments
-                        .get(index)
-                        .filter(|value| !value.is_empty())
-                        .ok_or_else(|| "--provider-config requires a path".to_owned())?;
-                    if provider_config
-                        .replace(std::path::PathBuf::from(path))
-                        .is_some()
-                    {
-                        return Err("--provider-config may be supplied only once".to_owned());
-                    }
-                }
                 Some("--clocks") => {
                     clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
                     index += 1;
@@ -648,7 +518,6 @@ impl RunOptions {
             intake_limits,
             limits: LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?,
             engine: engine.unwrap_or_default(),
-            provider_config,
             clocks,
         })
     }
@@ -660,11 +529,6 @@ struct CommandResult {
     document: Option<OutcomeDocument>,
     diagnostic: Option<String>,
     text_output: Option<String>,
-    #[allow(
-        dead_code,
-        reason = "keep provider results typed until QSL-655 defines their mapping"
-    )]
-    configured_run: Option<Result<ConfiguredRun, Box<ConfiguredRunFailure>>>,
     /// The FSL FR-621 `analyze` document, written in machine mode in place
     /// of `document`.
     analyze_document: Option<serde_json::Value>,
@@ -679,7 +543,6 @@ impl CommandResult {
             document: Some(document),
             diagnostic: None,
             text_output: None,
-            configured_run: None,
             analyze_document: None,
             stderr_line: None,
         }
@@ -691,7 +554,6 @@ impl CommandResult {
             document: None,
             diagnostic: Some(message.into()),
             text_output: None,
-            configured_run: None,
             analyze_document: None,
             stderr_line: None,
         }
@@ -703,7 +565,6 @@ impl CommandResult {
             document: Some(document),
             diagnostic: None,
             text_output,
-            configured_run: None,
             analyze_document: None,
             stderr_line: None,
         }
@@ -728,29 +589,6 @@ impl CommandResult {
         self.diagnostic = Some(message.into());
         self
     }
-
-    fn configured(run: Result<ConfiguredRun, Box<ConfiguredRunFailure>>) -> Self {
-        let document = match &run {
-            Ok(completed) => Some(call_outcome_document(&completed.call.outcome)),
-            Err(failure) => Some(failure.document.clone()),
-        };
-        let category = document
-            .as_ref()
-            .map_or(Category::InternalFailure, OutcomeDocument::category);
-        Self {
-            category,
-            document,
-            diagnostic: None,
-            text_output: None,
-            configured_run: Some(run),
-            analyze_document: None,
-            stderr_line: None,
-        }
-    }
-}
-
-fn call_outcome_document(outcome: &CallOutcome) -> OutcomeDocument {
-    OutcomeDocument::from_call(outcome)
 }
 
 fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> io::Result<()> {
@@ -809,18 +647,6 @@ fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -
 
 /// Run one complete-V1 function through FSL's interpreter.
 fn run(options: RunOptions) -> CommandResult {
-    let provider_config = match options.provider_config.as_deref() {
-        Some(path) => match crate::provider_config::load(path) {
-            Ok(config) => config,
-            Err(error) => {
-                return CommandResult::input_refusal(
-                    Operation::Execute,
-                    format!("invalid process-provider configuration: {error}"),
-                );
-            }
-        },
-        None => crate::provider_config::ProviderConfig::default(),
-    };
     if options.engine != ExecutionEngine::Interpreter {
         let failure = ExecutionFailure::UnsupportedEngine(options.engine);
         return CommandResult::document(failure.into_document());
@@ -869,16 +695,7 @@ fn run(options: RunOptions) -> CommandResult {
         };
     let input = match prepared {
         PreparedRun::Function(prepared) => prepared.into_input(),
-        PreparedRun::Clause(request) => {
-            if !provider_config.providers.is_empty() {
-                return CommandResult::catalog_failure_for(
-                    Operation::Monitor,
-                    Code::UnimplementedCapability,
-                    "process-provider composition for clause requests is unavailable",
-                );
-            }
-            return run_clause_request(*request, &options.limits);
-        }
+        PreparedRun::Clause(request) => return run_clause_request(*request, &options.limits),
     };
     let command::FunctionRunInput {
         source,
@@ -892,29 +709,6 @@ fn run(options: RunOptions) -> CommandResult {
         return CommandResult::input_refusal(Operation::Execute, error.to_string());
     }
     let identity = source.identity().clone();
-    if !provider_config.providers.is_empty() {
-        let configured = crate::signals::run(move |signals| {
-            run_configured_providers(ConfiguredRunRequest {
-                path: source.path(),
-                package_name: &package_name,
-                bytes: source.text().as_bytes(),
-                source: identity,
-                limits,
-                call,
-                packages,
-                dependencies,
-                config: provider_config,
-                signals,
-            })
-        });
-        return match configured {
-            Ok(configured) => CommandResult::configured(configured),
-            Err(error) => CommandResult::failure(
-                Category::InternalFailure,
-                format!("could not initialize process signal handling: {error}"),
-            ),
-        };
-    }
     match execute(ExecutionRequest {
         source: identity,
         package_name: &package_name,
@@ -986,250 +780,6 @@ fn run_clause_request(
         }
     };
     CommandResult::document(document)
-}
-
-fn run_configured_providers(
-    request: ConfiguredRunRequest<'_>,
-) -> Result<ConfiguredRun, Box<ConfiguredRunFailure>> {
-    let ConfiguredRunRequest {
-        path,
-        package_name,
-        bytes,
-        source,
-        limits,
-        call,
-        packages,
-        dependencies,
-        config,
-        signals,
-    } = request;
-    let cancel = Cancel::new();
-    let objects = ObjectEnvironment::default();
-
-    // This is the one interpreter call. The driver performs the separate
-    // package negotiation/generation pipeline below and does not call execute.
-    let call_run = run_with_requirements(
-        source.clone(),
-        package_name.to_owned(),
-        path,
-        bytes,
-        &packages,
-        &dependencies,
-        limits,
-        &call,
-        &objects,
-        &cancel,
-    );
-    let call_run = match call_run {
-        Ok(run) => run,
-        Err(refusal) => {
-            let failed_run: Result<CallOutcome, Box<RunRefusal>> = Err(refusal);
-            let document = OutcomeDocument::from_run(&failed_run);
-            let Err(refusal) = failed_run else {
-                return Err(Box::new(ConfiguredRunFailure {
-                    call: None,
-                    document,
-                    kind: ConfiguredRunErrorKind::PackageMismatch,
-                    cleanup_diagnostics: Vec::new(),
-                    cleanup_failures: Vec::new(),
-                }));
-            };
-            return Err(Box::new(ConfiguredRunFailure {
-                call: None,
-                document,
-                kind: ConfiguredRunErrorKind::Call(refusal),
-                cleanup_diagnostics: Vec::new(),
-                cleanup_failures: Vec::new(),
-            }));
-        }
-    };
-    let selected_package_name = call_run.package_name().as_str().to_owned();
-    let (outcome, requirements) = call_run.into_parts();
-    let call = ConfiguredCall {
-        package_name: selected_package_name,
-        outcome,
-        requirements,
-    };
-
-    // Start and admit every configured process before the driver's negotiation.
-    let mut active = Vec::with_capacity(config.providers.len());
-    for configured in config.providers {
-        let provider_name = configured.executable.display().to_string();
-        match start_configured_provider(&configured, &signals, &cancel) {
-            Ok(session) => active.push(ActiveConfiguredProvider {
-                deadline_ms: configured.deadline_ms,
-                session,
-            }),
-            Err(source) => {
-                return Err(configured_failure_after_call(
-                    call,
-                    ConfiguredRunErrorKind::Start {
-                        provider: provider_name,
-                        source,
-                    },
-                    active,
-                ));
-            }
-        }
-    }
-
-    let admissions = active.iter().map(|provider| {
-        (
-            provider.session.descriptor().clone(),
-            provider.session.manifest().clone(),
-        )
-    });
-    let mut linked = match build_linked_providers(&[]) {
-        Ok(linked) => linked,
-        Err(source) => {
-            return Err(configured_failure_after_call(
-                call,
-                ConfiguredRunErrorKind::Register(source),
-                active,
-            ));
-        }
-    };
-    if let Err(source) = linked.register_admitted(admissions) {
-        return Err(configured_failure_after_call(
-            call,
-            ConfiguredRunErrorKind::Register(source),
-            active,
-        ));
-    }
-
-    let mut admitted_identities = BTreeSet::new();
-    if let Some(backend) = active.iter().find_map(|provider| {
-        let identity = provider.session.descriptor().id().as_str();
-        (!admitted_identities.insert(identity.to_owned())).then(|| identity.to_owned())
-    }) {
-        let message = format!("configured process providers repeat admitted identity `{backend}`");
-        let document =
-            OutcomeDocument::new(Operation::Execute, None, Code::InvalidRequest.category())
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    None,
-                    Code::InvalidRequest.as_str(),
-                    None,
-                    message,
-                )]);
-        let (cleanup_diagnostics, cleanup_failures) = close_configured_providers(active);
-        return Err(Box::new(ConfiguredRunFailure {
-            call: Some(call),
-            document,
-            kind: ConfiguredRunErrorKind::DuplicateIdentity { backend },
-            cleanup_diagnostics,
-            cleanup_failures,
-        }));
-    }
-
-    let driven = match drive(
-        &FslCg,
-        CompileInput {
-            source,
-            package_name,
-            path,
-            bytes,
-            packages: &packages,
-            limits,
-            cancel: cancel.clone(),
-        },
-        linked.registry(),
-        None,
-        GenerationInput::default(),
-    ) {
-        Ok(driven) => driven,
-        Err(source) => {
-            return Err(configured_failure_after_call(
-                call,
-                ConfiguredRunErrorKind::Drive(source),
-                active,
-            ));
-        }
-    };
-    let projection = match crate::process_provider::project_call_items(
-        &call.package_name,
-        &call.requirements,
-        &driven,
-    ) {
-        Ok(projection) => projection,
-        Err(source) => {
-            return Err(configured_failure_after_call(
-                call,
-                ConfiguredRunErrorKind::Pairing(source),
-                active,
-            ));
-        }
-    };
-    let manifest_snapshot = linked.manifest_snapshot();
-    let mut provider_results = Vec::new();
-    let mut invoke_failure = None;
-    for provider in &mut active {
-        let backend = provider.session.descriptor().id().as_str().to_owned();
-        let routed = projection
-            .routed
-            .iter()
-            .filter(|item| item.backend.identity == backend)
-            .cloned()
-            .collect::<Vec<_>>();
-        if routed.is_empty() {
-            continue;
-        }
-        let routed_indices = routed
-            .iter()
-            .map(|item| item.request_index)
-            .collect::<BTreeSet<_>>();
-        let fsl_items = projection
-            .items
-            .iter()
-            .filter(|item| routed_indices.contains(&item.index().get()))
-            .cloned()
-            .collect::<Vec<_>>();
-        let request = ProcessProviderRequest {
-            emitted_package: driven.emitted(),
-            deadline_ms: provider.deadline_ms,
-            manifest: &manifest_snapshot,
-            provider_request: ProviderRequest::new(&routed),
-            fsl_items: &fsl_items,
-            cancel: &cancel,
-        };
-        match provider.session.invoke(request) {
-            Ok(results) => provider_results.push(results),
-            Err(source) => {
-                invoke_failure = Some((backend, source));
-                break;
-            }
-        }
-    }
-    if let Some((provider, source)) = invoke_failure {
-        return Err(configured_failure_after_call(
-            call,
-            ConfiguredRunErrorKind::Invoke {
-                provider,
-                source,
-                partial_results: provider_results,
-            },
-            active,
-        ));
-    }
-
-    let (diagnostics, failures) = close_configured_providers(active);
-    if !failures.is_empty() {
-        let document = call_outcome_document(&call.outcome);
-        return Err(Box::new(ConfiguredRunFailure {
-            call: Some(call),
-            document,
-            kind: ConfiguredRunErrorKind::Shutdown {
-                partial_results: provider_results,
-            },
-            cleanup_diagnostics: diagnostics,
-            cleanup_failures: failures,
-        }));
-    }
-    Ok(ConfiguredRun {
-        call,
-        driven,
-        provider_results,
-        diagnostics,
-    })
 }
 
 /// Compile a request through its owner and retain the actual package outcome.
@@ -2538,319 +2088,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-#[allow(
-    clippy::expect_used,
-    clippy::panic,
-    reason = "configured provider integration assertions are the test failure report"
-)]
-mod configured_run_tests {
-    use std::path::{Path, PathBuf};
-
-    use filament_exact::{Integer, Value};
-    use fsl_foundation::SourceIdentity;
-    use fsl_replay::spine::{
-        default_accounting, Call, CallArgument, SpineLimits, DEFAULT_WORK_UNITS,
-    };
-
-    use super::{run_configured_providers, Code, CommandResult, ConfiguredRunRequest};
-
-    struct TempDir(PathBuf);
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn python_path() -> PathBuf {
-        std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-            .map(|directory| directory.join("python3"))
-            .find(|candidate| candidate.is_file())
-            .expect("the process fixture requires Python 3")
-    }
-
-    /// Trace: FR-006-AC-1, FR-006-AC-3, FR-006-AC-8, FR-006-AC-10..FR-006-AC-11, FR-006-AC-15, FR-006-AC-25.
-    #[test]
-    fn configured_run_invokes_only_the_selected_process_and_retains_its_typed_result() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is after the Unix epoch")
-            .as_nanos();
-        let directory = TempDir(std::env::temp_dir().join(format!(
-            "fsl-cli-configured-run-{}-{unique}",
-            std::process::id()
-        )));
-        std::fs::create_dir(&directory.0).expect("create temporary test directory");
-        let bytes = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-             function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-             function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let path = "configured-run.native";
-        let source = SourceIdentity::new("agent-ix", path);
-        let packages = std::collections::BTreeMap::new();
-        let dependencies = fsl_replay::spine::DependencyInput::default();
-        let limits = SpineLimits::default();
-        let call = Call {
-            function: "eq".to_owned(),
-            arguments: vec![
-                CallArgument {
-                    parameter: "x".to_owned(),
-                    value: Value::Integer(Integer::from(2_i64)),
-                },
-                CallArgument {
-                    parameter: "y".to_owned(),
-                    value: Value::Integer(Integer::from(3_i64)),
-                },
-            ],
-            wire_arguments: Vec::new(),
-            accounting: default_accounting(DEFAULT_WORK_UNITS),
-            supplied: Default::default(),
-            backend: Default::default(),
-            clocks: Default::default(),
-        };
-        let executable = python_path();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/configured-fr331-provider.py");
-        let identities = [
-            "agent-ix/provider/configured-alpha",
-            "agent-ix/provider/configured-zeta",
-        ];
-        let capabilities = ["value-validity", "operation-contract"];
-        let markers = identities
-            .iter()
-            .enumerate()
-            .map(|(index, _)| directory.0.join(format!("provider-{index}.json")))
-            .collect::<Vec<_>>();
-        let providers = identities
-            .iter()
-            .zip(&markers)
-            .zip(capabilities)
-            .map(
-                |((identity, marker), capability)| crate::provider_config::ProcessProviderConfig {
-                    executable: executable.clone(),
-                    argv: vec![
-                        fixture.display().to_string(),
-                        (*identity).to_owned(),
-                        marker.display().to_string(),
-                        capability.to_owned(),
-                    ],
-                    deadline_ms: 4096,
-                    limits: crate::provider_config::ProcessProviderLimitsConfig {
-                        max_frame_bytes: 262_144,
-                        max_total_bytes: 1_048_576,
-                        max_stderr_bytes: 4096,
-                        cancellation_grace_ms: 500,
-                    },
-                },
-            )
-            .collect();
-
-        let configured = match run_configured_providers(ConfiguredRunRequest {
-            path,
-            package_name: path,
-            bytes: bytes.as_bytes(),
-            source,
-            limits,
-            call,
-            packages,
-            dependencies,
-            config: crate::provider_config::ProviderConfig { providers },
-            signals: crate::signals::SignalContext::default(),
-        }) {
-            Ok(configured) => configured,
-            Err(failure) => panic!("configured provider flow failed: {failure:?}"),
-        };
-        assert_eq!(configured.call.requirements.members().len(), 1);
-        assert_eq!(configured.driven.generation().items.len(), 2);
-        assert_eq!(configured.provider_results.len(), 1);
-        let invoked = markers
-            .iter()
-            .enumerate()
-            .filter(|(_, marker)| marker.is_file())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            invoked.len(),
-            1,
-            "only the selected provider receives a request"
-        );
-        let (selected, marker) = invoked[0];
-        let request: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(marker).expect("the selected provider recorded its request"),
-        )
-        .expect("the provider request is JSON");
-        let member = &configured.call.requirements.members()[0];
-        assert_eq!(request["request"]["deadline_ms"], 4096);
-        assert_eq!(
-            request["request"]["items"].as_array().map(Vec::len),
-            Some(1)
-        );
-        assert_eq!(
-            request["request"]["items"][0]["backend"],
-            identities[selected]
-        );
-        assert_eq!(
-            request["request"]["items"][0]["request_index"],
-            member.request_index().get()
-        );
-        assert_eq!(request["request"]["items"][0]["kind"], "value-validity");
-        assert!(request["request"]["items"][0]["claim"].is_object());
-        assert_eq!(request["request"]["items"][0]["candidates"]["type"], "set");
-        assert!(request["request"]["items"][0]["candidates"]["backends"]
-            .as_array()
-            .expect("candidate set is an array")
-            .iter()
-            .any(|candidate| candidate == identities[selected]));
-        assert!(request["request"]["items"][0]["extent"].is_object());
-
-        let command = CommandResult::configured(Ok(configured));
-        assert!(
-            command.document.is_some(),
-            "existing FSL call result is retained"
-        );
-        assert!(
-            command
-                .document
-                .as_ref()
-                .expect("FSL call document remains available")
-                .items()
-                .is_empty(),
-            "provider results are not fabricated as FSL terminals"
-        );
-        let Some(Ok(retained)) = command.configured_run.as_ref() else {
-            panic!("typed configured result remains owned by the command result");
-        };
-        assert_eq!(retained.provider_results.len(), 1);
-        assert_eq!(retained.provider_results[0].items.len(), 1);
-        let outcome = retained.provider_results[0].items[0]
-            .result
-            .as_ref()
-            .expect("the fixture returned a typed provider result");
-        assert!(matches!(
-            &outcome.item,
-            crate::process_provider::ProcessProviderItemOutcome::Result {
-                kind: crate::process_provider::Fr331ResultKind::Tested,
-                ..
-            }
-        ));
-        assert_eq!(retained.diagnostics.len(), 2);
-        assert!(retained
-            .diagnostics
-            .iter()
-            .all(|finished| String::from_utf8_lossy(&finished.stderr)
-                .contains("configured provider completed")));
-        assert_eq!(retained.call.package_name, retained.driven.emitted().name());
-    }
-
-    /// Trace: FR-006-AC-26; identical admitted hellos fail closed before negotiation and close both sessions.
-    #[test]
-    fn configured_run_refuses_idempotent_duplicate_identities_before_dispatch() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is after the Unix epoch")
-            .as_nanos();
-        let directory = TempDir(std::env::temp_dir().join(format!(
-            "fsl-cli-configured-duplicate-{}-{unique}",
-            std::process::id()
-        )));
-        std::fs::create_dir(&directory.0).expect("create temporary test directory");
-        let bytes = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-             function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-             function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let path = "configured-duplicate.native";
-        let source = SourceIdentity::new("agent-ix", path);
-        let call = Call {
-            function: "eq".to_owned(),
-            arguments: vec![
-                CallArgument {
-                    parameter: "x".to_owned(),
-                    value: Value::Integer(Integer::from(2_i64)),
-                },
-                CallArgument {
-                    parameter: "y".to_owned(),
-                    value: Value::Integer(Integer::from(3_i64)),
-                },
-            ],
-            wire_arguments: Vec::new(),
-            accounting: default_accounting(DEFAULT_WORK_UNITS),
-            supplied: Default::default(),
-            backend: Default::default(),
-            clocks: Default::default(),
-        };
-        let executable = python_path();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/configured-fr331-provider.py");
-        let identity = "agent-ix/provider/configured-duplicate";
-        let markers = [
-            directory.0.join("duplicate-one.json"),
-            directory.0.join("duplicate-two.json"),
-        ];
-        let shutdown_markers = [
-            directory.0.join("duplicate-one-shutdown"),
-            directory.0.join("duplicate-two-shutdown"),
-        ];
-        let providers = markers
-            .iter()
-            .zip(shutdown_markers.iter())
-            .map(
-                |(marker, shutdown)| crate::provider_config::ProcessProviderConfig {
-                    executable: executable.clone(),
-                    argv: vec![
-                        fixture.display().to_string(),
-                        identity.to_owned(),
-                        marker.display().to_string(),
-                        "value-validity".to_owned(),
-                        "normal".to_owned(),
-                        shutdown.display().to_string(),
-                    ],
-                    deadline_ms: 4096,
-                    limits: crate::provider_config::ProcessProviderLimitsConfig {
-                        max_frame_bytes: 262_144,
-                        max_total_bytes: 1_048_576,
-                        max_stderr_bytes: 4096,
-                        cancellation_grace_ms: 500,
-                    },
-                },
-            )
-            .collect();
-
-        let failure = match run_configured_providers(ConfiguredRunRequest {
-            path,
-            package_name: path,
-            bytes: bytes.as_bytes(),
-            source,
-            limits: SpineLimits::default(),
-            call,
-            packages: std::collections::BTreeMap::new(),
-            dependencies: fsl_replay::spine::DependencyInput::default(),
-            config: crate::provider_config::ProviderConfig { providers },
-            signals: crate::signals::SignalContext::default(),
-        }) {
-            Err(failure) => failure,
-            Ok(_) => panic!("idempotent duplicate identities are an input refusal"),
-        };
-        assert!(matches!(
-            failure.kind,
-            super::ConfiguredRunErrorKind::DuplicateIdentity { ref backend }
-                if backend == identity
-        ));
-        assert_eq!(
-            failure.document.category(),
-            filament_semantic_value::catalog::Category::Refusal
-        );
-        assert!(failure
-            .document
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code() == Code::InvalidRequest.as_str()));
-        assert_eq!(failure.cleanup_diagnostics.len(), 2);
-        assert!(failure.cleanup_failures.is_empty());
-        assert!(markers.iter().all(|marker| !marker.exists()));
-        assert!(shutdown_markers.iter().all(|marker| marker.is_file()));
-    }
-}
