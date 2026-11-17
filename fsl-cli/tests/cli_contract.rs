@@ -71,6 +71,10 @@ const PAID_SHORT_REQUEST: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/paid-short/requests/paid-short.json"
 );
+const CHARGE_CHANGES_TOTAL_REQUEST: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/charge-changes-total/requests/charge-changes-total.json"
+);
 
 fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read parse fixture");
@@ -826,6 +830,39 @@ fn run_paid_short_json_contains_the_state_rule_witness() {
         ),
         "the witness carries the decisive paid/total value: {witness}"
     );
+}
+
+/// Trace: QSL-2005; a frame violation reports the changed field and its values.
+#[test]
+fn run_charge_changes_total_json_contains_the_frame_witness() {
+    let output = Command::new(FSL)
+        .args(["run", CHARGE_CHANGES_TOTAL_REQUEST, "--format", "json"])
+        .output()
+        .expect("run the charge-changes-total frame example");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
+    assert_eq!(document["category"], "violation", "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["clause"], "Shop::Order::charge", "{item}");
+    assert_eq!(item["category"], "violation", "{item}");
+    assert_eq!(item["cause"]["code"], "frame_violation", "{item}");
+    assert_eq!(item["cause"]["kind"], "unauthorized-change", "{item}");
+
+    let witness = item
+        .get("witness")
+        .and_then(serde_json::Value::as_object)
+        .expect("the frame violation carries its user-facing witness");
+    assert_eq!(witness["object_identity"], "o1", "{witness}");
+    assert_eq!(witness["field"], "total", "{witness}");
+    assert_eq!(witness["before"]["integer"], "4200", "{witness}");
+    assert_eq!(witness["after"]["integer"], "9000", "{witness}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
