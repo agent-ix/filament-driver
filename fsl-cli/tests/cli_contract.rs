@@ -488,6 +488,7 @@ fn check_semantic_refusal_emits_fsl_check_outcome_document() {
 }
 
 /// Trace: FR-986-AC-1; a `null` expression reaches S3 and exits as a refusal.
+#[trace("FR-986-AC-1")]
 #[test]
 fn null_expression_refusal_exits_twenty_at_s3() {
     let directory = tempfile::tempdir().expect("create null expression source directory");
