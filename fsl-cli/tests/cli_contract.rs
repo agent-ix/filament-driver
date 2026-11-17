@@ -397,8 +397,36 @@ fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
         .output()
         .expect("run check refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &check_outcome_bytes(INVALID_SOURCE));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits JSON");
+    assert_eq!(document["diagnostics"][0]["message"], "expected `)`");
+}
+
+/// Trace: QSL-2202; text refusals render the diagnostic once on stdout.
+#[test]
+fn check_text_refusal_prints_its_message_once() {
+    let output = Command::new(FSL)
+        .args(["check", INVALID_SOURCE, "--format", "text"])
+        .output()
+        .expect("run check refusal in text mode");
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(text.matches("expected `)`").count(), 1, "{text}");
+}
+
+/// Trace: QSL-2202; a usage refusal remains on stderr in JSON mode.
+#[test]
+fn check_bad_option_still_reports_on_stderr() {
+    let output = Command::new(FSL)
+        .args(["check", SOURCE, "--bogus", "--format", "json"])
+        .output()
+        .expect("run check with an unknown option");
+    assert_eq!(output.status.code(), Some(20));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--bogus"), "{stderr}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check source I/O failures use FSL's typed code and serializer.
@@ -413,10 +441,13 @@ fn check_missing_source_emits_fsl_io_error_document() {
         .output()
         .expect("run check with a missing source");
     assert_eq!(output.status.code(), Some(20));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let message = stderr.trim_end();
+    assert!(output.stderr.is_empty());
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits JSON");
+    let message = document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("I/O refusal has a diagnostic message");
     assert!(message.starts_with(&format!("could not read source {missing}:")));
-    assert!(stderr.ends_with('\n'));
 
     let expected = OutcomeDocument::new(Operation::Check, None, Code::IoError.category())
         .with_diagnostics(vec![OutcomeDiagnostic::new(
@@ -453,7 +484,7 @@ fn compile_refusal_emits_fsl_package_outcome_document() {
         .output()
         .expect("run compile refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
 }
 
@@ -490,7 +521,7 @@ fn check_semantic_refusal_emits_fsl_check_outcome_document() {
         .output()
         .expect("run check semantic refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert!(!output.stderr.is_empty());
+    assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &check_outcome_bytes(CHECK_INVALID_SOURCE));
 }
 
@@ -611,7 +642,7 @@ fn parse_refusal_emits_fsl_diagnostic_cause_and_locus() {
         .output()
         .expect("run parse refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
 
     assert_fsl_document(&output.stdout, &parse_outcome_bytes(INVALID_SOURCE));
 }
@@ -818,7 +849,7 @@ fn format_refusal_emits_fsl_diagnostic_cause_and_locus() {
         .output()
         .expect("run format refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
 
     assert_fsl_document(&output.stdout, &format_outcome_bytes(INVALID_SOURCE));
 }
