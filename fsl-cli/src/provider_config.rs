@@ -24,17 +24,19 @@ pub(crate) struct ProviderArguments {
     named: BTreeSet<String>,
 }
 
-/// A provider option the verb cannot accept.
+/// A verb option the verb cannot accept.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ProviderArgumentError {
-    /// A `--provider-config` without a path or given twice: a usage refusal.
+pub(crate) enum OptionRefusal {
+    /// A usage refusal written as the verb's typed `invalid-request`
+    /// document, such as `--provider-config` without a path or given twice.
     Usage(String),
-    /// A `--provider-limit` FR-287 refuses: `invalid-request` naming the
-    /// option and the argument, with empty stdout (FR-006).
-    Limit(String),
+    /// A refusal with empty stdout and the message on stderr, exit 20: a
+    /// `--provider-limit` FSL FR-287 refuses (FR-006), or a repeated
+    /// `--integer-division` (FSL FR-767).
+    Quiet(String),
 }
 
-impl From<String> for ProviderArgumentError {
+impl From<String> for OptionRefusal {
     fn from(message: String) -> Self {
         Self::Usage(message)
     }
@@ -52,17 +54,17 @@ impl ProviderArguments {
         &mut self,
         arguments: &[OsString],
         index: usize,
-    ) -> Result<Option<usize>, ProviderArgumentError> {
+    ) -> Result<Option<usize>, OptionRefusal> {
         match arguments.get(index).and_then(|argument| argument.to_str()) {
             Some("--provider-config") => {
                 let path = arguments
                     .get(index + 1)
                     .filter(|path| !path.is_empty())
                     .ok_or_else(|| {
-                        ProviderArgumentError::Usage("--provider-config requires a path".to_owned())
+                        OptionRefusal::Usage("--provider-config requires a path".to_owned())
                     })?;
                 if self.config.replace(PathBuf::from(path)).is_some() {
-                    return Err(ProviderArgumentError::Usage(
+                    return Err(OptionRefusal::Usage(
                         "--provider-config may be supplied only once".to_owned(),
                     ));
                 }
@@ -74,7 +76,7 @@ impl ProviderArguments {
                     .map(|argument| argument.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 self.set_limit(&argument).map_err(|reason| {
-                    ProviderArgumentError::Limit(format!(
+                    OptionRefusal::Quiet(format!(
                         "invalid-request: --provider-limit `{argument}` {reason}"
                     ))
                 })?;
@@ -277,7 +279,7 @@ mod tests {
             .contains("unsupported"));
     }
 
-    fn take_limits(values: &[&str]) -> Result<ProviderArguments, ProviderArgumentError> {
+    fn take_limits(values: &[&str]) -> Result<ProviderArguments, OptionRefusal> {
         let mut arguments = ProviderArguments::default();
         let argv = values
             .iter()
@@ -327,11 +329,10 @@ mod tests {
         ] {
             let error = take_limits(refused).expect_err("the limit is refused");
             assert!(
-                matches!(error, ProviderArgumentError::Limit(_)),
+                matches!(error, OptionRefusal::Quiet(_)),
                 "{refused:?} is a limit refusal: {error:?}"
             );
-            let (ProviderArgumentError::Limit(message) | ProviderArgumentError::Usage(message)) =
-                error;
+            let (OptionRefusal::Quiet(message) | OptionRefusal::Usage(message)) = error;
             assert!(message.contains("--provider-limit"), "{message}");
             assert!(
                 message.contains(refused[refused.len() - 1]),

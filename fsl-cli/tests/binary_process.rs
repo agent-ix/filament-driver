@@ -34,9 +34,6 @@ use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 #[path = "../../tests/common/units.rs"]
 mod shared_units;
 
-#[path = "common/requests.rs"]
-mod requests;
-
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const SOURCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ir608-run.fsl");
 
@@ -619,45 +616,33 @@ fn missing_source_emits_fsl_io_error_document_and_diagnostic() {
     assert_eq!(output.stdout, format!("{expected}\n").as_bytes());
 }
 
-fn run_with_provider_config(path: &std::path::Path) -> std::process::Output {
-    Command::new(FSL)
-        .args(["run", RUN_REQUEST, "--provider-config"])
-        .arg(path)
-        .args(["--format", "json"])
-        .output()
-        .expect("run fsl with provider config")
-}
-
+/// FSpec FR-561 and FR-006-AC-24: each refusal exits 20 with empty stdout,
+/// in text and machine mode alike, and names the file, the member and the
+/// code on stderr.
 fn assert_provider_config_refusal(path: &std::path::Path, expected: &str) {
-    let output = run_with_provider_config(path);
-    assert_eq!(output.status.code(), Some(20));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("provider configuration"), "{stderr}");
-    assert!(stderr.contains(expected), "{stderr}");
-    let document: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("provider refusal is a typed outcome");
-    assert_eq!(document["format"], "filament-outcome/1", "{document}");
-    assert_eq!(document["operation"], "execute", "{document}");
-    assert_eq!(document["category"], "refusal", "{document}");
-    let diagnostic = &document["diagnostics"][0];
-    assert!(
-        diagnostic["message"]
-            .as_str()
-            .is_some_and(|message| message.contains(path.display().to_string().as_str())),
-        "the refusal names `{}`: {document}",
-        path.display()
-    );
-    if expected == "unknown_wire/unsupported-wire" {
-        assert_eq!(diagnostic["code"], "unknown_wire", "{document}");
-        assert_eq!(diagnostic["cause"], "unsupported-wire", "{document}");
-    } else {
-        assert_eq!(diagnostic["code"], "invalid-request", "{document}");
+    for format in ["json", "text"] {
+        let output = Command::new(FSL)
+            .args(["run", RUN_REQUEST, "--provider-config"])
+            .arg(path)
+            .args(["--format", format])
+            .output()
+            .expect("run fsl with provider config");
+        assert_eq!(output.status.code(), Some(20), "{format}");
+        assert!(output.stdout.is_empty(), "{format}: stdout is empty");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("provider configuration"), "{stderr}");
+        assert!(stderr.contains(expected), "{stderr}");
         assert!(
-            diagnostic["message"]
-                .as_str()
-                .is_some_and(|message| message.contains(expected)),
-            "{document}"
+            stderr.contains(path.display().to_string().as_str()),
+            "the refusal names `{}`: {stderr}",
+            path.display()
         );
+        let code = if expected == "unknown_wire/unsupported-wire" {
+            "unknown_wire/unsupported-wire"
+        } else {
+            "invalid-request"
+        };
+        assert!(stderr.contains(code), "{stderr}");
     }
 }
 
@@ -750,9 +735,10 @@ fn empty_provider_config_executes_without_starting_a_provider() {
     assert!(serde_json::from_slice::<serde_json::Value>(&output.stdout).is_ok());
 }
 
-/// Trace: QSL-2192; the valid FR-561 shape is read, while its runtime offer remains blocked.
+/// Trace: FSpec FR-561-AC-2; a plugin path that does not exist refuses
+/// naming it, exit 20 with empty stdout, before any plugin starts. QSL-2192.
 #[test]
-fn valid_provider_config_reaches_the_known_runtime_offer_blocker() {
+fn provider_config_naming_a_missing_plugin_is_refused() {
     let directory = tempfile::tempdir().expect("create provider config directory");
     let path = directory.path().join("providers.json");
     std::fs::write(
@@ -760,220 +746,159 @@ fn valid_provider_config_reaches_the_known_runtime_offer_blocker() {
         r#"{"format":"filament.provider-config/v1","providers":[{"path":"/must-not-start"}]}"#,
     )
     .expect("write valid provider config");
-    let output = run_with_provider_config(&path);
-    assert_eq!(output.status.code(), Some(20));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("no process-provider engine adapter yet"),
-        "{stderr}"
-    );
-    assert!(
-        !output.stdout.is_empty(),
-        "the command has its current typed refusal"
-    );
+    assert_provider_config_refusal(&path, "`/must-not-start` does not exist");
 }
 
-/// Trace: FR-006-AC-3; normal CLI completion sends shutdown and reaps its configured provider.
-#[test]
-#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
-fn configured_process_normal_exit_shuts_down_active_session() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock is after the Unix epoch")
-        .as_nanos();
-    let directory = std::env::temp_dir().join(format!(
-        "fsl-cli-configured-normal-exit-{}-{unique}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&directory).expect("create isolated normal-exit test directory");
-    let request_marker = directory.join("request.json");
-    let shutdown_marker = directory.join("shutdown.json");
-    let config_path = directory.join("providers.json");
-    let source_path = directory.join("normal-exit.native");
-    let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-         function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-         function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-        "filament.value.complete/v1"
-    );
-    std::fs::write(&source_path, source).expect("write source fixture");
-    let executable = std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-        .map(|directory| directory.join("python3"))
-        .find(|candidate| candidate.is_file())
-        .expect("the process fixture requires Python 3");
-    let fixture = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/configured-fr331-provider.py"
-    );
-    let config = serde_json::json!({
-        "providers": [{
-            "executable": executable,
-            "argv": [
-                fixture,
-                "agent-ix/provider/configured-normal-exit",
-                request_marker,
-                "value-validity",
-                "normal",
-                shutdown_marker,
-            ],
-            "deadline_ms": 10_000,
-            "limits": {
-                "max_frame_bytes": 262_144,
-                "max_total_bytes": 1_048_576,
-                "max_stderr_bytes": 4096,
-                "cancellation_grace_ms": 250,
-            }
-        }]
-    });
+const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
+const PROVIDER_BACKEND: &str = "fsl.test-process-provider";
+
+/// A native-run/1 request in `directory` calling `Even(3)` with
+/// `call.requirements` naming the test provider (FSL FR-960), and the
+/// FSpec FR-561 configuration starting `providers` test-provider processes,
+/// each with its own arguments.
+fn provider_run(
+    directory: &std::path::Path,
+    providers: &[Vec<String>],
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let source = directory.join("even.native");
     std::fs::write(
-        &config_path,
-        serde_json::to_vec(&config).expect("serialize provider config"),
+        &source,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"filament.value.complete/v1\";\n\
+         function Even using v(n: Integer): Boolean pure { n * 2 - n = n }\n",
+    )
+    .expect("write source fixture");
+    let request = directory.join("run.json");
+    std::fs::write(
+        &request,
+        serde_json::json!({"format": "native-run/1", "request": {"models": [],
+            "program": {"source": {"file": source, "authority": "agent-ix",
+                "identity": "test:provider-run", "document": "ProviderRun",
+                "formal_revision": 1}},
+            "call": {"function": "Even", "arguments": [{"parameter": "n", "value": 3}],
+                "requirements": {"backend": PROVIDER_BACKEND}}}})
+        .to_string(),
+    )
+    .expect("write run request");
+    let config = directory.join("providers.json");
+    let entries = providers
+        .iter()
+        .map(|arguments| serde_json::json!({"path": TEST_PROVIDER, "arguments": arguments}))
+        .collect::<Vec<_>>();
+    std::fs::write(
+        &config,
+        serde_json::json!({"format": "filament.provider-config/v1", "providers": entries})
+            .to_string(),
     )
     .expect("write provider config");
-    let request = requests::request(
-        source_path.to_str().expect("UTF-8 source path"),
-        Some((
-            "eq",
-            serde_json::json!([
-                {"parameter":"x","value":2},
-                {"parameter":"y","value":3}
-            ]),
-        )),
+    (request, config)
+}
+
+/// Trace: FR-006-AC-1, FR-006-AC-3, FR-006-AC-8; `fsl run` sends the call's
+/// requirement item to the configured provider as one FR-331 request under
+/// the run's deadline, settles it on the provider, and on normal completion
+/// sends shutdown and reaps the provider. QSL-2192.
+#[test]
+fn configured_process_normal_exit_shuts_down_active_session() {
+    let directory = tempfile::tempdir().expect("create isolated normal-exit test directory");
+    let request_marker = directory.path().join("request.json");
+    let shutdown_marker = directory.path().join("shutdown");
+    let (request, config) = provider_run(
+        directory.path(),
+        &[vec![
+            PROVIDER_BACKEND.to_owned(),
+            "unbounded".to_owned(),
+            "proved".to_owned(),
+            request_marker.display().to_string(),
+            shutdown_marker.display().to_string(),
+        ]],
     );
     let output = Command::new(FSL)
         .arg("run")
-        .arg(request.as_str())
+        .arg(&request)
         .arg("--provider-config")
-        .arg(&config_path)
-        .args(["--format", "json"])
+        .arg(&config)
+        .args(["--provider-limit", "deadline_ms=4096", "--format", "json"])
         .output()
         .expect("run production fsl binary");
-    assert_eq!(output.status.code(), Some(0));
-    assert!(
-        request_marker.is_file(),
-        "fixture received the routed request"
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let sent: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&request_marker).expect("the provider received the routed request"),
+    )
+    .expect("the request body is JSON");
+    assert_eq!(sent["request"]["deadline_ms"], 4096, "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["backend"], PROVIDER_BACKEND,
+        "{sent}"
     );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the execute outcome");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{document}");
     assert!(
         shutdown_marker.is_file(),
         "the CLI sent shutdown and waited for the provider to exit"
     );
-    std::fs::remove_dir_all(directory).expect("remove normal-exit test directory");
 }
 
-/// Trace: FR-006-AC-26; duplicate admitted identities refuse before requests and close both sessions.
+/// Trace: FR-006-AC-26; duplicate admitted identities refuse before any
+/// request and close both sessions. QSL-2192.
 #[test]
-#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() {
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock is after the Unix epoch")
-        .as_nanos();
-    let directory = std::env::temp_dir().join(format!(
-        "fsl-cli-configured-duplicate-{}-{unique}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&directory).expect("create isolated duplicate test directory");
-    let source_path = directory.join("duplicate.native");
-    let config_path = directory.join("providers.json");
-    let request_markers = [directory.join("request-one"), directory.join("request-two")];
-    let shutdown_markers = [
-        directory.join("shutdown-one"),
-        directory.join("shutdown-two"),
+    let directory = tempfile::tempdir().expect("create isolated duplicate test directory");
+    let request_markers = [
+        directory.path().join("request-one"),
+        directory.path().join("request-two"),
     ];
-    let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-         function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-         function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-        "filament.value.complete/v1"
-    );
-    std::fs::write(&source_path, source).expect("write source fixture");
-
-    let executable = std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-        .map(|directory| directory.join("python3"))
-        .find(|candidate| candidate.is_file())
-        .expect("duplicate provider fixture requires Python 3");
-    let fixture = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/configured-fr331-provider.py"
-    );
+    let shutdown_markers = [
+        directory.path().join("shutdown-one"),
+        directory.path().join("shutdown-two"),
+    ];
     let providers = (0..2)
         .map(|index| {
-            serde_json::json!({
-                "executable": executable.display().to_string(),
-                "argv": [
-                    fixture,
-                    "agent-ix/provider/configured-duplicate",
-                    request_markers[index].display().to_string(),
-                    "value-validity",
-                    "normal",
-                    shutdown_markers[index].display().to_string(),
-                ],
-                "deadline_ms": 4096,
-                "limits": {
-                    "max_frame_bytes": 262144,
-                    "max_total_bytes": 1048576,
-                    "max_stderr_bytes": 4096,
-                    "cancellation_grace_ms": 500,
-                }
-            })
+            vec![
+                PROVIDER_BACKEND.to_owned(),
+                "unbounded".to_owned(),
+                "proved".to_owned(),
+                request_markers[index].display().to_string(),
+                shutdown_markers[index].display().to_string(),
+            ]
         })
         .collect::<Vec<_>>();
-    std::fs::write(
-        &config_path,
-        serde_json::to_vec(&serde_json::json!({ "providers": providers }))
-            .expect("serialize provider config"),
-    )
-    .expect("write provider config");
-
-    let request = requests::request(
-        source_path.to_str().expect("UTF-8 source path"),
-        Some((
-            "eq",
-            serde_json::json!([
-                {"parameter":"x","value":2},
-                {"parameter":"y","value":3}
-            ]),
-        )),
-    );
+    let (request, config) = provider_run(directory.path(), &providers);
     let output = Command::new(FSL)
         .arg("run")
-        .arg(request.as_str())
+        .arg(&request)
         .arg("--provider-config")
-        .arg(&config_path)
+        .arg(&config)
         .args(["--format", "json"])
         .output()
         .expect("run production fsl binary with duplicate identities");
-    let message = "configured process providers repeat admitted identity `agent-ix/provider/configured-duplicate`";
-    assert_eq!(output.status.code(), Some(20));
-    assert_eq!(
-        output.stdout,
-        expected_document_bytes(Code::InvalidRequest, message)
-    );
-    assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), message);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(PROVIDER_BACKEND), "{stderr}");
     assert!(request_markers.iter().all(|marker| !marker.exists()));
     assert!(shutdown_markers.iter().all(|marker| marker.is_file()));
-    std::fs::remove_dir_all(directory).expect("remove duplicate test directory");
 }
 
 /// Trace: FR-006-AC-4; the production binary cancels and reaps a selected provider before re-raising SIGTERM.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
-#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn configured_process_sigterm_cleans_active_session_before_reraise() {
     assert_configured_process_signal_cleans_active_session(
         signal_hook::consts::signal::SIGTERM,
-        "signal",
+        "term",
     );
 }
 
 /// Trace: FR-006-AC-4; the production binary cancels and reaps a selected provider before re-raising SIGINT.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
-#[ignore = "QSL-2192: provider process limits and execution mapping are pending the FR-287 ruling"]
 fn configured_process_sigint_cleans_active_session_before_reraise() {
     assert_configured_process_signal_cleans_active_session(
         signal_hook::consts::signal::SIGINT,
-        "signal-int",
+        "int",
     );
 }
 
@@ -983,82 +908,29 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
     use std::process::Stdio;
     use std::time::{Duration, Instant};
 
-    let unique = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system clock is after the Unix epoch")
-        .as_nanos();
-    let directory = std::env::temp_dir().join(format!(
-        "fsl-cli-configured-signal-{}-{unique}",
-        std::process::id()
-    ));
-    std::fs::create_dir(&directory).expect("create isolated signal test directory");
-    let request_marker = directory.join("request.json");
-    let ready_marker = directory.join("descendant-ready");
-    let release_marker = directory.join("release-descendant");
-    let descendant_marker = directory.join("descendant-leaked");
-    let config_path = directory.join("providers.json");
-    let source_path = directory.join("signal.native");
-    let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-         function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-         function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-        "filament.value.complete/v1"
+    let directory = tempfile::tempdir().expect("create isolated signal test directory");
+    let request_marker = directory.path().join("request.json");
+    let ready_marker = directory.path().join("descendant-ready");
+    let descendant_marker = directory.path().join("descendant-leaked");
+    let (request, config) = provider_run(
+        directory.path(),
+        &[vec![
+            PROVIDER_BACKEND.to_owned(),
+            "unbounded".to_owned(),
+            mode.to_owned(),
+            request_marker.display().to_string(),
+            "-".to_owned(),
+            ready_marker.display().to_string(),
+            descendant_marker.display().to_string(),
+        ]],
     );
-    std::fs::write(&source_path, source).expect("write source fixture");
-
-    let executable = std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-        .map(|directory| directory.join("python3"))
-        .find(|candidate| candidate.is_file())
-        .expect("the signal fixture requires Python 3");
-    let fixture = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/configured-fr331-provider.py"
-    );
-    let config = serde_json::json!({
-        "providers": [{
-            "executable": executable,
-            "argv": [
-                fixture,
-                "agent-ix/provider/configured-signal",
-                request_marker,
-                "value-validity",
-                mode,
-                ready_marker,
-                release_marker,
-                descendant_marker,
-            ],
-            "deadline_ms": 10_000,
-            "limits": {
-                "max_frame_bytes": 262_144,
-                "max_total_bytes": 1_048_576,
-                "max_stderr_bytes": 4096,
-                "cancellation_grace_ms": 250,
-            }
-        }]
-    });
-    std::fs::write(
-        &config_path,
-        serde_json::to_vec(&config).expect("serialize provider config"),
-    )
-    .expect("write provider config");
-
     let started = Instant::now();
-    let request = requests::request(
-        source_path.to_str().expect("UTF-8 source path"),
-        Some((
-            "eq",
-            serde_json::json!([
-                {"parameter":"x","value":2},
-                {"parameter":"y","value":3}
-            ]),
-        )),
-    );
     let mut child = Command::new(FSL)
         .arg("run")
-        .arg(request.as_str())
+        .arg(&request)
         .arg("--provider-config")
-        .arg(&config_path)
-        .args(["--format", "json"])
+        .arg(&config)
+        .args(["--provider-limit", "grace_ms=250", "--format", "json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -1073,7 +945,6 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
             let output = child
                 .wait_with_output()
                 .expect("collect timed-out fsl child");
-            let _ = std::fs::write(&release_marker, b"release");
             panic!(
                 "production signal flow did not exit within its bound: status={:?}, stdout={}, stderr={}",
                 output.status,
@@ -1086,11 +957,10 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
     let output = child
         .wait_with_output()
         .expect("collect signalled fsl child");
-    let _ = std::fs::write(&release_marker, b"release");
 
     assert!(
         request_marker.is_file(),
-        "fixture received a real FR-331 request"
+        "the provider received a real FR-331 request"
     );
     assert!(
         ready_marker.is_file(),
@@ -1109,16 +979,11 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
         started.elapsed() < Duration::from_secs(5),
         "cleanup remains bounded"
     );
-
-    let descendant_deadline = Instant::now() + Duration::from_secs(2);
-    while !descendant_marker.exists() && Instant::now() < descendant_deadline {
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    std::thread::sleep(Duration::from_secs(4));
     assert!(
         !descendant_marker.exists(),
-        "the process-group descendant was reaped before the CLI re-raised SIGTERM"
+        "the process-group descendant was reaped before the CLI re-raised the signal"
     );
-    std::fs::remove_dir_all(directory).expect("remove signal test directory");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-8; root argv refusals name the rejected argument.

@@ -27,7 +27,7 @@ use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
 
-use crate::provider_config::{ProviderArgumentError, ProviderArguments};
+use crate::provider_config::{OptionRefusal, ProviderArguments};
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
 #[must_use]
@@ -334,6 +334,48 @@ struct CheckOptions {
     libraries: Vec<PathBuf>,
     dependent_bytes: usize,
     limits: LimitOverrides,
+    /// The `--integer-division <law>` value, unread until the check runs
+    /// (FSL FR-767).
+    integer_division: Option<String>,
+}
+
+/// The integer-division law `value` names, admitted as FSL FR-767 states:
+/// exactly `euclidean`, `floor` or `truncating`; any other value refuses
+/// `unknown_profile`/`unsupported-selection` naming `source` and the value.
+fn admit_integer_division_law(
+    value: &str,
+    source: &str,
+) -> Result<fsl_replay::AdmittedIntegerDivision, Box<CommandResult>> {
+    use fsl_replay::DefinitionRole;
+    let role = match value {
+        "euclidean" => DefinitionRole::IntegerDivisionEuclidean,
+        "floor" => DefinitionRole::IntegerDivisionFloor,
+        "truncating" => DefinitionRole::IntegerDivisionTruncating,
+        _ => {
+            let message = format!(
+                "integer-division law `{value}` supplied by `{source}` is not one of \
+                 `euclidean`, `floor`, `truncating`"
+            );
+            return Err(Box::new(
+                CommandResult::document(
+                    OutcomeDocument::new(Operation::Check, None, Code::UnknownProfile.category())
+                        .with_diagnostics(vec![OutcomeDiagnostic::new(
+                            Some("unsupported-selection"),
+                            Code::UnknownProfile.as_str(),
+                            None,
+                            message.clone(),
+                        )]),
+                )
+                .with_diagnostic(message),
+            ));
+        }
+    };
+    fsl_replay::admit_integer_division(&[role.reference()], None).map_err(|refusal| {
+        Box::new(CommandResult::failure(
+            Category::InternalFailure,
+            format!("FSL did not admit its own `{value}` integer-division law: {refusal:?}"),
+        ))
+    })
 }
 
 struct SourceOptions {
@@ -440,10 +482,11 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
-    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--format json|text]";
+    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--integer-division euclidean|floor|truncating] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
+        let mut integer_division = None;
         let mut model = None;
         let mut libraries = Vec::new();
         let mut limit_operands = Vec::new();
@@ -464,7 +507,18 @@ impl CheckOptions {
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| "--model requires a path".to_owned())?;
                 if model.replace(PathBuf::from(path)).is_some() {
-                    return Err("--model may be supplied only once".to_owned());
+                    return Err("--model may be supplied only once".to_owned().into());
+                }
+                index += 2;
+                continue;
+            }
+            if argument == "--integer-division" {
+                let law = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--integer-division requires a law".to_owned())?;
+                if integer_division.replace(law.to_owned()).is_some() {
+                    return Err(OptionRefusal::Quiet(Self::USAGE.to_owned()));
                 }
                 index += 2;
                 continue;
@@ -480,7 +534,9 @@ impl CheckOptions {
             }
             if argument == "--dependent-bytes" {
                 if dependent_bytes_supplied {
-                    return Err("--dependent-bytes may be supplied only once".to_owned());
+                    return Err("--dependent-bytes may be supplied only once"
+                        .to_owned()
+                        .into());
                 }
                 let value = arguments
                     .get(index + 1)
@@ -504,13 +560,13 @@ impl CheckOptions {
                 continue;
             }
             if argument.starts_with('-') {
-                return Err(format!("unknown check option `{argument}`"));
+                return Err(format!("unknown check option `{argument}`").into());
             }
             positionals.push(argument.to_owned());
             index += 1;
         }
         if positionals.len() != 1 {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         }
         let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
@@ -519,6 +575,7 @@ impl CheckOptions {
             libraries,
             dependent_bytes,
             limits,
+            integer_division,
         })
     }
 }
@@ -551,7 +608,7 @@ fn apply_frontend_limits(
 impl RunOptions {
     const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, ProviderArgumentError> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
         let mut limit_operands = Vec::new();
         let mut engine = None;
@@ -990,6 +1047,17 @@ fn compile(options: CompileOptions) -> CommandResult {
 
 /// Check one source through FSL's typed front-end and serialize its S4 outcome.
 fn check_source(options: CheckOptions) -> CommandResult {
+    // FSL FR-767: an unknown law refuses before any source, model or
+    // library file is read.
+    let integer_division = match options
+        .integer_division
+        .as_deref()
+        .map(|law| admit_integer_division_law(law, "--integer-division"))
+        .transpose()
+    {
+        Ok(law) => law,
+        Err(refusal) => return *refusal,
+    };
     let mut limits = SpineLimits::default();
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "check") {
         return CommandResult::input_refusal(Operation::Check, error);
@@ -1019,6 +1087,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
             let inputs = command::CheckInputs {
                 limits,
                 dependent_bytes: options.dependent_bytes,
+                integer_division,
                 ..command::CheckInputs::default()
             };
             return check_result(&command::check_outcome(Path::new(&options.path), &inputs));
@@ -1058,6 +1127,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
         libraries,
         limits,
         dependent_bytes: options.dependent_bytes,
+        integer_division,
         ..command::CheckInputs::default()
     };
     check_result(&command::check_outcome(Path::new(&options.path), &inputs))
@@ -1209,7 +1279,7 @@ struct AnalyzeOptions {
 impl AnalyzeOptions {
     const USAGE: &str = "usage: fsl analyze <request-file> [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, ProviderArgumentError> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
         let mut providers = ProviderArguments::default();
         let mut index = 0;
@@ -1243,10 +1313,10 @@ impl AnalyzeOptions {
 /// verb's typed `invalid-request` document; a refused `--provider-limit`
 /// writes empty stdout and names the option and argument on stderr (FSL
 /// FR-287; FR-006).
-fn provider_argument_refusal(operation: Operation, error: &ProviderArgumentError) -> CommandResult {
+fn option_refusal(operation: Operation, error: &OptionRefusal) -> CommandResult {
     match error {
-        ProviderArgumentError::Usage(message) => CommandResult::input_refusal(operation, message),
-        ProviderArgumentError::Limit(message) => {
+        OptionRefusal::Usage(message) => CommandResult::input_refusal(operation, message),
+        OptionRefusal::Quiet(message) => {
             CommandResult::failure(Code::InvalidRequest.category(), message)
         }
     }
@@ -1969,7 +2039,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Analyze {
         return match AnalyzeOptions::parse(raw_arguments) {
             Ok(options) => analyze(&options, format),
-            Err(error) => provider_argument_refusal(Operation::Analyze, &error),
+            Err(error) => option_refusal(Operation::Analyze, &error),
         };
     }
     if verb == Verb::Monitor {
@@ -1981,7 +2051,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Run {
         return match RunOptions::parse(raw_arguments) {
             Ok(options) => with_format(run(options), format),
-            Err(error) => provider_argument_refusal(Operation::Execute, &error),
+            Err(error) => option_refusal(Operation::Execute, &error),
         };
     }
     if verb == Verb::Compile {
@@ -1993,7 +2063,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Check {
         return match CheckOptions::parse(raw_arguments) {
             Ok(options) => with_format(check_source(options), format),
-            Err(error) => CommandResult::input_refusal(Operation::Check, error),
+            Err(error) => option_refusal(Operation::Check, &error),
         };
     }
     if verb == Verb::Parse {
@@ -2306,8 +2376,8 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OutputFormat,
-        ProviderArgumentError, RunOptions, Verb,
+        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OptionRefusal,
+        OutputFormat, RunOptions, Verb,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
@@ -2496,7 +2566,7 @@ mod tests {
         ];
         assert_eq!(
             RunOptions::parse(&missing).err(),
-            Some(ProviderArgumentError::Usage(
+            Some(OptionRefusal::Usage(
                 "--provider-config requires a path".to_owned()
             ))
         );
@@ -2510,7 +2580,7 @@ mod tests {
         ];
         assert_eq!(
             RunOptions::parse(&duplicate).err(),
-            Some(ProviderArgumentError::Usage(
+            Some(OptionRefusal::Usage(
                 "--provider-config may be supplied only once".to_owned()
             ))
         );
@@ -2527,7 +2597,7 @@ mod tests {
         ];
         assert!(matches!(
             RunOptions::parse(&args).err(),
-            Some(ProviderArgumentError::Limit(message))
+            Some(OptionRefusal::Quiet(message))
                 if message.contains("--provider-limit `deadline_ms=010`")
         ));
     }
