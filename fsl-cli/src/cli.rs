@@ -210,8 +210,7 @@ impl Verb {
 
     fn help_description(self) -> &'static str {
         match self {
-            Self::Parse => "Executes with --format json; default text output is unavailable.",
-            Self::Check | Self::Compile | Self::Run => {
+            Self::Check | Self::Parse | Self::Compile | Self::Run => {
                 "Executes and writes its outcome document as text by default; --format json selects JSON."
             }
             Self::Format => "Executes source formatting; text output is the default.",
@@ -2088,18 +2087,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     }
     if verb == Verb::Parse {
         return match SourceOptions::parse(verb, raw_arguments) {
-            Ok(options) if format == OutputFormat::Text => {
-                if let Some(refusal) = source_preflight(
-                    &options,
-                    Operation::Parse,
-                    SpineLimits::default().source.source_bytes,
-                ) {
-                    refusal
-                } else {
-                    text_rendering_unavailable(Operation::Parse, "parse")
-                }
-            }
-            Ok(options) => parse_source(options),
+            Ok(options) => with_format(parse_source(options), format),
             Err(error) => CommandResult::input_refusal(Operation::Parse, error),
         };
     }
@@ -2224,21 +2212,6 @@ fn unrouted_wire(document: &OutcomeDocument, verb: &str) -> Option<serde_json::V
     let diagnostic = wire.get_mut("diagnostics")?.get_mut(0)?.as_object_mut()?;
     diagnostic.insert("detail".to_owned(), serde_json::json!({ "verb": verb }));
     Some(wire)
-}
-
-/// Refuse a text selection whose FSL outcome renderer is not available.
-/// Machine mode remains fully FSL-serialized; the diagnostic includes the
-/// native FSL code because text mode has no outcome-document renderer.
-fn text_rendering_unavailable(operation: Operation, verb: &str) -> CommandResult {
-    let code = Code::UnimplementedCapability;
-    CommandResult::catalog_failure_for(
-        operation,
-        code,
-        format!(
-            "text rendering for `{verb}` is unavailable ({})",
-            code.as_str()
-        ),
-    )
 }
 
 /// Emit one result document with the kit's canonical JSON and stream APIs.

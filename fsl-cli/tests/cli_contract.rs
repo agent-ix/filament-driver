@@ -884,17 +884,8 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
             .find(|line| line.split_whitespace().next() == Some(command))
             .expect("every recognized lifecycle command has its own help row")
     };
-    let parse_line = command_line("parse");
-    assert!(
-        parse_line.contains("Executes with --format json"),
-        "{parse_line}"
-    );
-    assert!(
-        parse_line.contains("default text output is unavailable"),
-        "{parse_line}"
-    );
-    // FR-865: text is the default for check, compile and run.
-    for command in ["check", "compile", "run"] {
+    // FR-865: text is the default for check, compile, parse and run.
+    for command in ["check", "compile", "parse", "run"] {
         let line = command_line(command);
         assert!(line.contains("text by default"), "{line}");
         assert!(line.contains("--format json selects JSON"), "{line}");
