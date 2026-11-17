@@ -504,7 +504,7 @@ mod tests {
 
         use filament_driver::{
             ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
-            ProviderManifest, ProviderRequest, ProviderResults,
+            ProviderManifest, ProviderResults,
         };
         use filament_exact::Cancel;
         use fsl_foundation::BackendId;
@@ -596,16 +596,15 @@ mod tests {
                 };
                 if stage.starts_with("request") {
                     let request_cancel = Cancel::new();
-                    let package = crate::test_support::emitted_package();
-                    let request = ProcessProviderRequest {
-                        emitted_package: &package,
-                        deadline_ms: 4096,
-                        manifest: &[],
-                        provider_request: ProviderRequest::new(&[]),
-                        fsl_items: &[],
-                        cancel: &request_cancel,
-                    };
-                    let _ = session.invoke(request);
+                    let handle = request_cancel.clone();
+                    session = crate::test_support::with_provider_request(move |request| {
+                        let _ = session.invoke(ProcessProviderRequest {
+                            request,
+                            manifest: &[],
+                            cancel: &handle,
+                        });
+                        session
+                    });
                     if request_cancel.cause().is_some() {
                         std::fs::write(
                             std::path::PathBuf::from(&ready).with_extension("request-cancelled"),

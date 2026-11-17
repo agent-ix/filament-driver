@@ -59,7 +59,6 @@ fn matches_configured_clock(
     match actual {
         CheckedMonitorClock::Configured(configured) => expected == configured,
         CheckedMonitorClock::ModelTime { .. } => false,
-        CheckedMonitorClock::TraceTime => false,
     }
 }
 
@@ -445,9 +444,10 @@ mod tests {
         let expected = ClockConfiguration::TimestampedEvent {
             timestamp_unit: "ms".into(),
         };
+        let trace_time = ClockConfiguration::Timed { unit: "ms".into() };
         assert!(!matches_configured_clock(
             &expected,
-            CheckedMonitorClock::TraceTime
+            CheckedMonitorClock::Configured(&trace_time)
         ));
     }
 }

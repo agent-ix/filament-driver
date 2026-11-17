@@ -1219,6 +1219,7 @@ mod scalar_native_tractability_tests {
                 value: Value::Integer(Integer::from(4_i64)),
             }],
             wire_arguments: Vec::new(),
+            snapshot: None,
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: Default::default(),
@@ -1386,6 +1387,7 @@ mod native_receipt_integration_tests {
                 value: Value::Integer(Integer::from(4_i64)),
             }],
             wire_arguments: Vec::new(),
+            snapshot: None,
             accounting: default_accounting(1_000_000),
             supplied: Default::default(),
             backend: Default::default(),
@@ -1584,14 +1586,16 @@ fn envelope(
             || cg::RequestedKind::Unknown(label.to_owned()),
             cg::RequestedKind::Known,
         );
-        let (candidates, set) = match item.candidates() {
+        let (candidates, set, evidence) = match item.candidates() {
             CandidateOutcome::Candidates(set) => (
                 cg::Candidates::Set(set.candidates().iter().map(cg_candidate).collect()),
                 set.candidates().to_vec(),
+                set.evidence().and_then(cg_evidence),
             ),
             CandidateOutcome::UnknownBackend(id) => (
                 cg::Candidates::UnknownBackend(id.as_str().to_owned()),
                 Vec::new(),
+                None,
             ),
         };
         candidate_sets.push(set);
@@ -1602,7 +1606,10 @@ fn envelope(
             named_backend: named.map(|id| id.as_str().to_owned()),
             candidates,
             kani_form: Some(kani_form),
-            requirements: cg::ItemRequirements::default(),
+            requirements: cg::ItemRequirements {
+                evidence,
+                ..cg::ItemRequirements::default()
+            },
         });
     }
 
@@ -1729,6 +1736,27 @@ fn project_descriptor(
         bounds: bounds.cloned(),
         profile: crate::analyze::profile_of(descriptor),
     })
+}
+
+/// The item's FR-290 evidence value as CG reads it; `None` when the item
+/// names none, so negotiation refuses it as `absent-evidence-kind`.
+fn cg_evidence(evidence: &fsl_route::ItemEvidence) -> Option<cg::RequestedEvidence> {
+    match evidence {
+        fsl_route::ItemEvidence::Absent => None,
+        fsl_route::ItemEvidence::Unknown(label) => {
+            Some(cg::RequestedEvidence::Unknown(label.clone()))
+        }
+        fsl_route::ItemEvidence::Kind(kind) => {
+            Some(cg::RequestedEvidence::Known(cg_evidence_kind(*kind)))
+        }
+    }
+}
+
+fn cg_evidence_kind(kind: fsl_route::EvidenceKind) -> cg::EvidenceKind {
+    match kind {
+        fsl_route::EvidenceKind::Statistical => cg::EvidenceKind::Statistical,
+        fsl_route::EvidenceKind::Exact => cg::EvidenceKind::Exact,
+    }
 }
 
 #[cfg(test)]

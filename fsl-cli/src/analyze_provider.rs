@@ -21,7 +21,12 @@ use fsl_foundation::{BackendId, RequestIndex};
 use fsl_replay::value_check::ValueTarget;
 use fsl_replay::WitnessValue;
 
-use crate::process_provider::{Fr331ResultKind, ProcessProviderItemOutcome, ProcessProviderOutcome};
+use crate::process_provider::{
+    Fr331ResultKind, ProcessProviderItemOutcome, ProcessProviderOutcome,
+};
+
+/// The one capability kind an external provider decides (FSL FR-281).
+const VALUE_VALIDITY: &str = "value-validity";
 
 /// One started session, shared between FSL's engine and the driver, which
 /// shuts it down once the run ends.
@@ -102,15 +107,19 @@ fn verdict(
         .result
         .as_ref()
         .ok()?;
+    // A result for another capability kind than the item's answers nothing
+    // (FSpec FR-462-AC-4).
     match &outcome.item {
         ProcessProviderItemOutcome::Result {
+            capability_kind,
             kind: Fr331ResultKind::Proved,
-            ..
-        } => Some(ProviderVerdict::Proved),
+        } if capability_kind == VALUE_VALIDITY => Some(ProviderVerdict::Proved),
         ProcessProviderItemOutcome::Result {
+            capability_kind,
             kind: Fr331ResultKind::Refuted,
-            ..
-        } => counterexample(index, backend, target, &outcome.response),
+        } if capability_kind == VALUE_VALIDITY => {
+            counterexample(index, backend, target, &outcome.response)
+        }
         _ => None,
     }
 }

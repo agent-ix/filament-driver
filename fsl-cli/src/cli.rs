@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parser and command handlers for the user-facing `fsl` binary.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -9,10 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use filament_driver::{
-    build_linked_providers, drive, execute, CompileInput, Driven, ExecutionEngine,
-    ExecutionFailure, ExecutionRequest, FslCg, GenerationInput, LimitOverrides, ObjectEnvironment,
-    ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
-    ProviderRequest, ProviderResults,
+    build_linked_providers, execute, ExecutionEngine, ExecutionFailure, ExecutionRequest,
+    LimitOverrides, ObjectEnvironment, ProcessProvider, ProcessProviderLimits,
+    ProcessProviderRequest, ProviderResults,
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
@@ -22,13 +21,13 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
-use fsl_replay::spine::{
-    check, parse, select, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits,
-};
-use fsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
+use fsl_replay::spine::{parse, CompileRefusal, ParseRequest, SpineLimits};
+use fsl_replay::RunRefusal;
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
+
+use crate::provider_config::{ProviderArgumentError, ProviderArguments};
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
 #[must_use]
@@ -124,8 +123,10 @@ fn help_exit_code() -> ExitCode {
     }
     help.push_str(concat!(
         "\nSource operands:\n",
-        "  parse <authority> <identity> <file> [--format json|text]\n",
+        "  parse <authority> <identity> <file> [--limit name=value] [--format json|text]\n",
         "  format <authority> <identity> <file> [--format json|text]\n",
+        "  check <source-path> [--model <file>] [--library <file>]... [--limit name=value]\n",
+        "      [--dependent-bytes <bytes>] [--format json|text]\n",
         "  compile <request-file> [--clocks <json-file>] [--output <file>]\n",
         "      [--format json|text]\n",
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
@@ -209,8 +210,9 @@ impl Verb {
 
     fn help_description(self) -> &'static str {
         match self {
-            Self::Parse | Self::Check | Self::Compile | Self::Run => {
-                "Executes with --format json; default text output is unavailable."
+            Self::Parse => "Executes with --format json; default text output is unavailable.",
+            Self::Check | Self::Compile | Self::Run => {
+                "Executes and writes its outcome document as text by default; --format json selects JSON."
             }
             Self::Format => "Executes source formatting; text output is the default.",
             Self::Analyze => "Executes a native-analyze/1 request; --format json or text.",
@@ -285,6 +287,11 @@ struct RunOptions {
     limits: LimitOverrides,
     engine: ExecutionEngine,
     clocks: Option<PathBuf>,
+    /// `--provider-config` and `--provider-limit` (FSL FR-287; FR-006).
+    providers: crate::provider_config::ProviderArguments,
+    /// The driver-side run options FSL's `run_with_providers` does not take,
+    /// in the order the caller gave them.
+    local_options: Vec<&'static str>,
 }
 
 type CliProviderError = crate::process_provider::AdapterError<
@@ -323,26 +330,46 @@ struct CompileOptions {
 
 struct CheckOptions {
     path: String,
+    model: Option<PathBuf>,
+    libraries: Vec<PathBuf>,
+    dependent_bytes: usize,
+    limits: LimitOverrides,
 }
 
 struct SourceOptions {
     source: SourceIdentity,
     path: PathBuf,
+    limits: LimitOverrides,
 }
 
 impl SourceOptions {
     fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
+        let limit_usage = if verb == Verb::Parse {
+            " [--limit name=value]"
+        } else {
+            ""
+        };
         let usage = || {
             format!(
-                "usage: fsl {} <authority> <identity> <file> [--format json|text]",
-                verb.name()
+                "usage: fsl {} <authority> <identity> <file>{limit_usage} [--format json|text]",
+                verb.name(),
             )
         };
         let mut positionals = Vec::new();
+        let mut limit_operands = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--limit" && verb == Verb::Parse {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
             }
@@ -361,9 +388,11 @@ impl SourceOptions {
         let identity = identity
             .to_str()
             .ok_or_else(|| format!("{} identity label must be valid UTF-8", verb.name()))?;
+        let limits = parse_frontend_limit_operands(&limit_operands, &fsl_cst::Limits::default())?;
         Ok(Self {
             source: SourceIdentity::new(authority, identity),
             path: PathBuf::from(*path),
+            limits,
         })
     }
 }
@@ -411,14 +440,66 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
+    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--format json|text]";
+
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
+        let mut model = None;
+        let mut libraries = Vec::new();
+        let mut limit_operands = Vec::new();
+        let mut dependent_bytes = RunLimits::default().dependent_bytes;
+        let mut dependent_bytes_supplied = false;
         let mut index = 0;
         while index < arguments.len() {
             let argument = arguments[index]
                 .to_str()
                 .ok_or_else(|| "check arguments must be valid UTF-8".to_owned())?;
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--model" {
+                let path = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--model requires a path".to_owned())?;
+                if model.replace(PathBuf::from(path)).is_some() {
+                    return Err("--model may be supplied only once".to_owned());
+                }
+                index += 2;
+                continue;
+            }
+            if argument == "--library" {
+                let path = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--library requires a path".to_owned())?;
+                libraries.push(PathBuf::from(path));
+                index += 2;
+                continue;
+            }
+            if argument == "--dependent-bytes" {
+                if dependent_bytes_supplied {
+                    return Err("--dependent-bytes may be supplied only once".to_owned());
+                }
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .ok_or_else(|| {
+                        "--dependent-bytes requires a non-negative byte count".to_owned()
+                    })?;
+                dependent_bytes = value;
+                dependent_bytes_supplied = true;
+                index += 2;
+                continue;
+            }
+            if argument == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
             }
@@ -429,32 +510,79 @@ impl CheckOptions {
             index += 1;
         }
         if positionals.len() != 1 {
-            return Err("usage: fsl check <source-path> [--format json|text]".to_owned());
+            return Err(Self::USAGE.to_owned());
         }
+        let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
             path: positionals.remove(0),
+            model,
+            libraries,
+            dependent_bytes,
+            limits,
         })
     }
 }
 
-impl RunOptions {
-    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--format json|text]";
+fn parse_frontend_limit_operands(
+    operands: &[String],
+    bounds: &impl SettingLimits,
+) -> Result<LimitOverrides, String> {
+    LimitOverrides::parse(operands).map_err(|error| {
+        let accepted = bounds
+            .bounds()
+            .into_iter()
+            .map(|(setting, _)| setting.name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{error}; settings accepted by this command: {accepted}")
+    })
+}
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+fn apply_frontend_limits(
+    overrides: &LimitOverrides,
+    bounds: &mut impl SettingLimits,
+    operation: &str,
+) -> Result<(), String> {
+    overrides
+        .apply_to_limits(bounds)
+        .map_err(|error| error.message_for(operation))
+}
+
+impl RunOptions {
+    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
+
+    fn parse(arguments: &[OsString]) -> Result<Self, ProviderArgumentError> {
         let mut positionals = Vec::new();
         let mut limit_operands = Vec::new();
         let mut engine = None;
         let mut intake_limits = RunLimits::default();
         let mut byte_options = BTreeSet::new();
         let mut clocks: Option<PathBuf> = None;
+        let mut providers = crate::provider_config::ProviderArguments::default();
+        let mut local_options = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
+            if let Some(taken) = providers.take(arguments, index)? {
+                index += taken;
+                continue;
+            }
             let arg = arguments[index].to_str();
+            if let Some(option) = [
+                "--request-bytes",
+                "--dependent-bytes",
+                "--limit",
+                "--clocks",
+            ]
+            .into_iter()
+            .find(|option| arg == Some(*option))
+            {
+                local_options.push(option);
+            }
             match arg {
                 Some("--request-bytes" | "--dependent-bytes") => {
                     let option = arg.unwrap_or_default();
                     if !byte_options.insert(option) {
-                        return Err(format!("{option} may be supplied only once"));
+                        return Err(format!("{option} may be supplied only once").into());
                     }
                     index += 1;
                     let value = arguments
@@ -485,7 +613,7 @@ impl RunOptions {
                         .and_then(|value| value.to_str())
                         .ok_or_else(|| "--engine requires interpreter, aot, or jit".to_owned())?;
                     if engine.is_some() {
-                        return Err("--engine may be supplied only once".to_owned());
+                        return Err("--engine may be supplied only once".to_owned().into());
                     }
                     engine = Some(ExecutionEngine::parse(value)?);
                 }
@@ -500,18 +628,18 @@ impl RunOptions {
                         .and_then(|value| value.to_str())
                         .is_none()
                     {
-                        return Err(format!("{} requires a value", arg.unwrap_or_default()));
+                        return Err(format!("{} requires a value", arg.unwrap_or_default()).into());
                     }
                 }
                 Some(option) if option.starts_with('-') => {
-                    return Err(format!("unknown run option `{option}`"));
+                    return Err(format!("unknown run option `{option}`").into());
                 }
                 _ => positionals.push(arguments[index].clone()),
             }
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         };
         Ok(Self {
             path: PathBuf::from(path),
@@ -519,6 +647,8 @@ impl RunOptions {
             limits: LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?,
             engine: engine.unwrap_or_default(),
             clocks,
+            providers,
+            local_options,
         })
     }
 }
@@ -534,6 +664,8 @@ struct CommandResult {
     analyze_document: Option<serde_json::Value>,
     /// One plain stderr line, written in place of the document diagnostics.
     stderr_line: Option<String>,
+    /// The admitted sources the command read, for locating text diagnostics (FR-865).
+    render_sources: Option<fsl_inspect::RenderSources>,
 }
 
 impl CommandResult {
@@ -545,6 +677,7 @@ impl CommandResult {
             text_output: None,
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 
@@ -556,6 +689,7 @@ impl CommandResult {
             text_output: None,
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 
@@ -567,6 +701,7 @@ impl CommandResult {
             text_output,
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 
@@ -583,6 +718,11 @@ impl CommandResult {
             ]),
         )
         .with_diagnostic(message)
+    }
+
+    fn with_sources(mut self, sources: fsl_inspect::RenderSources) -> Self {
+        self.render_sources = Some(sources);
+        self
     }
 
     fn with_diagnostic(mut self, message: impl Into<String>) -> Self {
@@ -645,11 +785,31 @@ fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -
     .with_diagnostic(message)
 }
 
-/// Run one complete-V1 function through FSL's interpreter.
+/// Run one native-run/1 request. With `--provider-config` or
+/// `--provider-limit` the run goes through FSL's `run_with_providers` with
+/// the configured process providers registered beside FSL's engines and the
+/// run's one limit set (FSL FR-961, FR-964); otherwise the driver runs the
+/// request through FSL's interpreter with its own run options.
 fn run(options: RunOptions) -> CommandResult {
+    let provider_config = match load_provider_config(&options.providers) {
+        Ok(config) => config,
+        Err(refusal) => return *refusal,
+    };
     if options.engine != ExecutionEngine::Interpreter {
         let failure = ExecutionFailure::UnsupportedEngine(options.engine);
         return CommandResult::document(failure.into_document());
+    }
+    if options.providers.given() {
+        if let Some(option) = options.local_options.first() {
+            return CommandResult::input_refusal(
+                Operation::Execute,
+                format!(
+                    "`{option}` cannot be combined with --provider-config or --provider-limit: \
+                     FSL's provider run entry takes no {option}"
+                ),
+            );
+        }
+        return run_with_providers(&options.path, provider_config, options.providers.limits);
     }
     // Reject a setting unavailable to every run family before request-file I/O.
     // The selected function or clause still validates its exact bounds below.
@@ -661,7 +821,7 @@ fn run(options: RunOptions) -> CommandResult {
                 return CommandResult::input_refusal(
                     Operation::Execute,
                     filament_driver::LimitError::OperationUnavailable { setting: *setting }
-                        .to_string(),
+                        .message_for("run"),
                 );
             }
         }
@@ -696,6 +856,12 @@ fn run(options: RunOptions) -> CommandResult {
     let input = match prepared {
         PreparedRun::Function(prepared) => prepared.into_input(),
         PreparedRun::Clause(request) => return run_clause_request(*request, &options.limits),
+        PreparedRun::TlLowering(_) => {
+            return CommandResult::input_refusal(
+                Operation::Execute,
+                "FR-931 tl_lowering requests are not run by the driver yet",
+            );
+        }
     };
     let command::FunctionRunInput {
         source,
@@ -709,6 +875,7 @@ fn run(options: RunOptions) -> CommandResult {
         return CommandResult::input_refusal(Operation::Execute, error.to_string());
     }
     let identity = source.identity().clone();
+    let render_sources = fsl_inspect::RenderSources::from_sources([source.clone()]);
     match execute(ExecutionRequest {
         source: identity,
         package_name: &package_name,
@@ -722,8 +889,10 @@ fn run(options: RunOptions) -> CommandResult {
         cancel: Cancel::new(),
         engine: options.engine,
     }) {
-        Ok(result) => CommandResult::document(result.document),
-        Err(failure) => CommandResult::document(failure.into_document()),
+        Ok(result) => CommandResult::document(result.document).with_sources(render_sources),
+        Err(failure) => {
+            CommandResult::document(failure.into_document()).with_sources(render_sources)
+        }
     }
 }
 
@@ -740,7 +909,8 @@ fn run_clause_request(
         return CommandResult::input_refusal(Operation::Monitor, error.to_string());
     }
     let name = match &request.selection {
-        ClauseRunSelection::Clause(selection) => selection.name.clone(),
+        ClauseRunSelection::Clause(selection)
+        | ClauseRunSelection::ClauseWithPath { selection, .. } => selection.name.clone(),
         ClauseRunSelection::Function { name, .. }
         | ClauseRunSelection::Temporal { name, .. }
         | ClauseRunSelection::SampledTemporal { name, .. } => name.clone(),
@@ -796,16 +966,34 @@ fn compile(options: CompileOptions) -> CommandResult {
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
+        ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
-        Ok(outcome) => CommandResult::document(outcome.document().clone()),
+        Ok(outcome) => CommandResult::document(outcome.document().clone())
+            .with_sources(fsl_command::render_sources(outcome.sources())),
+        Err(error) if matches!(error.cause, command::RunCause::EmptyCompileProgram) => {
+            let code = Code::InvalidPackage;
+            CommandResult::document(
+                OutcomeDocument::new(Operation::Package, None, code.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        Some("invalid-value"),
+                        code.as_str(),
+                        None,
+                        error.to_string(),
+                    )],
+                ),
+            )
+        }
         Err(error) => CommandResult::document(error.outcome_document(Operation::Package)),
     }
 }
 
 /// Check one source through FSL's typed front-end and serialize its S4 outcome.
 fn check_source(options: CheckOptions) -> CommandResult {
-    let limits = SpineLimits::default();
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "check") {
+        return CommandResult::input_refusal(Operation::Check, error);
+    }
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -814,11 +1002,10 @@ fn check_source(options: CheckOptions) -> CommandResult {
         }
     };
     let source = SourceIdentity::new("filament", &options.path);
-    let packages = BTreeMap::new();
     let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
     tc018_record_check_request(&options, &source, &bytes, limits);
-    let result = parse(
+    let parsed = match parse(
         &ParseRequest {
             source: &source,
             path: &options.path,
@@ -826,24 +1013,64 @@ fn check_source(options: CheckOptions) -> CommandResult {
         },
         limits.source,
         &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &packages, limits.model, &cancel).and_then(|models| {
-            check(
-                parsed.value(),
-                options.path.clone(),
-                models.value(),
-                &DependencyInput::default(),
+    ) {
+        Ok(parsed) => parsed,
+        Err(_failure) => {
+            let inputs = command::CheckInputs {
                 limits,
-                &cancel,
-            )
+                dependent_bytes: options.dependent_bytes,
+                ..command::CheckInputs::default()
+            };
+            return check_result(&command::check_outcome(Path::new(&options.path), &inputs));
+        }
+    };
+
+    // The CLI accepts files while the typed check API also requires each
+    // selected identity. Read those identities from the source first so
+    // unused model and library paths are refused before their files open.
+    let selected_models = &parsed.value().unit().selections().models;
+    let selected_libraries = &parsed.value().unit().selections().imports;
+    let models = options
+        .model
+        .map(|path| {
+            let identity = selected_models
+                .first()
+                .map(|selection| selection.identity.clone())
+                .unwrap_or_else(|| "unused-model".to_owned());
+            (identity, path)
         })
-    });
-    CommandResult::document(OutcomeDocument::from_check(&result))
+        .into_iter()
+        .collect();
+    let libraries = options
+        .libraries
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let identity = selected_libraries
+                .get(index)
+                .map(|selection| selection.identity.clone())
+                .unwrap_or_else(|| format!("unused-library-{index}"));
+            (identity, path)
+        })
+        .collect();
+    let inputs = command::CheckInputs {
+        models,
+        libraries,
+        limits,
+        dependent_bytes: options.dependent_bytes,
+        ..command::CheckInputs::default()
+    };
+    check_result(&command::check_outcome(Path::new(&options.path), &inputs))
+}
+
+/// The check result with the sources the check admitted.
+fn check_result(outcome: &command::CheckOutcome) -> CommandResult {
+    CommandResult::document(outcome.document().clone())
+        .with_sources(fsl_command::render_sources(outcome.sources()))
 }
 
 /// Observe the TC-018 refused-range selection at the typed check boundary.
-/// The normal FSL parse/select/check below supplies the result; argv parsing,
+/// The normal FSL parse/check outcome supplies the result; argv parsing,
 /// source reading, serialization and exit mapping remain the production paths.
 #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
 fn tc018_record_check_request(
@@ -907,7 +1134,14 @@ fn source_preflight(
 
 /// Parse one source through FSL and serialize its typed parse outcome.
 fn parse_source(options: SourceOptions) -> CommandResult {
-    let limits = SpineLimits::default();
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits.source, "parse") {
+        return CommandResult::input_refusal(Operation::Parse, error);
+    }
+    if let Some(refusal) = source_preflight(&options, Operation::Parse, limits.source.source_bytes)
+    {
+        return refusal;
+    }
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -962,65 +1196,95 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
     Ok(bytes)
 }
 
-/// The operands of `fsl analyze`: one `native-analyze/1` request file and an
-/// optional `--provider-config` file. The request document carries every
-/// analysis setting (FSL FR-620); the provider configuration names the
-/// process providers registered beside FSL's engines (FSL FR-287, FR-635).
+/// The operands of `fsl analyze`: one `native-analyze/1` request file, an
+/// optional `--provider-config` file and the `--provider-limit` set. The
+/// request document carries every analysis setting (FSL FR-620); the
+/// provider configuration names the process providers registered beside
+/// FSL's engines (FSL FR-287, FR-635; FSpec FR-561).
 struct AnalyzeOptions {
     path: PathBuf,
-    provider_config: Option<PathBuf>,
+    providers: ProviderArguments,
 }
 
 impl AnalyzeOptions {
-    const USAGE: &str =
-        "usage: fsl analyze <request-file> [--provider-config <path>] [--format json|text]";
+    const USAGE: &str = "usage: fsl analyze <request-file> [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+    fn parse(arguments: &[OsString]) -> Result<Self, ProviderArgumentError> {
         let mut positionals = Vec::new();
-        let mut provider_config = None;
+        let mut providers = ProviderArguments::default();
         let mut index = 0;
         while index < arguments.len() {
+            if let Some(taken) = providers.take(arguments, index)? {
+                index += taken;
+                continue;
+            }
             let argument = &arguments[index];
             if argument == "--format" {
                 index += 2;
                 continue;
             }
-            if argument == "--provider-config" {
-                let path = arguments
-                    .get(index + 1)
-                    .ok_or_else(|| "--provider-config requires a path".to_owned())?;
-                if provider_config.replace(PathBuf::from(path)).is_some() {
-                    return Err("--provider-config may be supplied only once".to_owned());
-                }
-                index += 2;
-                continue;
-            }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown analyze option `{option}`"));
+                return Err(format!("unknown analyze option `{option}`").into());
             }
             positionals.push(argument);
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         };
         Ok(Self {
             path: PathBuf::from(*path),
-            provider_config,
+            providers,
         })
     }
 }
 
-/// The started process providers of one analyze run: FSL's engines over
-/// them, the sessions the driver shuts down after the run, and their
-/// admitted descriptors for the driver's negotiation.
-struct AnalyzeProviders {
+/// The CLI result of a refused provider option: a usage refusal is the
+/// verb's typed `invalid-request` document; a refused `--provider-limit`
+/// writes empty stdout and names the option and argument on stderr (FSL
+/// FR-287; FR-006).
+fn provider_argument_refusal(operation: Operation, error: &ProviderArgumentError) -> CommandResult {
+    match error {
+        ProviderArgumentError::Usage(message) => CommandResult::input_refusal(operation, message),
+        ProviderArgumentError::Limit(message) => {
+            CommandResult::failure(Code::InvalidRequest.category(), message)
+        }
+    }
+}
+
+/// Read the caller's FSpec FR-561 document, or the empty one when none is
+/// named. A refusal exits 20 with empty stdout and its diagnostic, naming
+/// the file and the member, on stderr (FSpec FR-561; FR-006).
+fn load_provider_config(
+    arguments: &ProviderArguments,
+) -> Result<crate::provider_config::ProviderConfig, Box<CommandResult>> {
+    let Some(path) = arguments.config.as_deref() else {
+        return Ok(crate::provider_config::ProviderConfig {
+            format: crate::provider_config::FORMAT.to_owned(),
+            providers: Vec::new(),
+        });
+    };
+    crate::provider_config::load(path).map_err(|error| {
+        let message = match error {
+            crate::provider_config::ProviderConfigError::UnsupportedFormat { .. } => {
+                format!("unknown_wire/unsupported-wire: {error}")
+            }
+            _ => format!("invalid-request: invalid provider configuration: {error}"),
+        };
+        Box::new(CommandResult::failure(Category::Refusal, message))
+    })
+}
+
+/// The started process providers of one run: FSL's engines over them, the
+/// sessions the driver shuts down after the run, and their admitted
+/// descriptors for the driver's negotiation.
+struct StartedProviders {
     engines: Vec<fsl_analyze::analyze::Engine>,
     sessions: Vec<crate::analyze_provider::SharedSession>,
     descriptors: Vec<fsl_route::BackendDescriptor>,
 }
 
-impl AnalyzeProviders {
+impl StartedProviders {
     /// Shut every started session down, whether or not FSL called it.
     fn close(self) {
         drop(self.engines);
@@ -1040,22 +1304,24 @@ impl AnalyzeProviders {
 /// `Process` origin (FSL FR-635 "Where provider manifests come from"). A
 /// provider that does not start, or whose manifest does not advertise
 /// (`value-validity`, `unbounded`), is a registration failure naming the
-/// entry's executable; the providers already started are shut down.
-fn start_analyze_providers(
+/// entry's executable; the providers already started are shut down. Every
+/// session works under the run's one limit set (FSpec FR-777).
+fn start_providers(
     config: crate::provider_config::ProviderConfig,
+    limits: &fsl_analyze::provider::ProviderLimits,
     signals: &crate::signals::SignalContext,
     cancel: &Cancel,
-) -> Result<AnalyzeProviders, String> {
-    let mut started: Vec<(u64, CliProviderSession)> = Vec::new();
-    let shut = |started: Vec<(u64, CliProviderSession)>| {
-        for (_, session) in started {
+) -> Result<StartedProviders, String> {
+    let mut started: Vec<CliProviderSession> = Vec::new();
+    let shut = |started: Vec<CliProviderSession>| {
+        for session in started {
             let _ = filament_driver::ProcessProviderSession::shutdown(session);
         }
     };
     for configured in config.providers {
-        let name = configured.executable.display().to_string();
-        match start_configured_provider(&configured, signals, cancel) {
-            Ok(session) => started.push((configured.deadline_ms, session)),
+        let name = configured.path.display().to_string();
+        match start_configured_provider(&configured, limits, signals, cancel) {
+            Ok(session) => started.push(session),
             Err(error) => {
                 shut(started);
                 return Err(format!(
@@ -1064,7 +1330,7 @@ fn start_analyze_providers(
             }
         }
     }
-    let admissions = started.iter().map(|(_, session)| {
+    let admissions = started.iter().map(|session| {
         (
             filament_driver::ProcessProviderSession::descriptor(session).clone(),
             filament_driver::ProcessProviderSession::manifest(session).clone(),
@@ -1087,25 +1353,33 @@ fn start_analyze_providers(
             ));
         }
     };
-    let mut providers = AnalyzeProviders {
+    let mut providers = StartedProviders {
         engines: Vec::new(),
         sessions: Vec::new(),
         descriptors: Vec::new(),
     };
     let mut refusal = None;
-    for (deadline_ms, session) in started {
+    for session in started {
         let descriptor = filament_driver::ProcessProviderSession::descriptor(&session).clone();
+        let tool = manifest_tool(filament_driver::ProcessProviderSession::manifest(&session));
         let shared = std::sync::Arc::new(std::sync::Mutex::new(Some(session)));
         providers.sessions.push(std::sync::Arc::clone(&shared));
         if refusal.is_some() {
             continue;
         }
+        let Some(tool) = tool else {
+            refusal = Some(format!(
+                "process provider `{}` did not register: its hello manifest names no `tool` \
+                 (FSpec FR-331-AC-37)",
+                descriptor.id().as_str()
+            ));
+            continue;
+        };
         let provider = crate::analyze_provider::SessionProvider {
             session: shared,
             manifest: std::sync::Arc::clone(&manifest),
-            deadline_ms,
         };
-        match fsl_analyze::analyze::Engine::external(descriptor.clone(), Box::new(provider)) {
+        match fsl_analyze::analyze::Engine::external(descriptor.clone(), tool, Box::new(provider)) {
             Ok(engine) => {
                 providers.engines.push(engine);
                 providers.descriptors.push(descriptor);
@@ -1122,13 +1396,31 @@ fn start_analyze_providers(
     }
 }
 
-/// Start one configured process provider and admit its `hello`.
+/// The FSpec FR-331 `tool` of an admitted hello manifest: the retained
+/// descriptor's `{name, version}`, or `None` when it names none.
+fn manifest_tool(
+    manifest: &filament_driver::ProviderManifest,
+) -> Option<fsl_analyze::analyze::BackendTool> {
+    let descriptor: serde_json::Value = serde_json::from_slice(manifest.wire.as_deref()?).ok()?;
+    let tool = descriptor.get("tool")?;
+    fsl_analyze::analyze::BackendTool::new(
+        tool.get("name")?.as_str()?,
+        tool.get("version")?.as_str()?,
+    )
+    .ok()
+}
+
+/// Start one configured process provider under the run's transport limits
+/// and admit its `hello`. The process memory and CPU-time limits are not
+/// applied: the plugin host offers neither (FSpec FR-462 sets them "where
+/// the platform provides one").
 fn start_configured_provider(
-    configured: &crate::provider_config::ProcessProviderConfig,
+    configured: &crate::provider_config::ProviderEntry,
+    limits: &fsl_analyze::provider::ProviderLimits,
     signals: &crate::signals::SignalContext,
     cancel: &Cancel,
 ) -> Result<CliProviderSession, CliProviderError> {
-    let max_frame_bytes = configured.limits.max_frame_bytes;
+    let max_frame_bytes = limits.max_frame_bytes;
     let provider = crate::process_provider::HostProcessProvider::new(
         signals.clone(),
         move |manifest: &crate::backend_provider::ManifestStage| {
@@ -1141,19 +1433,17 @@ fn start_configured_provider(
         crate::process_provider::convert_fr331_response as CliProviderConvert,
     );
     let arguments = configured
-        .argv
+        .arguments
         .iter()
         .map(OsString::from)
         .collect::<Vec<_>>();
     let limits = ProcessProviderLimits {
-        max_frame_bytes: configured.limits.max_frame_bytes,
-        max_total_bytes: configured.limits.max_total_bytes,
-        max_stderr_bytes: configured.limits.max_stderr_bytes,
-        cancellation_grace: std::time::Duration::from_millis(
-            configured.limits.cancellation_grace_ms,
-        ),
+        max_frame_bytes: limits.max_frame_bytes,
+        max_total_bytes: limits.max_total_bytes,
+        max_stderr_bytes: limits.max_stderr_bytes,
+        cancellation_grace: std::time::Duration::from_millis(limits.grace_ms),
     };
-    provider.start(&configured.executable, &arguments, limits, cancel)
+    provider.start(&configured.path, &arguments, limits, cancel)
 }
 
 /// Read the `native-analyze/1` request, have FSL analyze its items under the
@@ -1164,39 +1454,19 @@ fn start_configured_provider(
 /// handle with cause `requested`, and the verb writes the outcome FSL settles
 /// for it (FSL FR-624 `cancelled`, exit 22) rather than dying by the signal.
 fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
-    let config = match options.provider_config.as_deref() {
-        Some(path) => match crate::provider_config::load(path) {
-            Ok(config) => config,
-            Err(error) => {
-                return CommandResult::input_refusal(
-                    Operation::Analyze,
-                    format!("invalid process-provider configuration: {error}"),
-                );
-            }
-        },
-        None => crate::provider_config::ProviderConfig::default(),
+    let config = match load_provider_config(&options.providers) {
+        Ok(config) => config,
+        Err(refusal) => return *refusal,
     };
     let path = options.path.clone();
-    let ran = crate::signals::run(move |signals| {
-        let cancel = Cancel::new();
-        let _reporting = signals.activate_reporting(cancel.clone());
-        let mut providers = match start_analyze_providers(config, &signals, &cancel) {
-            Ok(providers) => providers,
-            Err(message) => return Err(message),
-        };
-        let negotiation =
-            match filament_driver::AnalyzeNegotiation::with_providers(&providers.descriptors) {
-                Ok(negotiation) => negotiation,
-                Err(error) => {
-                    providers.close();
-                    return Err(format!("{error:?}"));
-                }
-            };
-        let engines = std::mem::take(&mut providers.engines);
-        let written = command::analyze_with_providers(&path, &negotiation, engines, &cancel);
-        providers.close();
-        Ok(written)
-    });
+    let ran = with_started_providers(
+        config,
+        options.providers.limits,
+        true,
+        move |negotiation, engines, provider_options, cancel| {
+            command::analyze_with_providers(&path, negotiation, engines, provider_options, cancel)
+        },
+    );
     let written = match ran {
         Ok(Ok(written)) => written,
         Ok(Err(message)) => return CommandResult::input_refusal(Operation::Analyze, message),
@@ -1231,6 +1501,112 @@ fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
     }
 }
 
+/// Inside one signal session, start the configured providers under `limits`,
+/// build the driver's negotiation over them and FSL's engines, run `entry`
+/// with them, and shut every session down once it returns. A `reporting`
+/// session consumes a received signal so the command writes FSL's
+/// cancellation outcome (FR-022); otherwise the signal is re-raised after
+/// cleanup (FR-006-AC-4).
+fn with_started_providers<T: Send + 'static>(
+    config: crate::provider_config::ProviderConfig,
+    limits: fsl_analyze::provider::ProviderLimits,
+    reporting: bool,
+    entry: impl FnOnce(
+            &filament_driver::AnalyzeNegotiation,
+            Vec<fsl_analyze::analyze::Engine>,
+            &fsl_analyze::provider::ProviderOptions,
+            &Cancel,
+        ) -> T
+        + Send
+        + 'static,
+) -> io::Result<Result<T, String>> {
+    crate::signals::run(move |signals| {
+        let cancel = Cancel::new();
+        let _session = if reporting {
+            signals.activate_reporting(cancel.clone())
+        } else {
+            signals.activate(cancel.clone())
+        };
+        let mut providers = start_providers(config, &limits, &signals, &cancel)?;
+        let negotiation =
+            match filament_driver::AnalyzeNegotiation::with_providers(&providers.descriptors) {
+                Ok(negotiation) => negotiation,
+                Err(error) => {
+                    providers.close();
+                    return Err(format!("{error:?}"));
+                }
+            };
+        let engines = std::mem::take(&mut providers.engines);
+        let options = fsl_analyze::provider::ProviderOptions {
+            provider_limits: limits,
+        };
+        let written = entry(&negotiation, engines, &options, &cancel);
+        providers.close();
+        Ok(written)
+    })
+}
+
+/// `fsl run` with configured providers: FSL's `run_with_providers` runs the
+/// request and settles its call's requirement items against FSL's engines
+/// and the started process providers (FSL FR-961, FR-963), under the run's
+/// one limit set (FSL FR-964).
+fn run_with_providers(
+    path: &Path,
+    config: crate::provider_config::ProviderConfig,
+    limits: fsl_analyze::provider::ProviderLimits,
+) -> CommandResult {
+    let path = path.to_path_buf();
+    let ran = with_started_providers(
+        config,
+        limits,
+        false,
+        move |negotiation, engines, options, cancel| {
+            command::run_with_providers(&path, negotiation, engines, options, cancel)
+        },
+    );
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Execute, message),
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
+        }
+    };
+    match written {
+        Ok(result) => match result.outcome {
+            Some(document) => CommandResult::document(document),
+            None => native_result(result.value.as_value().clone(), result.exit_code),
+        },
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
+    }
+}
+
+/// A run result FSL writes as its native document rather than an FR-286
+/// outcome: the document unchanged in machine mode and its JSON text
+/// otherwise, under the category FSL's exit code names (FR-285).
+fn native_result(document: serde_json::Value, exit_code: u8) -> CommandResult {
+    let Some(category) = Category::ALL
+        .into_iter()
+        .find(|category| category.exit_code() == exit_code)
+    else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!("FSL's run exit code {exit_code} names no category"),
+        );
+    };
+    CommandResult {
+        category,
+        document: None,
+        diagnostic: None,
+        text_output: Some(document.to_string()),
+        analyze_document: Some(document),
+        stderr_line: None,
+        render_sources: None,
+    }
+}
+
 /// The CLI result of an accepted analyze request: the document's category
 /// must be the one FSL's exit code names (FR-285), or the result is an
 /// internal failure rather than a guessed exit.
@@ -1255,9 +1631,9 @@ fn analyze_result(
         document: None,
         diagnostic: None,
         text_output,
-        configured_run: None,
         analyze_document: Some(document),
         stderr_line: None,
+        render_sources: None,
     }
 }
 
@@ -1582,9 +1958,9 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         document: None,
         diagnostic: None,
         text_output: None,
-        configured_run: None,
         analyze_document: None,
         stderr_line: None,
+        render_sources: None,
     }
 }
 
@@ -1593,7 +1969,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Analyze {
         return match AnalyzeOptions::parse(raw_arguments) {
             Ok(options) => analyze(&options, format),
-            Err(error) => CommandResult::input_refusal(Operation::Analyze, error),
+            Err(error) => provider_argument_refusal(Operation::Analyze, &error),
         };
     }
     if verb == Verb::Monitor {
@@ -1604,46 +1980,36 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     }
     if verb == Verb::Run {
         return match RunOptions::parse(raw_arguments) {
-            Ok(_options) if format == OutputFormat::Text => {
-                text_rendering_unavailable(Operation::Execute, "run")
-            }
-            Ok(options) => run(options),
-            Err(error) => CommandResult::input_refusal(Operation::Execute, error),
+            Ok(options) => with_format(run(options), format),
+            Err(error) => provider_argument_refusal(Operation::Execute, &error),
         };
     }
     if verb == Verb::Compile {
         return match CompileOptions::parse(raw_arguments) {
-            Ok(_options) if format == OutputFormat::Text => {
-                text_rendering_unavailable(Operation::Package, "compile")
-            }
-            Ok(options) => compile(options),
+            Ok(options) => with_format(compile(options), format),
             Err(error) => CommandResult::input_refusal(Operation::Package, error),
         };
     }
     if verb == Verb::Check {
         return match CheckOptions::parse(raw_arguments) {
-            Ok(_options) if format == OutputFormat::Text => {
-                text_rendering_unavailable(Operation::Check, "check")
-            }
-            Ok(options) => check_source(options),
+            Ok(options) => with_format(check_source(options), format),
             Err(error) => CommandResult::input_refusal(Operation::Check, error),
         };
     }
     if verb == Verb::Parse {
         return match SourceOptions::parse(verb, raw_arguments) {
-            Ok(options) => {
+            Ok(options) if format == OutputFormat::Text => {
                 if let Some(refusal) = source_preflight(
                     &options,
                     Operation::Parse,
                     SpineLimits::default().source.source_bytes,
                 ) {
                     refusal
-                } else if format == OutputFormat::Text {
-                    text_rendering_unavailable(Operation::Parse, "parse")
                 } else {
-                    parse_source(options)
+                    text_rendering_unavailable(Operation::Parse, "parse")
                 }
             }
+            Ok(options) => parse_source(options),
             Err(error) => CommandResult::input_refusal(Operation::Parse, error),
         };
     }
@@ -1695,6 +2061,38 @@ fn unrouted_operation(verb: Verb) -> Option<Operation> {
         | Verb::Run
         | Verb::Analyze
         | Verb::Monitor => None,
+    }
+}
+
+/// In text mode, replace the result's outcome document with FSL's FR-865 text
+/// form of it, built from the same document and the sources the command read.
+/// Machine mode keeps the document untouched and the exit category never moves.
+fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult {
+    if format != OutputFormat::Text {
+        return result;
+    }
+    let Some(document) = result.document.as_ref() else {
+        return result;
+    };
+    let sources = result
+        .render_sources
+        .take()
+        .unwrap_or_else(|| fsl_inspect::RenderSources::from_sources([]));
+    match fsl_inspect::render_outcome(
+        document,
+        fsl_inspect::RenderForm::Text,
+        &sources,
+        fsl_replay::RenderLimits::default(),
+        &Cancel::new(),
+    ) {
+        Ok(staged) => {
+            result.text_output = Some(staged.into_value().as_str().to_owned());
+            result
+        }
+        Err(_) => CommandResult::failure(
+            Category::InternalFailure,
+            "could not render the outcome document as text",
+        ),
     }
 }
 
@@ -1908,9 +2306,27 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        parse_invocation, read_source, ExecutionEngine, Invocation, OutputFormat, RunOptions, Verb,
+        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OutputFormat,
+        ProviderArgumentError, RunOptions, Verb,
     };
+    use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn unavailable_limit_error_is_generic_and_cli_message_names_operation() {
+        let error = filament_driver::LimitError::OperationUnavailable {
+            setting: SettingName::Stage(Setting::ExploreStates),
+        };
+        assert_eq!(
+            error.to_string(),
+            "limit setting `explore.states` is unavailable for this operation"
+        );
+        assert_eq!(
+            error.message_for("run"),
+            "limit setting `explore.states` is unavailable for the `run` operation"
+        );
+    }
 
     /// Trace: FR-002-AC-1, root command surface.
     #[test]
@@ -1983,6 +2399,56 @@ mod tests {
         ));
     }
 
+    /// Trace: QSL-1972 / FR-866-AC-5; check parses its named model and library inputs.
+    #[test]
+    fn check_options_accept_model_libraries_and_dependent_byte_limit() {
+        let args = vec![
+            OsString::from("unit.fsl"),
+            OsString::from("--model"),
+            OsString::from("model.json"),
+            OsString::from("--library"),
+            OsString::from("geometry.native"),
+            OsString::from("--library"),
+            OsString::from("units.native"),
+            OsString::from("--dependent-bytes"),
+            OsString::from("1234"),
+        ];
+        let options = CheckOptions::parse(&args).expect("valid check inputs");
+        assert_eq!(options.path, "unit.fsl");
+        assert_eq!(options.model.as_deref(), Some(Path::new("model.json")));
+        assert_eq!(
+            options.libraries,
+            [
+                PathBuf::from("geometry.native"),
+                PathBuf::from("units.native")
+            ]
+        );
+        assert_eq!(options.dependent_bytes, 1234);
+    }
+
+    /// Trace: QSL-1972 / FR-866-AC-5; malformed named check inputs refuse during argv parsing.
+    #[test]
+    fn check_options_reject_missing_or_duplicate_model_and_invalid_byte_limit() {
+        for args in [
+            vec![OsString::from("unit.fsl"), OsString::from("--model")],
+            vec![OsString::from("unit.fsl"), OsString::from("--library")],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--dependent-bytes"),
+                OsString::from("many"),
+            ],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--model"),
+                OsString::from("one.json"),
+                OsString::from("--model"),
+                OsString::from("two.json"),
+            ],
+        ] {
+            assert!(CheckOptions::parse(&args).is_err(), "accepted {args:?}");
+        }
+    }
+
     /// Trace: FR-003-AC-1 / FR-004-AC-1, parse both options into the run call.
     #[test]
     fn run_options_keep_the_requested_engine_and_limits() {
@@ -2003,7 +2469,7 @@ mod tests {
                 1024,
             )]
         );
-        assert_eq!(options.provider_config, None);
+        assert!(!options.providers.given());
     }
 
     /// Trace: FR-006-AC-24, FR-014-AC-6; accept only one explicitly named config path.
@@ -2016,7 +2482,7 @@ mod tests {
         ];
         let options = RunOptions::parse(&args).expect("valid provider config path");
         assert_eq!(
-            options.provider_config.as_deref(),
+            options.providers.config.as_deref(),
             Some(std::path::Path::new("providers.json"))
         );
     }
@@ -2028,10 +2494,12 @@ mod tests {
             OsString::from("unit.fsl"),
             OsString::from("--provider-config"),
         ];
-        assert!(RunOptions::parse(&missing)
-            .err()
-            .expect("provider config path is required")
-            .contains("--provider-config requires a path"));
+        assert_eq!(
+            RunOptions::parse(&missing).err(),
+            Some(ProviderArgumentError::Usage(
+                "--provider-config requires a path".to_owned()
+            ))
+        );
 
         let duplicate = vec![
             OsString::from("unit.fsl"),
@@ -2040,10 +2508,28 @@ mod tests {
             OsString::from("--provider-config"),
             OsString::from("two.json"),
         ];
-        assert!(RunOptions::parse(&duplicate)
-            .err()
-            .expect("provider config may be selected once")
-            .contains("only once"));
+        assert_eq!(
+            RunOptions::parse(&duplicate).err(),
+            Some(ProviderArgumentError::Usage(
+                "--provider-config may be supplied only once".to_owned()
+            ))
+        );
+    }
+
+    /// Trace: FR-006-AC-29; a refused `--provider-limit` is its own refusal,
+    /// with empty stdout, not a usage refusal.
+    #[test]
+    fn run_options_refuse_a_malformed_provider_limit() {
+        let args = vec![
+            OsString::from("unit.fsl"),
+            OsString::from("--provider-limit"),
+            OsString::from("deadline_ms=010"),
+        ];
+        assert!(matches!(
+            RunOptions::parse(&args).err(),
+            Some(ProviderArgumentError::Limit(message))
+                if message.contains("--provider-limit `deadline_ms=010`")
+        ));
     }
 
     /// Trace: FR-004-AC-2, an unknown engine fails before any source stage.
@@ -2087,4 +2573,3 @@ mod tests {
         assert_eq!(actual, expected[..=limit]);
     }
 }
-

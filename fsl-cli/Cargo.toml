@@ -31,6 +31,7 @@ filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic
 base64 = "=0.23.1"
 fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-cst = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
@@ -53,10 +54,11 @@ serde_path_to_error = "=0.1.20"
 signal-hook = "=0.4.6"
 
 [dev-dependencies]
+tempfile = "=3.27.0"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 libc = "=0.2.190"
 filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
-filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", branch = "main" }
+filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.0" }
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 regex = "=1.13.1"
 

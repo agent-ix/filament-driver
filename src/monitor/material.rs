@@ -215,6 +215,7 @@ impl Material for TemporalBinding {
             ClockConfiguration::TimestampedEvent { timestamp_unit } => {
                 timestamp_unit.inspect_material(budget)
             }
+            ClockConfiguration::Timed { unit } => unit.inspect_material(budget),
         }
     }
 }

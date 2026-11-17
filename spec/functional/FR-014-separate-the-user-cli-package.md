@@ -15,6 +15,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/ADR-029
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-287
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-561
+    type: depends_on
 ---
 # FR-014: Place the user CLI in a separate workspace package
 
@@ -57,14 +61,16 @@ cache, and process-provider adapter using `filament-plugin-host`.
   `fsl-cli/src/cli.rs`, with the binary entry point in
   `fsl-cli/src/main.rs`.
 - The `fsl-cli` composition in `fsl-cli/src/cli.rs` SHALL own the
-  process-provider configuration input passed into FR-006 composition. The
-  `run` command SHALL accept `--provider-config <path>` and use the named file
-  as the sole caller-input source for process providers, including each
-  provider's required `deadline_ms`, with the JSON shape and validation rules
-  defined by FR-006. When the option is omitted, the command SHALL register no
-  process providers and no implicit provider deadline applies. It SHALL NOT
-  search a default location or read this configuration from ambient environment
-  state.
+  process-provider configuration and provider-limit inputs passed into FR-006
+  composition. The `run` command, like every provider-routing verb (FSL
+  FR-287), SHALL accept `--provider-config <path>` as the sole source of the
+  process plugins it starts, a plugins-only FSpec FR-561 document with the
+  shape and refusals FR-006 states, and `--provider-limit <name>=<value>` as
+  the sole source of the run's provider limits, including `deadline_ms`.
+  When `--provider-config` is omitted, the command SHALL register no process
+  providers; when a limit is not given, FSL FR-287's default applies. The
+  command SHALL NOT search a default location or read either input from
+  ambient environment state or another file.
 - CLI contract and binary process-boundary tests and their fixtures SHALL
   reside in the `fsl-cli` package.
 
@@ -77,7 +83,7 @@ cache, and process-provider adapter using `filament-plugin-host`.
 | FR-014-AC-3 | The workspace root lists `fsl-cli` in `default-members`. | Test (TC-005) |
 | FR-014-AC-4 | CLI contract and binary process-boundary tests and their fixtures reside in the `fsl-cli` package. | Test (TC-009, TC-018, TC-028) |
 | FR-014-AC-5 | The CLI parser definition resides in `fsl-cli/src/cli.rs`, and the binary entry point is in `fsl-cli/src/main.rs`; the `filament-driver` package's `src/lib.rs` does not export a `cli` module. | Test (TC-028) |
-| FR-014-AC-6 | The `fsl run` command accepts `--provider-config <path>` as its sole process-provider configuration source, including the required per-provider `deadline_ms` defined by FR-006; omitting the option registers no process providers and applies no implicit provider deadline or default/ambient configuration. | Test (TC-028) |
+| FR-014-AC-6 | The `fsl run` command accepts `--provider-config <path>` as its sole process-plugin source, a plugins-only document whose entries carry no deadline or limit, and `--provider-limit <name>=<value>` as the sole source of the run's limits, including `deadline_ms`; omitting `--provider-config` registers no process providers, omitting a limit applies FSL FR-287's default (`deadline_ms` 600000), and no default, ambient or file configuration is read. | Test (TC-028, TC-041) |
 
 ## Dependencies
 

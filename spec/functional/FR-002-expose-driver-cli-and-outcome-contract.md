@@ -15,6 +15,10 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-298
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-865
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-718
+    type: depends_on
   - target: ix://agent-ix/filament-specification/FR-301
     type: depends_on
   - target: ix://agent-ix/ix-cli-kit/FR-008
@@ -51,9 +55,10 @@ the fallback when that function returns reserved value `5`.
 - One FSL-defined `filament-outcome/1` JSON value in machine mode, or the
   selected text rendering, except that a reserved-code mapping invariant
   failure or signal-terminated active plugin invocation writes no outcome
-  document or text result. Until FSL supplies typed outcome text rendering,
-  parse, check, compile and run text requests return the typed unsupported
-  refusal specified in AC-13 and write no stdout.
+  document or text result. Text is the default output format: without
+  `--format`, parse, check, compile and run write the FSL FR-865 text form
+  of the same `filament-outcome/1` document that `--format json` writes, and
+  analyze and monitor write the text forms FR-022 and FR-025 give them.
 - Root help text for a help invocation, as specified by AC-17; help does not
   produce a lifecycle outcome document.
 - The exit status returned by FSL's category exit function, except that a
@@ -103,7 +108,7 @@ the fallback when that function returns reserved value `5`.
 - When primary stdout writing and flushing succeed, the CLI SHALL retain its
   ordinary command diagnostics and category. Invocations that attempt no
   primary stdout write remain governed by their existing diagnostic and exit
-  rules, including AC-6, AC-7 and AC-13; no closed-pipe probe or output artifact
+  rules, including AC-6 and AC-7; no closed-pipe probe or output artifact
   is introduced for them.
 - When writing or flushing primary command output to stdout fails with an I/O
   error other than `BrokenPipe`, the CLI SHALL select
@@ -111,10 +116,32 @@ the fallback when that function returns reserved value `5`.
   best-effort attempt to write an `OutputFailure` diagnostic to stderr that
   identifies the failed output. The CLI SHALL NOT promise that stdout is empty;
   a failed write can occur after some output bytes were written.
-- When the user requests text output for parse, check, compile or run while
-  FSL's typed outcome renderer is unavailable, the CLI SHALL refuse with FSL
-  `Code::UnimplementedCapability` and SHALL NOT run the operation. Format
-  continues to use FSL's formatter text.
+- The `--format` option of every lifecycle verb SHALL default to `text`
+  when omitted; `--format json` selects machine mode. Text is the default so that
+  the first command a reader types, `fsl check rule.fsl`, prints a readable
+  result without a flag (FSpec FR-718).
+- When parse, check, compile or run runs in text mode, the CLI SHALL build
+  the outcome document exactly as in machine mode, render it through FSL
+  FR-298's `render_outcome` with `RenderForm::Text` and a `RenderSources`
+  built from the admitted sources the command read (FSL FR-865), and write
+  the rendered bytes to stdout as its primary output. The rendered text names
+  the operation, category, exit code, last stage when known, every
+  diagnostic's code, cause and locus, every item's result, category and
+  cause, and the result. None of these verbs SHALL refuse text mode as
+  `UnimplementedCapability`.
+- The CLI SHALL take the source values for `RenderSources` from the admitted
+  sources exposed by FSL's compile, run and check outcomes and `RunError`,
+  and SHALL NOT read a source a second time to render it.
+- The process exit status of an invocation SHALL be equal in text and machine
+  mode; the format changes only the bytes on stdout.
+- A missing request file or a malformed request SHALL refuse in text mode
+  with the same FSL code and exit status as in machine mode; text mode writes
+  the text form of that refusal document.
+- If `--format` names a value other than `text`, `json`, or `dot` on
+  `inspect`, the CLI SHALL refuse `invalid-request`, exit 20, naming
+  `--format` and the value, before reading any file.
+- Analyze and monitor keep the text forms FR-022 and FR-025 specify. Format
+  continues to write FSL's formatted source as its text output.
 - When the CLI resolves configuration values, it SHALL use ix-cli-kit's
   `config` module.
 - When invoked with no arguments or with `--help`, `-h` or `help` as its sole
@@ -124,8 +151,9 @@ the fallback when that function returns reserved value `5`.
   lifecycle verb names, the `--format text|json|dot` option with the `inspect`
   restriction on `dot`, and the `--version`/`-V` version options.
 - The root help SHALL distinguish lifecycle verbs that execute operations
-  from verbs the build accepts but does not route, which return an `unsupported_operation` result, and
-  identify any default text-output restriction for executable verbs.
+  from verbs the build accepts but does not route, which return an
+  `unsupported_operation` result, and state that `text` is the default output
+  format and `--format json` selects machine output.
 - When root help is written successfully, the CLI SHALL return FSL's success
   exit result and write no stderr output.
 - When the user invokes `fsl --version`, the CLI SHALL report the semantic
@@ -154,18 +182,19 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-10 | When the CLI resolves configuration values, it uses ix-cli-kit's `config` module. | Test (TC-009) |
 | FR-002-AC-11 | When invoked with `--version`, the CLI reports the semantic version declared by the `fsl-cli` Cargo package. | Test (TC-009) |
 | FR-002-AC-12 | The `fsl-cli` built-binary version-agreement check uses `ix_cli_kit::version::Agreement::command` to compare `CARGO_PKG_VERSION` with the output of the built `fsl --version` command and requires agreement. | Test (TC-009) |
-| FR-002-AC-13 | When text rendering is unavailable for parse, check, compile or run, the CLI returns the operation-specific FSL `UnimplementedCapability` result, writes no stdout, and does not execute the requested lifecycle operation. | Test (TC-009) |
+| FR-002-AC-13 | `fsl check <file>`, `fsl parse <authority> <identity> <file>`, `fsl compile <request>` and `fsl run <request>` without `--format`, and with `--format text`, each over a succeeding and a refused input, write to stdout the FSL FR-865 text form of the document `--format json` writes for the same invocation (header `<operation>: <category> (exit <code>)`, diagnostic lines with cause and locus, item lines, result line) and exit with the same status as under `--format json`; none returns `UnimplementedCapability` or exit 21. | Test (TC-040) |
 | FR-002-AC-14 | For a `BrokenPipe` while writing or flushing primary stdout, the process status equals the completed operation's FSL category exit result and stderr is empty, including for a refused operation with nonempty diagnostics when stdout is writable. No output-failure category is selected and no `OutputFailure` diagnostic is emitted. | Test |
 | FR-002-AC-15 | If writing or flushing primary stdout returns an I/O error other than `BrokenPipe`, the process exits with FSL's `Category::InternalFailure` exit result. The criterion makes no assertion that stdout is empty or complete. | Test (TC-018) |
 | FR-002-AC-16 | If a non-`BrokenPipe` primary stdout write or flush fails and stderr is writable, stderr contains an `OutputFailure` diagnostic that identifies the failed output. | Test (TC-018) |
-| FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results and identifies executable verbs whose default text output is unavailable. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
+| FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results, and states that `text` is the default output format and `--format json` selects machine output. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
+| FR-002-AC-18 | `fsl run nosuch.json` and `fsl compile nosuch.json` without `--format` refuse with the I/O failure's FSL code and exit 20, as under `--format json`, never `UnimplementedCapability` or exit 21, and stdout holds the text form of that refusal document; the text of a refused `check` names each diagnostic's code, cause and source position; `--format bogus` on each of the four verbs refuses `invalid-request`, exit 20, naming `--format` and `bogus`, before any file is opened. | Test (TC-040) |
 
 ## Dependencies
 
 - FSL ADR-029 CB-1, CB-4 and CB-5; FSL FR-285, FR-286 and FR-287.
-- FSL FR-298 defines typed rendering; QSL-600/QSL-601 own its pending
-  `fsl-inspect` implementation. AC-13 specifies the driver's behavior until
-  that renderer is available.
+- FSL FR-298 defines typed rendering and `render_outcome`; FSL FR-865
+  defines the text form of an outcome document and the driver's default
+  text mode; FSpec FR-718 makes text the CLI's default output.
 - FSpec FR-300 and FR-301 for the CLI output and process contract.
 - [ix-cli-kit FR-017](ix://agent-ix/ix-cli-kit/FR-017) defines the caller-owned
   exit-code pass-through; FSL ADR-029 remains authoritative for category
@@ -175,9 +204,10 @@ the fallback when that function returns reserved value `5`.
   version agreement used by AC-12.
 - [TC-009](../test-cases/TC-009-cli-outcome-and-exit-contract.md).
 - [TC-018](../test-cases/TC-018-binary-process-boundary.md), adding verification for AC-2 through AC-4 and AC-6.
+- [TC-040](../test-cases/TC-040-write-text-outcomes-by-default.md), verifying AC-13 and AC-18.
 
 AC-14 adopts FSL FR-287-AC-8's quiet behavior only when a primary stdout write
-or flush actually reports `BrokenPipe`. AC-13's outputless text refusals do not
-attempt that write, so this requirement does not qualify the whole FSL
-criterion across output modes. It adds no file-descriptor probe or replacement
-refusal envelope.
+or flush actually reports `BrokenPipe`. A text-mode write of the rendered
+outcome is a primary stdout write and follows the same rule (FSL
+FR-287-AC-8). It adds no file-descriptor probe or replacement refusal
+envelope.

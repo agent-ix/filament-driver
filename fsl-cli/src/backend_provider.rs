@@ -9,18 +9,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
-use filament_driver::Driven;
 use filament_driver::ProviderManifest;
 use filament_semantic_value::catalog::{CatalogCode, Category};
 use fsl_foundation::backend::EmptyBackendIdentity;
-use fsl_foundation::bound::DomainKind;
 use fsl_foundation::diagnostic::category_of;
 use fsl_foundation::BackendId;
-use fsl_package::EmittedPackage;
-use fsl_route::request::RequirementItem;
-use fsl_route::CandidateOutcome;
 use fsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
     ProviderOrigin,
@@ -51,6 +44,17 @@ struct ProviderDescriptorShape {
     evidence_kinds: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_present")]
     fairness_kinds: Option<Vec<String>>,
+    /// FSpec FR-331 "Backend tool": the code that decides the backend's
+    /// results. FSL registers an external provider only with its tool.
+    #[serde(default, deserialize_with = "deserialize_present")]
+    tool: Option<ToolShape>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolShape {
+    name: String,
+    version: String,
 }
 
 fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -259,6 +263,13 @@ impl ManifestStage {
                 detail: source.inner().to_string(),
             })?;
         validate_manifest(&shape)?;
+        if shape
+            .tool
+            .as_ref()
+            .is_some_and(|tool| tool.name.is_empty() || tool.version.is_empty())
+        {
+            return Err(invalid_member("tool", "names a nonempty name and version"));
+        }
         let limits = quire_canonical::Limits::new(max_frame_bytes);
         let mut canonical_wire = Vec::new();
         quire_canonical::encode(&mut canonical_wire, &**wire, limits)?;
@@ -277,6 +288,11 @@ impl ManifestStage {
             .fairness_kinds
             .as_ref()
             .map(|_| FairnessKindsMember::List(&fairness_labels));
+        // FSL owns evidence-kind admission (QSL-654): hand it the labels.
+        let evidence_labels = shape
+            .evidence_kinds
+            .as_deref()
+            .map(|kinds| kinds.iter().map(String::as_str).collect::<Vec<_>>());
         let descriptor = descriptor_from_manifest(
             Candidate::new(BackendId::from_wire(&shape.backend)?),
             ProviderOrigin::Process,
@@ -287,6 +303,7 @@ impl ManifestStage {
             fsl_route::ManifestMembers {
                 domains: domain_labels.as_deref(),
                 fairness_kinds: fairness_member,
+                evidence_kinds: evidence_labels.as_deref(),
                 ..fsl_route::ManifestMembers::default()
             },
         )?;
@@ -408,19 +425,61 @@ mod tests {
         }
     }
 
-    fn process_admission(identity: &str) -> AdmittedManifest {
+    fn process_manifest(identity: &str) -> ProviderManifest {
         ManifestStage {
             contract_version: CONTRACT_VERSION.to_owned(),
             capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             manifest: vec![serde_json::json!({
                 "backend": identity,
-                "advertises": [{ "kind": "value-validity", "mode": "bounded" }],
-                "domains": ["integer"]
+                "advertises": [{ "kind": "value-validity", "mode": "unbounded" }],
+                "domains": ["integer"],
+                "tool": {"name": "fsl-test-capture", "version": "1"}
             })
             .into()],
         }
         .admit_process(4096)
         .expect("FSL admits the process hello")
+        .manifest()
+        .clone()
+    }
+
+    /// Trace: FR-006-AC-1, FR-006-AC-5, FR-006-AC-8, FR-006-AC-9; the request
+    /// stage carries the retained manifest snapshot and FSL's request member
+    /// unchanged, and refuses a snapshot without the routed backend.
+    #[test]
+    fn request_stage_forwards_fsl_request_with_the_retained_snapshot() {
+        use crate::test_support::{with_provider_request, CAPTURE_BACKEND};
+        let (framed, expected, missing) = with_provider_request(|request| {
+            let manifest = [process_manifest(CAPTURE_BACKEND)];
+            let cancel = filament_exact::Cancel::new();
+            let framed =
+                RequestStage::from_process_request(&filament_driver::ProcessProviderRequest {
+                    request,
+                    manifest: &manifest,
+                    cancel: &cancel,
+                });
+            let other = [process_manifest("agent-ix/provider/other")];
+            let missing =
+                RequestStage::from_process_request(&filament_driver::ProcessProviderRequest {
+                    request,
+                    manifest: &other,
+                    cancel: &cancel,
+                });
+            (
+                framed,
+                serde_json::to_value(request).expect("FSL's request serializes"),
+                missing,
+            )
+        });
+        let framed = serde_json::to_value(framed.expect("the request frames"))
+            .expect("the stage serializes");
+        assert_eq!(framed["request"], expected);
+        assert_eq!(framed["request"]["deadline_ms"], 600_000);
+        assert!(framed["request"].get("domains").is_none());
+        assert!(framed["request"].get("limits").is_none());
+        assert_eq!(framed["manifest"][0]["backend"], CAPTURE_BACKEND);
+        assert_eq!(framed["manifest"][0]["tool"]["name"], "fsl-test-capture");
+        assert_eq!(missing.err(), Some(RequestStageError::RoutedBackendMissing));
     }
 
     /// Trace: FR-005-AC-15.

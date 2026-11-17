@@ -34,12 +34,16 @@ The verb is the command-line encoding of FSL's in-process entry
 `fsl_command::command::monitor`. The request document carries every monitoring
 setting, so the driver reads none from options.
 
-### Deviation: no `--provider-config` for `monitor` (QSL-2132)
+### Deviation: no `--provider-config` or `--provider-limit` for `monitor` (QSL-2132)
 
-FSL FR-644 passes the started process providers to `command::monitor` by
-FSL FR-635's rule. Configured providers are not built yet, and the library
-entry takes no providers parameter, so the driver refuses the option with exit
-20 naming QSL-2132.
+FSL FR-287 and FR-006 give `monitor`, as a provider-routing verb, the
+`--provider-config <file>` and `--provider-limit <name>=<value>` options, and
+FSL FR-644 passes the started process providers to `command::monitor` by FSL
+FR-635's rule. The requirement stands; this deviation only defers it.
+Configured providers are not built yet, and the library entry takes no
+providers parameter, so until QSL-2132 lands the driver refuses both options
+with exit 20 naming QSL-2132. When QSL-2132 lands, this deviation lifts and
+`monitor` takes both options as FR-006 states.
 
 ### Decision: a signal ends the stream as a cancelled run
 
@@ -82,8 +86,9 @@ written. The signal is consumed, not re-raised.
 - The driver SHALL add no event, no member and no reordering to what FSL hands
   it; a malformed record is FSL's `refusal` event and the stream continues.
 - A missing or extra operand, an unknown option, `--input` repeated or without
-  a path, an `--input` file that cannot be opened, and `--provider-config` SHALL
-  refuse with exit 20 before any record is read.
+  a path, an `--input` file that cannot be opened, and, until QSL-2132 lands,
+  `--provider-config` and `--provider-limit` SHALL refuse with exit 20 before
+  any record is read.
 - A request that carries a `records` member is refused by FSL: `run` reads that
   batch form, `monitor` reads the stream it is given.
 
@@ -98,7 +103,7 @@ clauses `Reaches` (`eventually holds(r.level = 2)`) and `Never`
 | FR-025-AC-1 | `fsl monitor` over `Reaches` and `Never` with levels 0, 1, 2, 1 then `{"end": true}` writes event lines then one summary line and exits 10, with a `settled` `violation` event for `Never` at record 2; over `Never` alone with levels 0, 1, 0 it exits 0. | Test (TC-039) |
 | FR-025-AC-2 | The lines the binary writes equal, byte for byte, the canonical encodings of the events and summary `command::monitor` hands back in process for the same request and records, and the exit code equals the summary's. | Test (TC-039) |
 | FR-025-AC-3 | A request naming a clause the program lacks, a request that is not JSON, and a missing operand each exit 20 before any record is read; the first writes only the `monitor` command-error document. | Test (TC-039) |
-| FR-025-AC-4 | `--provider-config` refuses with exit 20 and names QSL-2132; in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty and the message is on stderr. | Test (TC-039) |
+| FR-025-AC-4 | Until QSL-2132 lands, `--provider-config` and `--provider-limit` each refuse with exit 20 and name QSL-2132; in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty and the message is on stderr. | Test (TC-039) |
 | FR-025-AC-5 | A record with an unknown member between good records gives one `refusal` event naming that record, the summary counts it, the stream continues and the output equals `command::monitor`'s. | Test (TC-039) |
 | FR-025-AC-6 | With standard input held open, the event that settles `Never` is on standard output before the next record is sent or the input is closed. | Test (TC-039) |
 | FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty. | Test (TC-039) |

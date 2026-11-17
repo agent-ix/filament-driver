@@ -434,8 +434,10 @@ impl Upstream for Recorder {
             items: envelope.items.len(),
         });
         *self.envelope.borrow_mut() = Some(envelope.clone());
-        if let Some(Some(KaniForm::V2ScalarClaim { package, .. })) =
-            envelope.items.first().map(|item| &item.kani_form)
+        if let Some(KaniForm::V2ScalarClaim { package, .. }) = envelope
+            .items
+            .first()
+            .and_then(|item| item.kani_form.as_ref())
         {
             self.source_matches
                 .borrow_mut()
@@ -2193,6 +2195,7 @@ fn tc_006_rr16_binds_each_exact_occurrence_to_its_generated_item() {
             value: Value::Integer(Integer::from(3_i64)),
         }],
         wire_arguments: Vec::new(),
+        snapshot: None,
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: Default::default(),
@@ -2317,6 +2320,7 @@ fn tc_006_no_selected_scalar_item_skips_binding_and_native_execution() {
         function: "f".to_owned(),
         arguments: Vec::new(),
         wire_arguments: Vec::new(),
+        snapshot: None,
         accounting: default_accounting(1_000_000),
         supplied: Default::default(),
         backend: Default::default(),

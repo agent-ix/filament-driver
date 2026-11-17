@@ -55,6 +55,7 @@ fn main() -> io::Result<()> {
                     "backend": backend,
                     "advertises": [{"kind": "value-validity", "mode": mode}],
                     "domains": ["integer"],
+                    "tool": {"name": "fsl-test-provider", "version": env!("CARGO_PKG_VERSION")},
                 }],
             },
         }),

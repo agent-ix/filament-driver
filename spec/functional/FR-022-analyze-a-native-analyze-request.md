@@ -37,8 +37,9 @@ The verb is the command-line encoding of FSL's in-process entry
 setting: the program, models, supplied documents, subject, items with their
 engines, fairness, reductions and limits, the shared limits and the deadline.
 The driver therefore reads no analysis setting from options; `--format`
-selects the output mode, and `--provider-config` names the process providers
-registered beside FSL's engines (FSL FR-287, FR-635).
+selects the output mode, `--provider-config` names the process providers
+registered beside FSL's engines (FSL FR-287, FR-635; FSpec FR-561), and
+`--provider-limit` sets the run's FSpec FR-462 limits (FSL FR-287, FR-964).
 
 ### Decision: the driver negotiates, FSL computes the candidates
 
@@ -57,10 +58,11 @@ FSL's analyze entry reads no provider configuration (FSL FR-635 "One rule for
 every provider-routing entry"). The driver reads `--provider-config`, starts
 each entry's executable as a `filament.plugin-wire/v1` process, admits its
 `hello` manifest with origin `Process`, and hands FSL one external engine per
-provider through `fsl_command::command::analyze_with_providers`. An item FSL
-settles on a provider is sent to that process as one FR-331 request: the
-package's v2 bytes, the registry's manifest snapshot and the item at FSL's
-request index, under the entry's `deadline_ms`. The provider's `proved`
+provider through `fsl_command::command::analyze_with_providers`, with the run's
+one limit set from `--provider-limit` as `ProviderOptions` (FSL FR-964). FSL
+routes, negotiates and builds the FR-331 request for the items it settles on a
+provider (FSL FR-635); the driver only transports it to that process under
+the set's transport limits and maps the response back. The provider's `proved`
 settles `proved` (certification `trusted`); its `refuted` carries its
 `counterexamples` assignment, which FSL replays before the item can settle
 `refuted`; any other result, or an exchange that fails, leaves the claim
@@ -135,10 +137,13 @@ re-raised, because FSL FR-624 gives the cancellation an outcome.
   | several candidates, a backend named | `invalid-request` | `invalid_capability`/`inconsistent-candidates`, payload the named backend |
   | a named backend the registry does not hold | `invalid-request` | `invalid_capability`/`unknown-backend`, payload the backend |
 
-- When an operand is missing or extra, an option is neither `--format` nor
-  `--provider-config`, or `--provider-config` has no path or is given twice,
-  the driver SHALL refuse with exit 20 before any file is read, naming the
-  usage.
+- When an operand is missing or extra, an option is none of `--format`,
+  `--provider-config` and `--provider-limit`, or `--provider-config` has no
+  path or is given twice, the driver SHALL refuse with exit 20 before any file
+  is read, naming the usage.
+- The driver SHALL read and refuse the `--provider-config` document and every
+  `--provider-limit` as FR-006 states, before any stage runs and before any
+  plugin starts.
 - No `fsl analyze` invocation SHALL exit without writing a document to stdout
   in machine mode or a line to stdout or stderr in text mode.
 

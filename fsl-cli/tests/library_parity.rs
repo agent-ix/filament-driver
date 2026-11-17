@@ -71,7 +71,7 @@ fn library_check(path: &str, bytes: &[u8]) -> OutcomeDocument {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let packages = BTreeMap::new();
-    let result = parse(
+    let parsed = match parse(
         &ParseRequest {
             source: &source,
             path,
@@ -79,20 +79,22 @@ fn library_check(path: &str, bytes: &[u8]) -> OutcomeDocument {
         },
         limits.source,
         &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &packages, limits.model, &cancel).and_then(|models| {
-            check(
-                parsed.value(),
-                path.to_owned(),
-                models.value(),
-                &DependencyInput::default(),
-                limits,
-                &cancel,
-            )
-        })
-    });
-    OutcomeDocument::from_check(&result)
+    ) {
+        Ok(parsed) => parsed,
+        Err(failure) => return OutcomeDocument::from_check(&Err(failure)),
+    };
+    let models = match select(parsed.value(), &packages, limits.model, &cancel) {
+        Ok(models) => models,
+        Err(failure) => return OutcomeDocument::from_check(&Err(failure)),
+    };
+    OutcomeDocument::from_check(&check(
+        parsed.value(),
+        path.to_owned(),
+        models.value(),
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    ))
 }
 
 fn library_package(path: &str, bytes: &[u8]) -> OutcomeDocument {
@@ -100,7 +102,7 @@ fn library_package(path: &str, bytes: &[u8]) -> OutcomeDocument {
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let packages = BTreeMap::new();
-    let result = parse(
+    let parsed = match parse(
         &ParseRequest {
             source: &source,
             path,
@@ -108,21 +110,26 @@ fn library_package(path: &str, bytes: &[u8]) -> OutcomeDocument {
         },
         limits.source,
         &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &packages, limits.model, &cancel).and_then(|models| {
-            check(
-                parsed.value(),
-                path.to_owned(),
-                models.value(),
-                &DependencyInput::default(),
-                limits,
-                &cancel,
-            )
-            .and_then(|checked| package(checked.value(), PackageLimits::default(), &cancel))
-        })
-    });
-    OutcomeDocument::from_package(&result)
+    ) {
+        Ok(parsed) => parsed,
+        Err(failure) => return OutcomeDocument::from_package(&Err(failure)),
+    };
+    let models = match select(parsed.value(), &packages, limits.model, &cancel) {
+        Ok(models) => models,
+        Err(failure) => return OutcomeDocument::from_package(&Err(failure)),
+    };
+    let checked = match check(
+        parsed.value(),
+        path.to_owned(),
+        models.value(),
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    ) {
+        Ok(checked) => checked,
+        Err(failure) => return OutcomeDocument::from_package(&Err(failure)),
+    };
+    OutcomeDocument::from_package(&package(checked.value(), PackageLimits::default(), &cancel))
 }
 
 fn library_execute(
@@ -144,11 +151,12 @@ fn library_execute(
         call: Call {
             function: function.to_owned(),
             arguments,
-            wire_arguments: Vec::new(),
             accounting: default_accounting(DEFAULT_WORK_UNITS),
             supplied: SuppliedLimits::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            wire_arguments: Vec::new(),
+            snapshot: None,
         },
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),

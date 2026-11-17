@@ -99,6 +99,20 @@ fsl run yes.json --format json
 `fsl compile` likewise takes a `native-compile/1` request file. Run intake
 accepts `--request-bytes` and `--dependent-bytes`; compile uses fixed ceilings.
 
+Provider configuration files use the strict `filament.provider-config/v1`
+shape. Each provider entry names an executable `path` and may supply an array
+of string `arguments`:
+
+```json
+{"format":"filament.provider-config/v1","providers":[{"path":"./provider","arguments":["--mode","safe"]}]}
+```
+
+Pass the file with `--provider-config <path>`. The file is read only when named;
+there is no discovery or ambient provider search. Invalid files and unsupported
+format versions are refused before execution. Provider process limits remain
+caller-owned settings and do not belong in this document. Relative executable
+paths are resolved from the configuration file's directory.
+
 ## Library
 
 The `filament-driver` library crate exposes `drive`, which runs one request
