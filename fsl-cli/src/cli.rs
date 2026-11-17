@@ -771,6 +771,7 @@ struct CommandResult {
     category: Category,
     document: Option<OutcomeDocument>,
     diagnostic: Option<String>,
+    diagnostic_on_stderr: bool,
     text_output: Option<String>,
     /// The FSL FR-621 `analyze` document, written in machine mode in place
     /// of `document`.
@@ -787,6 +788,7 @@ impl CommandResult {
             category: document.category(),
             document: Some(document),
             diagnostic: None,
+            diagnostic_on_stderr: false,
             text_output: None,
             analyze_document: None,
             stderr_line: None,
@@ -799,6 +801,7 @@ impl CommandResult {
             category,
             document: None,
             diagnostic: Some(message.into()),
+            diagnostic_on_stderr: true,
             text_output: None,
             analyze_document: None,
             stderr_line: None,
@@ -811,6 +814,7 @@ impl CommandResult {
             category: document.category(),
             document: Some(document),
             diagnostic: None,
+            diagnostic_on_stderr: false,
             text_output,
             analyze_document: None,
             stderr_line: None,
@@ -820,7 +824,9 @@ impl CommandResult {
 
     /// An input refusal raised before FSL runs, recorded with FSL's native code.
     fn input_refusal(operation: Operation, message: impl Into<String>) -> Self {
-        Self::catalog_failure_for(operation, Code::InvalidRequest, message)
+        let mut result = Self::catalog_failure_for(operation, Code::InvalidRequest, message);
+        result.diagnostic_on_stderr = true;
+        result
     }
 
     fn catalog_failure_for(operation: Operation, code: Code, message: impl Into<String>) -> Self {
@@ -844,12 +850,25 @@ impl CommandResult {
     }
 }
 
-fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> io::Result<()> {
+fn write_result_diagnostics<W: Write>(
+    result: &CommandResult,
+    format: OutputFormat,
+    sink: &mut W,
+) -> io::Result<()> {
     if let Some(line) = &result.stderr_line {
         return writeln!(sink, "{line}");
     }
     if let Some(message) = &result.diagnostic {
-        return write_diagnostic(sink, "DriverDiagnostic", message);
+        if result.diagnostic_on_stderr
+            || (format != OutputFormat::Json && result.text_output.is_none())
+        {
+            return write_diagnostic(sink, "DriverDiagnostic", message);
+        }
+    }
+    // The selected primary output already carries FSL's diagnostics: as
+    // structured members in JSON or as rendered lines in text mode.
+    if format == OutputFormat::Json || result.text_output.is_some() {
+        return Ok(());
     }
     if let Some(document) = &result.document {
         for diagnostic in document.diagnostics() {
@@ -1940,6 +1959,7 @@ fn native_result(document: serde_json::Value, exit_code: u8) -> CommandResult {
         category,
         document: None,
         diagnostic: None,
+        diagnostic_on_stderr: false,
         text_output: Some(document.to_string()),
         analyze_document: Some(document),
         stderr_line: None,
@@ -1970,6 +1990,7 @@ fn analyze_result(
         category,
         document: None,
         diagnostic: None,
+        diagnostic_on_stderr: false,
         text_output,
         analyze_document: Some(document),
         stderr_line: None,
@@ -2315,6 +2336,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         category,
         document: None,
         diagnostic: None,
+        diagnostic_on_stderr: false,
         text_output: None,
         analyze_document: None,
         stderr_line: None,
@@ -2538,7 +2560,7 @@ fn emit_result(result: &CommandResult, format: OutputFormat) -> Category {
         }
     }
     let mut stderr = io::stderr().lock();
-    let _ = write_result_diagnostics(result, &mut stderr);
+    let _ = write_result_diagnostics(result, format, &mut stderr);
     category
 }
 
@@ -2559,7 +2581,7 @@ pub(super) fn entrypoint() -> ExitCode {
             if exit_result == RESERVED_COMMAND_NOT_FOUND {
                 if format == OutputFormat::Text {
                     let mut stderr = io::stderr().lock();
-                    let _ = write_result_diagnostics(&result, &mut stderr);
+                    let _ = write_result_diagnostics(&result, format, &mut stderr);
                 }
                 process_exit_code(result.category)
             } else {
