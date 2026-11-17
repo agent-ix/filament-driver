@@ -1734,7 +1734,15 @@ fn project_descriptor(
         origin,
         domains: descriptor.domains().cloned(),
         bounds: bounds.cloned(),
-        profile: crate::analyze::profile_of(descriptor),
+        profile: cg::BackendProfile {
+            evidence_kinds: descriptor
+                .evidence_kinds()
+                .iter()
+                .copied()
+                .map(cg_evidence_kind)
+                .collect(),
+            ..cg::BackendProfile::default()
+        },
     })
 }
 
