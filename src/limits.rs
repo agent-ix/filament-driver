@@ -198,6 +198,7 @@ mod tests {
                     authority: "issuer".to_owned(),
                     identity: "snapshot".to_owned(),
                 },
+                snapshot_path: None,
             },
             limits: SpineLimits::default(),
             observation_limits: fsl_replay::ObservationLimits::default(),

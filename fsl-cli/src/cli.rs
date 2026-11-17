@@ -1106,7 +1106,8 @@ fn run_clause_request(
         return CommandResult::input_refusal(Operation::Monitor, error.to_string());
     }
     let name = match &request.selection {
-        ClauseRunSelection::Clause(selection) => selection.name.clone(),
+        ClauseRunSelection::Clause(selection)
+        | ClauseRunSelection::ClauseWithPath { selection, .. } => selection.name.clone(),
         ClauseRunSelection::Function { name, .. }
         | ClauseRunSelection::Temporal { name, .. }
         | ClauseRunSelection::SampledTemporal { name, .. } => name.clone(),
