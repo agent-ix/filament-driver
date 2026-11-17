@@ -1471,6 +1471,7 @@ fn compile(options: CompileOptions) -> CommandResult {
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
+        limits: Some(&limits),
         ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {

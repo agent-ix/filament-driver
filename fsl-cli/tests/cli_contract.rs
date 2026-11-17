@@ -721,7 +721,7 @@ fn compile_accepts_limit_operand() {
             "compile",
             request.as_str(),
             "--limit",
-            "s1.nodes=1000000",
+            "s1.nodes=1",
             "--format",
             "json",
         ])
@@ -729,11 +729,13 @@ fn compile_accepts_limit_operand() {
         .expect("run compile with a named limit");
     assert_eq!(
         output.status.code(),
-        Some(0),
+        Some(22),
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
-    assert!(output.stderr.is_empty());
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("compile emits an outcome document");
+    assert!(document.to_string().contains("s1.nodes"), "{document}");
 }
 
 /// Trace: QSL-2014, FR-255-AC-4; format's source-byte refusal names its limit.
