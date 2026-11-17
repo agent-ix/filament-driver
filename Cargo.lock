@@ -748,6 +748,7 @@ dependencies = [
  "fsl-command",
  "fsl-cst",
  "fsl-foundation",
+ "fsl-inspect",
  "fsl-package",
  "fsl-replay",
  "fsl-route",

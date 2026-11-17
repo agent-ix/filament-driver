@@ -483,15 +483,15 @@ fn run_without_engine_executes_with_the_interpreter() {
     );
 }
 
-/// Trace: FR-002-AC-13; unsupported FSL text renderers refuse before lifecycle execution.
+/// Trace: FR-002-AC-13; `parse`, the one verb without an FSL text renderer here, refuses before lifecycle execution.
 #[test]
 fn unavailable_text_renderers_return_typed_unsupported_refusals() {
-    let cases = [
-        vec!["parse", "issuer", "document", "missing-text-renderer.fsl"],
-        vec!["check", "missing-text-renderer.fsl"],
-        vec!["compile", "missing-text-renderer.fsl"],
-        vec!["run", "missing-text-renderer.json"],
-    ];
+    let cases = [vec![
+        "parse",
+        "issuer",
+        "document",
+        "missing-text-renderer.fsl",
+    ]];
 
     for arguments in cases {
         let verb = arguments[0];
