@@ -690,12 +690,7 @@ fn apply_frontend_limits(
 ) -> Result<(), String> {
     overrides
         .apply_to_limits(bounds)
-        .map_err(|error| match error {
-            filament_driver::LimitError::OperationUnavailable { setting } => format!(
-                "limit setting `{}` is unavailable for the `{operation}` operation",
-                setting.name()
-            ),
-        })
+        .map_err(|error| error.message_for(operation))
 }
 
 impl RunOptions {
@@ -1012,7 +1007,7 @@ fn run(options: RunOptions) -> CommandResult {
                 return CommandResult::input_refusal(
                     Operation::Execute,
                     filament_driver::LimitError::OperationUnavailable { setting: *setting }
-                        .to_string(),
+                        .message_for("run"),
                 );
             }
         }
@@ -2293,8 +2288,24 @@ mod tests {
         parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OutputFormat,
         RunOptions, Verb,
     };
+    use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn unavailable_limit_error_is_generic_and_cli_message_names_operation() {
+        let error = filament_driver::LimitError::OperationUnavailable {
+            setting: SettingName::Stage(Setting::ExploreStates),
+        };
+        assert_eq!(
+            error.to_string(),
+            "limit setting `explore.states` is unavailable for this operation"
+        );
+        assert_eq!(
+            error.message_for("run"),
+            "limit setting `explore.states` is unavailable for the `run` operation"
+        );
+    }
 
     /// Trace: FR-002-AC-1, root command surface.
     #[test]

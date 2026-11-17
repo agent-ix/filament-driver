@@ -11,7 +11,7 @@ use fsl_replay::{
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum LimitError {
     /// FSL recognizes the setting, but this operation does not expose it.
-    #[error("limit setting `{}` is unavailable for the `run` operation", setting.name())]
+    #[error("limit setting `{}` is unavailable for this operation", setting.name())]
     OperationUnavailable {
         /// The recognized setting absent from the operation's bounds.
         setting: SettingName,
@@ -136,6 +136,18 @@ impl LimitOverrides {
     /// The parsed FSL settings, for caller inspection.
     pub fn values(&self) -> &[(SettingName, u64)] {
         &self.0
+    }
+}
+
+impl LimitError {
+    /// Format the refusal for the selected operation.
+    pub fn message_for(&self, operation: &str) -> String {
+        match self {
+            Self::OperationUnavailable { setting } => format!(
+                "limit setting `{}` is unavailable for the `{operation}` operation",
+                setting.name()
+            ),
+        }
     }
 }
 
