@@ -767,7 +767,7 @@ fn format_limit_message_names_the_source_byte_setting() {
 /// Trace: QSL-2014, FR-255-AC-3; run does not offer a request member for CLI limits.
 #[test]
 fn run_limit_message_only_offers_the_cli_setting() {
-    let request = requests::request(SOURCE, None);
+    let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
         .args([
             "run",
@@ -779,7 +779,12 @@ fn run_limit_message_only_offers_the_cli_setting() {
         ])
         .output()
         .expect("run with a low token limit");
-    assert_eq!(output.status.code(), Some(22));
+    assert_eq!(
+        output.status.code(),
+        Some(22),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run emits an outcome document");
     let serialized = document.to_string();
