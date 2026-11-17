@@ -22,6 +22,7 @@ tc018-test-adapter = []
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", branch = "main" }
 base64 = "=0.23.1"
 fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
+fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-cst = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }

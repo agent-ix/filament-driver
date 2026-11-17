@@ -209,8 +209,9 @@ impl Verb {
 
     fn help_description(self) -> &'static str {
         match self {
-            Self::Parse | Self::Check | Self::Compile | Self::Run => {
-                "Executes with --format json; default text output is unavailable."
+            Self::Parse => "Executes with --format json; default text output is unavailable.",
+            Self::Check | Self::Compile | Self::Run => {
+                "Executes and writes its outcome document as text by default; --format json selects JSON."
             }
             Self::Format => "Executes source formatting; text output is the default.",
             Self::Analyze => "Executes a native-analyze/1 request; --format json or text.",
@@ -810,6 +811,8 @@ struct CommandResult {
     analyze_document: Option<serde_json::Value>,
     /// One plain stderr line, written in place of the document diagnostics.
     stderr_line: Option<String>,
+    /// The admitted sources the command read, for locating text diagnostics (FR-865).
+    render_sources: Option<fsl_inspect::RenderSources>,
 }
 
 impl CommandResult {
@@ -822,6 +825,7 @@ impl CommandResult {
             configured_run: None,
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 
@@ -834,6 +838,7 @@ impl CommandResult {
             configured_run: None,
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 
@@ -846,6 +851,7 @@ impl CommandResult {
             configured_run: None,
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 
@@ -862,6 +868,11 @@ impl CommandResult {
             ]),
         )
         .with_diagnostic(message)
+    }
+
+    fn with_sources(mut self, sources: fsl_inspect::RenderSources) -> Self {
+        self.render_sources = Some(sources);
+        self
     }
 
     fn with_diagnostic(mut self, message: impl Into<String>) -> Self {
@@ -889,6 +900,7 @@ impl CommandResult {
             configured_run: Some(run),
             analyze_document: None,
             stderr_line: None,
+            render_sources: None,
         }
     }
 }
@@ -1069,6 +1081,7 @@ fn run(options: RunOptions) -> CommandResult {
         return CommandResult::input_refusal(Operation::Execute, error.to_string());
     }
     let identity = source.identity().clone();
+    let render_sources = fsl_inspect::RenderSources::from_sources([source.clone()]);
     if !provider_config.providers.is_empty() {
         return CommandResult::input_refusal(
             Operation::Execute,
@@ -1088,8 +1101,10 @@ fn run(options: RunOptions) -> CommandResult {
         cancel: Cancel::new(),
         engine: options.engine,
     }) {
-        Ok(result) => CommandResult::document(result.document),
-        Err(failure) => CommandResult::document(failure.into_document()),
+        Ok(result) => CommandResult::document(result.document).with_sources(render_sources),
+        Err(failure) => {
+            CommandResult::document(failure.into_document()).with_sources(render_sources)
+        }
     }
 }
 
@@ -1439,7 +1454,8 @@ fn compile(options: CompileOptions) -> CommandResult {
         ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
-        Ok(outcome) => CommandResult::document(outcome.document().clone()),
+        Ok(outcome) => CommandResult::document(outcome.document().clone())
+            .with_sources(fsl_command::render_sources(outcome.sources())),
         Err(error) if matches!(error.cause, command::RunCause::EmptyCompileProgram) => {
             let code = Code::InvalidPackage;
             CommandResult::document(
@@ -1490,11 +1506,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
                 dependent_bytes: options.dependent_bytes,
                 ..command::CheckInputs::default()
             };
-            return CommandResult::document(
-                command::check_outcome(Path::new(&options.path), &inputs)
-                    .document()
-                    .clone(),
-            );
+            return check_result(&command::check_outcome(Path::new(&options.path), &inputs));
         }
     };
 
@@ -1533,11 +1545,13 @@ fn check_source(options: CheckOptions) -> CommandResult {
         dependent_bytes: options.dependent_bytes,
         ..command::CheckInputs::default()
     };
-    CommandResult::document(
-        command::check_outcome(Path::new(&options.path), &inputs)
-            .document()
-            .clone(),
-    )
+    check_result(&command::check_outcome(Path::new(&options.path), &inputs))
+}
+
+/// The check result with the sources the check admitted.
+fn check_result(outcome: &command::CheckOutcome) -> CommandResult {
+    CommandResult::document(outcome.document().clone())
+        .with_sources(fsl_command::render_sources(outcome.sources()))
 }
 
 /// Observe the TC-018 refused-range selection at the typed check boundary.
@@ -1769,6 +1783,7 @@ fn analyze_result(
         configured_run: None,
         analyze_document: Some(document),
         stderr_line: None,
+        render_sources: None,
     }
 }
 
@@ -2024,6 +2039,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         configured_run: None,
         analyze_document: None,
         stderr_line: None,
+        render_sources: None,
     }
 }
 
@@ -2043,28 +2059,19 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     }
     if verb == Verb::Run {
         return match RunOptions::parse(raw_arguments) {
-            Ok(_options) if format == OutputFormat::Text => {
-                text_rendering_unavailable(Operation::Execute, "run")
-            }
-            Ok(options) => run(options),
+            Ok(options) => with_format(run(options), format),
             Err(error) => CommandResult::input_refusal(Operation::Execute, error),
         };
     }
     if verb == Verb::Compile {
         return match CompileOptions::parse(raw_arguments) {
-            Ok(_options) if format == OutputFormat::Text => {
-                text_rendering_unavailable(Operation::Package, "compile")
-            }
-            Ok(options) => compile(options),
+            Ok(options) => with_format(compile(options), format),
             Err(error) => CommandResult::input_refusal(Operation::Package, error),
         };
     }
     if verb == Verb::Check {
         return match CheckOptions::parse(raw_arguments) {
-            Ok(_options) if format == OutputFormat::Text => {
-                text_rendering_unavailable(Operation::Check, "check")
-            }
-            Ok(options) => check_source(options),
+            Ok(options) => with_format(check_source(options), format),
             Err(error) => CommandResult::input_refusal(Operation::Check, error),
         };
     }
@@ -2122,6 +2129,39 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
         configured_run: None,
         analyze_document: None,
         stderr_line: None,
+        render_sources: None,
+    }
+}
+
+/// In text mode, replace the result's outcome document with FSL's FR-865 text
+/// form of it, built from the same document and the sources the command read.
+/// Machine mode keeps the document untouched and the exit category never moves.
+fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult {
+    if format != OutputFormat::Text {
+        return result;
+    }
+    let Some(document) = result.document.as_ref() else {
+        return result;
+    };
+    let sources = result
+        .render_sources
+        .take()
+        .unwrap_or_else(|| fsl_inspect::RenderSources::from_sources([]));
+    match fsl_inspect::render_outcome(
+        document,
+        fsl_inspect::RenderForm::Text,
+        &sources,
+        fsl_replay::RenderLimits::default(),
+        &Cancel::new(),
+    ) {
+        Ok(staged) => {
+            result.text_output = Some(staged.into_value().as_str().to_owned());
+            result
+        }
+        Err(_) => CommandResult::failure(
+            Category::InternalFailure,
+            "could not render the outcome document as text",
+        ),
     }
 }
 

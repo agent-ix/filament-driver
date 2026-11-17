@@ -1396,3 +1396,82 @@ fn unsupported_result_names_function_and_cause() {
     let message = diagnostic["message"].as_str().expect("a message");
     assert!(message.contains("function give"), "{message}");
 }
+
+#[trace("TC-2456", "FR-865-AC-3")]
+#[trace("TC-2456", "FR-865-AC-4")]
+#[test]
+fn check_compile_and_run_default_to_the_text_form_of_the_json_document() {
+    let cases: [(&str, &[&str]); 6] = [
+        ("check", &[SOURCE]),
+        ("check", &[INVALID_SOURCE]),
+        ("compile", &[COMPILE_REQUEST]),
+        ("compile", &[COMPILE_REFUSED]),
+        ("run", &[RUN_REQUEST]),
+        ("run", &[RUN_REFUSED]),
+    ];
+    for (verb, operands) in cases {
+        let with = |format: &[&str]| {
+            let mut arguments = vec![verb];
+            arguments.extend_from_slice(operands);
+            arguments.extend_from_slice(format);
+            fsl(&arguments)
+        };
+        let context = format!("{verb} {operands:?}");
+        let default = with(&[]);
+        let json = with(&["--format", "json"]);
+        let text = with(&["--format", "text"]);
+
+        assert_eq!(default.status.code(), json.status.code(), "{context}");
+        assert_ne!(default.status.code(), Some(21), "{context}");
+        assert!(
+            !String::from_utf8_lossy(&default.stderr).contains("text rendering"),
+            "{context}"
+        );
+        assert_eq!(
+            default.stdout, text.stdout,
+            "{context}: text is the default"
+        );
+        assert_ne!(default.stdout, json.stdout, "{context}");
+
+        let default_text = String::from_utf8(default.stdout.clone()).expect("text is UTF-8");
+        assert!(!default_text.starts_with('{'), "{context}: {default_text}");
+        assert!(
+            !default_text.trim().is_empty(),
+            "{context}: text output is written"
+        );
+        serde_json::from_slice::<serde_json::Value>(&default.stdout)
+            .expect_err("the default output is not the JSON document");
+    }
+}
+
+#[trace("TC-2456", "FR-865-AC-4")]
+#[trace("TC-2456", "FR-865-AC-5")]
+#[test]
+fn text_mode_io_failures_keep_the_json_exit_code_and_locate_sources() {
+    for (verb, operand) in [("run", "nosuch.json"), ("compile", "nosuch.json")] {
+        let default = fsl(&[verb, operand]);
+        let json = fsl(&[verb, operand, "--format", "json"]);
+        assert_eq!(default.status.code(), Some(refusal_code()), "{verb}");
+        assert_eq!(default.status.code(), json.status.code(), "{verb}");
+        assert!(
+            !String::from_utf8_lossy(&default.stderr).contains("unimplemented_capability"),
+            "{verb}"
+        );
+    }
+    // A refused check names the admitted source's path in its diagnostics.
+    let output = fsl(&["check", INVALID_SOURCE]);
+    let text = String::from_utf8(output.stdout).expect("text is UTF-8");
+    assert!(text.contains("parse-invalid.fsl"), "{text}");
+}
+
+/// FR-865-AC-1 wants the header `<operation>: <category> (exit <code>) at <stage>`; the
+/// language's `render_outcome` text form still begins `Outcome: <category>`, so this stays
+/// ignored until the language implements FR-865's header, items and result lines.
+#[trace("TC-2456", "FR-865-AC-3")]
+#[test]
+#[ignore = "QSL-2350: fsl-inspect render_outcome text lacks the FR-865 header, item and result lines"]
+fn default_text_begins_with_the_fr_865_header() {
+    let output = fsl(&["check", INVALID_SOURCE]);
+    let text = String::from_utf8(output.stdout).expect("text is UTF-8");
+    assert!(text.starts_with("check: refusal (exit 20)"), "{text}");
+}
