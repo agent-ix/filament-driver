@@ -37,8 +37,8 @@ The verb is the command-line encoding of FSL's in-process entry
 setting: the program, models, supplied documents, subject, items with their
 engines, fairness, reductions and limits, the shared limits and the deadline.
 The driver therefore reads no analysis setting from options; `--format`
-selects the output mode, and `--provider-config` is refused until the
-deviation below is closed.
+selects the output mode, and `--provider-config` and `--provider-limit` are
+refused until the deviation below lifts.
 
 ### Decision: the driver negotiates, FSL computes the candidates
 
@@ -66,15 +66,20 @@ FSL as `supported` on its one candidate, and FSL refuses it with
 `invalid_capability`/`inconsistent-candidates` (FR-281 rule 4), so the user
 sees that refusal rather than `requires-bound` or `unbounded-extent`.
 
-### Deviation: no `--provider-config` for `analyze` (QSL-2283)
+### Deviation: no `--provider-config` or `--provider-limit` for `analyze` (QSL-2283)
 
-FSL FR-287 gives `analyze` the `--provider-config <file>` option, so that
-configured providers register before negotiation (FR-635).
+FSL FR-287 and FR-006 give `analyze`, as a provider-routing verb, the
+`--provider-config <file>` and `--provider-limit <name>=<value>` options, so
+that configured providers register before negotiation (FR-635) and work
+under the run's one limit set (FSL FR-964). The requirement stands; this
+deviation only defers it.
 `fsl_command::command::analyze` builds its registry from `Engines::fsl()` and
 takes no caller registry, so the driver cannot register a configured
 provider. QSL-2283 adds a language analyze entry that takes the caller's
-registry; until then the driver refuses the option with exit 20 and a
-message naming the missing registry.
+registry, and its driver half is being implemented in driver #165. Until
+QSL-2283 lands, the driver refuses both options with exit 20 and a message
+naming the missing registry; when it lands, this deviation lifts and
+`analyze` takes both options as FR-006 states.
 
 ## Inputs
 
@@ -127,7 +132,8 @@ message naming the missing registry.
 
 - A missing or extra operand, or an option other than `--format`, SHALL
   refuse with exit 20 before any file is read, naming the usage;
-  `--provider-config` is refused naming the missing caller registry.
+  `--provider-config` and `--provider-limit` are refused naming the missing
+  caller registry until QSL-2283 lands (the deviation above).
 - No `fsl analyze` invocation SHALL exit without writing a document to stdout
   in machine mode or a line to stdout or stderr in text mode.
 

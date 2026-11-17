@@ -36,14 +36,16 @@ Ticket: QSL-2335.
 3. Run with `--provider-limit deadline_ms=250` and no `--provider-config`;
    assert it is accepted and starts no plugin (AC-28, FR-014-AC-6).
 4. Run each refused `--provider-limit` argument of FR-006-AC-29 and assert
-   `invalid-request` naming `--provider-limit` and the argument, exit 20, and
-   no fixture start marker. Run `fsl parse` with `--provider-limit` and with
+   `invalid-request` naming `--provider-limit` and the argument, exit 20,
+   empty stdout under both `--format text` and `--format json`, and no
+   fixture start marker. Run `fsl parse` with `--provider-limit` and with
    `--provider-config` and assert each is refused as an unknown option, exit
    20 (AC-29).
 5. Run configuration documents whose entry holds a `deadline_ms` or a
    `limits` member, a document with no `format`, a document with `format`
    `filament.provider-config/v2`, an entry with a blank `path`, and
-   `arguments` holding a number; assert each refusal FR-006-AC-24 states and
+   `arguments` holding a number; assert each refusal FR-006-AC-24 states,
+   exit 20, empty stdout under both `--format text` and `--format json`, and
    no fixture start marker (AC-24).
 
 Test location: `fsl-cli/tests/binary_process.rs` (production binary) and the
@@ -55,5 +57,5 @@ Test location: `fsl-cli/tests/binary_process.rs` (production binary) and the
   defaults, and every provider of the run receives the same set.
 - The configuration document lists plugins only; a deadline or limit member
   in it is an unknown member.
-- Each malformed limit or configuration refuses with exit 20 before any
-  plugin starts.
+- Each malformed limit or configuration refuses with exit 20 and empty
+  stdout in both output modes before any plugin starts.
