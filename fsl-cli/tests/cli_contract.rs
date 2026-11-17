@@ -88,7 +88,7 @@ fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
 
 fn check_outcome_bytes(path: &'static str) -> Vec<u8> {
     command::check_outcome(Path::new(path), &CheckInputs::default())
-        .expect("FSL runs a check over the fixture")
+        .document()
         .to_bytes()
         .expect("FSL serializes its check outcome")
 }

@@ -171,6 +171,7 @@ mod tests {
             function: "run".to_owned(),
             arguments: Vec::new(),
             wire_arguments: Vec::new(),
+            snapshot: None,
             accounting: default_accounting(100),
             supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
             backend: Default::default(),

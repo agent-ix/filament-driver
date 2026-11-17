@@ -148,6 +148,8 @@ fn library_execute(
             supplied: SuppliedLimits::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            wire_arguments: Vec::new(),
+            snapshot: None,
         },
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),
