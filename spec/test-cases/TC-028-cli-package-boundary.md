@@ -31,7 +31,7 @@ shutdown-waiting states; the two-provider selection assertion is currently at
 the configured-run composition boundary rather than one binary-process test.
 
 Scope: FR-002-AC-3, FR-002-AC-7, FR-006-AC-1, FR-006-AC-3..FR-006-AC-4,
-FR-006-AC-8,
+FR-006-AC-8, FR-006-AC-28,
 FR-006-AC-24..FR-006-AC-27, FR-013-AC-11,
 FR-013-AC-14..FR-013-AC-15,
 FR-014-AC-1, FR-014-AC-2, FR-014-AC-4..FR-014-AC-6.
@@ -55,19 +55,20 @@ kill-on-close in this PR.
    point is `fsl-cli/src/main.rs`, and the `filament-driver` package's
    `src/lib.rs` does not export a `cli` module.
 6. Exercise the production `fsl run --provider-config <path>` command with a
-   strict JSON file containing at least two entries for distinct fixture
-   executables. Each fixture SHALL record its executable identity, exact argv,
-   its `deadline_ms`, and hello-ready marker. Give each entry a distinct valid
-   `deadline_ms` and distinct, non-default frame, total, stderr-retention, and
-   cancellation-grace values. Hold the fixture hellos at a test barrier
+   `filament.provider-config/v1` document containing at least two entries for
+   distinct fixture executables, and with `--provider-limit` values for
+   `deadline_ms`, `max_frame_bytes`, `max_total_bytes`, `max_stderr_bytes`
+   and `grace_ms` that differ from FSL FR-287's defaults. Each fixture SHALL
+   record its executable identity, exact arguments, the `deadline_ms` it
+   receives, and hello-ready marker. Hold the fixture hellos at a test barrier
    and verify both hellos are admitted before the run begins backend
    negotiation. Use the real FSL/CG route to select the second configured
    provider. Verify only that provider receives the routed request, and verify
    the process-provider dispatch receives that entry's exact executable path,
-   argv, framing/stderr/cleanup limits, and `deadline_ms`; the first provider
-   receives no request. Verify the selected provider's FR-331 request contains
-   that entry's exact `deadline_ms`, unchanged.
-   Include a separate entry with `argv: []` and verify the executable receives
+   arguments, and the run limit set's framing/stderr/cleanup limits and
+   `deadline_ms`; the first provider receives no request. Verify the selected
+   provider's FR-331 request contains the run's `deadline_ms`, unchanged.
+   Include a separate entry with no `arguments` member and verify the executable receives
    no extra arguments. The admitted hello is the sole source of each provider
    identity; the config contains no identity field. The
    `configured_run_invokes_only_the_selected_process_and_retains_its_typed_result`
@@ -82,17 +83,12 @@ kill-on-close in this PR.
    fsl-cli/tests/fixtures/ir608-run.fsl yes --format json
    --provider-config <path>` and verify no provider process starts. Cover a
    missing or unreadable file; malformed JSON; missing or wrongly typed
-   required fields; missing, zero, negative, fractional, null, wrongly typed,
-   or greater-than-9,007,199,254,740,991 `deadline_ms`; unknown fields at the
-   top-level, provider-entry and `limits` objects, including removed CPU and RSS
-   budget fields. Add parser-level boundary
-   cases that accept `deadline_ms` values 1 and 9,007,199,254,740,991; keep
-   end-to-end dispatch fixtures' deadlines large enough for the fixture run.
-   Verify each process exits with the existing FSL
-   refusal category and writes exactly one `filament-outcome/1` for
-   `Operation::Execute` with `Code::InvalidRequest` to stdout. Compare the
-   document with the existing CLI input-refusal result, including its
-   diagnostic; assert no configuration-specific code or cause is introduced.
+   members; a missing `format` or `providers`; another `format`; an entry with
+   no or a blank `path`; `arguments` that are not strings; and unknown members
+   at the top level and in an entry, including `deadline_ms` and `limits`,
+   which the plugins-only document does not hold. Verify each refusal is the
+   one FR-006-AC-24 states, exit 20. `--provider-limit` parsing and its
+   boundary values are verified by TC-041.
 9. Configure two distinct executables whose admitted hellos advertise the same
    identity. Verify FSL admission is invoked normally and its typed registration
    refusal, if any, is preserved. If FSL treats identical repeated admission as
@@ -117,7 +113,7 @@ kill-on-close in this PR.
 12. On Linux and macOS, using an adapter fixture independent of CG routing and
    a plugin fixture that starts a descendant which remains alive, let a request finish
    normally. Confirm the CLI closes the session and the process tree exits
-   before the CLI exits; if `RunLimits.cancellation_grace` expires first,
+   before the CLI exits; if the run's `grace_ms` limit expires first,
    confirm forced cleanup completes within one second. Windows forced cleanup
    uses the existing `terminate_tree`/`terminate_job` path, but this PR does not
    verify it on Windows. AC-14 kill-on-close is deferred to IR-674.
@@ -126,7 +122,7 @@ kill-on-close in this PR.
    marker before hello is written, wait for a request-running marker, and wait
    for a shutdown-waiting marker after the shutdown frame. Confirm the CLI
    requests cancellation, waits for settlement or
-   `RunLimits.cancellation_grace` expiry, terminates any remaining process
+   the run's `grace_ms` limit expiry, terminates any remaining process
    tree, restores the default disposition and re-raises the received signal.
    Confirm the parent observes signal termination for that exact signal (not
    an integer exit code), stdout contains no `filament-outcome/1` document, and no
@@ -178,21 +174,19 @@ Linux/macOS runners provide the signal evidence in step 13.
 - The parser definitions and binary entry point have the specified
   `fsl-cli` locations, and the `filament-driver` package's `src/lib.rs` does
   not export a `cli` module.
-- `fsl run --provider-config <path>` reads only the named strict JSON file;
-  malformed/unknown configuration or an invalid `deadline_ms` fails before
-  spawn; each configured provider's executable, arguments, limits and
-  `deadline_ms` reach the selected process-provider dispatch unchanged; and
-  omitting the option (or providing an empty `providers` array) registers and
-  starts no process providers, with no implicit deadline. The selected-provider
+- `fsl run --provider-config <path>` reads only the named plugins-only
+  document; malformed or unknown configuration fails before spawn; each
+  configured provider's path and arguments, and the run's one limit set from
+  `--provider-limit`, reach the selected process-provider dispatch unchanged;
+  and omitting the option (or providing an empty `providers` array) registers
+  and starts no process providers. The selected-provider
   route is exercised by the configured composition test; production binary
-  regressions cover duplicate refusal and active-request signal cleanup. Invalid config in machine mode uses
-  the existing
-  `Operation::Execute` `Code::InvalidRequest` input-refusal document and
-  refusal exit category, with no new code or cause. Removed CPU/RSS budget
-  fields are unknown and rejected before spawn.
+  regressions cover duplicate refusal and active-request signal cleanup. Invalid config refuses as FR-006-AC-24
+  states (`invalid-request`, or `unknown_wire` for another `format`), exit 20. A `deadline_ms` or `limits` entry member is unknown
+  and rejected before spawn.
 - With two configured providers, both hellos are admitted before negotiation;
   the second provider can be selected and receives only its routed request,
-  with its exact executable, argv, limits and `deadline_ms`. The hello
+  with its exact path and arguments and the run's limits and `deadline_ms`. The hello
   descriptor remains the sole identity source.
 - Distinct sessions with duplicate admitted identities cause no negotiation
   and all started sessions close. FSL registration refusals pass through
