@@ -75,6 +75,10 @@ const CHARGE_CHANGES_TOTAL_REQUEST: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/charge-changes-total/requests/charge-changes-total.json"
 );
+const ACCOUNTING_WORK_UNITS_REQUEST: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/accounting-work-units/requests/work-units.json"
+);
 
 fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read parse fixture");
@@ -1594,5 +1598,48 @@ fn run_limit_message_only_offers_the_cli_setting() {
     assert!(!document.contains("stage_limits"), "{document}");
 }
 
-/// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
 #[test]
+fn accounting_work_units_item_setting_can_be_raised_to_finish_the_run() {
+    let limited = Command::new(FSL)
+        .args(["run", ACCOUNTING_WORK_UNITS_REQUEST, "--format", "json"])
+        .output()
+        .expect("run with the request's accounting.work_units bound");
+    assert_eq!(limited.status.code(), Some(22));
+    assert!(limited.stderr.is_empty());
+
+    let limited_document: serde_json::Value =
+        serde_json::from_slice(&limited.stdout).expect("limited run outcome JSON");
+    assert_eq!(
+        limited_document["category"], "incomplete",
+        "{limited_document}"
+    );
+    let cause = &limited_document["items"][0]["cause"];
+    assert_eq!(cause["code"], "resource_exhausted", "{cause}");
+    let setting = cause["setting"]
+        .as_str()
+        .expect("the stopped state-rule item names its setting");
+    assert_eq!(setting, "accounting.work_units");
+
+    let raised_limit = format!("{setting}=100000");
+    let completed = Command::new(FSL)
+        .args([
+            "run",
+            ACCOUNTING_WORK_UNITS_REQUEST,
+            "--limit",
+            &raised_limit,
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with the item's named accounting limit raised");
+    assert_eq!(completed.status.code(), Some(0));
+    assert!(completed.stderr.is_empty());
+
+    let completed_document: serde_json::Value =
+        serde_json::from_slice(&completed.stdout).expect("completed run outcome JSON");
+    assert_eq!(
+        completed_document["category"], "success",
+        "{completed_document}"
+    );
+}
+
