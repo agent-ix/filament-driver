@@ -5,7 +5,7 @@
     reason = "process launch failures should fail this integration test"
 )]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use filament_exact::Cancel;
@@ -166,6 +166,24 @@ fn assert_fsl_document(cli_stdout: &[u8], fsl_bytes: &[u8]) {
     let fsl_value: serde_json::Value =
         serde_json::from_slice(fsl_bytes).expect("FSL bytes encode one JSON document");
     assert_eq!(cli_value, fsl_value);
+}
+
+fn deep_parenthesis_source(depth: usize) -> String {
+    let expression = format!("{}1{}", "(".repeat(depth), ")".repeat(depth));
+    format!(
+        concat!(
+            "language \"ix:native\" edition \"1-draft\";\n",
+            "profile v = \"filament.value.complete/v1\";\n",
+            "function deep using v(): Integer pure {{ {expression} }}\n"
+        ),
+        expression = expression
+    )
+}
+
+fn write_deep_source(directory: &TemporaryDirectory, depth: usize) -> PathBuf {
+    let path = directory.0.join("deep.fsl");
+    std::fs::write(&path, deep_parenthesis_source(depth)).expect("write deep source fixture");
+    path
 }
 
 /// Trace: IR-607, one FSL exit function for unknown verbs.
@@ -541,6 +559,102 @@ fn parse_refusal_emits_fsl_diagnostic_cause_and_locus() {
     assert_eq!(output.stderr, b"expected `)`\n");
 
     assert_fsl_document(&output.stdout, &parse_outcome_bytes(INVALID_SOURCE));
+}
+
+/// Trace: QSL-2190; a caller may raise the parser's node bound from the CLI.
+#[trace("QSL-2190")]
+#[test]
+fn parse_accepts_raised_node_limit() {
+    let directory = TemporaryDirectory::new("parse-node-limit");
+    let source = write_deep_source(&directory, 6_000);
+    let output = Command::new(FSL)
+        .arg("parse")
+        .arg("issuer")
+        .arg("deep")
+        .arg(&source)
+        .args(["--limit", "s1.nodes=1000000", "--format", "json"])
+        .output()
+        .expect("parse a deep source with a raised node limit");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("parse emits an outcome document");
+    assert_eq!(document["category"], "success");
+}
+
+/// Trace: QSL-2190; the default parser bound remains enforced.
+#[trace("QSL-2190")]
+#[test]
+fn default_node_limit_still_stops_deep_nest() {
+    let directory = TemporaryDirectory::new("default-node-limit");
+    let source = write_deep_source(&directory, 6_000);
+    let output = Command::new(FSL)
+        .arg("parse")
+        .arg("issuer")
+        .arg("deep")
+        .arg(&source)
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("parse a deep source under the default node limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("parse emits an incomplete document");
+    assert_eq!(document["category"], "incomplete");
+}
+
+/// Trace: QSL-2190; check passes caller-raised source limits to FSL.
+#[trace("QSL-2190")]
+#[test]
+fn check_accepts_raised_node_limit() {
+    let directory = TemporaryDirectory::new("check-node-limit");
+    let source = write_deep_source(&directory, 6_000);
+    let output = Command::new(FSL)
+        .arg("check")
+        .arg(&source)
+        .args(["--limit", "s1.nodes=1000000", "--format", "json"])
+        .output()
+        .expect("check a deep source with a raised node limit");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits an outcome document");
+    assert_eq!(document["category"], "success");
+}
+
+/// Trace: QSL-2190; unknown settings identify the valid settings for the verb.
+#[trace("QSL-2190")]
+#[test]
+fn frontend_limit_unknown_setting_names_accepted_settings() {
+    let output = Command::new(FSL)
+        .args([
+            "parse",
+            "issuer",
+            "deep",
+            SOURCE,
+            "--limit",
+            "unknown.limit=7",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("parse with an unknown limit setting");
+    assert_eq!(output.status.code(), Some(20));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("invalid limit emits a refusal document");
+    let message = document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("limit refusal has a message");
+    assert!(message.contains("unknown.limit"), "{message}");
+    assert!(message.contains("s1.nodes"), "{message}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; text mode writes FSL's formatted UTF-8 value.

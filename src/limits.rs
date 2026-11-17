@@ -11,7 +11,7 @@ use fsl_replay::{
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum LimitError {
     /// FSL recognizes the setting, but this operation does not expose it.
-    #[error("limit setting `{}` is unavailable for the `run` operation", setting.name())]
+    #[error("limit setting `{}` is unavailable for this operation", setting.name())]
     OperationUnavailable {
         /// The recognized setting absent from the operation's bounds.
         setting: SettingName,
@@ -31,6 +31,44 @@ impl LimitOverrides {
     /// Apply settings exposed by the selected `run` operation.
     pub fn apply_to(&self, limits: &mut SpineLimits, call: &mut Call) -> Result<(), LimitError> {
         self.apply_parts(limits, None, &mut call.accounting)
+    }
+
+    /// Apply stage settings to the bounds an operation accepts.
+    ///
+    /// Accounting settings require a call and are unavailable to front-end
+    /// operations such as parse and check.
+    pub fn apply_to_limits<T: SettingLimits>(&self, limits: &mut T) -> Result<(), LimitError> {
+        let available = limits.bounds();
+        let mut updates = Vec::with_capacity(self.0.len());
+        for (name, value) in &self.0 {
+            match name {
+                SettingName::Stage(setting)
+                    if available.iter().any(|(available, _)| available == setting) =>
+                {
+                    updates.push((*setting, *value));
+                }
+                SettingName::Stage(setting) => {
+                    return Err(LimitError::OperationUnavailable {
+                        setting: SettingName::Stage(*setting),
+                    });
+                }
+                SettingName::Accounting(_) => {
+                    return Err(LimitError::OperationUnavailable { setting: *name });
+                }
+            }
+        }
+        for (setting, value) in updates {
+            // `bounds()` and `set_bound()` are the paired FSL API for an
+            // operation's exposed settings.
+            let updated = limits.set_bound(setting, value);
+            debug_assert!(updated, "FSL bound listed by bounds() must be settable");
+            if !updated {
+                return Err(LimitError::OperationUnavailable {
+                    setting: SettingName::Stage(setting),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Apply settings to the actual stage, observation and accounting limits of a clause run.
@@ -98,6 +136,18 @@ impl LimitOverrides {
     /// The parsed FSL settings, for caller inspection.
     pub fn values(&self) -> &[(SettingName, u64)] {
         &self.0
+    }
+}
+
+impl LimitError {
+    /// Format the refusal for the selected operation.
+    pub fn message_for(&self, operation: &str) -> String {
+        match self {
+            Self::OperationUnavailable { setting } => format!(
+                "limit setting `{}` is unavailable for the `{operation}` operation",
+                setting.name()
+            ),
+        }
     }
 }
 
