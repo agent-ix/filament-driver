@@ -487,6 +487,46 @@ fn check_semantic_refusal_emits_fsl_check_outcome_document() {
     assert_fsl_document(&output.stdout, &check_outcome_bytes(CHECK_INVALID_SOURCE));
 }
 
+/// Trace: FR-986-AC-1; a `null` expression reaches S3 and exits as a refusal.
+#[trace("FR-986-AC-1")]
+#[test]
+fn null_expression_refusal_exits_twenty_at_s3() {
+    let directory = tempfile::tempdir().expect("create null expression source directory");
+    let source = directory.path().join("null-expression.fsl");
+    std::fs::write(
+        &source,
+        concat!(
+            "language \"ix:native\" edition \"1-draft\";\n",
+            "profile v = \"filament.value.complete/v1\";\n",
+            "function bad using v(): Integer pure { null }\n"
+        ),
+    )
+    .expect("write null expression source");
+
+    let output = Command::new(FSL)
+        .arg("check")
+        .arg(&source)
+        .args(["--format", "json"])
+        .output()
+        .expect("check null expression source");
+
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits a check outcome");
+    assert_eq!(document["last_stage"], "S3", "{document}");
+    assert_eq!(document["category"], "refusal", "{document}");
+    assert_eq!(
+        document["diagnostics"][0]["code"], "ill_typed",
+        "{document}"
+    );
+    assert!(
+        document["diagnostics"][0]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("null")),
+        "{document}"
+    );
+}
+
 /// Trace: FR-002-AC-1, FR-002-AC-3; argument refusals retain the selected FSL operation.
 #[test]
 fn implemented_verb_argument_refusals_use_the_selected_operation() {
