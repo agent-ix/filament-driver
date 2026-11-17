@@ -660,7 +660,6 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
-/// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
 #[test]
 fn check_does_not_read_an_unnamed_config_from_the_working_directory() {
     let unique = std::time::SystemTime::now()
