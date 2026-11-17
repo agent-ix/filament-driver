@@ -862,10 +862,10 @@ fn run_charge_changes_total_json_contains_the_frame_witness() {
         .get("witness")
         .and_then(serde_json::Value::as_object)
         .expect("the frame violation carries its user-facing witness");
-    assert_eq!(witness["object_identity"], "o1", "{witness}");
-    assert_eq!(witness["field"], "total", "{witness}");
-    assert_eq!(witness["before"]["integer"], "4200", "{witness}");
-    assert_eq!(witness["after"]["integer"], "9000", "{witness}");
+    assert_eq!(witness["object_identity"], "o1", "{witness:?}");
+    assert_eq!(witness["field"], "total", "{witness:?}");
+    assert_eq!(witness["before"]["integer"], "4200", "{witness:?}");
+    assert_eq!(witness["after"]["integer"], "9000", "{witness:?}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
@@ -1641,4 +1641,3 @@ fn accounting_work_units_item_setting_can_be_raised_to_finish_the_run() {
         "{completed_document}"
     );
 }
-
