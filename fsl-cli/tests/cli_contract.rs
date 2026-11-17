@@ -354,6 +354,158 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
+/// Trace: QSL-2015; request and CLI entry points share the observation byte limit outcome.
+#[test]
+fn observation_input_bytes_request_member_matches_cli_limit() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock is after the Unix epoch")
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "fsl-qsl-2015-observation-limit-{}-{unique}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&directory).expect("create isolated request directory");
+    struct RemoveDirectory(std::path::PathBuf);
+    impl Drop for RemoveDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = RemoveDirectory(directory.clone());
+
+    let observation = serde_json::json!({
+        "format": "filament.state.snapshot/v1",
+        "identity": {"authority": "issuer", "identity": "current"},
+        "observation": "current"
+    });
+    let observation_bytes = serde_json::to_vec(&observation).expect("encode observation");
+    assert!(observation_bytes.len() > 10);
+    std::fs::write(directory.join("current.json"), &observation_bytes)
+        .expect("write over-limit observation");
+
+    let request = |request_limit: bool| {
+        let mut clause = serde_json::json!({
+            "selection": {"function": {"name": "yes", "arguments": [], "snapshot": "current"}},
+            "observations": {"current": "current.json"}
+        });
+        if request_limit {
+            clause["observation_limits"] = serde_json::json!({"input_bytes": 10});
+        }
+        serde_json::json!({
+            "format": "native-run/1",
+            "request": {
+                "models": [],
+                "program": {"source": {
+                    "file": SOURCE,
+                    "authority": "issuer",
+                    "identity": "document",
+                    "document": "CliObservationLimit",
+                    "formal_revision": 1
+                }},
+                "clause": clause
+            }
+        })
+    };
+    let request_path = directory.join("request-member.json");
+    std::fs::write(
+        &request_path,
+        serde_json::to_vec(&request(true)).expect("encode request-member request"),
+    )
+    .expect("write request-member request");
+    let flag_path = directory.join("flag.json");
+    std::fs::write(
+        &flag_path,
+        serde_json::to_vec(&request(false)).expect("encode CLI-limit request"),
+    )
+    .expect("write CLI-limit request");
+
+    let request_limited = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run with the request observation limit");
+    let cli_limited = Command::new(FSL)
+        .arg("run")
+        .arg(&flag_path)
+        .args(["--limit", "observation.input_bytes=10", "--format", "json"])
+        .output()
+        .expect("run with the CLI observation limit");
+    assert_eq!(request_limited.status.code(), Some(22));
+    assert_eq!(cli_limited.status.code(), Some(22));
+    assert!(request_limited.stderr.is_empty());
+    assert!(cli_limited.stderr.is_empty());
+
+    let request_document: serde_json::Value =
+        serde_json::from_slice(&request_limited.stdout).expect("request limit outcome JSON");
+    let cli_document: serde_json::Value =
+        serde_json::from_slice(&cli_limited.stdout).expect("CLI limit outcome JSON");
+    assert_eq!(request_document, cli_document);
+    assert_eq!(request_document["category"], "incomplete");
+    assert_eq!(request_document["items"].as_array().map(Vec::len), Some(1));
+    assert!(
+        request_document["diagnostics"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "the limit is carried by the result item, not a top-level diagnostic: {request_document}"
+    );
+    assert_eq!(
+        request_document["items"][0]["cause"]["code"],
+        "stage_limit_exceeded"
+    );
+    assert_eq!(
+        request_document["items"][0]["cause"]["kind"],
+        "input-bytes-exceeded"
+    );
+
+    fn has_limit_message(value: &serde_json::Value, observed_bytes: &str) -> bool {
+        match value {
+            serde_json::Value::String(message) => {
+                message.contains("observation.input_bytes")
+                    && message.contains("10")
+                    && message.contains(observed_bytes)
+            }
+            serde_json::Value::Array(values) => values
+                .iter()
+                .any(|value| has_limit_message(value, observed_bytes)),
+            serde_json::Value::Object(values) => values
+                .values()
+                .any(|value| has_limit_message(value, observed_bytes)),
+            _ => false,
+        }
+    }
+    assert!(
+        has_limit_message(&request_document, &observation_bytes.len().to_string()),
+        "a message names observation.input_bytes, limit 10, and observed size {}: {request_document}",
+        observation_bytes.len()
+    );
+}
+
+/// Trace: QSL-2015; the removed `observation.document_bytes` flag remains unknown.
+#[test]
+fn observation_document_bytes_is_not_a_cli_limit_setting() {
+    let output = Command::new(FSL)
+        .args([
+            "run",
+            RUN_REQUEST,
+            "--limit",
+            "observation.document_bytes=10",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with the removed observation limit name");
+    assert_eq!(output.status.code(), Some(20));
+    let refusal = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(refusal.contains("UnknownSetting"), "{refusal}");
+    assert!(refusal.contains("observation.input_bytes"), "{refusal}");
+}
+
 /// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
 #[test]
 fn check_does_not_read_an_unnamed_config_from_the_working_directory() {
