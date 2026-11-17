@@ -34,6 +34,10 @@ const CHECK_INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/check-invalid.fsl"
 );
+const CHARGE_CHANGES_TOTAL_REQUEST: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/charge-changes-total/requests/charge-changes-total.json"
+);
 const CHECK_MODEL_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/check-with-model.fsl"
@@ -480,6 +484,39 @@ fn compile_empty_program_is_invalid_package() {
     assert_eq!(document["category"], "refusal");
     assert_eq!(document["diagnostics"][0]["code"], "invalid_package");
     assert_eq!(document["diagnostics"][0]["cause"], "invalid-value");
+}
+
+/// Trace: QSL-2005; a frame violation reports the changed field and its values.
+#[test]
+fn run_charge_changes_total_json_contains_the_frame_witness() {
+    let output = Command::new(FSL)
+        .args(["run", CHARGE_CHANGES_TOTAL_REQUEST, "--format", "json"])
+        .output()
+        .expect("run the charge-changes-total frame example");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
+    assert_eq!(document["category"], "violation", "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["clause"], "Shop::Order::charge", "{item}");
+    assert_eq!(item["category"], "violation", "{item}");
+    assert_eq!(item["cause"]["code"], "frame_violation", "{item}");
+    assert_eq!(item["cause"]["kind"], "unauthorized-change", "{item}");
+
+    let witness = item
+        .get("witness")
+        .and_then(serde_json::Value::as_object)
+        .expect("the frame violation carries its user-facing witness");
+    assert_eq!(witness["object_identity"], "o1", "{witness}");
+    assert_eq!(witness["field"], "total", "{witness}");
+    assert_eq!(witness["before"]["integer"], "4200", "{witness}");
+    assert_eq!(witness["after"]["integer"], "9000", "{witness}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
