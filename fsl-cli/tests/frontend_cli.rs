@@ -594,7 +594,8 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
         panic!("function claim");
     };
     let name = name.clone();
-    let report = fsl_replay::spine::run_clause(*request).expect("actual clause report");
+    let report =
+        fsl_replay::spine::run_clause(*request.into_request()).expect("actual clause report");
     let document =
         OutcomeDocument::from_clause_runs(Some(OutcomeStage::S4), [(name.as_str(), &report)])
             .expect("core producer");
@@ -1724,16 +1725,63 @@ fn text_mode_io_failures_keep_the_json_exit_code_and_locate_sources() {
     assert!(text.contains("parse-invalid.fsl"), "{text}");
 }
 
-/// FR-865-AC-1 wants the header `<operation>: <category> (exit <code>) at <stage>`; the
-/// language's `render_outcome` text form still begins `Outcome: <category>`, so this stays
-/// ignored until the language implements FR-865's header, items and result lines.
+/// FR-865-AC-1, AC-2 and AC-3: `check`, `compile` and `run` without `--format` write the
+/// language renderer's text: the `<operation>: <category> (exit <code>) at <stage>` header,
+/// the item line with its cause, and the `result:` line.
 #[trace("TC-2456", "FR-865-AC-3")]
 #[test]
-#[ignore = "QSL-2350: fsl-inspect render_outcome text lacks the FR-865 header, item and result lines"]
-fn default_text_begins_with_the_fr_865_header() {
-    let output = fsl(&["check", INVALID_SOURCE]);
-    let text = String::from_utf8(output.stdout).expect("text is UTF-8");
-    assert!(text.starts_with("check: refusal (exit 20)"), "{text}");
+fn default_text_carries_the_fr_865_header_items_and_result() {
+    let text = |arguments: &[&str]| {
+        let output = fsl(arguments);
+        (
+            output.status.code(),
+            String::from_utf8(output.stdout).expect("text is UTF-8"),
+        )
+    };
+
+    let (code, check) = text(&["check", INVALID_SOURCE]);
+    assert_eq!(code, Some(20), "{check}");
+    assert!(
+        check.starts_with("check: refusal (exit 20) at S1\n"),
+        "{check}"
+    );
+    assert!(
+        check.contains("parse-invalid.fsl:3:20: invalid_syntax"),
+        "{check}"
+    );
+    assert!(check.contains("  cause: unexpected-token"), "{check}");
+    let (code, check) = text(&["check", SOURCE]);
+    assert_eq!(code, Some(0));
+    assert_eq!(check, "check: success (exit 0) at S4\n");
+
+    let (code, compile) = text(&["compile", COMPILE_REFUSED]);
+    assert_eq!(code, Some(20), "{compile}");
+    assert!(
+        compile.starts_with("package: refusal (exit 20) at S1\n"),
+        "{compile}"
+    );
+    assert!(compile.contains("  cause: unexpected-token"), "{compile}");
+    let (code, compile) = text(&["compile", COMPILE_REQUEST]);
+    assert_eq!(code, Some(0));
+    assert_eq!(compile, "package: success (exit 0) at S4\n");
+
+    let (code, run) = text(&["run", RUN_REQUEST]);
+    assert_eq!(code, Some(0), "{run}");
+    assert!(
+        run.starts_with("execute: success (exit 0) at S6a\n"),
+        "{run}"
+    );
+    assert!(
+        run.contains("result: completed {\"value\":{\"boolean\":true}}"),
+        "{run}"
+    );
+    let (code, run) = text(&["run", RUN_REFUSED]);
+    assert_eq!(code, Some(20), "{run}");
+    assert!(
+        run.starts_with("execute: refusal (exit 20) at S6a\n"),
+        "{run}"
+    );
+    assert!(run.contains("missing_declaration"), "{run}");
 }
 
 /// FSL FR-670-AC-1's unit, with the floor law header when `header` is set.

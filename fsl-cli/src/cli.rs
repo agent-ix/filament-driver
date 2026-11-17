@@ -912,7 +912,9 @@ fn run(options: RunOptions) -> CommandResult {
         };
     let input = match prepared {
         PreparedRun::Function(prepared) => prepared.into_input(),
-        PreparedRun::Clause(request) => return run_clause_request(*request, &options.limits),
+        PreparedRun::Clause(request) => {
+            return run_clause_request(*request.into_request(), &options.limits)
+        }
         PreparedRun::TlLowering(_) => {
             return CommandResult::input_refusal(
                 Operation::Execute,
@@ -1999,6 +2001,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         let summary = match summary {
             Ok(_) if cancel.cause().is_some() => Err(Box::new(command::RunError {
                 cause: command::RunCause::MonitorCancelled,
+                sources: Default::default(),
             })),
             summary => summary,
         };
