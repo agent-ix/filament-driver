@@ -395,7 +395,7 @@ struct SourceOptions {
 
 impl SourceOptions {
     fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
-        let limit_usage = if verb == Verb::Parse {
+        let limit_usage = if matches!(verb, Verb::Parse | Verb::Format) {
             " [--limit name=value]"
         } else {
             ""
@@ -415,11 +415,11 @@ impl SourceOptions {
                 index += 2;
                 continue;
             }
-            if argument == "--limit" && verb == Verb::Parse {
+            if argument == "--limit" && matches!(verb, Verb::Parse | Verb::Format) {
                 let value = arguments
                     .get(index + 1)
                     .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                    .ok_or_else(|| "--limit requires a setting=value operand".to_owned())?;
                 limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
@@ -458,6 +458,15 @@ impl CompileOptions {
         while index < arguments.len() {
             let argument = &arguments[index];
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires a setting=value operand".to_owned())?;
+                limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
             }
@@ -643,7 +652,7 @@ fn apply_frontend_limits(
     bounds: &mut impl SettingLimits,
     operation: &str,
 ) -> Result<(), String> {
-    overrides.apply_to_limits(bounds).map_err(|error| {
+    overrides.apply_to_limits(bounds, operation).map_err(|error| {
         let accepted = accepted_frontend_limit_settings(bounds);
         format!(
             "{}; settings accepted by this command: {accepted}",
@@ -924,7 +933,10 @@ fn run(options: RunOptions) -> CommandResult {
             if !exposed.iter().any(|(available, _)| available == stage) {
                 return CommandResult::input_refusal(
                     Operation::Execute,
-                    filament_driver::LimitError::OperationUnavailable { setting: *setting }
+                    filament_driver::LimitError::OperationUnavailable {
+                        setting: *setting,
+                        operation: "run",
+                    }
                         .message_for("run"),
                 );
             }
@@ -1060,6 +1072,10 @@ fn run_clause_request(
 
 /// Compile a request through its owner and retain the actual package outcome.
 fn compile(options: CompileOptions) -> CommandResult {
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "compile") {
+        return CommandResult::input_refusal(Operation::Package, error);
+    }
     let clocks = match options
         .clocks
         .as_deref()
@@ -1382,7 +1398,14 @@ fn parse_source(options: SourceOptions) -> CommandResult {
 
 /// Format one parsed source through FSL and retain its typed outcome.
 fn format_source(options: SourceOptions) -> CommandResult {
-    let limits = fsl_cst::Limits::default();
+    let mut limits = fsl_cst::Limits::default();
+    let mut format_limits = FormatLimits::default();
+    if let Err(error) = options
+        .limits
+        .apply_to_setting_group(&mut [&mut limits, &mut format_limits], "format")
+    {
+        return CommandResult::input_refusal(Operation::Format, error.to_string());
+    }
     let bytes = match read_source(&options.path, limits.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1395,7 +1418,7 @@ fn format_source(options: SourceOptions) -> CommandResult {
     let cancel = Cancel::new();
     let result = fsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
-        .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
+        .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
     let document = OutcomeDocument::from_format(&result);
     let text_output = result.ok().map(Staged::into_value);
     CommandResult::formatted(document, text_output)
@@ -2632,10 +2655,11 @@ mod tests {
     fn unavailable_limit_error_is_generic_and_cli_message_names_operation() {
         let error = filament_driver::LimitError::OperationUnavailable {
             setting: SettingName::Stage(Setting::ExploreStates),
+            operation: "run",
         };
         assert_eq!(
             error.to_string(),
-            "limit setting `explore.states` is unavailable for this operation"
+            "limit setting `explore.states` is unavailable for the `run` operation"
         );
         assert_eq!(
             error.message_for("run"),

@@ -1454,3 +1454,145 @@ fn built_binary_version_agrees_with_cargo_package_version() {
     let result = agreement.check();
     assert!(result.is_ok(), "version agreement failed: {result:?}");
 }
+/// Trace: FR-255-AC-1, `--limit` is accepted by check and parse for S1 ceilings.
+#[test]
+fn check_and_parse_accept_raised_s1_limits_for_deep_source() {
+    let source_path =
+        std::env::temp_dir().join(format!("fsl-qsl-2014-deep-{}.native", std::process::id()));
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"filament.value.complete/v1\";\nfunction f using Complete (x: Boolean): Boolean pure {{ {}true }}\n",
+        "not ".repeat(6_000)
+    );
+    std::fs::write(&source_path, source).expect("write deep source fixture");
+    let path = source_path.to_string_lossy().into_owned();
+    for arguments in [
+        vec![
+            "parse",
+            "issuer",
+            "deep",
+            path.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ],
+        vec![
+            "check",
+            path.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ],
+    ] {
+        let output = Command::new(FSL)
+            .args(arguments)
+            .output()
+            .expect("run source command with raised S1 node limit");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(output.stderr.is_empty());
+    }
+    std::fs::remove_file(source_path).expect("remove deep source fixture");
+}
+
+/// Trace: FR-255-AC-2, compile accepts a named limit operand.
+#[test]
+fn compile_accepts_limit_operand() {
+    let request = requests::request(SOURCE, None);
+    let output = Command::new(FSL)
+        .args([
+            "compile",
+            request.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run compile with a named limit");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty());
+}
+
+/// Trace: FR-255-AC-4, the format source-byte refusal names the accepted setting.
+#[test]
+fn format_limit_message_names_the_source_byte_setting() {
+    let source_path =
+        std::env::temp_dir().join(format!("fsl-qsl-2014-format-{}.native", std::process::id()));
+    std::fs::write(&source_path, b"source bytes").expect("write format source fixture");
+    let path = source_path.to_string_lossy().into_owned();
+    let output = Command::new(FSL)
+        .args([
+            "format",
+            "issuer",
+            "identity",
+            path.as_str(),
+            "--limit",
+            "s1.input_bytes=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run format with a low source-byte limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("s1.input_bytes"), "{document}");
+    std::fs::remove_file(source_path).expect("remove format source fixture");
+}
+
+/// Trace: FR-255-AC-6, unknown limits keep FSL's accepted-setting list.
+#[test]
+fn unknown_limit_setting_lists_accepted_settings() {
+    let output = Command::new(FSL)
+        .args([
+            "parse",
+            "issuer",
+            "document",
+            SOURCE,
+            "--limit",
+            "not.a.setting=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run parse with an unknown limit setting");
+    assert_eq!(output.status.code(), Some(20));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("not.a.setting"), "{document}");
+    assert!(document.contains("s1.nodes"), "{document}");
+    assert!(document.contains("format.output_bytes"), "{document}");
+}
+
+/// Trace: FR-255-AC-3, run limit diagnostics omit request-stage settings.
+#[test]
+fn run_limit_message_only_offers_the_cli_setting() {
+    let request = requests::request(SOURCE, None);
+    let output = Command::new(FSL)
+        .args([
+            "run",
+            request.as_str(),
+            "--limit",
+            "s1.tokens=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with a low token limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("s1.tokens"), "{document}");
+    assert!(!document.contains("stage_limits"), "{document}");
+}
+
+/// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
+#[test]
