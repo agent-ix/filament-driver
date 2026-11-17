@@ -34,6 +34,10 @@ const CHECK_INVALID_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/check-invalid.fsl"
 );
+const PAID_SHORT_REQUEST: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/paid-short/requests/paid-short.json"
+);
 const CHECK_MODEL_SOURCE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/check-with-model.fsl"
@@ -480,6 +484,54 @@ fn compile_empty_program_is_invalid_package() {
     assert_eq!(document["category"], "refusal");
     assert_eq!(document["diagnostics"][0]["code"], "invalid_package");
     assert_eq!(document["diagnostics"][0]["cause"], "invalid-value");
+}
+
+/// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
+#[test]
+fn run_paid_short_json_contains_the_state_rule_witness() {
+    let output = Command::new(FSL)
+        .args(["run", PAID_SHORT_REQUEST, "--format", "json"])
+        .output()
+        .expect("run the paid-short state-rule example");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
+    assert_eq!(document["category"], "violation", "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["clause"], "PaidInFull", "{item}");
+    assert_eq!(item["category"], "violation", "{item}");
+    let witness = item
+        .get("witness")
+        .filter(|witness| witness.is_object())
+        .expect("the state-rule violation carries its witness");
+    assert_eq!(
+        witness["value_path"]["root"]["subject"]["object_identity"], "o1",
+        "{witness}"
+    );
+    assert!(
+        witness["value_path"]["steps"]
+            .as_array()
+            .is_some_and(|steps| {
+                steps
+                    .iter()
+                    .any(|step| step["name"] == "charged" || step["name"] == "total")
+            }),
+        "the witness identifies the deciding field: {witness}"
+    );
+    assert!(
+        ["4000", "4200"].contains(
+            &witness["deciding_element"]["decimal"]
+                .as_str()
+                .unwrap_or("")
+        ),
+        "the witness carries the decisive paid/total value: {witness}"
+    );
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
