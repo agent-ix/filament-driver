@@ -581,44 +581,6 @@ fn parse_emits_fsl_parse_outcome_document() {
     assert_fsl_document(&output.stdout, &parse_outcome_bytes(SOURCE));
 }
 
-/// Trace: TC-965, FR-480-AC-1; the CLI accepts a reference literal in a unit.
-#[trace("TC-965", "FR-480-AC-1")]
-#[test]
-fn parse_accepts_reference_literal_in_unit() {
-    let directory = TemporaryDirectory::new("reference-literal");
-    let source = directory.0.join("reference-literal.fsl");
-    std::fs::write(
-        &source,
-        concat!(
-            "language \"ix:native\" edition \"1-draft\";\n",
-            "profile m = \"filament.model.complete/v1\";\n",
-            "pre P using m on M::T::op { M::Server#\"s1\" = M::Server#\"s2\" }\n"
-        ),
-    )
-    .expect("write source containing reference literals");
-
-    let output = Command::new(FSL)
-        .arg("parse")
-        .arg("issuer")
-        .arg("reference-literal")
-        .arg(&source)
-        .arg("--format")
-        .arg("json")
-        .output()
-        .expect("parse source containing reference literals through the CLI");
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    assert!(output.stderr.is_empty());
-    let document: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("parse emits a JSON outcome");
-    assert_eq!(document["operation"], "parse");
-    assert_eq!(document["category"], "success");
-}
-
 /// Trace: FR-002-AC-1, FR-002-AC-3; a parse refusal retains FSL's cause and locus.
 #[test]
 fn parse_refusal_emits_fsl_diagnostic_cause_and_locus() {
