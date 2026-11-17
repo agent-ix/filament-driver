@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Linux and macOS signal forwarding for explicitly routed plugin sessions.
+//! Linux and macOS signal forwarding for explicitly routed plugin sessions,
+//! and signal reporting for `fsl analyze` and `fsl monitor`.
 //!
-//! Ordinary CLI commands do not install handlers. During a routed plugin
-//! session an inherited `SIG_IGN` disposition is overridden by `signal-hook`
-//! for the process lifetime; cleanup on plugin-session signals takes precedence.
+//! Other CLI commands do not install handlers. A routed plugin session
+//! re-raises a received signal once its cleanup ends; a reporting session
+//! (`activate_reporting`) consumes it, so the verb writes the cancelled
+//! outcome FSL settles. During a session an inherited `SIG_IGN` disposition
+//! is overridden by `signal-hook` for the process lifetime; cleanup on
+//! plugin-session signals takes precedence.
 //!
 //! The tests `signal_is_forwarded_after_active_cleanup_and_defaults_without_a_session`
 //! and `plugin_session_signals_cancel_and_reap_each_active_lifecycle_stage`
@@ -55,15 +59,32 @@ fn emulate_default_handler(signal: i32) {
 pub(crate) struct ActiveSession {
     context: SignalContext,
     token: u64,
+    /// Whether the command reports a received signal as its own outcome
+    /// rather than re-raising it once cleanup ends.
+    reports: bool,
 }
 
 impl SignalContext {
     pub(crate) fn activate(&self, cancel: Cancel) -> ActiveSession {
+        self.register(cancel, false)
+    }
+
+    /// Activate `cancel` for a command that reports a signal as its own
+    /// outcome: SIGINT or SIGTERM cancels it with cause `requested`, and when
+    /// this activation ends the signal is consumed, not re-raised, so the
+    /// command writes the outcome FSL settled for the cancellation (FSL
+    /// FR-624 `cancelled`/`requested`, exit 22).
+    pub(crate) fn activate_reporting(&self, cancel: Cancel) -> ActiveSession {
+        self.register(cancel, true)
+    }
+
+    fn register(&self, cancel: Cancel, reports: bool) -> ActiveSession {
         let token = self.shared.next_token.fetch_add(1, Ordering::Relaxed);
         lock_active(&self.shared).insert(token, cancel);
         ActiveSession {
             context: self.clone(),
             token,
+            reports,
         }
     }
 
@@ -106,7 +127,11 @@ impl Drop for ActiveSession {
         drop(active);
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         if became_empty {
-            self.context.reraise_received();
+            if self.reports {
+                self.context.shared.received.store(0, Ordering::Release);
+            } else {
+                self.context.reraise_received();
+            }
         }
     }
 }
@@ -117,10 +142,6 @@ impl Drop for ActiveSession {
 /// active session, the listener emulates the default action. The listener
 /// remains until process exit so a signal after session drop is not swallowed.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-#[allow(
-    dead_code,
-    reason = "called only by a command that routes a plugin session"
-)]
 pub(crate) fn run<T: Send + 'static>(
     operation: impl FnOnce(SignalContext) -> T + Send + 'static,
 ) -> Result<T, std::io::Error> {
@@ -179,10 +200,6 @@ pub(crate) fn run<T: Send + 'static>(
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-#[allow(
-    dead_code,
-    reason = "called only by a command that routes a plugin session"
-)]
 pub(crate) fn run<T>(operation: impl FnOnce(SignalContext) -> T) -> Result<T, std::io::Error> {
     Ok(operation(SignalContext::default()))
 }
@@ -487,7 +504,7 @@ mod tests {
 
         use filament_driver::{
             ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
-            ProviderManifest, ProviderRequest, ProviderResults,
+            ProviderManifest, ProviderResults,
         };
         use filament_exact::Cancel;
         use fsl_foundation::BackendId;
@@ -579,16 +596,15 @@ mod tests {
                 };
                 if stage.starts_with("request") {
                     let request_cancel = Cancel::new();
-                    let package = crate::test_support::emitted_package();
-                    let request = ProcessProviderRequest {
-                        emitted_package: &package,
-                        deadline_ms: 4096,
-                        manifest: &[],
-                        provider_request: ProviderRequest::new(&[]),
-                        fsl_items: &[],
-                        cancel: &request_cancel,
-                    };
-                    let _ = session.invoke(request);
+                    let handle = request_cancel.clone();
+                    session = crate::test_support::with_provider_request(move |request| {
+                        let _ = session.invoke(ProcessProviderRequest {
+                            request,
+                            manifest: &[],
+                            cancel: &handle,
+                        });
+                        session
+                    });
                     if request_cancel.cause().is_some() {
                         std::fs::write(
                             std::path::PathBuf::from(&ready).with_extension("request-cancelled"),

@@ -4,19 +4,19 @@
 //! The wire authority is FSpec FR-331
 //! (`agent-ix/filament-specification/spec/objects/interfaces/FR-331-backend-provider-envelope.md`)
 //! and FR-462 (`filament-specification/spec/functional/tooling/FR-462-speak-the-plugin-wire.md`).
-//! The seam uses the driver's [`ProviderRequest`] and [`ProviderResults`]; it
-//! does not define a local FR-331 wire schema or depend on the host crate.
+//! The seam forwards the FR-331 provider request FSL built
+//! ([`fsl_analyze::provider::ProviderRequest`]) and returns the driver's
+//! [`ProviderResults`]; it defines no FR-331 request of its own, holds no
+//! package or routed item, and does not depend on the host crate.
 
 use std::ffi::OsString;
 use std::path::Path;
 use std::time::Duration;
 
 use filament_exact::Cancel;
-use fsl_package::EmittedPackage;
-use fsl_route::request::RequirementItem;
 use fsl_route::BackendDescriptor;
 
-use crate::{ProviderManifest, ProviderRequest, ProviderResults};
+use crate::{ProviderManifest, ProviderResults};
 
 /// Caller-owned frame, stderr and cancellation limits, independent of the host crate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,21 +32,16 @@ pub struct ProcessProviderLimits {
     pub cancellation_grace: Duration,
 }
 
-/// One routed request sent over an already-started process session.
+/// One FSL provider request sent over an already-started process session.
 pub struct ProcessProviderRequest<'a> {
-    /// Exact emitted checked-package bytes, intentionally forwarded under
-    /// FR-006 without decoding or rewriting them in the driver seam.
-    pub emitted_package: &'a EmittedPackage,
-    /// Caller-supplied deadline for this request in milliseconds.
-    pub deadline_ms: u64,
+    /// The FR-331 request FSL built after routing and negotiation: the
+    /// package bytes, the routed items, the negotiated manifest entry and
+    /// the FR-462 limits. Forwarded unchanged.
+    pub request: &'a fsl_analyze::provider::ProviderRequest<'a>,
     /// Snapshot of all registered candidate manifests, from the one driver
-    /// registry that admitted linked and process providers.
+    /// registry that admitted linked and process providers: the request
+    /// stage's `manifest`.
     pub manifest: &'a [ProviderManifest],
-    /// Driver-owned typed request for this provider's negotiated items.
-    pub provider_request: ProviderRequest<'a>,
-    /// The exact FSL request items from the `Driven` value, indexed by each
-    /// routed generation item's original request index.
-    pub fsl_items: &'a [RequirementItem],
     /// Caller-owned cancellation handle for this request.
     pub cancel: &'a Cancel,
 }

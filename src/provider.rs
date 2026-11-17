@@ -622,8 +622,8 @@ mod tests {
                 batch: None,
                 diagnostics: None,
                 failure_cause: None,
-                proof_phase: None,
                 shadow_size: None,
+                proof_phase: None,
             }),
         }
     }

@@ -9,10 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use filament_driver::{
-    build_linked_providers, drive, execute, CompileInput, Driven, ExecutionEngine,
-    ExecutionFailure, ExecutionRequest, FslCg, GenerationInput, LimitOverrides, ObjectEnvironment,
-    ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
-    ProviderRequest, ProviderResults,
+    build_linked_providers, execute, ExecutionEngine, ExecutionFailure, ExecutionRequest,
+    LimitOverrides, ObjectEnvironment, ProcessProvider, ProcessProviderLimits,
+    ProcessProviderRequest, ProviderResults,
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
@@ -22,11 +21,13 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
-use fsl_replay::spine::{parse, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits};
-use fsl_replay::{run_with_requirements, CallOutcome, RequirementsRun, RunRefusal};
+use fsl_replay::spine::{parse, CompileRefusal, ParseRequest, SpineLimits};
+use fsl_replay::RunRefusal;
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
+
+use crate::provider_config::{OptionRefusal, ProviderArguments};
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
 #[must_use]
@@ -219,7 +220,7 @@ impl Verb {
                 "Executes a native-monitor/1 request over a record stream; --format json or text."
             }
             Self::Prove | Self::Replay | Self::Generate | Self::Inspect | Self::Render => {
-                "Recognized; currently returns an unsupported-capability result."
+                "Recognized; this build does not route it and returns an unsupported_operation result."
             }
         }
     }
@@ -285,8 +286,12 @@ struct RunOptions {
     intake_limits: RunLimits,
     limits: LimitOverrides,
     engine: ExecutionEngine,
-    provider_config: Option<std::path::PathBuf>,
     clocks: Option<PathBuf>,
+    /// `--provider-config` and `--provider-limit` (FSL FR-287; FR-006).
+    providers: crate::provider_config::ProviderArguments,
+    /// The driver-side run options FSL's `run_with_providers` does not take,
+    /// in the order the caller gave them.
+    local_options: Vec<&'static str>,
 }
 
 type CliProviderError = crate::process_provider::AdapterError<
@@ -294,32 +299,16 @@ type CliProviderError = crate::process_provider::AdapterError<
     String,
     serde_json::Value,
 >;
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-type CliProviderEncode =
+pub(crate) type CliProviderEncode =
     for<'a> fn(ProcessProviderRequest<'a>) -> Result<crate::backend_provider::RequestStage, String>;
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-type CliProviderValidate =
+pub(crate) type CliProviderValidate =
     fn(&crate::backend_provider::ManifestStage, &serde_json::Value) -> Result<(), String>;
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-type CliProviderConvert =
+pub(crate) type CliProviderConvert =
     fn(
         serde_json::Value,
     )
         -> Result<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>, String>;
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-type CliProviderSession = crate::process_provider::HostProcessSession<
+pub(crate) type CliProviderSession = crate::process_provider::HostProcessSession<
     crate::backend_provider::ManifestStage,
     crate::backend_provider::RequestStage,
     serde_json::Value,
@@ -333,141 +322,6 @@ type CliProviderSession = crate::process_provider::HostProcessSession<
     CliProviderConvert,
 >;
 
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-struct ActiveConfiguredProvider {
-    deadline_ms: u64,
-    session: CliProviderSession,
-}
-
-#[derive(Debug)]
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-struct ConfiguredCall {
-    package_name: String,
-    outcome: CallOutcome,
-    requirements: fsl_replay::CallRequirements,
-}
-
-/// The configured run retains both compositions until FSL settlement owns the
-/// provider result mapping. No provider result is converted to a terminal.
-#[allow(
-    dead_code,
-    reason = "QSL-655 settlement will consume the retained typed composition"
-)]
-struct ConfiguredRun {
-    call: ConfiguredCall,
-    driven: Driven,
-    provider_results: Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    diagnostics: Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
-}
-
-#[allow(
-    dead_code,
-    reason = "typed configured-run failures remain unmapped until their FSL contracts land"
-)]
-#[derive(Debug)]
-enum ConfiguredRunErrorKind {
-    Call(Box<RunRefusal>),
-    DuplicateIdentity {
-        backend: String,
-    },
-    Start {
-        provider: String,
-        source: CliProviderError,
-    },
-    Register(filament_driver::DriverRefusal),
-    Drive(filament_driver::DriverRefusal),
-    PackageMismatch,
-    Pairing(crate::process_provider::CallItemProjectionError),
-    Invoke {
-        provider: String,
-        source: CliProviderError,
-        partial_results:
-            Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    },
-    Shutdown {
-        partial_results:
-            Vec<ProviderResults<crate::process_provider::ProcessProviderOutcome, String>>,
-    },
-}
-
-#[allow(
-    dead_code,
-    reason = "QSL-655 settlement will consume typed failure and cleanup details"
-)]
-#[derive(Debug)]
-struct ConfiguredRunFailure {
-    call: Option<ConfiguredCall>,
-    document: OutcomeDocument,
-    kind: ConfiguredRunErrorKind,
-    cleanup_diagnostics:
-        Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
-    cleanup_failures: Vec<CliProviderError>,
-}
-
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-struct ConfiguredRunRequest<'a> {
-    path: &'a str,
-    package_name: &'a str,
-    bytes: &'a [u8],
-    source: SourceIdentity,
-    limits: SpineLimits,
-    call: Call,
-    packages: fsl_semantics::model::intake::PackageInput,
-    dependencies: DependencyInput,
-    config: Vec<crate::provider_config::RuntimeProviderConfig>,
-    signals: crate::signals::SignalContext,
-}
-
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-fn close_configured_providers(
-    sessions: Vec<ActiveConfiguredProvider>,
-) -> (
-    Vec<filament_plugin_host::SessionFinished<crate::backend_provider::ManifestStage>>,
-    Vec<CliProviderError>,
-) {
-    let mut diagnostics = Vec::new();
-    let mut failures = Vec::new();
-    for active in sessions {
-        match active.session.shutdown() {
-            Ok(finished) => diagnostics.push(finished),
-            Err(error) => failures.push(error),
-        }
-    }
-    (diagnostics, failures)
-}
-
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-fn configured_failure_after_call(
-    call: ConfiguredCall,
-    kind: ConfiguredRunErrorKind,
-    sessions: Vec<ActiveConfiguredProvider>,
-) -> Box<ConfiguredRunFailure> {
-    let document = call_outcome_document(&call.outcome);
-    let (cleanup_diagnostics, cleanup_failures) = close_configured_providers(sessions);
-    Box::new(ConfiguredRunFailure {
-        call: Some(call),
-        document,
-        kind,
-        cleanup_diagnostics,
-        cleanup_failures,
-    })
-}
-
 struct CompileOptions {
     path: PathBuf,
     clocks: Option<PathBuf>,
@@ -480,6 +334,48 @@ struct CheckOptions {
     libraries: Vec<PathBuf>,
     dependent_bytes: usize,
     limits: LimitOverrides,
+    /// The `--integer-division <law>` value, unread until the check runs
+    /// (FSL FR-767).
+    integer_division: Option<String>,
+}
+
+/// The integer-division law `value` names, admitted as FSL FR-767 states:
+/// exactly `euclidean`, `floor` or `truncating`; any other value refuses
+/// `unknown_profile`/`unsupported-selection` naming `source` and the value.
+fn admit_integer_division_law(
+    value: &str,
+    source: &str,
+) -> Result<fsl_replay::AdmittedIntegerDivision, Box<CommandResult>> {
+    use fsl_replay::DefinitionRole;
+    let role = match value {
+        "euclidean" => DefinitionRole::IntegerDivisionEuclidean,
+        "floor" => DefinitionRole::IntegerDivisionFloor,
+        "truncating" => DefinitionRole::IntegerDivisionTruncating,
+        _ => {
+            let message = format!(
+                "integer-division law `{value}` supplied by `{source}` is not one of \
+                 `euclidean`, `floor`, `truncating`"
+            );
+            return Err(Box::new(
+                CommandResult::document(
+                    OutcomeDocument::new(Operation::Check, None, Code::UnknownProfile.category())
+                        .with_diagnostics(vec![OutcomeDiagnostic::new(
+                            Some("unsupported-selection"),
+                            Code::UnknownProfile.as_str(),
+                            None,
+                            message.clone(),
+                        )]),
+                )
+                .with_diagnostic(message),
+            ));
+        }
+    };
+    fsl_replay::admit_integer_division(&[role.reference()], None).map_err(|refusal| {
+        Box::new(CommandResult::failure(
+            Category::InternalFailure,
+            format!("FSL did not admit its own `{value}` integer-division law: {refusal:?}"),
+        ))
+    })
 }
 
 struct SourceOptions {
@@ -586,10 +482,11 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
-    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--format json|text]";
+    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--integer-division euclidean|floor|truncating] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
+        let mut integer_division = None;
         let mut model = None;
         let mut libraries = Vec::new();
         let mut limit_operands = Vec::new();
@@ -610,7 +507,18 @@ impl CheckOptions {
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| "--model requires a path".to_owned())?;
                 if model.replace(PathBuf::from(path)).is_some() {
-                    return Err("--model may be supplied only once".to_owned());
+                    return Err("--model may be supplied only once".to_owned().into());
+                }
+                index += 2;
+                continue;
+            }
+            if argument == "--integer-division" {
+                let law = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--integer-division requires a law".to_owned())?;
+                if integer_division.replace(law.to_owned()).is_some() {
+                    return Err(OptionRefusal::Quiet(Self::USAGE.to_owned()));
                 }
                 index += 2;
                 continue;
@@ -626,7 +534,9 @@ impl CheckOptions {
             }
             if argument == "--dependent-bytes" {
                 if dependent_bytes_supplied {
-                    return Err("--dependent-bytes may be supplied only once".to_owned());
+                    return Err("--dependent-bytes may be supplied only once"
+                        .to_owned()
+                        .into());
                 }
                 let value = arguments
                     .get(index + 1)
@@ -650,13 +560,13 @@ impl CheckOptions {
                 continue;
             }
             if argument.starts_with('-') {
-                return Err(format!("unknown check option `{argument}`"));
+                return Err(format!("unknown check option `{argument}`").into());
             }
             positionals.push(argument.to_owned());
             index += 1;
         }
         if positionals.len() != 1 {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         }
         let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
@@ -665,6 +575,7 @@ impl CheckOptions {
             libraries,
             dependent_bytes,
             limits,
+            integer_division,
         })
     }
 }
@@ -695,24 +606,40 @@ fn apply_frontend_limits(
 }
 
 impl RunOptions {
-    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>] [--clocks <json-file>] [--format json|text]";
+    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
         let mut limit_operands = Vec::new();
         let mut engine = None;
         let mut intake_limits = RunLimits::default();
         let mut byte_options = BTreeSet::new();
-        let mut provider_config: Option<std::path::PathBuf> = None;
         let mut clocks: Option<PathBuf> = None;
+        let mut providers = crate::provider_config::ProviderArguments::default();
+        let mut local_options = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
+            if let Some(taken) = providers.take(arguments, index)? {
+                index += taken;
+                continue;
+            }
             let arg = arguments[index].to_str();
+            if let Some(option) = [
+                "--request-bytes",
+                "--dependent-bytes",
+                "--limit",
+                "--clocks",
+            ]
+            .into_iter()
+            .find(|option| arg == Some(*option))
+            {
+                local_options.push(option);
+            }
             match arg {
                 Some("--request-bytes" | "--dependent-bytes") => {
                     let option = arg.unwrap_or_default();
                     if !byte_options.insert(option) {
-                        return Err(format!("{option} may be supplied only once"));
+                        return Err(format!("{option} may be supplied only once").into());
                     }
                     index += 1;
                     let value = arguments
@@ -743,22 +670,9 @@ impl RunOptions {
                         .and_then(|value| value.to_str())
                         .ok_or_else(|| "--engine requires interpreter, aot, or jit".to_owned())?;
                     if engine.is_some() {
-                        return Err("--engine may be supplied only once".to_owned());
+                        return Err("--engine may be supplied only once".to_owned().into());
                     }
                     engine = Some(ExecutionEngine::parse(value)?);
-                }
-                Some("--provider-config") => {
-                    index += 1;
-                    let path = arguments
-                        .get(index)
-                        .filter(|value| !value.is_empty())
-                        .ok_or_else(|| "--provider-config requires a path".to_owned())?;
-                    if provider_config
-                        .replace(std::path::PathBuf::from(path))
-                        .is_some()
-                    {
-                        return Err("--provider-config may be supplied only once".to_owned());
-                    }
                 }
                 Some("--clocks") => {
                     clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
@@ -771,26 +685,27 @@ impl RunOptions {
                         .and_then(|value| value.to_str())
                         .is_none()
                     {
-                        return Err(format!("{} requires a value", arg.unwrap_or_default()));
+                        return Err(format!("{} requires a value", arg.unwrap_or_default()).into());
                     }
                 }
                 Some(option) if option.starts_with('-') => {
-                    return Err(format!("unknown run option `{option}`"));
+                    return Err(format!("unknown run option `{option}`").into());
                 }
                 _ => positionals.push(arguments[index].clone()),
             }
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         };
         Ok(Self {
             path: PathBuf::from(path),
             intake_limits,
             limits: LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?,
             engine: engine.unwrap_or_default(),
-            provider_config,
             clocks,
+            providers,
+            local_options,
         })
     }
 }
@@ -801,11 +716,6 @@ struct CommandResult {
     document: Option<OutcomeDocument>,
     diagnostic: Option<String>,
     text_output: Option<String>,
-    #[allow(
-        dead_code,
-        reason = "keep provider results typed until QSL-655 defines their mapping"
-    )]
-    configured_run: Option<Result<ConfiguredRun, Box<ConfiguredRunFailure>>>,
     /// The FSL FR-621 `analyze` document, written in machine mode in place
     /// of `document`.
     analyze_document: Option<serde_json::Value>,
@@ -822,7 +732,6 @@ impl CommandResult {
             document: Some(document),
             diagnostic: None,
             text_output: None,
-            configured_run: None,
             analyze_document: None,
             stderr_line: None,
             render_sources: None,
@@ -835,7 +744,6 @@ impl CommandResult {
             document: None,
             diagnostic: Some(message.into()),
             text_output: None,
-            configured_run: None,
             analyze_document: None,
             stderr_line: None,
             render_sources: None,
@@ -848,7 +756,6 @@ impl CommandResult {
             document: Some(document),
             diagnostic: None,
             text_output,
-            configured_run: None,
             analyze_document: None,
             stderr_line: None,
             render_sources: None,
@@ -879,38 +786,6 @@ impl CommandResult {
         self.diagnostic = Some(message.into());
         self
     }
-
-    #[allow(
-        dead_code,
-        reason = "provider execution awaits the provider-limit CLI ruling"
-    )]
-    fn configured(run: Result<ConfiguredRun, Box<ConfiguredRunFailure>>) -> Self {
-        let document = match &run {
-            Ok(completed) => Some(call_outcome_document(&completed.call.outcome)),
-            Err(failure) => Some(failure.document.clone()),
-        };
-        let category = document
-            .as_ref()
-            .map_or(Category::InternalFailure, OutcomeDocument::category);
-        Self {
-            category,
-            document,
-            diagnostic: None,
-            text_output: None,
-            configured_run: Some(run),
-            analyze_document: None,
-            stderr_line: None,
-            render_sources: None,
-        }
-    }
-}
-
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-fn call_outcome_document(outcome: &CallOutcome) -> OutcomeDocument {
-    OutcomeDocument::from_call(outcome)
 }
 
 fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> io::Result<()> {
@@ -967,47 +842,31 @@ fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -
     .with_diagnostic(message)
 }
 
-/// Run one complete-V1 function through FSL's interpreter.
+/// Run one native-run/1 request. With `--provider-config` or
+/// `--provider-limit` the run goes through FSL's `run_with_providers` with
+/// the configured process providers registered beside FSL's engines and the
+/// run's one limit set (FSL FR-961, FR-964); otherwise the driver runs the
+/// request through FSL's interpreter with its own run options.
 fn run(options: RunOptions) -> CommandResult {
-    let provider_config = match options.provider_config.as_deref() {
-        Some(path) => match crate::provider_config::load(path) {
-            Ok(config) => config,
-            Err(error) => {
-                if matches!(
-                    error,
-                    crate::provider_config::ProviderConfigError::UnsupportedFormat { .. }
-                ) {
-                    let message = format!("unknown_wire/unsupported-wire: {error}");
-                    return CommandResult::document(
-                        OutcomeDocument::new(
-                            Operation::Execute,
-                            None,
-                            Code::UnknownWire.category(),
-                        )
-                        .with_diagnostics(vec![OutcomeDiagnostic::new(
-                            Some("unsupported-wire"),
-                            Code::UnknownWire.as_str(),
-                            None,
-                            message.clone(),
-                        )]),
-                    )
-                    .with_diagnostic(message);
-                } else {
-                    return CommandResult::input_refusal(
-                        Operation::Execute,
-                        format!("invalid provider configuration: {error}"),
-                    );
-                }
-            }
-        },
-        None => crate::provider_config::ProviderConfig {
-            format: crate::provider_config::FORMAT.to_owned(),
-            providers: Vec::new(),
-        },
+    let provider_config = match load_provider_config(&options.providers) {
+        Ok(config) => config,
+        Err(refusal) => return *refusal,
     };
     if options.engine != ExecutionEngine::Interpreter {
         let failure = ExecutionFailure::UnsupportedEngine(options.engine);
         return CommandResult::document(failure.into_document());
+    }
+    if options.providers.given() {
+        if let Some(option) = options.local_options.first() {
+            return CommandResult::input_refusal(
+                Operation::Execute,
+                format!(
+                    "`{option}` cannot be combined with --provider-config or --provider-limit: \
+                     FSL's provider run entry takes no {option}"
+                ),
+            );
+        }
+        return run_with_providers(&options.path, provider_config, options.providers.limits);
     }
     // Reject a setting unavailable to every run family before request-file I/O.
     // The selected function or clause still validates its exact bounds below.
@@ -1053,15 +912,7 @@ fn run(options: RunOptions) -> CommandResult {
         };
     let input = match prepared {
         PreparedRun::Function(prepared) => prepared.into_input(),
-        PreparedRun::Clause(request) => {
-            if !provider_config.providers.is_empty() {
-                return CommandResult::input_refusal(
-                    Operation::Execute,
-                    "valid FR-561 providers are loaded, but the driver has no process-provider engine adapter yet",
-                );
-            }
-            return run_clause_request(*request, &options.limits);
-        }
+        PreparedRun::Clause(request) => return run_clause_request(*request, &options.limits),
         PreparedRun::TlLowering(_) => {
             return CommandResult::input_refusal(
                 Operation::Execute,
@@ -1082,12 +933,6 @@ fn run(options: RunOptions) -> CommandResult {
     }
     let identity = source.identity().clone();
     let render_sources = fsl_inspect::RenderSources::from_sources([source.clone()]);
-    if !provider_config.providers.is_empty() {
-        return CommandResult::input_refusal(
-            Operation::Execute,
-            "valid FR-561 providers are loaded, but the driver has no process-provider engine adapter yet",
-        );
-    }
     match execute(ExecutionRequest {
         source: identity,
         package_name: &package_name,
@@ -1164,279 +1009,6 @@ fn run_clause_request(
     CommandResult::document(document)
 }
 
-#[allow(
-    dead_code,
-    reason = "provider execution awaits the provider-limit CLI ruling"
-)]
-fn run_configured_providers(
-    request: ConfiguredRunRequest<'_>,
-) -> Result<ConfiguredRun, Box<ConfiguredRunFailure>> {
-    let ConfiguredRunRequest {
-        path,
-        package_name,
-        bytes,
-        source,
-        limits,
-        call,
-        packages,
-        dependencies,
-        config,
-        signals,
-    } = request;
-    let cancel = Cancel::new();
-    let objects = ObjectEnvironment::default();
-
-    // This is the one interpreter call. The driver performs the separate
-    // package negotiation/generation pipeline below and does not call execute.
-    let call_run = run_with_requirements(&RequirementsRun {
-        source: source.clone(),
-        package_name: package_name.to_owned(),
-        path,
-        bytes,
-        packages: &packages,
-        dependencies: &dependencies,
-        limits,
-        call: &call,
-        objects: &objects,
-        cancel: &cancel,
-    });
-    let call_run = match call_run {
-        Ok(run) => run,
-        Err(refusal) => {
-            let failed_run: Result<CallOutcome, Box<RunRefusal>> = Err(refusal);
-            let document = OutcomeDocument::from_run(&failed_run);
-            let Err(refusal) = failed_run else {
-                return Err(Box::new(ConfiguredRunFailure {
-                    call: None,
-                    document,
-                    kind: ConfiguredRunErrorKind::PackageMismatch,
-                    cleanup_diagnostics: Vec::new(),
-                    cleanup_failures: Vec::new(),
-                }));
-            };
-            return Err(Box::new(ConfiguredRunFailure {
-                call: None,
-                document,
-                kind: ConfiguredRunErrorKind::Call(refusal),
-                cleanup_diagnostics: Vec::new(),
-                cleanup_failures: Vec::new(),
-            }));
-        }
-    };
-    let selected_package_name = call_run.package_name().as_str().to_owned();
-    let (outcome, requirements) = call_run.into_parts();
-    let call = ConfiguredCall {
-        package_name: selected_package_name,
-        outcome,
-        requirements,
-    };
-
-    // Start and admit every configured process before the driver's negotiation.
-    let mut active = Vec::with_capacity(config.len());
-    for configured in config {
-        let provider_name = configured.executable.display().to_string();
-        let max_frame_bytes = configured.limits.max_frame_bytes;
-        let provider = crate::process_provider::HostProcessProvider::new(
-            signals.clone(),
-            move |manifest: &crate::backend_provider::ManifestStage| {
-                manifest
-                    .admit_process(max_frame_bytes)
-                    .map(|admitted| (admitted.descriptor().clone(), admitted.manifest().clone()))
-            },
-            crate::process_provider::encode_fr331_request as CliProviderEncode,
-            crate::process_provider::validate_fr331_response as CliProviderValidate,
-            crate::process_provider::convert_fr331_response as CliProviderConvert,
-        );
-        let arguments = configured
-            .argv
-            .into_iter()
-            .map(OsString::from)
-            .collect::<Vec<_>>();
-        let process_limits = ProcessProviderLimits {
-            max_frame_bytes: configured.limits.max_frame_bytes,
-            max_total_bytes: configured.limits.max_total_bytes,
-            max_stderr_bytes: configured.limits.max_stderr_bytes,
-            cancellation_grace: std::time::Duration::from_millis(
-                configured.limits.cancellation_grace_ms,
-            ),
-        };
-        match provider.start(&configured.executable, &arguments, process_limits, &cancel) {
-            Ok(session) => active.push(ActiveConfiguredProvider {
-                deadline_ms: configured.deadline_ms,
-                session,
-            }),
-            Err(source) => {
-                return Err(configured_failure_after_call(
-                    call,
-                    ConfiguredRunErrorKind::Start {
-                        provider: provider_name,
-                        source,
-                    },
-                    active,
-                ));
-            }
-        }
-    }
-
-    let admissions = active.iter().map(|provider| {
-        (
-            provider.session.descriptor().clone(),
-            provider.session.manifest().clone(),
-        )
-    });
-    let mut linked = match build_linked_providers(&[]) {
-        Ok(linked) => linked,
-        Err(source) => {
-            return Err(configured_failure_after_call(
-                call,
-                ConfiguredRunErrorKind::Register(source),
-                active,
-            ));
-        }
-    };
-    if let Err(source) = linked.register_admitted(admissions) {
-        return Err(configured_failure_after_call(
-            call,
-            ConfiguredRunErrorKind::Register(source),
-            active,
-        ));
-    }
-
-    let mut admitted_identities = BTreeSet::new();
-    if let Some(backend) = active.iter().find_map(|provider| {
-        let identity = provider.session.descriptor().id().as_str();
-        (!admitted_identities.insert(identity.to_owned())).then(|| identity.to_owned())
-    }) {
-        let message = format!("configured process providers repeat admitted identity `{backend}`");
-        let document =
-            OutcomeDocument::new(Operation::Execute, None, Code::InvalidRequest.category())
-                .with_diagnostics(vec![OutcomeDiagnostic::new(
-                    None,
-                    Code::InvalidRequest.as_str(),
-                    None,
-                    message,
-                )]);
-        let (cleanup_diagnostics, cleanup_failures) = close_configured_providers(active);
-        return Err(Box::new(ConfiguredRunFailure {
-            call: Some(call),
-            document,
-            kind: ConfiguredRunErrorKind::DuplicateIdentity { backend },
-            cleanup_diagnostics,
-            cleanup_failures,
-        }));
-    }
-
-    let driven = match drive(
-        &FslCg,
-        CompileInput {
-            source,
-            package_name,
-            path,
-            bytes,
-            packages: &packages,
-            limits,
-            cancel: cancel.clone(),
-        },
-        linked.registry(),
-        None,
-        GenerationInput::default(),
-    ) {
-        Ok(driven) => driven,
-        Err(source) => {
-            return Err(configured_failure_after_call(
-                call,
-                ConfiguredRunErrorKind::Drive(source),
-                active,
-            ));
-        }
-    };
-    let projection = match crate::process_provider::project_call_items(
-        &call.package_name,
-        &call.requirements,
-        &driven,
-    ) {
-        Ok(projection) => projection,
-        Err(source) => {
-            return Err(configured_failure_after_call(
-                call,
-                ConfiguredRunErrorKind::Pairing(source),
-                active,
-            ));
-        }
-    };
-    let manifest_snapshot = linked.manifest_snapshot();
-    let mut provider_results = Vec::new();
-    let mut invoke_failure = None;
-    for provider in &mut active {
-        let backend = provider.session.descriptor().id().as_str().to_owned();
-        let routed = projection
-            .routed
-            .iter()
-            .filter(|item| item.backend.identity == backend)
-            .cloned()
-            .collect::<Vec<_>>();
-        if routed.is_empty() {
-            continue;
-        }
-        let routed_indices = routed
-            .iter()
-            .map(|item| item.request_index)
-            .collect::<BTreeSet<_>>();
-        let fsl_items = projection
-            .items
-            .iter()
-            .filter(|item| routed_indices.contains(&item.index().get()))
-            .cloned()
-            .collect::<Vec<_>>();
-        let request = ProcessProviderRequest {
-            emitted_package: driven.emitted(),
-            deadline_ms: provider.deadline_ms,
-            manifest: &manifest_snapshot,
-            provider_request: ProviderRequest::new(&routed),
-            fsl_items: &fsl_items,
-            cancel: &cancel,
-        };
-        match provider.session.invoke(request) {
-            Ok(results) => provider_results.push(results),
-            Err(source) => {
-                invoke_failure = Some((backend, source));
-                break;
-            }
-        }
-    }
-    if let Some((provider, source)) = invoke_failure {
-        return Err(configured_failure_after_call(
-            call,
-            ConfiguredRunErrorKind::Invoke {
-                provider,
-                source,
-                partial_results: provider_results,
-            },
-            active,
-        ));
-    }
-
-    let (diagnostics, failures) = close_configured_providers(active);
-    if !failures.is_empty() {
-        let document = call_outcome_document(&call.outcome);
-        return Err(Box::new(ConfiguredRunFailure {
-            call: Some(call),
-            document,
-            kind: ConfiguredRunErrorKind::Shutdown {
-                partial_results: provider_results,
-            },
-            cleanup_diagnostics: diagnostics,
-            cleanup_failures: failures,
-        }));
-    }
-    Ok(ConfiguredRun {
-        call,
-        driven,
-        provider_results,
-        diagnostics,
-    })
-}
-
 /// Compile a request through its owner and retain the actual package outcome.
 fn compile(options: CompileOptions) -> CommandResult {
     let clocks = match options
@@ -1475,6 +1047,17 @@ fn compile(options: CompileOptions) -> CommandResult {
 
 /// Check one source through FSL's typed front-end and serialize its S4 outcome.
 fn check_source(options: CheckOptions) -> CommandResult {
+    // FSL FR-767: an unknown law refuses before any source, model or
+    // library file is read.
+    let integer_division = match options
+        .integer_division
+        .as_deref()
+        .map(|law| admit_integer_division_law(law, "--integer-division"))
+        .transpose()
+    {
+        Ok(law) => law,
+        Err(refusal) => return *refusal,
+    };
     let mut limits = SpineLimits::default();
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "check") {
         return CommandResult::input_refusal(Operation::Check, error);
@@ -1504,6 +1087,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
             let inputs = command::CheckInputs {
                 limits,
                 dependent_bytes: options.dependent_bytes,
+                integer_division,
                 ..command::CheckInputs::default()
             };
             return check_result(&command::check_outcome(Path::new(&options.path), &inputs));
@@ -1543,6 +1127,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
         libraries,
         limits,
         dependent_bytes: options.dependent_bytes,
+        integer_division,
         ..command::CheckInputs::default()
     };
     check_result(&command::check_outcome(Path::new(&options.path), &inputs))
@@ -1681,57 +1266,304 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
     Ok(bytes)
 }
 
-/// The operands of `fsl analyze`: one `native-analyze/1` request file. The
-/// request document carries every analysis setting (FSL FR-620), so the verb
-/// takes no other option than `--format`.
+/// The operands of `fsl analyze`: one `native-analyze/1` request file, an
+/// optional `--provider-config` file and the `--provider-limit` set. The
+/// request document carries every analysis setting (FSL FR-620); the
+/// provider configuration names the process providers registered beside
+/// FSL's engines (FSL FR-287, FR-635; FSpec FR-561).
 struct AnalyzeOptions {
     path: PathBuf,
+    providers: ProviderArguments,
 }
 
 impl AnalyzeOptions {
-    const USAGE: &str = "usage: fsl analyze <request-file> [--format json|text]";
+    const USAGE: &str = "usage: fsl analyze <request-file> [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
+        let mut providers = ProviderArguments::default();
         let mut index = 0;
         while index < arguments.len() {
+            if let Some(taken) = providers.take(arguments, index)? {
+                index += taken;
+                continue;
+            }
             let argument = &arguments[index];
             if argument == "--format" {
                 index += 2;
                 continue;
             }
-            if argument == "--provider-config" {
-                return Err(
-                    "`--provider-config` is not available for `analyze` yet: FSL's \
-                            analyze entry takes no caller registry, so configured providers \
-                            cannot be registered before negotiation"
-                        .to_owned(),
-                );
-            }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown analyze option `{option}`"));
+                return Err(format!("unknown analyze option `{option}`").into());
             }
             positionals.push(argument);
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         };
         Ok(Self {
             path: PathBuf::from(*path),
+            providers,
         })
     }
+}
+
+/// The CLI result of a refused provider option: a usage refusal is the
+/// verb's typed `invalid-request` document; a refused `--provider-limit`
+/// writes empty stdout and names the option and argument on stderr (FSL
+/// FR-287; FR-006).
+fn option_refusal(operation: Operation, error: &OptionRefusal) -> CommandResult {
+    match error {
+        OptionRefusal::Usage(message) => CommandResult::input_refusal(operation, message),
+        OptionRefusal::Quiet(message) => {
+            CommandResult::failure(Code::InvalidRequest.category(), message)
+        }
+    }
+}
+
+/// Read the caller's FSpec FR-561 document, or the empty one when none is
+/// named. A refusal exits 20 with empty stdout and its diagnostic, naming
+/// the file and the member, on stderr (FSpec FR-561; FR-006).
+fn load_provider_config(
+    arguments: &ProviderArguments,
+) -> Result<crate::provider_config::ProviderConfig, Box<CommandResult>> {
+    let Some(path) = arguments.config.as_deref() else {
+        return Ok(crate::provider_config::ProviderConfig {
+            format: crate::provider_config::FORMAT.to_owned(),
+            providers: Vec::new(),
+        });
+    };
+    crate::provider_config::load(path).map_err(|error| {
+        let message = match error {
+            crate::provider_config::ProviderConfigError::UnsupportedFormat { .. } => {
+                format!("unknown_wire/unsupported-wire: {error}")
+            }
+            _ => format!("invalid-request: invalid provider configuration: {error}"),
+        };
+        Box::new(CommandResult::failure(Category::Refusal, message))
+    })
+}
+
+/// The started process providers of one run: FSL's engines over them, the
+/// sessions the driver shuts down after the run, and their admitted
+/// descriptors for the driver's negotiation.
+struct StartedProviders {
+    engines: Vec<fsl_analyze::analyze::Engine>,
+    sessions: Vec<crate::analyze_provider::SharedSession>,
+    descriptors: Vec<fsl_route::BackendDescriptor>,
+}
+
+impl StartedProviders {
+    /// Shut every started session down, whether or not FSL called it.
+    fn close(self) {
+        drop(self.engines);
+        for session in self.sessions {
+            let taken = session
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(session) = taken {
+                let _ = filament_driver::ProcessProviderSession::shutdown(session);
+            }
+        }
+    }
+}
+
+/// Start each configured provider and admit its `hello` manifest with
+/// `Process` origin (FSL FR-635 "Where provider manifests come from"). A
+/// provider that does not start, or whose manifest does not advertise
+/// (`value-validity`, `unbounded`), is a registration failure naming the
+/// entry's executable; the providers already started are shut down. Every
+/// session works under the run's one limit set (FSpec FR-777).
+fn start_providers(
+    config: crate::provider_config::ProviderConfig,
+    limits: &fsl_analyze::provider::ProviderLimits,
+    signals: &crate::signals::SignalContext,
+    cancel: &Cancel,
+) -> Result<StartedProviders, String> {
+    let mut started: Vec<CliProviderSession> = Vec::new();
+    let shut = |started: Vec<CliProviderSession>| {
+        for session in started {
+            let _ = filament_driver::ProcessProviderSession::shutdown(session);
+        }
+    };
+    for configured in config.providers {
+        let name = configured.path.display().to_string();
+        match start_configured_provider(&configured, limits, signals, cancel) {
+            Ok(session) => started.push(session),
+            Err(error) => {
+                shut(started);
+                return Err(format!(
+                    "process provider `{name}` did not register: {error:?}"
+                ));
+            }
+        }
+    }
+    // FR-006-AC-26: distinct sessions with one admitted identity stop before
+    // negotiation, close every session, and return the CLI's InvalidRequest
+    // input refusal naming the identity.
+    let mut identities = BTreeSet::new();
+    let repeated = started.iter().find_map(|session| {
+        let identity = filament_driver::ProcessProviderSession::descriptor(session)
+            .id()
+            .as_str()
+            .to_owned();
+        (!identities.insert(identity.clone())).then_some(identity)
+    });
+    if let Some(identity) = repeated {
+        shut(started);
+        return Err(format!(
+            "configured process providers repeat admitted identity `{identity}`"
+        ));
+    }
+    let admissions = started.iter().map(|session| {
+        (
+            filament_driver::ProcessProviderSession::descriptor(session).clone(),
+            filament_driver::ProcessProviderSession::manifest(session).clone(),
+        )
+    });
+    let registered = build_linked_providers(&[])
+        .map_err(|error| format!("{error:?}"))
+        .and_then(|mut linked| {
+            linked
+                .register_admitted(admissions)
+                .map_err(|error| format!("{error:?}"))?;
+            Ok(linked.manifest_snapshot())
+        });
+    let manifest = match registered {
+        Ok(manifest) => std::sync::Arc::<[filament_driver::ProviderManifest]>::from(manifest),
+        Err(error) => {
+            shut(started);
+            return Err(format!(
+                "configured process providers did not register: {error}"
+            ));
+        }
+    };
+    let mut providers = StartedProviders {
+        engines: Vec::new(),
+        sessions: Vec::new(),
+        descriptors: Vec::new(),
+    };
+    let mut refusal = None;
+    for session in started {
+        let descriptor = filament_driver::ProcessProviderSession::descriptor(&session).clone();
+        let tool = manifest_tool(filament_driver::ProcessProviderSession::manifest(&session));
+        let shared = std::sync::Arc::new(std::sync::Mutex::new(Some(session)));
+        providers.sessions.push(std::sync::Arc::clone(&shared));
+        if refusal.is_some() {
+            continue;
+        }
+        let Some(tool) = tool else {
+            refusal = Some(format!(
+                "process provider `{}` did not register: its hello manifest names no `tool` \
+                 (FSpec FR-331-AC-37)",
+                descriptor.id().as_str()
+            ));
+            continue;
+        };
+        let provider = crate::analyze_provider::SessionProvider {
+            session: shared,
+            manifest: std::sync::Arc::clone(&manifest),
+        };
+        match fsl_analyze::analyze::Engine::external(descriptor.clone(), tool, Box::new(provider)) {
+            Ok(engine) => {
+                providers.engines.push(engine);
+                providers.descriptors.push(descriptor);
+            }
+            Err(error) => refusal = Some(format!("process provider did not register: {error}")),
+        }
+    }
+    match refusal {
+        Some(refusal) => {
+            providers.close();
+            Err(refusal)
+        }
+        None => Ok(providers),
+    }
+}
+
+/// The FSpec FR-331 `tool` of an admitted hello manifest: the retained
+/// descriptor's `{name, version}`, or `None` when it names none.
+fn manifest_tool(
+    manifest: &filament_driver::ProviderManifest,
+) -> Option<fsl_analyze::analyze::BackendTool> {
+    let descriptor: serde_json::Value = serde_json::from_slice(manifest.wire.as_deref()?).ok()?;
+    let tool = descriptor.get("tool")?;
+    fsl_analyze::analyze::BackendTool::new(
+        tool.get("name")?.as_str()?,
+        tool.get("version")?.as_str()?,
+    )
+    .ok()
+}
+
+/// Start one configured process provider under the run's transport limits
+/// and admit its `hello`. The process memory and CPU-time limits are not
+/// applied: the plugin host offers neither (FSpec FR-462 sets them "where
+/// the platform provides one").
+fn start_configured_provider(
+    configured: &crate::provider_config::ProviderEntry,
+    limits: &fsl_analyze::provider::ProviderLimits,
+    signals: &crate::signals::SignalContext,
+    cancel: &Cancel,
+) -> Result<CliProviderSession, CliProviderError> {
+    let max_frame_bytes = limits.max_frame_bytes;
+    let provider = crate::process_provider::HostProcessProvider::new(
+        signals.clone(),
+        move |manifest: &crate::backend_provider::ManifestStage| {
+            manifest
+                .admit_process(max_frame_bytes)
+                .map(|admitted| (admitted.descriptor().clone(), admitted.manifest().clone()))
+        },
+        crate::process_provider::encode_fr331_request as CliProviderEncode,
+        crate::process_provider::validate_fr331_response as CliProviderValidate,
+        crate::process_provider::convert_fr331_response as CliProviderConvert,
+    );
+    let arguments = configured
+        .arguments
+        .iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+    let limits = ProcessProviderLimits {
+        max_frame_bytes: limits.max_frame_bytes,
+        max_total_bytes: limits.max_total_bytes,
+        max_stderr_bytes: limits.max_stderr_bytes,
+        cancellation_grace: std::time::Duration::from_millis(limits.grace_ms),
+    };
+    provider.start(&configured.path, &arguments, limits, cancel)
 }
 
 /// Read the `native-analyze/1` request, have FSL analyze its items under the
 /// driver's negotiation, and keep FSL FR-621's document with its exit code,
 /// or FR-624's whole-request refusal.
+///
+/// The run is one signal-reporting session: SIGINT or SIGTERM cancels FSL's
+/// handle with cause `requested`, and the verb writes the outcome FSL settles
+/// for it (FSL FR-624 `cancelled`, exit 22) rather than dying by the signal.
 fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
-    let written = command::analyze(
-        &options.path,
-        &filament_driver::AnalyzeNegotiation,
-        &Cancel::new(),
+    let config = match load_provider_config(&options.providers) {
+        Ok(config) => config,
+        Err(refusal) => return *refusal,
+    };
+    let path = options.path.clone();
+    let ran = with_started_providers(
+        config,
+        options.providers.limits,
+        true,
+        move |negotiation, engines, provider_options, cancel| {
+            command::analyze_with_providers(&path, negotiation, engines, provider_options, cancel)
+        },
     );
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Analyze, message),
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
+        }
+    };
     match written {
         Ok(result) => analyze_result(result.value.as_value().clone(), result.exit_code, format),
         Err(error) => {
@@ -1753,6 +1585,112 @@ fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
             result.stderr_line = Some(line);
             result
         }
+    }
+}
+
+/// Inside one signal session, start the configured providers under `limits`,
+/// build the driver's negotiation over them and FSL's engines, run `entry`
+/// with them, and shut every session down once it returns. A `reporting`
+/// session consumes a received signal so the command writes FSL's
+/// cancellation outcome (FR-022); otherwise the signal is re-raised after
+/// cleanup (FR-006-AC-4).
+fn with_started_providers<T: Send + 'static>(
+    config: crate::provider_config::ProviderConfig,
+    limits: fsl_analyze::provider::ProviderLimits,
+    reporting: bool,
+    entry: impl FnOnce(
+            &filament_driver::AnalyzeNegotiation,
+            Vec<fsl_analyze::analyze::Engine>,
+            &fsl_analyze::provider::ProviderOptions,
+            &Cancel,
+        ) -> T
+        + Send
+        + 'static,
+) -> io::Result<Result<T, String>> {
+    crate::signals::run(move |signals| {
+        let cancel = Cancel::new();
+        let _session = if reporting {
+            signals.activate_reporting(cancel.clone())
+        } else {
+            signals.activate(cancel.clone())
+        };
+        let mut providers = start_providers(config, &limits, &signals, &cancel)?;
+        let negotiation =
+            match filament_driver::AnalyzeNegotiation::with_providers(&providers.descriptors) {
+                Ok(negotiation) => negotiation,
+                Err(error) => {
+                    providers.close();
+                    return Err(format!("{error:?}"));
+                }
+            };
+        let engines = std::mem::take(&mut providers.engines);
+        let options = fsl_analyze::provider::ProviderOptions {
+            provider_limits: limits,
+        };
+        let written = entry(&negotiation, engines, &options, &cancel);
+        providers.close();
+        Ok(written)
+    })
+}
+
+/// `fsl run` with configured providers: FSL's `run_with_providers` runs the
+/// request and settles its call's requirement items against FSL's engines
+/// and the started process providers (FSL FR-961, FR-963), under the run's
+/// one limit set (FSL FR-964).
+fn run_with_providers(
+    path: &Path,
+    config: crate::provider_config::ProviderConfig,
+    limits: fsl_analyze::provider::ProviderLimits,
+) -> CommandResult {
+    let path = path.to_path_buf();
+    let ran = with_started_providers(
+        config,
+        limits,
+        false,
+        move |negotiation, engines, options, cancel| {
+            command::run_with_providers(&path, negotiation, engines, options, cancel)
+        },
+    );
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Execute, message),
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
+        }
+    };
+    match written {
+        Ok(result) => match result.outcome {
+            Some(document) => CommandResult::document(document),
+            None => native_result(result.value.as_value().clone(), result.exit_code),
+        },
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
+    }
+}
+
+/// A run result FSL writes as its native document rather than an FR-286
+/// outcome: the document unchanged in machine mode and its JSON text
+/// otherwise, under the category FSL's exit code names (FR-285).
+fn native_result(document: serde_json::Value, exit_code: u8) -> CommandResult {
+    let Some(category) = Category::ALL
+        .into_iter()
+        .find(|category| category.exit_code() == exit_code)
+    else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!("FSL's run exit code {exit_code} names no category"),
+        );
+    };
+    CommandResult {
+        category,
+        document: None,
+        diagnostic: None,
+        text_output: Some(document.to_string()),
+        analyze_document: Some(document),
+        stderr_line: None,
+        render_sources: None,
     }
 }
 
@@ -1780,7 +1718,6 @@ fn analyze_result(
         document: None,
         diagnostic: None,
         text_output,
-        configured_run: None,
         analyze_document: Some(document),
         stderr_line: None,
         render_sources: None,
@@ -1975,12 +1912,57 @@ fn monitor_summary_text(summary: &serde_json::Value) -> String {
     lines.join("\n")
 }
 
+/// The monitor's record stream, read on its own thread so a cancelled run
+/// ends the stream without waiting for a blocked read (FR-025).
+struct CancellableRecords {
+    records: std::sync::mpsc::Receiver<io::Result<Vec<u8>>>,
+    cancel: Cancel,
+}
+
+impl CancellableRecords {
+    /// How often a waiting read looks at the cancellation handle.
+    const POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
+    fn new(reader: Box<dyn io::BufRead + Send>, cancel: Cancel) -> Self {
+        let (sender, records) = std::sync::mpsc::sync_channel(1);
+        // The reader thread ends at end of stream, or when the receiver is
+        // gone; a read still blocked then ends with the process.
+        let _ = std::thread::Builder::new()
+            .name("fsl-monitor-records".to_owned())
+            .spawn(move || {
+                for record in io::BufRead::split(reader, b'\n') {
+                    if sender.send(record).is_err() {
+                        break;
+                    }
+                }
+            });
+        Self { records, cancel }
+    }
+}
+
+impl Iterator for CancellableRecords {
+    type Item = io::Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.cancel.cause().is_some() {
+                return None;
+            }
+            match self.records.recv_timeout(Self::POLL) {
+                Ok(record) => return Some(record),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+            }
+        }
+    }
+}
+
 /// Run the `native-monitor/1` request over its record stream, writing each
 /// event to standard output before the next record is read, then the summary.
 /// The exit code is FSL's. A refusal before any record is read is the
 /// command-error envelope.
 fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
-    let reader: Box<dyn io::BufRead> = match &options.input {
+    let reader: Box<dyn io::BufRead + Send> = match &options.input {
         Some(path) => match File::open(path) {
             Ok(file) => Box::new(io::BufReader::new(file)),
             Err(error) => {
@@ -1992,18 +1974,45 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         },
         None => Box::new(io::BufReader::new(io::stdin())),
     };
-    let mut output = MonitorOutput {
-        format,
-        closed: false,
-        failure: None,
+    let path = options.path.clone();
+    // The run is one signal-reporting session: SIGINT or SIGTERM cancels the
+    // handle with cause `requested`, the record stream ends at once even
+    // while a read blocks, and FSL settles the cancelled session (exit 22).
+    let ran = crate::signals::run(move |signals| {
+        let cancel = Cancel::new();
+        let _reporting = signals.activate_reporting(cancel.clone());
+        let mut output = MonitorOutput {
+            format,
+            closed: false,
+            failure: None,
+        };
+        let records = CancellableRecords::new(reader, cancel.clone());
+        let summary = command::monitor(
+            &path,
+            records,
+            &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
+            RunLimits::default(),
+            &cancel,
+        );
+        // A stream the cancellation ended is not the complete stream, so its
+        // summary does not stand: the run is FSL's cancelled monitor run.
+        let summary = match summary {
+            Ok(_) if cancel.cause().is_some() => Err(Box::new(command::RunError {
+                cause: command::RunCause::MonitorCancelled,
+            })),
+            summary => summary,
+        };
+        (summary, output)
+    });
+    let (summary, mut output) = match ran {
+        Ok(ran) => ran,
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
+        }
     };
-    let summary = command::monitor(
-        &options.path,
-        io::BufRead::split(reader, b'\n'),
-        &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
-        RunLimits::default(),
-        &Cancel::new(),
-    );
     let summary = match summary {
         Ok(summary) => summary,
         Err(error) => {
@@ -2036,7 +2045,6 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         document: None,
         diagnostic: None,
         text_output: None,
-        configured_run: None,
         analyze_document: None,
         stderr_line: None,
         render_sources: None,
@@ -2048,7 +2056,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Analyze {
         return match AnalyzeOptions::parse(raw_arguments) {
             Ok(options) => analyze(&options, format),
-            Err(error) => CommandResult::input_refusal(Operation::Analyze, error),
+            Err(error) => option_refusal(Operation::Analyze, &error),
         };
     }
     if verb == Verb::Monitor {
@@ -2060,7 +2068,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Run {
         return match RunOptions::parse(raw_arguments) {
             Ok(options) => with_format(run(options), format),
-            Err(error) => CommandResult::input_refusal(Operation::Execute, error),
+            Err(error) => option_refusal(Operation::Execute, &error),
         };
     }
     if verb == Verb::Compile {
@@ -2072,7 +2080,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Check {
         return match CheckOptions::parse(raw_arguments) {
             Ok(options) => with_format(check_source(options), format),
-            Err(error) => CommandResult::input_refusal(Operation::Check, error),
+            Err(error) => option_refusal(Operation::Check, &error),
         };
     }
     if verb == Verb::Parse {
@@ -2121,15 +2129,25 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             format!("option `{option}` is only accepted by `run`"),
         );
     }
-    CommandResult {
-        category: Category::Unsupported,
-        document: None,
-        diagnostic: None,
-        text_output: None,
-        configured_run: None,
-        analyze_document: None,
-        stderr_line: None,
-        render_sources: None,
+    unrouted_verb(verb, format)
+}
+
+/// The library operation an accepted but unrouted verb names, `None` for a
+/// routed verb.
+fn unrouted_operation(verb: Verb) -> Option<Operation> {
+    match verb {
+        Verb::Prove => Some(Operation::Prove),
+        Verb::Replay => Some(Operation::Replay),
+        Verb::Generate => Some(Operation::Generate),
+        Verb::Inspect => Some(Operation::Inspect),
+        Verb::Render => Some(Operation::Render),
+        Verb::Parse
+        | Verb::Format
+        | Verb::Check
+        | Verb::Compile
+        | Verb::Run
+        | Verb::Analyze
+        | Verb::Monitor => None,
     }
 }
 
@@ -2163,6 +2181,46 @@ fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult
             "could not render the outcome document as text",
         ),
     }
+}
+
+/// Refuse a verb this build accepts but does not route (FSpec FR-522): an
+/// `unsupported_operation` document with cause `operation-not-routed` whose
+/// detail names the verb under machine output, or the named stderr line
+/// otherwise. Neither stream stays empty.
+fn unrouted_verb(verb: Verb, format: OutputFormat) -> CommandResult {
+    const CODE: &str = "unsupported_operation";
+    const CAUSE: &str = "operation-not-routed";
+    let Some(operation) = unrouted_operation(verb) else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            format!("verb `{}` reached the unrouted-verb refusal", verb.name()),
+        );
+    };
+    let name = verb.name();
+    let line = format!("fsl {name}: this build does not route the {name} operation ({CODE})");
+    let document =
+        OutcomeDocument::new(operation, None, Category::Unsupported).with_diagnostics(vec![
+            OutcomeDiagnostic::new(Some(CAUSE), CODE, None, line.clone()),
+        ]);
+    let mut result = CommandResult::document(document.clone());
+    if format != OutputFormat::Json {
+        result.stderr_line = Some(line);
+        return result;
+    }
+    match unrouted_wire(&document, name) {
+        Some(wire) => result.analyze_document = Some(wire),
+        None => result.stderr_line = Some(line),
+    }
+    result
+}
+
+/// The wire form of `document` with the verb as the first diagnostic's
+/// `detail` payload.
+fn unrouted_wire(document: &OutcomeDocument, verb: &str) -> Option<serde_json::Value> {
+    let mut wire = serde_json::to_value(document).ok()?;
+    let diagnostic = wire.get_mut("diagnostics")?.get_mut(0)?.as_object_mut()?;
+    diagnostic.insert("detail".to_owned(), serde_json::json!({ "verb": verb }));
+    Some(wire)
 }
 
 /// Refuse a text selection whose FSL outcome renderer is not available.
@@ -2335,8 +2393,8 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OutputFormat,
-        RunOptions, Verb,
+        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OptionRefusal,
+        OutputFormat, RunOptions, Verb,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
@@ -2498,7 +2556,7 @@ mod tests {
                 1024,
             )]
         );
-        assert_eq!(options.provider_config, None);
+        assert!(!options.providers.given());
     }
 
     /// Trace: FR-006-AC-24, FR-014-AC-6; accept only one explicitly named config path.
@@ -2511,7 +2569,7 @@ mod tests {
         ];
         let options = RunOptions::parse(&args).expect("valid provider config path");
         assert_eq!(
-            options.provider_config.as_deref(),
+            options.providers.config.as_deref(),
             Some(std::path::Path::new("providers.json"))
         );
     }
@@ -2523,10 +2581,12 @@ mod tests {
             OsString::from("unit.fsl"),
             OsString::from("--provider-config"),
         ];
-        assert!(RunOptions::parse(&missing)
-            .err()
-            .expect("provider config path is required")
-            .contains("--provider-config requires a path"));
+        assert_eq!(
+            RunOptions::parse(&missing).err(),
+            Some(OptionRefusal::Usage(
+                "--provider-config requires a path".to_owned()
+            ))
+        );
 
         let duplicate = vec![
             OsString::from("unit.fsl"),
@@ -2535,10 +2595,28 @@ mod tests {
             OsString::from("--provider-config"),
             OsString::from("two.json"),
         ];
-        assert!(RunOptions::parse(&duplicate)
-            .err()
-            .expect("provider config may be selected once")
-            .contains("only once"));
+        assert_eq!(
+            RunOptions::parse(&duplicate).err(),
+            Some(OptionRefusal::Usage(
+                "--provider-config may be supplied only once".to_owned()
+            ))
+        );
+    }
+
+    /// Trace: FR-006-AC-29; a refused `--provider-limit` is its own refusal,
+    /// with empty stdout, not a usage refusal.
+    #[test]
+    fn run_options_refuse_a_malformed_provider_limit() {
+        let args = vec![
+            OsString::from("unit.fsl"),
+            OsString::from("--provider-limit"),
+            OsString::from("deadline_ms=010"),
+        ];
+        assert!(matches!(
+            RunOptions::parse(&args).err(),
+            Some(OptionRefusal::Quiet(message))
+                if message.contains("--provider-limit `deadline_ms=010`")
+        ));
     }
 
     /// Trace: FR-004-AC-2, an unknown engine fails before any source stage.
@@ -2580,324 +2658,5 @@ mod tests {
             "read is bounded to the limit plus one sentinel byte"
         );
         assert_eq!(actual, expected[..=limit]);
-    }
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::expect_used,
-    clippy::panic,
-    reason = "configured provider integration assertions are the test failure report"
-)]
-mod configured_run_tests {
-    use std::path::{Path, PathBuf};
-
-    use filament_exact::{Integer, Value};
-    use fsl_foundation::SourceIdentity;
-    use fsl_replay::spine::{
-        default_accounting, Call, CallArgument, SpineLimits, DEFAULT_WORK_UNITS,
-    };
-
-    use super::{run_configured_providers, Code, CommandResult, ConfiguredRunRequest};
-
-    struct TempDir(PathBuf);
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    fn python_path() -> PathBuf {
-        std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-            .map(|directory| directory.join("python3"))
-            .find(|candidate| candidate.is_file())
-            .expect("the process fixture requires Python 3")
-    }
-
-    /// Trace: FR-006-AC-1, FR-006-AC-3, FR-006-AC-8, FR-006-AC-10..FR-006-AC-11, FR-006-AC-15, FR-006-AC-25.
-    #[test]
-    fn configured_run_invokes_only_the_selected_process_and_retains_its_typed_result() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is after the Unix epoch")
-            .as_nanos();
-        let directory = TempDir(std::env::temp_dir().join(format!(
-            "fsl-cli-configured-run-{}-{unique}",
-            std::process::id()
-        )));
-        std::fs::create_dir(&directory.0).expect("create temporary test directory");
-        let bytes = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-             function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-             function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let path = "configured-run.native";
-        let source = SourceIdentity::new("agent-ix", path);
-        let packages = std::collections::BTreeMap::new();
-        let dependencies = fsl_replay::spine::DependencyInput::default();
-        let limits = SpineLimits::default();
-        let call = Call {
-            function: "eq".to_owned(),
-            arguments: vec![
-                CallArgument {
-                    parameter: "x".to_owned(),
-                    value: Value::Integer(Integer::from(2_i64)),
-                },
-                CallArgument {
-                    parameter: "y".to_owned(),
-                    value: Value::Integer(Integer::from(3_i64)),
-                },
-            ],
-            accounting: default_accounting(DEFAULT_WORK_UNITS),
-            supplied: Default::default(),
-            backend: Default::default(),
-            clocks: Default::default(),
-            wire_arguments: Vec::new(),
-            snapshot: None,
-        };
-        let executable = python_path();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/configured-fr331-provider.py");
-        let identities = [
-            "agent-ix/provider/configured-alpha",
-            "agent-ix/provider/configured-zeta",
-        ];
-        let capabilities = ["value-validity", "operation-contract"];
-        let markers = identities
-            .iter()
-            .enumerate()
-            .map(|(index, _)| directory.0.join(format!("provider-{index}.json")))
-            .collect::<Vec<_>>();
-        let providers = identities
-            .iter()
-            .zip(&markers)
-            .zip(capabilities)
-            .map(
-                |((identity, marker), capability)| crate::provider_config::RuntimeProviderConfig {
-                    executable: executable.clone(),
-                    argv: vec![
-                        fixture.display().to_string(),
-                        (*identity).to_owned(),
-                        marker.display().to_string(),
-                        capability.to_owned(),
-                    ],
-                    deadline_ms: 4096,
-                    limits: crate::provider_config::RuntimeProviderLimitsConfig {
-                        max_frame_bytes: 262_144,
-                        max_total_bytes: 1_048_576,
-                        max_stderr_bytes: 4096,
-                        cancellation_grace_ms: 500,
-                    },
-                },
-            )
-            .collect();
-
-        let configured = match run_configured_providers(ConfiguredRunRequest {
-            path,
-            package_name: path,
-            bytes: bytes.as_bytes(),
-            source,
-            limits,
-            call,
-            packages,
-            dependencies,
-            config: providers,
-            signals: crate::signals::SignalContext::default(),
-        }) {
-            Ok(configured) => configured,
-            Err(failure) => panic!("configured provider flow failed: {failure:?}"),
-        };
-        assert_eq!(configured.call.requirements.members().len(), 1);
-        assert_eq!(configured.driven.generation().items.len(), 2);
-        assert_eq!(configured.provider_results.len(), 1);
-        let invoked = markers
-            .iter()
-            .enumerate()
-            .filter(|(_, marker)| marker.is_file())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            invoked.len(),
-            1,
-            "only the selected provider receives a request"
-        );
-        let (selected, marker) = invoked[0];
-        let request: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(marker).expect("the selected provider recorded its request"),
-        )
-        .expect("the provider request is JSON");
-        let member = &configured.call.requirements.members()[0];
-        assert_eq!(request["request"]["deadline_ms"], 4096);
-        assert_eq!(
-            request["request"]["items"].as_array().map(Vec::len),
-            Some(1)
-        );
-        assert_eq!(
-            request["request"]["items"][0]["backend"],
-            identities[selected]
-        );
-        assert_eq!(
-            request["request"]["items"][0]["request_index"],
-            member.request_index().get()
-        );
-        assert_eq!(request["request"]["items"][0]["kind"], "value-validity");
-        assert!(request["request"]["items"][0]["claim"].is_object());
-        assert_eq!(request["request"]["items"][0]["candidates"]["type"], "set");
-        assert!(request["request"]["items"][0]["candidates"]["backends"]
-            .as_array()
-            .expect("candidate set is an array")
-            .iter()
-            .any(|candidate| candidate == identities[selected]));
-        assert!(request["request"]["items"][0]["extent"].is_object());
-
-        let command = CommandResult::configured(Ok(configured));
-        assert!(
-            command.document.is_some(),
-            "existing FSL call result is retained"
-        );
-        assert!(
-            command
-                .document
-                .as_ref()
-                .expect("FSL call document remains available")
-                .items()
-                .is_empty(),
-            "provider results are not fabricated as FSL terminals"
-        );
-        let Some(Ok(retained)) = command.configured_run.as_ref() else {
-            panic!("typed configured result remains owned by the command result");
-        };
-        assert_eq!(retained.provider_results.len(), 1);
-        assert_eq!(retained.provider_results[0].items.len(), 1);
-        let outcome = retained.provider_results[0].items[0]
-            .result
-            .as_ref()
-            .expect("the fixture returned a typed provider result");
-        assert!(matches!(
-            &outcome.item,
-            crate::process_provider::ProcessProviderItemOutcome::Result {
-                kind: crate::process_provider::Fr331ResultKind::Tested,
-                ..
-            }
-        ));
-        assert_eq!(retained.diagnostics.len(), 2);
-        assert!(retained
-            .diagnostics
-            .iter()
-            .all(|finished| String::from_utf8_lossy(&finished.stderr)
-                .contains("configured provider completed")));
-        assert_eq!(retained.call.package_name, retained.driven.emitted().name());
-    }
-
-    /// Trace: FR-006-AC-26; identical admitted hellos fail closed before negotiation and close both sessions.
-    #[test]
-    fn configured_run_refuses_idempotent_duplicate_identities_before_dispatch() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system time is after the Unix epoch")
-            .as_nanos();
-        let directory = TempDir(std::env::temp_dir().join(format!(
-            "fsl-cli-configured-duplicate-{}-{unique}",
-            std::process::id()
-        )));
-        std::fs::create_dir(&directory.0).expect("create temporary test directory");
-        let bytes = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-             function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-             function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let path = "configured-duplicate.native";
-        let source = SourceIdentity::new("agent-ix", path);
-        let call = Call {
-            function: "eq".to_owned(),
-            arguments: vec![
-                CallArgument {
-                    parameter: "x".to_owned(),
-                    value: Value::Integer(Integer::from(2_i64)),
-                },
-                CallArgument {
-                    parameter: "y".to_owned(),
-                    value: Value::Integer(Integer::from(3_i64)),
-                },
-            ],
-            accounting: default_accounting(DEFAULT_WORK_UNITS),
-            supplied: Default::default(),
-            backend: Default::default(),
-            clocks: Default::default(),
-            wire_arguments: Vec::new(),
-            snapshot: None,
-        };
-        let executable = python_path();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/configured-fr331-provider.py");
-        let identity = "agent-ix/provider/configured-duplicate";
-        let markers = [
-            directory.0.join("duplicate-one.json"),
-            directory.0.join("duplicate-two.json"),
-        ];
-        let shutdown_markers = [
-            directory.0.join("duplicate-one-shutdown"),
-            directory.0.join("duplicate-two-shutdown"),
-        ];
-        let providers = markers
-            .iter()
-            .zip(shutdown_markers.iter())
-            .map(
-                |(marker, shutdown)| crate::provider_config::RuntimeProviderConfig {
-                    executable: executable.clone(),
-                    argv: vec![
-                        fixture.display().to_string(),
-                        identity.to_owned(),
-                        marker.display().to_string(),
-                        "value-validity".to_owned(),
-                        "normal".to_owned(),
-                        shutdown.display().to_string(),
-                    ],
-                    deadline_ms: 4096,
-                    limits: crate::provider_config::RuntimeProviderLimitsConfig {
-                        max_frame_bytes: 262_144,
-                        max_total_bytes: 1_048_576,
-                        max_stderr_bytes: 4096,
-                        cancellation_grace_ms: 500,
-                    },
-                },
-            )
-            .collect();
-
-        let failure = match run_configured_providers(ConfiguredRunRequest {
-            path,
-            package_name: path,
-            bytes: bytes.as_bytes(),
-            source,
-            limits: SpineLimits::default(),
-            call,
-            packages: std::collections::BTreeMap::new(),
-            dependencies: fsl_replay::spine::DependencyInput::default(),
-            config: providers,
-            signals: crate::signals::SignalContext::default(),
-        }) {
-            Err(failure) => failure,
-            Ok(_) => panic!("idempotent duplicate identities are an input refusal"),
-        };
-        assert!(matches!(
-            failure.kind,
-            super::ConfiguredRunErrorKind::DuplicateIdentity { ref backend }
-                if backend == identity
-        ));
-        assert_eq!(
-            failure.document.category(),
-            filament_semantic_value::catalog::Category::Refusal
-        );
-        assert!(failure
-            .document
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code() == Code::InvalidRequest.as_str()));
-        assert_eq!(failure.cleanup_diagnostics.len(), 2);
-        assert!(failure.cleanup_failures.is_empty());
-        assert!(markers.iter().all(|marker| !marker.exists()));
-        assert!(shutdown_markers.iter().all(|marker| marker.is_file()));
     }
 }

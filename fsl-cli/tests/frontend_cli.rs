@@ -615,36 +615,36 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     );
     let actual: serde_json::Value = serde_json::from_slice(&output.stdout).expect("monitor output");
     assert_eq!(actual["operation"], "monitor");
-    // The nonexistent executable proves this unsupported composition never starts a provider.
+    // QSL-2370: the configured provider is never ignored. An FSpec FR-561
+    // document naming a plugin path that does not exist refuses naming it,
+    // exit 20 with empty stdout, before any stage runs or any plugin starts
+    // (FSpec FR-561-AC-2, FR-006-AC-24).
     let config_path = directory.0.join("providers.json");
-    let config = serde_json::json!({"providers":[{"executable":directory.0.join("never-start-provider"),
-        "argv":[],"deadline_ms":1024,"limits":{"max_frame_bytes":262144,"max_total_bytes":1048576,
-            "max_stderr_bytes":4096,"cancellation_grace_ms":500}}]});
+    let never_start = directory.0.join("never-start-provider");
+    let config = serde_json::json!({"format": "filament.provider-config/v1",
+        "providers": [{"path": never_start, "arguments": []}]});
     std::fs::write(&config_path, config.to_string()).expect("provider config");
     let output = Command::new(FSL)
         .arg("run")
         .arg(&request_path)
         .arg("--provider-config")
         .arg(&config_path)
+        .args(["--provider-limit", "deadline_ms=1024"])
         .args(["--format", "json"])
         .output()
-        .expect("unsupported clause provider composition");
+        .expect("clause run with a configured provider");
     assert_eq!(
         output.status.code(),
-        Some(i32::from(Category::Unsupported.exit_code()))
+        Some(i32::from(Category::Refusal.exit_code()))
     );
-    let document: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("typed unsupported document");
-    assert_eq!(document["operation"], "monitor");
-    assert_eq!(document["category"], "unsupported");
-    assert_eq!(document["last_stage"], serde_json::Value::Null);
-    assert_eq!(
-        document["diagnostics"][0]["code"],
-        "unimplemented_capability"
-    );
+    assert!(output.stdout.is_empty(), "the refusal writes no document");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("clause"), "{stderr}");
-    assert!(!stderr.contains("could not start"), "{stderr}");
+    assert!(stderr.contains("invalid-request"), "{stderr}");
+    assert!(
+        stderr.contains(never_start.display().to_string().as_str()),
+        "{stderr}"
+    );
+    assert!(stderr.contains("does not exist"), "{stderr}");
 }
 
 const ANALYZE_REQUEST: &str = concat!(
@@ -904,7 +904,7 @@ fn timed_event_profile_cause_removed() {
     );
     let frontend_error = fsl_command::command::analyze(
         &request.path(),
-        &filament_driver::AnalyzeNegotiation,
+        &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
         &filament_exact::Cancel::new(),
     )
     .expect_err("the frontend refuses model time over an untimed model");
@@ -1106,16 +1106,276 @@ fn analyze_malformed_request_is_typed_refusal() {
             "{arguments:?}: {stderr}"
         );
     }
-    // The option FSL FR-287 gives `analyze` is refused, naming the missing
-    // caller registry, before any file is read.
-    let output = fsl(&["analyze", "missing.json", "--provider-config", "p.json"]);
+    // `--provider-config` takes one path, once, before any file is read.
+    for arguments in [
+        &["analyze", "missing.json", "--provider-config"][..],
+        &[
+            "analyze",
+            "missing.json",
+            "--provider-config",
+            "a.json",
+            "--provider-config",
+            "b.json",
+        ][..],
+    ] {
+        let output = fsl(arguments);
+        assert_eq!(output.status.code(), Some(20), "{arguments:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("--provider-config"),
+            "{arguments:?}: {stderr}"
+        );
+    }
+}
+
+const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
+const PROVIDER_BACKEND: &str = "fsl.test-process-provider";
+
+/// The Counter program with the value-validity function `Even` added.
+fn even_program() -> Vec<u8> {
+    let fixtures = std::path::Path::new(ANALYZE_REQUEST)
+        .parent()
+        .expect("fixture directory");
+    let mut program =
+        std::fs::read_to_string(fixtures.join("analyze-counter.fsl")).expect("the Counter program");
+    program.push_str("\nfunction Even using v(n: Integer): Boolean pure { n * 2 - n = n }\n");
+    program.into_bytes()
+}
+
+/// A `--provider-config` file in `request`'s folder starting the test
+/// provider with `arguments`.
+fn provider_config(request: &AnalyzeRequest, arguments: &[&str]) -> std::path::PathBuf {
+    let path = request.directory.0.join("providers.json");
+    let config = serde_json::json!({"format": "filament.provider-config/v1",
+        "providers": [{"path": TEST_PROVIDER, "arguments": arguments}]});
+    std::fs::write(&path, config.to_string()).expect("the provider configuration");
+    path
+}
+
+fn analyze_with_config(request: &AnalyzeRequest, config: &std::path::Path) -> Output {
+    Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(config)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl analyze --provider-config")
+}
+
+/// FSL FR-287, FR-635: a `--provider-config` provider registers beside FSL's
+/// engines before negotiation; an item naming it is sent to the started
+/// process as one FR-331 request and settles `proved` with certification
+/// `trusted`; the registry lists it; and an item that does not negotiate to
+/// it is byte-equal to the run without it. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_config_settles_an_item_on_the_process_provider() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND},
+        {"claim": "Bounded"}]);
+    let request = AnalyzeRequest::new("provider-proved", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let log = request.directory.0.join("request.json");
+    let log_text = log.to_string_lossy().into_owned();
+    let config = provider_config(
+        &request,
+        &[PROVIDER_BACKEND, "unbounded", "proved", &log_text],
+    );
+    let output = analyze_with_config(&request, &config);
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+        panic!(
+            "a document; stderr {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(item["record"]["certification"], "trusted", "{document}");
+    let registry: Vec<&str> = document["registry"]
+        .as_array()
+        .expect("registry")
+        .iter()
+        .filter_map(|entry| entry["backend"].as_str())
+        .collect();
+    assert!(registry.contains(&PROVIDER_BACKEND), "{registry:?}");
+    assert!(registry.contains(&"en-1"), "{registry:?}");
+    let sent: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&log).expect("the provider saw a request"))
+            .expect("the request body");
+    assert_eq!(sent["request"]["items"][0]["request_index"], 0, "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["backend"], PROVIDER_BACKEND,
+        "{sent}"
+    );
+    let (without, _) = request.json();
+    assert_eq!(document["items"][1], without["items"][1]);
+}
+
+/// FSL FR-281: a provider result that is not a verdict settles the item
+/// `inconclusive`, never `proved`. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_without_a_verdict_is_inconclusive() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-unknown", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "failed"]);
+    let output = analyze_with_config(&request, &config);
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("a document");
+    assert_eq!(
+        document["items"][0]["record"]["result"], "inconclusive",
+        "{document}"
+    );
+}
+
+/// FSL FR-624: SIGTERM or SIGINT during `fsl analyze` cancels the run with
+/// cause `requested`: the open item settles `incomplete` with
+/// `{"kind": "cancelled", "source": "requested"}`, the document is written,
+/// and the process exits 22 rather than by the signal. The test provider
+/// sends the signal while its request is open. QSL-2284.
+#[trace("TC-036", "FR-022-AC-10")]
+#[test]
+fn analyze_signal_cancels_with_cause_requested() {
+    for signal in ["term", "int"] {
+        let items = serde_json::json!([
+            {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND},
+            {"claim": "Bounded"}]);
+        let request =
+            AnalyzeRequest::new(&format!("signal-{signal}"), items, serde_json::json!({}))
+                .with_file("/request/program/source/file", "even.fsl", &even_program());
+        let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", signal]);
+        let output = analyze_with_config(&request, &config);
+        assert_eq!(output.status.code(), Some(22), "{signal}: {output:?}");
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("a document");
+        for index in [0, 1] {
+            let record = &document["items"][index]["record"];
+            assert_eq!(record["result"], "incomplete", "{signal}: {document}");
+            assert_eq!(
+                record["cause"],
+                serde_json::json!({"kind": "cancelled", "source": "requested"}),
+                "{signal}: {document}"
+            );
+        }
+    }
+}
+
+/// FSL FR-635-AC-4: a provider whose `hello` does not advertise
+/// (`value-validity`, `unbounded`) is refused at registration, exit 20,
+/// naming its backend, and no item runs. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_config_refuses_a_misadvertising_provider() {
+    let request = AnalyzeRequest::new(
+        "provider-bounded",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "bounded", "proved"]);
+    let output = analyze_with_config(&request, &config);
     assert_eq!(output.status.code(), Some(20));
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("`--provider-config` is not available for `analyze` yet"),
-        "{stderr}"
+        stdout.contains(PROVIDER_BACKEND) || stderr.contains(PROVIDER_BACKEND),
+        "{stdout} {stderr}"
     );
-    assert!(stderr.contains("caller registry"), "{stderr}");
+}
+
+/// FSL FR-287, FSpec FR-561: an unreadable or malformed `--provider-config`
+/// refuses with exit 20 and empty stdout, naming the file, and starts no
+/// provider. QSL-2283.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_config_refuses_an_invalid_file() {
+    let request = AnalyzeRequest::new(
+        "provider-invalid",
+        one_item("Bounded"),
+        serde_json::json!({}),
+    );
+    let missing = request.directory.0.join("absent.json");
+    let malformed = request.directory.0.join("malformed.json");
+    std::fs::write(&malformed, b"{\"providers\": 3}").expect("malformed configuration");
+    for config in [missing, malformed] {
+        let output = analyze_with_config(&request, &config);
+        assert_eq!(output.status.code(), Some(20), "{}", config.display());
+        assert!(output.stdout.is_empty(), "{}", config.display());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("provider configuration"), "{stderr}");
+        assert!(
+            stderr.contains(config.display().to_string().as_str()),
+            "{stderr}"
+        );
+    }
+}
+
+/// FSL FR-287, FR-964: `--provider-limit deadline_ms` reaches the FR-331
+/// request FSL sends the provider, and a malformed limit refuses naming
+/// the option and argument, exit 20 with empty stdout, before any provider
+/// starts. QSL-2192.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_limit_sets_the_request_deadline() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-limit", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let log = request.directory.0.join("request.json");
+    let log_text = log.to_string_lossy().into_owned();
+    let config = provider_config(
+        &request,
+        &[PROVIDER_BACKEND, "unbounded", "proved", &log_text],
+    );
+    for (limits, deadline) in [(&[][..], 600_000), (&["deadline_ms=250"][..], 250)] {
+        let mut command = Command::new(FSL);
+        command
+            .arg("analyze")
+            .arg(request.path())
+            .arg("--provider-config")
+            .arg(&config);
+        for limit in limits {
+            command.args(["--provider-limit", limit]);
+        }
+        let output = command
+            .args(["--format", "json"])
+            .output()
+            .expect("run fsl analyze");
+        assert_eq!(output.status.code(), Some(0), "{output:?}");
+        let sent: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&log).expect("the provider saw a request"))
+                .expect("the request body");
+        assert_eq!(sent["request"]["deadline_ms"], deadline, "{sent}");
+    }
+    let _ = std::fs::remove_file(&log);
+    for format in ["json", "text"] {
+        let output = Command::new(FSL)
+            .arg("analyze")
+            .arg(request.path())
+            .arg("--provider-config")
+            .arg(&config)
+            .args(["--provider-limit", "deadline_ms=10s", "--format", format])
+            .output()
+            .expect("run fsl analyze");
+        assert_eq!(output.status.code(), Some(20), "{format}");
+        assert!(output.stdout.is_empty(), "{format}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("--provider-limit `deadline_ms=10s`"),
+            "{stderr}"
+        );
+        assert!(!log.exists(), "no provider started");
+    }
 }
 
 /// FR-022-AC-6, FSL FR-621-AC-5: the binary's machine-mode document is the
@@ -1127,7 +1387,7 @@ fn analyze_document_equals_the_library_document() {
     let request = AnalyzeRequest::new("parity", one_item("BelowThree"), serde_json::json!({}));
     let library = fsl_command::command::analyze(
         &request.path(),
-        &filament_driver::AnalyzeNegotiation,
+        &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
         &filament_exact::Cancel::new(),
     )
     .unwrap_or_else(|_| panic!("the request is accepted"));
@@ -1474,4 +1734,195 @@ fn default_text_begins_with_the_fr_865_header() {
     let output = fsl(&["check", INVALID_SOURCE]);
     let text = String::from_utf8(output.stdout).expect("text is UTF-8");
     assert!(text.starts_with("check: refusal (exit 20)"), "{text}");
+}
+
+/// FSL FR-670-AC-1's unit, with the floor law header when `header` is set.
+fn division_unit(directory: &std::path::Path, header: bool) -> std::path::PathBuf {
+    let law = if header {
+        "profile d = \"filament.value.integer-division.floor/v1\";\n"
+    } else {
+        ""
+    };
+    let path = directory.join("u.fsl");
+    std::fs::write(
+        &path,
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"filament.value.complete/v1\";\n{law}\
+             function q using v(a: Int[-7, 7], b: Int[1, 3]): Int[-7, 7] pure {{ a div b }}\n\
+             function r using v(a: Int[-7, 7], b: Int[1, 3]): Int[-7, 7] pure {{ a rem b }}\n"
+        ),
+    )
+    .expect("the division unit");
+    path
+}
+
+fn diagnostic_codes(output: &Output) -> Vec<(String, String)> {
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("a check document");
+    document["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|diagnostic| {
+            (
+                diagnostic["code"].as_str().unwrap_or_default().to_owned(),
+                diagnostic["cause"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// FSL FR-767-AC-7: `fsl check --integer-division <law>` passes the admitted
+/// law to the check; an unknown law refuses before the source is read; the
+/// option given twice refuses with usage and no stdout byte; a header law
+/// that disagrees refuses `conflicting-definition`; `run`, `compile`,
+/// `analyze` and `monitor` refuse the option as unknown. QSL-2279.
+#[trace("TC-2189", "FR-767-AC-7")]
+#[test]
+fn check_takes_the_integer_division_law_from_its_option() {
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-integer-division-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&directory.0);
+    std::fs::create_dir_all(&directory.0).expect("a unit folder");
+    let unit = division_unit(&directory.0, false);
+    let unit = unit.to_str().expect("UTF-8 path");
+
+    let checked = fsl(&[
+        "check",
+        unit,
+        "--integer-division",
+        "floor",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+
+    let without = fsl(&["check", unit, "--format", "json"]);
+    assert_eq!(without.status.code(), Some(20), "{without:?}");
+    assert!(diagnostic_codes(&without).contains(&(
+        "missing_declaration".to_owned(),
+        "missing-selection".to_owned()
+    )));
+
+    let absent = directory.0.join("absent.fsl");
+    let absent = absent.to_str().expect("UTF-8 path");
+    let unknown = fsl(&[
+        "check",
+        absent,
+        "--integer-division",
+        "ceiling",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(unknown.status.code(), Some(20), "{unknown:?}");
+    assert_eq!(
+        diagnostic_codes(&unknown),
+        [(
+            "unknown_profile".to_owned(),
+            "unsupported-selection".to_owned()
+        )]
+    );
+    let stderr = String::from_utf8_lossy(&unknown.stderr);
+    assert!(
+        stderr.contains(
+            "integer-division law `ceiling` supplied by `--integer-division` is not one of \
+             `euclidean`, `floor`, `truncating`"
+        ),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("could not read"), "{stderr}");
+    let near_miss = fsl(&["check", absent, "--integer-division", "Floor"]);
+    assert_eq!(near_miss.status.code(), Some(20));
+
+    let twice = fsl(&[
+        "check",
+        unit,
+        "--integer-division",
+        "floor",
+        "--integer-division",
+        "floor",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(twice.status.code(), Some(20));
+    assert!(twice.stdout.is_empty(), "no stdout byte");
+    assert!(String::from_utf8_lossy(&twice.stderr).contains("usage: fsl check"));
+
+    let headed = division_unit(&directory.0, true);
+    let headed = headed.to_str().expect("UTF-8 path");
+    let agreeing = fsl(&[
+        "check",
+        headed,
+        "--integer-division",
+        "floor",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(agreeing.status.code(), Some(0), "{agreeing:?}");
+    let conflicting = fsl(&[
+        "check",
+        headed,
+        "--integer-division",
+        "truncating",
+        "--format",
+        "json",
+    ]);
+    assert_eq!(conflicting.status.code(), Some(20), "{conflicting:?}");
+    assert!(diagnostic_codes(&conflicting).contains(&(
+        "invalid_package".to_owned(),
+        "conflicting-definition".to_owned()
+    )));
+
+    // `prove` is not routed by this build: it answers every invocation with
+    // its `unsupported_operation` result (FSpec FR-522).
+    for verb in ["run", "compile", "analyze", "monitor"] {
+        let output = fsl(&[verb, "request.json", "--integer-division", "floor"]);
+        assert_eq!(output.status.code(), Some(20), "{verb}: {output:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("unknown") || stderr.contains("--integer-division"),
+            "{verb}: {stderr}"
+        );
+        assert!(!stderr.contains("could not read"), "{verb}: {stderr}");
+    }
+}
+
+/// FSL FR-767-AC-7, run half: `fsl run` over a request with
+/// `"integer_division": "floor"` calling `q(-7, 3)` exits 0 with value -3.
+#[trace("TC-2189", "FR-767-AC-7")]
+#[test]
+#[ignore = "QSL-1989: FSL's native-run/1 reader refuses `integer_division` as an unknown field (FR-767 run half not in language main)"]
+fn run_takes_the_integer_division_law_from_its_request() {
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-integer-division-run-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&directory.0);
+    std::fs::create_dir_all(&directory.0).expect("a unit folder");
+    let unit = division_unit(&directory.0, false);
+    let request = directory.0.join("run.json");
+    std::fs::write(
+        &request,
+        serde_json::json!({"format": "native-run/1", "request": {"models": [],
+            "integer_division": "floor",
+            "program": {"source": {"file": unit, "authority": "test", "identity": "division",
+                "document": "Division", "formal_revision": 1}},
+            "call": {"function": "q", "arguments": [
+                {"parameter": "a", "value": -7}, {"parameter": "b", "value": 3}]}}})
+        .to_string(),
+    )
+    .expect("the run request");
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("\"-3\""),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }

@@ -151,9 +151,9 @@ the fallback when that function returns reserved value `5`.
   lifecycle verb names, the `--format text|json|dot` option with the `inspect`
   restriction on `dot`, and the `--version`/`-V` version options.
 - The root help SHALL distinguish lifecycle verbs that execute operations
-  from verbs that currently return an unsupported-capability result, and
-  state that `text` is the default output format and `--format json`
-  selects machine output.
+  from verbs the build accepts but does not route, which return an
+  `unsupported_operation` result, and state that `text` is the default output
+  format and `--format json` selects machine output.
 - When root help is written successfully, the CLI SHALL return FSL's success
   exit result and write no stderr output.
 - When the user invokes `fsl --version`, the CLI SHALL report the semantic
@@ -186,7 +186,7 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-14 | For a `BrokenPipe` while writing or flushing primary stdout, the process status equals the completed operation's FSL category exit result and stderr is empty, including for a refused operation with nonempty diagnostics when stdout is writable. No output-failure category is selected and no `OutputFailure` diagnostic is emitted. | Test |
 | FR-002-AC-15 | If writing or flushing primary stdout returns an I/O error other than `BrokenPipe`, the process exits with FSL's `Category::InternalFailure` exit result. The criterion makes no assertion that stdout is empty or complete. | Test (TC-018) |
 | FR-002-AC-16 | If a non-`BrokenPipe` primary stdout write or flush fails and stderr is writable, stderr contains an `OutputFailure` diagnostic that identifies the failed output. | Test (TC-018) |
-| FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs that currently return unsupported-capability results and states that `text` is the default output format and `--format json` selects machine output. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
+| FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results, and states that `text` is the default output format and `--format json` selects machine output. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
 | FR-002-AC-18 | `fsl run nosuch.json` and `fsl compile nosuch.json` without `--format` refuse with the I/O failure's FSL code and exit 20, as under `--format json`, never `UnimplementedCapability` or exit 21, and stdout holds the text form of that refusal document; the text of a refused `check` names each diagnostic's code, cause and source position; `--format bogus` on each of the four verbs refuses `invalid-request`, exit 20, naming `--format` and `bogus`, before any file is opened. | Test (TC-040) |
 
 ## Dependencies

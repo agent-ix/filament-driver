@@ -910,7 +910,7 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     let monitor_line = command_line("monitor");
     assert!(monitor_line.contains("native-monitor/1"), "{monitor_line}");
     for command in ["prove", "replay", "generate", "inspect", "render"] {
-        assert!(command_line(command).contains("unsupported-capability"));
+        assert!(command_line(command).contains("unsupported_operation"));
         let unavailable = Command::new(FSL)
             .args([command, "--format", "json"])
             .output()

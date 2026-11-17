@@ -9,18 +9,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
-use filament_driver::Driven;
 use filament_driver::ProviderManifest;
 use filament_semantic_value::catalog::{CatalogCode, Category};
 use fsl_foundation::backend::EmptyBackendIdentity;
-use fsl_foundation::bound::DomainKind;
 use fsl_foundation::diagnostic::category_of;
 use fsl_foundation::BackendId;
-use fsl_package::EmittedPackage;
-use fsl_route::request::RequirementItem;
-use fsl_route::CandidateOutcome;
 use fsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
     ProviderOrigin,
@@ -51,6 +44,17 @@ struct ProviderDescriptorShape {
     evidence_kinds: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_present")]
     fairness_kinds: Option<Vec<String>>,
+    /// FSpec FR-331 "Backend tool": the code that decides the backend's
+    /// results. FSL registers an external provider only with its tool.
+    #[serde(default, deserialize_with = "deserialize_present")]
+    tool: Option<ToolShape>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolShape {
+    name: String,
+    version: String,
 }
 
 fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -259,6 +263,13 @@ impl ManifestStage {
                 detail: source.inner().to_string(),
             })?;
         validate_manifest(&shape)?;
+        if shape
+            .tool
+            .as_ref()
+            .is_some_and(|tool| tool.name.is_empty() || tool.version.is_empty())
+        {
+            return Err(invalid_member("tool", "names a nonempty name and version"));
+        }
         let limits = quire_canonical::Limits::new(max_frame_bytes);
         let mut canonical_wire = Vec::new();
         quire_canonical::encode(&mut canonical_wire, &**wire, limits)?;
@@ -277,6 +288,11 @@ impl ManifestStage {
             .fairness_kinds
             .as_ref()
             .map(|_| FairnessKindsMember::List(&fairness_labels));
+        // FSL owns evidence-kind admission (QSL-654): hand it the labels.
+        let evidence_labels = shape
+            .evidence_kinds
+            .as_deref()
+            .map(|kinds| kinds.iter().map(String::as_str).collect::<Vec<_>>());
         let descriptor = descriptor_from_manifest(
             Candidate::new(BackendId::from_wire(&shape.backend)?),
             ProviderOrigin::Process,
@@ -287,6 +303,7 @@ impl ManifestStage {
             fsl_route::ManifestMembers {
                 domains: domain_labels.as_deref(),
                 fairness_kinds: fairness_member,
+                evidence_kinds: evidence_labels.as_deref(),
                 ..fsl_route::ManifestMembers::default()
             },
         )?;
@@ -307,7 +324,10 @@ impl ManifestStage {
     }
 }
 
-/// One FR-331 request-stage envelope to serialize for a process provider.
+/// One FR-331 request-stage envelope to serialize for a process provider:
+/// the registry snapshot of retained manifests and the `request` member
+/// FSL built ([`fsl_analyze::provider::ProviderRequest`]), forwarded as FSL
+/// serialized it. The driver writes no request member of its own.
 #[derive(Clone, Debug, Serialize)]
 pub struct RequestStage {
     /// FR-331 contract identity.
@@ -316,169 +336,63 @@ pub struct RequestStage {
     pub capability_vocabulary: &'static str,
     /// Snapshot of retained FR-331 manifests for the current FSL registry.
     pub manifest: Vec<Value>,
-    /// The provider request body.
-    pub request: RequestBody,
+    /// FSL's FR-331 `request` member.
+    pub request: Value,
 }
 
-/// A caller value cannot be represented exactly by the FR-331 JSON integer contract.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+/// A process request the driver cannot frame as an FR-331 request stage.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RequestStageError {
     /// FR-331 PositiveCount requires a nonzero safe integer deadline.
     #[error("deadline_ms must be in 1..=9007199254740991")]
     Deadline,
-    /// FR-331 Count requires a safe non-negative request index.
-    #[error("request_index must be in 0..=9007199254740991")]
-    RequestIndex,
-    /// A nested bound is outside FR-331's safe JSON integer range.
-    #[error("request bounds must use safe FR-331 JSON integers")]
-    Bound,
     /// FR-331 requires at least one retained manifest and one routed item.
     #[error("a process request requires at least one manifest and one item")]
     EmptyRequest,
     /// A retained manifest snapshot could not be reconstructed as JSON.
     #[error("a retained FR-331 manifest descriptor is invalid")]
     ManifestDescriptor,
-    /// A FSL request index cannot be represented by the FR-331 integer contract.
-    #[error("a FSL request index cannot be represented by FR-331")]
-    FslRequestIndex,
-    /// A FSL node key could not be written as its structural wire object.
-    #[error("a FSL node identity cannot be written as an FR-331 node object")]
-    NodeIdentity,
-    /// A routed provider is absent from the retained registry manifest.
+    /// The routed provider is absent from the retained registry manifest.
     #[error("the routed backend is absent from the retained FR-331 manifest")]
     RoutedBackendMissing,
-    /// The routed backend is not in that request item's FSL candidate set.
-    #[error("the routed backend is absent from the FSL candidate outcome")]
-    RoutedBackendOutsideCandidates,
-    /// The request index does not identify exactly one FSL-produced item.
-    #[error("the routed request index has no matching FSL request item")]
-    MissingFslRequestItem,
-    /// The retained FSL sidecar contains the same request index more than once.
-    #[error("the routed request index has multiple matching FSL request items")]
-    AmbiguousFslRequestItem,
-    /// The generated backend identity cannot be represented as a FSL id.
-    #[error("the generated process backend identity is invalid")]
-    RoutedBackendIdentity,
+    /// FSL's request did not serialize.
+    #[error("FSL's provider request did not serialize: {0}")]
+    Request(String),
 }
 
 impl RequestStage {
-    /// Build the FR-331 request from the exact production process request,
-    /// joining each generated item to its retained FSL request item.
+    /// Frame FSL's request with the registry snapshot it was negotiated
+    /// against.
     pub fn from_process_request(
         request: &filament_driver::ProcessProviderRequest<'_>,
     ) -> Result<Self, RequestStageError> {
-        let items = request
-            .provider_request
-            .items()
-            .iter()
-            .map(|generated| {
-                let backend = BackendId::from_wire(&generated.backend.identity)
-                    .map_err(|_| RequestStageError::RoutedBackendIdentity)?;
-                let mut matching_items = request
-                    .fsl_items
-                    .iter()
-                    .filter(|item| item.index().get() == generated.request_index);
-                let item = matching_items
-                    .next()
-                    .ok_or(RequestStageError::MissingFslRequestItem)?;
-                if matching_items.next().is_some() {
-                    return Err(RequestStageError::AmbiguousFslRequestItem);
-                }
-                RequestItem::from_fsl(item, &backend)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Self::from_emitted(
-            request.emitted_package,
-            request.manifest,
-            request.deadline_ms,
-            items,
-        )
-    }
-
-    /// Build one process-provider request from the routed items, the exact
-    /// FSL request items used for CG negotiation, and the retained registry
-    /// manifest.
-    ///
-    /// This is the production bridge from the driver's E4/E5 result to the
-    /// FR-331 writer. Candidate wire values are projected from FSL outcomes;
-    /// they are not reconstructed from CG dispositions.
-    pub fn from_driven(
-        driven: &Driven,
-        backend: &fsl_foundation::BackendId,
-        manifest: &[ProviderManifest],
-        deadline_ms: u64,
-    ) -> Result<Self, RequestStageError> {
-        if !manifest
-            .iter()
-            .any(|entry| entry.identity == backend.as_str())
-        {
-            return Err(RequestStageError::RoutedBackendMissing);
-        }
-
-        let items = driven
-            .generation()
-            .items
-            .iter()
-            .filter(|generated| generated.backend.identity == backend.as_str())
-            .map(|generated| {
-                let item = driven
-                    .request_items
-                    .iter()
-                    .find(|item| item.index().get() == generated.request_index)
-                    .ok_or(RequestStageError::MissingFslRequestItem)?;
-                RequestItem::from_fsl(item, backend)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Self::from_emitted(driven.emitted(), manifest, deadline_ms, items)
-    }
-
-    /// Build the wire request from an emitted package and typed routed inputs.
-    ///
-    /// `manifest` comes from
-    /// retained decoded provider-manifest DTOs, not from FSL registry
-    /// descriptors, which intentionally omit optional FR-331 members.
-    pub fn from_emitted(
-        package: &EmittedPackage,
-        manifest: &[ProviderManifest],
-        deadline_ms: u64,
-        items: Vec<RequestItem>,
-    ) -> Result<Self, RequestStageError> {
-        if deadline_ms == 0 || deadline_ms > MAX_SAFE_INTEGER {
+        let deadline = request.request.deadline_ms();
+        if deadline == 0 || deadline > MAX_SAFE_INTEGER {
             return Err(RequestStageError::Deadline);
         }
-        if items
-            .iter()
-            .any(|item| item.request_index > MAX_SAFE_INTEGER)
-        {
-            return Err(RequestStageError::RequestIndex);
-        }
-        if items.iter().any(|item| !item_has_safe_bounds(item)) {
-            return Err(RequestStageError::Bound);
-        }
-        if manifest.is_empty() || items.is_empty() {
+        if request.manifest.is_empty() || request.request.items().is_empty() {
             return Err(RequestStageError::EmptyRequest);
+        }
+        let backend = request.request.backend().as_str();
+        if !request
+            .manifest
+            .iter()
+            .any(|entry| entry.identity == backend)
+        {
+            return Err(RequestStageError::RoutedBackendMissing);
         }
         Ok(Self {
             contract_version: CONTRACT_VERSION,
             capability_vocabulary: CAPABILITY_VOCABULARY,
-            manifest: manifest
+            manifest: request
+                .manifest
                 .iter()
                 .map(manifest_descriptor)
                 .collect::<Result<Vec<_>, _>>()?,
-            request: RequestBody {
-                package: encode_package_bytes(package.bytes()),
-                deadline_ms,
-                items,
-                dependencies: None,
-                provision: None,
-                memory: None,
-            },
+            request: serde_json::to_value(request.request)
+                .map_err(|error| RequestStageError::Request(error.to_string()))?,
         })
     }
-}
-
-fn encode_package_bytes(bytes: &[u8]) -> String {
-    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 fn manifest_descriptor(manifest: &ProviderManifest) -> Result<Value, RequestStageError> {
@@ -493,507 +407,9 @@ fn manifest_descriptor(manifest: &ProviderManifest) -> Result<Value, RequestStag
     Err(RequestStageError::ManifestDescriptor)
 }
 
-fn item_has_safe_bounds(item: &RequestItem) -> bool {
-    let safe = |bounds: &[ProofBound]| {
-        bounds.iter().all(|bound| match &bound.bound {
-            FiniteBound::Cardinality { maximum } | FiniteBound::Depth { maximum } => {
-                *maximum <= MAX_SAFE_INTEGER
-            }
-            FiniteBound::IntegerRange { .. } => true,
-        })
-    };
-    let extent_safe = match &item.extent {
-        Some(Extent::Bounded { bounds }) => safe(bounds),
-        Some(Extent::Unbounded { .. }) | None => true,
-    };
-    extent_safe
-        && item.temporal.as_ref().is_none_or(|temporal| {
-            safe(&temporal.subject.proof_bounds)
-                && temporal
-                    .subject
-                    .initial_states
-                    .iter()
-                    .all(|r| valid_hex_digest(&r.digest))
-                && temporal
-                    .subject
-                    .universes
-                    .iter()
-                    .all(|r| valid_hex_digest(&r.digest))
-        })
-}
-
-fn valid_hex_digest(digest: &str) -> bool {
-    digest.len() == 64
-        && digest
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-}
-
-/// FR-331 request members supplied for one provider call.
-#[derive(Clone, Debug, Serialize)]
-pub struct RequestBody {
-    /// RFC 8785 emitted package bytes encoded as unpadded base64url.
-    pub package: String,
-    /// Caller-supplied provider deadline in milliseconds.
-    pub deadline_ms: u64,
-    /// Routed items; their indices and candidates come from CG's routing seam.
-    pub items: Vec<RequestItem>,
-    /// Dependency package bytes supplied by the package-selection owner.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<Vec<Value>>,
-    /// Byte provisions supplied by the owning request/selection layer.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub provision: Option<Vec<Value>>,
-    /// Memory-model selections supplied by the owning request layer.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub memory: Option<Vec<Value>>,
-}
-
-/// One FR-331 request item, with its FSpec-owned claim and candidate values.
-#[derive(Clone, Debug, Serialize)]
-pub struct RequestItem {
-    /// Zero-based request position supplied by the driver/CG routing seam.
-    pub request_index: u64,
-    /// Requested FR-290 capability label, kept as received from the request.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    /// FSpec locus, supplied by the driver's original request item.
-    pub claim: RequestClaim,
-    /// Classification and proof bounds supplied by CG's routed item.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extent: Option<Extent>,
-    /// The selected backend identity from CG routing.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub backend: Option<String>,
-    /// Registry candidate set supplied by CG routing.
-    pub candidates: CandidateWire,
-    /// Backend options supplied by the caller's request.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub options: Option<Value>,
-    /// Reductions supplied by the caller's request.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reductions: Option<Value>,
-    /// Temporal request; proof bounds are carried below its subject.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub temporal: Option<TemporalRequest>,
-    /// Probabilistic selections supplied by the caller's request.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub probabilistic: Option<Value>,
-}
-
-/// FSpec-owned semantic claim carried by one request item.
-#[derive(Clone, Debug, Serialize)]
-pub struct RequestClaim {
-    /// Stable identity of the checked semantic node.
-    pub node: Value,
-    /// Source occurrence that distinguishes repeated uses of the same node.
-    pub occurrence: RequestClaimOccurrence,
-}
-
-/// FSL source occurrence identity in the FR-331 wire format.
-#[derive(Clone, Debug, Serialize)]
-pub struct RequestClaimOccurrence {
-    /// FSL occurrence role.
-    pub role: String,
-    /// Zero-based ordinal within that role.
-    pub ordinal: u64,
-}
-
-/// FSL's computed candidate outcome in the FR-331 request representation.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum CandidateWire {
-    /// A candidate set, ordered by FSL's bytewise backend ordering.
-    Set {
-        /// Candidate backend identities in FSL's computed order.
-        backends: Vec<String>,
-    },
-    /// The request named a backend absent from the admitted registry.
-    UnknownBackend {
-        /// The backend identity FSL found to be unknown.
-        backend: String,
-    },
-}
-
-impl RequestItem {
-    /// Project one FSL-produced item without re-deriving its claim,
-    /// classification, named backend, or candidate result.
-    fn from_fsl(
-        item: &RequirementItem,
-        routed_backend: &fsl_foundation::BackendId,
-    ) -> Result<Self, RequestStageError> {
-        let request_index =
-            u64::try_from(item.index().get()).map_err(|_| RequestStageError::FslRequestIndex)?;
-        let origin = item.occurrence().origin();
-        let claim = RequestClaim {
-            node: fsl_foundation::node_wire::node_key_to_json(item.node())
-                .map_err(|_| RequestStageError::NodeIdentity)?,
-            occurrence: RequestClaimOccurrence {
-                role: origin.role().as_str().to_owned(),
-                ordinal: origin.ordinal(),
-            },
-        };
-        let candidates = match item.candidates() {
-            CandidateOutcome::Candidates(set) => {
-                if !set
-                    .candidates()
-                    .iter()
-                    .any(|candidate| candidate.id() == routed_backend)
-                {
-                    return Err(RequestStageError::RoutedBackendOutsideCandidates);
-                }
-                CandidateWire::Set {
-                    backends: set
-                        .candidates()
-                        .iter()
-                        .map(|candidate| candidate.id().as_str().to_owned())
-                        .collect(),
-                }
-            }
-            CandidateOutcome::UnknownBackend(_) => {
-                return Err(RequestStageError::RoutedBackendOutsideCandidates);
-            }
-        };
-        let extent = match item.extent() {
-            fsl_route::request::ExtentClassification::Bounded => {
-                Some(Extent::Bounded { bounds: Vec::new() })
-            }
-            fsl_route::request::ExtentClassification::Unbounded {
-                finite_bound_available,
-            } => Some(Extent::Unbounded {
-                domains: item
-                    .unbounded()
-                    .iter()
-                    .map(|(key, kind)| {
-                        let domain = match key {
-                            fsl_foundation::bound::DomainKey::Node { node, path } => {
-                                DomainKey::Node {
-                                    node: node.to_string(),
-                                    path: path.to_vec(),
-                                }
-                            }
-                            fsl_foundation::bound::DomainKey::Population {
-                                member_type,
-                                ordinal,
-                            } => DomainKey::Population {
-                                member_type: member_type.to_string(),
-                                ordinal: *ordinal,
-                            },
-                        };
-                        ExtentDomain {
-                            domain,
-                            kind: domain_kind(*kind),
-                        }
-                    })
-                    .collect(),
-                finite_bound_available,
-            }),
-        };
-
-        Ok(Self {
-            request_index,
-            kind: Some(item.kind().to_wire().to_owned()),
-            claim,
-            extent,
-            backend: Some(routed_backend.as_str().to_owned()),
-            candidates,
-            options: None,
-            reductions: None,
-            temporal: None,
-            probabilistic: None,
-        })
-    }
-}
-
-fn domain_kind(kind: DomainKind) -> ExtentDomainKind {
-    match kind {
-        DomainKind::Collection => ExtentDomainKind::Collection,
-        DomainKind::Population => ExtentDomainKind::Population,
-        DomainKind::Integer => ExtentDomainKind::Integer,
-        DomainKind::Recursive => ExtentDomainKind::Recursive,
-        DomainKind::Quantity => ExtentDomainKind::Quantity,
-        DomainKind::Loop => ExtentDomainKind::Loop,
-        DomainKind::InfiniteTrace => ExtentDomainKind::InfiniteTrace,
-    }
-}
-
-/// FR-331 finite or unbounded extent. Proof bounds stay under `extent.bounds`.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "classification", rename_all = "kebab-case")]
-pub enum Extent {
-    /// Finite extent with the supplied substitutions.
-    Bounded {
-        /// Per-domain proof bounds supplied by CG's routed request.
-        bounds: Vec<ProofBound>,
-    },
-    /// Unbounded extent and its request-owned domain declarations.
-    Unbounded {
-        /// Domain descriptions supplied by CG's routed request.
-        domains: Vec<ExtentDomain>,
-        /// Whether a finite bound is available for these domains.
-        finite_bound_available: bool,
-    },
-}
-
-/// One FR-331 unbounded domain selector.
-#[derive(Clone, Debug, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExtentDomain {
-    /// The checked-package domain key.
-    pub domain: DomainKey,
-    /// The domain's closed classification.
-    pub kind: ExtentDomainKind,
-}
-
-/// FR-331 extent-domain kind vocabulary.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ExtentDomainKind {
-    /// Collection domain.
-    Collection,
-    /// Population domain.
-    Population,
-    /// Integer domain.
-    Integer,
-    /// Recursive domain.
-    Recursive,
-    /// Quantity domain.
-    Quantity,
-    /// Loop domain.
-    Loop,
-    /// Infinite trace domain.
-    InfiniteTrace,
-}
-
-/// One FR-331 ADR-014 domain substitution.
-#[derive(Clone, Debug, Serialize)]
-pub struct ProofBound {
-    /// The bounded FSpec domain key.
-    pub domain: DomainKey,
-    /// The finite bound supplied by the request.
-    pub bound: FiniteBound,
-}
-
-/// FSpec FR-331 domain key.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum DomainKey {
-    /// A node domain with a projection path.
-    Node { node: String, path: Vec<u32> },
-    /// Finite population domain.
-    Population { member_type: String, ordinal: u32 },
-}
-
-/// FSpec finite proof-bound shape.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum FiniteBound {
-    /// Cardinality bound.
-    Cardinality { maximum: u64 },
-    /// Integer range bound represented by canonical integer strings.
-    IntegerRange { lower: String, upper: String },
-    /// Structural depth bound.
-    Depth { maximum: u64 },
-}
-
-/// Temporal FR-331 request members.
-#[derive(Clone, Debug, Serialize)]
-pub struct TemporalRequest {
-    /// Temporal subject and its proof bounds.
-    pub subject: TemporalSubject,
-    /// Formula or deadlock-freedom request kind.
-    pub item_kind: TemporalItemKind,
-    /// Required fairness constraints (empty for deadlock-freedom).
-    pub fairness: Vec<Fairness>,
-}
-
-/// Temporal request subject with proof bounds at the FR-331 path.
-#[derive(Clone, Debug, Serialize)]
-pub struct TemporalSubject {
-    /// Initial state document references.
-    pub initial_states: Vec<ProvisionRef>,
-    /// Universe document references.
-    pub universes: Vec<ProvisionRef>,
-    /// Proof bounds at `temporal.subject.proof_bounds`.
-    pub proof_bounds: Vec<ProofBound>,
-}
-
-/// FSpec temporal item kind.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TemporalItemKind {
-    Formula,
-    DeadlockFreedom,
-}
-
-/// FSpec temporal fairness constraint.
-#[derive(Clone, Debug, Serialize)]
-pub struct Fairness {
-    /// Weak or strong fairness.
-    pub kind: FairnessKind,
-    /// The operation subject to fairness.
-    pub operation: String,
-    /// Whole-operation or per-operation granularity.
-    pub granularity: FairnessGranularity,
-}
-
-/// FSpec fairness kind.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum FairnessKind {
-    Weak,
-    Strong,
-}
-
-/// FSpec fairness granularity.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum FairnessGranularity {
-    Whole,
-    Each,
-}
-
-/// FR-331 byte-provision reference.
-#[derive(Clone, Debug, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProvisionRef {
-    /// FR-364's supported digest domain.
-    pub digest_domain: ProvisionDigestDomain,
-    /// Lowercase digest of the canonical document.
-    pub digest: String,
-}
-
-/// FSpec provision digest-domain vocabulary.
-#[derive(Clone, Debug, Serialize)]
-pub enum ProvisionDigestDomain {
-    /// RFC 8785 SHA-256 digest.
-    #[serde(rename = "sha256-jcs")]
-    Sha256Jcs,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use filament_contract_codegen as cg;
-    use filament_driver::{
-        build_linked_providers, build_registry, drive, CompileInput, FslCg, GenerationInput,
-    };
-    use filament_driver::{DriverRefusal, Upstream};
-    use filament_exact::Cancel;
-    use fsl_foundation::SourceIdentity;
-    use fsl_replay::spine::SpineLimits;
-    use std::cell::Cell;
-    use std::collections::BTreeMap;
-
-    #[derive(Default)]
-    struct RouteRecorder {
-        calls: Cell<usize>,
-        unsupported_at: Vec<usize>,
-        supported_at: Option<(usize, String)>,
-    }
-
-    impl Upstream for RouteRecorder {
-        fn has_abstraction_relation(&self, package: &fsl_package::CheckedPackage) -> bool {
-            FslCg.has_abstraction_relation(package)
-        }
-        fn export_bindings(
-            &self,
-            package: &fsl_package::CheckedPackage,
-            items: &[fsl_foundation::source::provenance::OccurrenceKey],
-        ) -> Result<
-            Vec<Result<fsl_package::BoundItem, fsl_package::ExportRefusal>>,
-            fsl_package::ExportRefusal,
-        > {
-            FslCg.export_bindings(package, items)
-        }
-        fn compile(
-            &self,
-            source: fsl_foundation::SourceIdentity,
-            path: &str,
-            bytes: &[u8],
-            package_name: &str,
-            packages: &fsl_semantics::model::intake::PackageInput,
-            limits: SpineLimits,
-            cancel: &Cancel,
-        ) -> Result<
-            (
-                fsl_replay::spine::CheckedUnit,
-                fsl_replay::spine::AdmittedModels,
-                fsl_replay::spine::EmittedUnit,
-            ),
-            DriverRefusal,
-        > {
-            FslCg.compile(source, path, bytes, package_name, packages, limits, cancel)
-        }
-
-        fn read_package(
-            &self,
-            emitted: &fsl_replay::spine::EmittedUnit,
-            limits: filament_contract_model::CheckedPackageReadLimits,
-            evidence: &filament_contract_model::CheckedPackageEvidence,
-        ) -> filament_contract_model::CheckedPackageDispatchResult {
-            FslCg.read_package(emitted, limits, evidence)
-        }
-
-        fn backend_kind(&self, descriptor: &cg::BackendDescriptor) -> Option<cg::BackendKind> {
-            FslCg.backend_kind(descriptor)
-        }
-
-        fn negotiate(
-            &self,
-            source: &filament_contract_model::CheckedPackageV2,
-            package: &filament_contract_model::ContractPackageV1,
-            positions: &[cg::ContractRequestPosition],
-            envelope: &cg::BackendProviderEnvelope,
-        ) -> Result<Vec<cg::ContractItemSettlement>, Box<cg::ContractNegotiationError>> {
-            let mut settlements = FslCg.negotiate(source, package, positions, envelope)?;
-            for index in &self.unsupported_at {
-                if let Some(settlement) = settlements.get_mut(*index) {
-                    let backend = settlement.backend.as_mut().expect("a lowered item settles");
-                    let kind = backend
-                        .kind
-                        .expect("a value-validity item settles with a kind");
-                    backend.disposition = cg::Disposition::Unsupported {
-                        cause: cg::Cause::UnsupportedRequestedCapability {
-                            kind,
-                            backend: None,
-                        },
-                    };
-                }
-            }
-            if let Some((index, backend)) = &self.supported_at {
-                if let Some(settlement) = settlements.get_mut(*index) {
-                    settlement
-                        .backend
-                        .as_mut()
-                        .expect("a lowered item settles")
-                        .disposition = cg::Disposition::Supported {
-                        backend: backend.clone(),
-                    };
-                }
-            }
-            Ok(settlements)
-        }
-
-        fn route<'d>(
-            &self,
-            dispositions: &'d [fsl_route::routing::Disposition],
-        ) -> Vec<Option<&'d fsl_route::Candidate>> {
-            self.calls.set(self.calls.get() + 1);
-            FslCg.route(dispositions)
-        }
-
-        fn generate(
-            &self,
-            source: &filament_contract_model::CheckedPackageV2,
-            package: &filament_contract_model::ContractPackageV1,
-            positions: &[cg::ContractRequestPosition],
-            routed: &[cg::RoutedGenerationItem],
-            contexts: &cg::GenerationContexts<'_>,
-        ) -> Result<cg::RoutedGeneration, cg::RoutedGenerationError> {
-            FslCg.generate(source, package, positions, routed, contexts)
-        }
-    }
 
     fn hello(kind: Value, mode: Value) -> ManifestStage {
         ManifestStage {
@@ -1009,19 +425,61 @@ mod tests {
         }
     }
 
-    fn process_admission(identity: &str) -> AdmittedManifest {
+    fn process_manifest(identity: &str) -> ProviderManifest {
         ManifestStage {
             contract_version: CONTRACT_VERSION.to_owned(),
             capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             manifest: vec![serde_json::json!({
                 "backend": identity,
-                "advertises": [{ "kind": "value-validity", "mode": "bounded" }],
-                "domains": ["integer"]
+                "advertises": [{ "kind": "value-validity", "mode": "unbounded" }],
+                "domains": ["integer"],
+                "tool": {"name": "fsl-test-capture", "version": "1"}
             })
             .into()],
         }
         .admit_process(4096)
         .expect("FSL admits the process hello")
+        .manifest()
+        .clone()
+    }
+
+    /// Trace: FR-006-AC-1, FR-006-AC-5, FR-006-AC-8, FR-006-AC-9; the request
+    /// stage carries the retained manifest snapshot and FSL's request member
+    /// unchanged, and refuses a snapshot without the routed backend.
+    #[test]
+    fn request_stage_forwards_fsl_request_with_the_retained_snapshot() {
+        use crate::test_support::{with_provider_request, CAPTURE_BACKEND};
+        let (framed, expected, missing) = with_provider_request(|request| {
+            let manifest = [process_manifest(CAPTURE_BACKEND)];
+            let cancel = filament_exact::Cancel::new();
+            let framed =
+                RequestStage::from_process_request(&filament_driver::ProcessProviderRequest {
+                    request,
+                    manifest: &manifest,
+                    cancel: &cancel,
+                });
+            let other = [process_manifest("agent-ix/provider/other")];
+            let missing =
+                RequestStage::from_process_request(&filament_driver::ProcessProviderRequest {
+                    request,
+                    manifest: &other,
+                    cancel: &cancel,
+                });
+            (
+                framed,
+                serde_json::to_value(request).expect("FSL's request serializes"),
+                missing,
+            )
+        });
+        let framed = serde_json::to_value(framed.expect("the request frames"))
+            .expect("the stage serializes");
+        assert_eq!(framed["request"], expected);
+        assert_eq!(framed["request"]["deadline_ms"], 600_000);
+        assert!(framed["request"].get("domains").is_none());
+        assert!(framed["request"].get("limits").is_none());
+        assert_eq!(framed["manifest"][0]["backend"], CAPTURE_BACKEND);
+        assert_eq!(framed["manifest"][0]["tool"]["name"], "fsl-test-capture");
+        assert_eq!(missing.err(), Some(RequestStageError::RoutedBackendMissing));
     }
 
     /// Trace: FR-005-AC-15.
@@ -1184,445 +642,6 @@ mod tests {
         assert!(matches!(
             refusal.cause(),
             fsl_route::RegistrationCause::InvalidDomains(_)
-        ));
-    }
-
-    /// Trace: FR-006-AC-6.
-    #[test]
-    fn package_encoding_uses_unpadded_base64url_for_special_bytes() {
-        let bytes = [0xfb, 0xff];
-        assert_ne!(bytes.len() % 3, 0);
-        assert_eq!(
-            base64::engine::general_purpose::STANDARD_NO_PAD.encode(bytes),
-            "+/8"
-        );
-        assert_eq!(encode_package_bytes(&bytes), "-_8");
-    }
-
-    /// Trace: FR-006-AC-8, FR-006-AC-13.
-    #[test]
-    fn request_wire_keeps_package_bounds_and_temporal_proof_bounds_at_contract_paths() {
-        let item = RequestItem {
-            request_index: 3,
-            kind: Some("operation-contract".to_owned()),
-            claim: RequestClaim {
-                node: serde_json::json!({"package": "test", "path": ["node"], "ordinal": 0}),
-                occurrence: RequestClaimOccurrence {
-                    role: "test".to_owned(),
-                    ordinal: 0,
-                },
-            },
-            extent: Some(Extent::Bounded {
-                bounds: vec![ProofBound {
-                    domain: DomainKey::Population {
-                        member_type: "member-node".to_owned(),
-                        ordinal: 0,
-                    },
-                    bound: FiniteBound::Cardinality { maximum: 4 },
-                }],
-            }),
-            backend: Some("agent-ix/provider/test".to_owned()),
-            candidates: CandidateWire::Set {
-                backends: vec!["agent-ix/provider/test".to_owned()],
-            },
-            options: None,
-            reductions: None,
-            temporal: Some(TemporalRequest {
-                subject: TemporalSubject {
-                    initial_states: Vec::new(),
-                    universes: Vec::new(),
-                    proof_bounds: vec![ProofBound {
-                        domain: DomainKey::Population {
-                            member_type: "member-node".to_owned(),
-                            ordinal: 0,
-                        },
-                        bound: FiniteBound::Cardinality { maximum: 4 },
-                    }],
-                },
-                item_kind: TemporalItemKind::Formula,
-                fairness: Vec::new(),
-            }),
-            probabilistic: None,
-        };
-        let package = crate::test_support::emitted_package_with_urlsafe_bytes();
-        let retained_value = serde_json::json!({
-            "backend":"agent-ix/provider/test",
-            "advertises":[{"kind":"operation-contract", "mode":"bounded"}],
-            "domains":["integer"],
-            "bounds":{"max_states":8}
-        });
-        let retained_wire = Arc::<[u8]>::from(
-            quire_canonical::to_vec(&retained_value, quire_canonical::Limits::new(4096))
-                .expect("manifest canonicalizes"),
-        );
-        let process_manifest = ProviderManifest {
-            identity: "agent-ix/provider/test".to_owned(),
-            advertises: vec![(
-                Some("operation-contract".to_owned()),
-                Some("bounded".to_owned()),
-            )],
-            domains: Some(vec!["integer".to_owned()]),
-            bounds: Some(BTreeMap::from([("max_states".to_owned(), 8)])),
-            wire: Some(Arc::clone(&retained_wire)),
-        };
-        let linked_provider = filament_driver::KaniProvider::new(ProviderManifest {
-            identity: "agent-ix/provider/linked".to_owned(),
-            advertises: vec![(
-                Some("operation-contract".to_owned()),
-                Some("bounded".to_owned()),
-            )],
-            domains: Some(vec!["recursive".to_owned()]),
-            bounds: None,
-            wire: None,
-        });
-        let linked_manifests = filament_driver::build_linked_providers(&[&linked_provider])
-            .expect("linked provider is admitted by the production registry")
-            .manifest_snapshot();
-        let mut manifests = vec![process_manifest];
-        manifests.extend(linked_manifests);
-        let request_stage =
-            RequestStage::from_emitted(&package, &manifests, 100, vec![item.clone()])
-                .expect("the real emitted identity and safe request values serialize");
-        let request = serde_json::to_value(request_stage).expect("typed request serializes");
-
-        assert_eq!(
-            request["request"]["package"],
-            URL_SAFE_NO_PAD.encode(package.bytes())
-        );
-        assert!(request["request"].get("package_id").is_none());
-        assert_eq!(request["request"]["deadline_ms"], 100);
-        assert_eq!(request["manifest"][0], retained_value);
-        assert_eq!(
-            request["manifest"][1]["backend"],
-            "agent-ix/provider/linked"
-        );
-        assert_eq!(
-            request["manifest"][1]["domains"],
-            serde_json::json!(["recursive"])
-        );
-        assert_eq!(
-            request["manifest"][1]["advertises"][0]["kind"],
-            "operation-contract"
-        );
-        assert!(request["manifest"][1].get("options").is_none());
-
-        assert_eq!(
-            request["request"]["items"][0]["extent"]["bounds"][0]["bound"]["maximum"],
-            4
-        );
-        assert_eq!(
-            request["request"]["items"][0]["temporal"]["subject"]["proof_bounds"][0]["bound"]
-                ["maximum"],
-            4
-        );
-        assert!(matches!(
-            RequestStage::from_emitted(&package, &manifests, 100, Vec::new()),
-            Err(RequestStageError::EmptyRequest)
-        ));
-        let mut missing_wire = manifests[1].clone();
-        missing_wire.wire = None;
-        assert!(matches!(
-            RequestStage::from_emitted(&package, &[missing_wire], 100, vec![item.clone()]),
-            Err(RequestStageError::ManifestDescriptor)
-        ));
-        assert!(matches!(
-            RequestStage::from_emitted(&package, &[], 100, vec![item.clone()]),
-            Err(RequestStageError::EmptyRequest)
-        ));
-        assert!(RequestStage::from_emitted(&package, &[], 0, Vec::new()).is_err());
-        assert!(
-            RequestStage::from_emitted(&package, &[], MAX_SAFE_INTEGER + 1, Vec::new()).is_err()
-        );
-    }
-
-    /// Trace: FR-005-AC-16.
-    #[test]
-    fn request_stage_refuses_missing_manifest_wire_without_reconstruction() {
-        let package = crate::test_support::emitted_package();
-        let manifest = ProviderManifest {
-            identity: "agent-ix/provider/missing-wire".to_owned(),
-            advertises: vec![(
-                Some("operation-contract".to_owned()),
-                Some("bounded".to_owned()),
-            )],
-            domains: None,
-            bounds: None,
-            wire: None,
-        };
-        let item = RequestItem {
-            request_index: 0,
-            kind: None,
-            claim: RequestClaim {
-                node: serde_json::json!({"package": "test", "path": ["node"], "ordinal": 0}),
-                occurrence: RequestClaimOccurrence {
-                    role: "test".to_owned(),
-                    ordinal: 0,
-                },
-            },
-            extent: None,
-            backend: None,
-            candidates: CandidateWire::Set {
-                backends: Vec::new(),
-            },
-            options: None,
-            reductions: None,
-            temporal: None,
-            probabilistic: None,
-        };
-
-        assert!(matches!(
-            RequestStage::from_emitted(&package, &[manifest], 100, vec![item]),
-            Err(RequestStageError::ManifestDescriptor)
-        ));
-    }
-
-    /// Trace: FR-006-AC-5, FR-006-AC-6, FR-006-AC-8, FR-006-AC-10, FR-006-AC-11.
-    #[test]
-    fn driven_request_serializes_the_routed_fsl_candidate_and_emitted_package() {
-        let source_text = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\nfunction negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let packages = BTreeMap::new();
-        let mut registry = build_linked_providers(&[]).expect("the empty linked registry builds");
-        let admitted = [
-            process_admission("agent-ix/plugin/alpha"),
-            process_admission("agent-ix/plugin/zeta"),
-        ];
-        registry
-            .register_admitted(
-                admitted
-                    .iter()
-                    .map(|admitted| (admitted.descriptor().clone(), admitted.manifest().clone())),
-            )
-            .expect("both process descriptors join the FSL registry");
-        let manifests = registry.manifest_snapshot();
-        let source = SourceIdentity::new("agent-ix", "ir813");
-        let input = CompileInput {
-            source,
-            package_name: "ir813",
-            path: "ir813.native",
-            bytes: source_text.as_bytes(),
-            packages: &packages,
-            limits: SpineLimits::default(),
-            cancel: Cancel::new(),
-        };
-        let upstream = RouteRecorder {
-            // Keep the real FSL candidate data, but make the first two
-            // settlement unsupported so the writer is exercised at a nonzero
-            // index. This is a test seam, not production negotiation.
-            unsupported_at: vec![0],
-            supported_at: Some((1, "agent-ix/plugin/alpha".to_owned())),
-            ..RouteRecorder::default()
-        };
-        let driven = drive(
-            &upstream,
-            input,
-            registry.registry(),
-            None,
-            GenerationInput::default(),
-        )
-        .expect("FSL emits two items and the test seam routes the supported one");
-
-        assert_eq!(driven.request_items.len(), 2);
-        assert_eq!(driven.settlements.len(), 2);
-        let request_index = 1;
-        assert_eq!(driven.request_items[0].index().get(), 0);
-        assert_eq!(driven.request_items[1].index().get(), request_index);
-        assert!(serde_json::to_value(
-            &driven.settlements[0]
-                .backend
-                .as_ref()
-                .expect("a lowered item settles")
-                .disposition
-        )
-        .is_ok_and(|disposition| disposition["disposition"] == "unsupported"));
-        let unsupported = driven
-            .settlements
-            .iter()
-            .find(|settlement| settlement.request_index == 0)
-            .expect("the first request item is retained");
-        assert!(serde_json::to_value(
-            &unsupported
-                .backend
-                .as_ref()
-                .expect("a lowered item settles")
-                .disposition
-        )
-        .is_ok_and(|disposition| disposition["disposition"] == "unsupported"));
-        let settlement = driven
-            .settlements
-            .iter()
-            .find(|settlement| settlement.request_index == request_index)
-            .expect("the supported settlement retains request index 1");
-        assert_eq!(settlement.request_index, request_index);
-        let fsl_item = driven
-            .request_items
-            .iter()
-            .find(|item| item.index().get() == request_index)
-            .expect("the routed FSL item is retained");
-        assert_eq!(
-            settlement
-                .backend
-                .as_ref()
-                .expect("a lowered item settles")
-                .kind
-                .map(|kind| kind.label()),
-            Some(fsl_item.kind().to_wire())
-        );
-        let disposition = serde_json::to_value(
-            &settlement
-                .backend
-                .as_ref()
-                .expect("a lowered item settles")
-                .disposition,
-        )
-        .expect("the typed settlement disposition serializes");
-        assert_eq!(disposition["disposition"], "supported", "{disposition:?}");
-        assert_eq!(driven.routed.len(), 1);
-        assert_eq!(driven.routed[0].request_index, request_index);
-        assert_eq!(driven.routed[0].backend().as_str(), "agent-ix/plugin/alpha");
-        assert_eq!(driven.generation().items.len(), 1);
-        assert_eq!(driven.generation().items[0].request_index, request_index);
-        assert_eq!(upstream.calls.get(), 1, "the one supported item is routed");
-
-        let backend = driven.routed[0].backend();
-        let stage = RequestStage::from_driven(&driven, backend, &manifests, 250)
-            .expect("the production writer selects this provider's routed FSL item");
-        let wire = serde_json::to_value(stage).expect("FR-331 stage serializes");
-        assert_eq!(
-            URL_SAFE_NO_PAD
-                .decode(wire["request"]["package"].as_str().expect("package string"))
-                .expect("package uses base64url"),
-            driven.emitted().bytes()
-        );
-        assert!(wire["request"].get("package_id").is_none());
-        assert_eq!(wire["request"]["items"].as_array().unwrap().len(), 1);
-        assert_eq!(wire["request"]["items"][0]["request_index"], request_index);
-        assert_eq!(
-            wire["request"]["items"][0]["backend"],
-            driven.generation().items[0].backend.identity
-        );
-        assert_eq!(
-            wire["request"]["items"][0]["kind"],
-            fsl_item.kind().to_wire()
-        );
-        assert_eq!(
-            wire["request"]["items"][0]["claim"]["node"],
-            fsl_foundation::node_wire::node_key_to_json(fsl_item.node()).expect("the node encodes")
-        );
-        assert_eq!(
-            wire["request"]["items"][0]["claim"]["occurrence"]["role"],
-            fsl_item.occurrence().origin().role().as_str()
-        );
-        assert_eq!(
-            wire["request"]["items"][0]["claim"]["occurrence"]["ordinal"],
-            fsl_item.occurrence().origin().ordinal()
-        );
-        assert_eq!(
-            wire["request"]["items"][0]["kind"],
-            fsl_item.kind().to_wire()
-        );
-        match fsl_item.candidates() {
-            CandidateOutcome::Candidates(set) => {
-                let candidate_ids = set
-                    .candidates()
-                    .iter()
-                    .map(|candidate| candidate.id().as_str())
-                    .collect::<Vec<_>>();
-                assert_eq!(
-                    wire["request"]["items"][0]["candidates"]["backends"],
-                    serde_json::json!(candidate_ids)
-                );
-                assert_eq!(
-                    candidate_ids,
-                    ["agent-ix/plugin/alpha", "agent-ix/plugin/zeta"]
-                );
-            }
-            CandidateOutcome::UnknownBackend(_) => {
-                panic!("a routed item must originate in a FSL candidate set")
-            }
-        }
-        assert_eq!(wire["request"]["items"][0]["request_index"], request_index);
-        assert_eq!(
-            wire["request"]["deadline_ms"], 250,
-            "the supplied deadline is serialized unchanged"
-        );
-        let retained: Value = serde_json::from_slice(
-            manifests[0]
-                .wire
-                .as_deref()
-                .expect("production registry retains manifest wire"),
-        )
-        .expect("retained manifest is JSON");
-        assert_eq!(wire["manifest"][0], retained);
-    }
-
-    /// Trace: IR-813-AC-5.
-    #[test]
-    fn unsupported_fsl_candidate_does_not_create_a_process_request() {
-        let source_text = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\nfunction negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let packages = BTreeMap::new();
-        let registry = build_registry(&[ProviderManifest {
-            identity: "kani".to_owned(),
-            advertises: vec![(
-                Some("operation-contract".to_owned()),
-                Some("bounded".to_owned()),
-            )],
-            domains: Some(vec!["integer".to_owned()]),
-            bounds: None,
-            wire: None,
-        }])
-        .expect("the non-matching provider is admitted");
-        let upstream = RouteRecorder::default();
-        let driven = drive(
-            &upstream,
-            CompileInput {
-                source: SourceIdentity::new("agent-ix", "ir813"),
-                package_name: "ir813",
-                path: "ir813.native",
-                bytes: source_text.as_bytes(),
-                packages: &packages,
-                limits: SpineLimits::default(),
-                cancel: Cancel::new(),
-            },
-            &registry,
-            None,
-            GenerationInput::default(),
-        )
-        .expect("FSL and CG return an unsupported disposition for the empty candidate set");
-
-        assert!(matches!(
-            driven.request_items[0].candidates(),
-            CandidateOutcome::Candidates(set) if set.candidates().is_empty()
-        ));
-        assert!(driven.settlements.iter().all(|settlement| {
-            serde_json::to_value(
-                &settlement
-                    .backend
-                    .as_ref()
-                    .expect("a lowered item settles")
-                    .disposition,
-            )
-            .is_ok_and(|disposition| disposition["disposition"] == "unsupported")
-        }));
-        assert_eq!(
-            upstream.calls.get(),
-            0,
-            "unsupported items skip the route seam"
-        );
-        assert!(driven.routed.is_empty());
-        assert!(matches!(
-            RequestStage::from_driven(
-                &driven,
-                &fsl_foundation::BackendId::new("kani"),
-                registry.manifests(),
-                250,
-            ),
-            Err(RequestStageError::EmptyRequest)
         ));
     }
 }

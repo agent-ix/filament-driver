@@ -13,6 +13,14 @@ publish = false
 name = "fsl"
 path = "src/main.rs"
 
+# The process provider the `fsl analyze --provider-config` tests start
+# (FSL FR-635). It is a test fixture, not part of the `fsl` distribution.
+[[bin]]
+name = "fsl-test-provider"
+path = "tests/support/test_provider.rs"
+test = false
+doc = false
+
 [features]
 # Opt-in TC-018 seam; it is absent from default features and only active in
 # builds with debug assertions. Other builds reject explicit feature selection.
@@ -21,6 +29,7 @@ tc018-test-adapter = []
 [dependencies]
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", branch = "main" }
 base64 = "=0.23.1"
+fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }

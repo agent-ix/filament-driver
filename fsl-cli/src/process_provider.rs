@@ -9,14 +9,12 @@ use std::sync::Arc;
 
 use filament_driver::{
     ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession,
-    ProviderItemResult, ProviderResults, RoutedItemOutput,
+    ProviderItemResult, ProviderResults,
 };
 use filament_exact::Cancel;
 use filament_plugin_host::{
     FrameLimits, PluginError, PluginSession, RunLimits, SessionFinished, SessionStart,
 };
-use fsl_replay::CallRequirements;
-use fsl_route::request::RequirementItem;
 use fsl_route::{BackendDescriptor, ProviderOrigin};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -52,80 +50,6 @@ pub(crate) enum Fr331DispositionKind {
 pub(crate) struct ProcessProviderOutcome {
     pub(crate) item: ProcessProviderItemOutcome,
     pub(crate) response: Arc<serde_json::Value>,
-}
-
-/// The call-selected FSL items, verified against the exact package and driver
-/// request that produced the routed generation.
-pub(crate) struct CallItemProjection {
-    pub(crate) package_name: String,
-    pub(crate) items: Vec<RequirementItem>,
-    pub(crate) routed: Vec<RoutedItemOutput>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum CallItemProjectionError {
-    #[error("FSL call requirements and driver generation came from different packages")]
-    PackageMismatch,
-    #[error("a call requirement request index does not identify exactly one driver FSL item")]
-    RequestIndex,
-    #[error("a call requirement occurrence differs from the driver FSL item at its index")]
-    Occurrence,
-    #[error("FSL returned a duplicate call requirement request index")]
-    DuplicateIndex,
-}
-
-/// Join FSL's call-aware members to the exact retained driver request items.
-/// The package name is checked before using request indices, then every selected
-/// occurrence must match; package-wide items outside the selected call are
-/// excluded from the returned sidecar.
-pub(crate) fn project_call_items(
-    package_name: &str,
-    requirements: &CallRequirements,
-    driven: &filament_driver::Driven,
-) -> Result<CallItemProjection, CallItemProjectionError> {
-    if package_name != driven.emitted().name() {
-        return Err(CallItemProjectionError::PackageMismatch);
-    }
-
-    let mut indices = std::collections::BTreeSet::new();
-    let mut items = Vec::with_capacity(requirements.members().len());
-    for member in requirements.members() {
-        let index = member.request_index().get();
-        if !indices.insert(index) {
-            return Err(CallItemProjectionError::DuplicateIndex);
-        }
-        let mut matches = driven
-            .request_items
-            .iter()
-            .filter(|item| item.index().get() == index);
-        let item = matches
-            .next()
-            .ok_or(CallItemProjectionError::RequestIndex)?;
-        if matches.next().is_some() {
-            return Err(CallItemProjectionError::RequestIndex);
-        }
-        if item.occurrence() != member.occurrence() {
-            return Err(CallItemProjectionError::Occurrence);
-        }
-        items.push(item.clone());
-    }
-    items.sort_by_key(|item| item.index().get());
-    let selected_indices = indices;
-    let mut routed_indices = std::collections::BTreeSet::new();
-    let mut routed = Vec::new();
-    for generated in &driven.generation().items {
-        if selected_indices.contains(&generated.request_index) {
-            if !routed_indices.insert(generated.request_index) {
-                return Err(CallItemProjectionError::DuplicateIndex);
-            }
-            routed.push(generated.clone());
-        }
-    }
-    Ok(CallItemProjection {
-        package_name: package_name.to_owned(),
-        items,
-        routed,
-    })
 }
 
 /// Build one request body from retained driver and FSL values.
@@ -173,19 +97,15 @@ pub(crate) fn convert_fr331_response(
     retain_fr331_response(response)
 }
 
-/// An FR-331 item state kept distinct until the FSL mapping API is available.
+/// One FR-331 item state: a result, with the capability kind it answers,
+/// or a disposition, which settles no claim.
 #[derive(Clone, Debug)]
 pub(crate) enum ProcessProviderItemOutcome {
     Result {
         capability_kind: String,
         kind: Fr331ResultKind,
-        item: serde_json::Value,
     },
-    Disposition {
-        capability_kind: String,
-        kind: Fr331DispositionKind,
-        item: serde_json::Value,
-    },
+    Disposition,
 }
 
 #[derive(Debug, Deserialize)]
@@ -198,8 +118,10 @@ struct Fr331ResponseItem {
     result: Option<Fr331ResultKind>,
     #[serde(default)]
     disposition: Option<Fr331DispositionKind>,
+    /// The item's other FR-331 members, accepted and left in the retained
+    /// response.
     #[serde(flatten)]
-    payload: serde_json::Map<String, serde_json::Value>,
+    _members: serde_json::Map<String, serde_json::Value>,
 }
 
 fn retain_fr331_response(
@@ -231,23 +153,12 @@ fn retain_fr331_response(
             }
             let request_index = usize::try_from(parsed.request_index)
                 .map_err(|_| "FR-331 request index does not fit this platform".to_owned())?;
-            let wire = serde_json::Value::Object(parsed.payload);
-            let outcome = if is_result {
-                ProcessProviderItemOutcome::Result {
+            let outcome = match parsed.result {
+                Some(kind) => ProcessProviderItemOutcome::Result {
                     capability_kind: parsed.kind,
-                    kind: parsed
-                        .result
-                        .ok_or_else(|| "missing result value".to_owned())?,
-                    item: wire,
-                }
-            } else {
-                ProcessProviderItemOutcome::Disposition {
-                    capability_kind: parsed.kind,
-                    kind: parsed
-                        .disposition
-                        .ok_or_else(|| "missing disposition value".to_owned())?,
-                    item: wire,
-                }
+                    kind,
+                },
+                None => ProcessProviderItemOutcome::Disposition,
             };
             items.push(ProviderItemResult {
                 request_index,
@@ -478,146 +389,16 @@ mod tests {
     use std::time::Duration;
 
     use filament_driver::{
-        build_linked_providers, drive, CompileInput, FslCg, GenerationInput, ProcessProvider,
-        ProcessProviderLimits, ProcessProviderRequest, ProcessProviderSession, ProviderItemResult,
-        ProviderManifest, ProviderRequest, ProviderResults,
+        build_linked_providers, ProcessProvider, ProcessProviderLimits, ProcessProviderRequest,
+        ProcessProviderSession, ProviderItemResult, ProviderManifest, ProviderResults,
     };
-    use filament_exact::{Cancel, Integer, Value};
+    use filament_exact::Cancel;
     use fsl_foundation::BackendId;
-    use fsl_foundation::SourceIdentity;
-    use fsl_replay::spine::{default_accounting, Call, CallArgument, DependencyInput, SpineLimits};
     use fsl_route::{descriptor_from_manifest, BackendDescriptor, Candidate, ProviderOrigin};
     use serde::Deserialize;
 
-    use super::{project_call_items, HostProcessProvider};
-
-    /// Trace: FR-006-AC-1, FR-006-AC-5..FR-006-AC-8, FR-006-AC-13; pair the selected FSL call
-    /// with the driver generation by package, request index and occurrence before writing FR-331.
-    #[test]
-    fn configured_call_projection_sends_only_its_correlated_routed_items() {
-        use crate::backend_provider::ManifestStage;
-        let bytes = format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile v = \"{}\";\n\
-             function eq using v(x: Int[0, 9], y: Int[0, 9]): Boolean pure {{ x = y }}\n\
-             function negate using v(z: Int[0, 9]): Int[-9, 0] pure {{ -z }}\n",
-            "filament.value.complete/v1"
-        );
-        let source = SourceIdentity::new("agent-ix", "configured-call");
-        let path = "configured-call.native";
-        let packages = std::collections::BTreeMap::new();
-        let dependencies = DependencyInput::default();
-        let limits = SpineLimits::default();
-        let cancel = Cancel::new();
-        let call = Call {
-            function: "eq".to_owned(),
-            arguments: vec![
-                CallArgument {
-                    parameter: "x".to_owned(),
-                    value: Value::Integer(Integer::from(2_i64)),
-                },
-                CallArgument {
-                    parameter: "y".to_owned(),
-                    value: Value::Integer(Integer::from(3_i64)),
-                },
-            ],
-            accounting: default_accounting(1_000_000),
-            supplied: Default::default(),
-            backend: Default::default(),
-            clocks: Default::default(),
-            wire_arguments: Vec::new(),
-            snapshot: None,
-        };
-        let objects = fsl_semantics::model::object_environment::ObjectEnvironment::default();
-        let call_run = fsl_replay::run_with_requirements(&fsl_replay::RequirementsRun {
-            source: source.clone(),
-            package_name: "configured-call".to_owned(),
-            path,
-            bytes: bytes.as_bytes(),
-            packages: &packages,
-            dependencies: &dependencies,
-            limits,
-            call: &call,
-            objects: &objects,
-            cancel: &cancel,
-        })
-        .expect("the selected call completes with its FSL requirement members");
-
-        let hello = ManifestStage {
-            contract_version: "filament.backend-provider/v1".to_owned(),
-            capability_vocabulary: Some("filament.capability-kind/v1".to_owned()),
-            manifest: vec![Arc::new(serde_json::json!({
-                "backend": "agent-ix/provider/fr331-fixture",
-                "advertises": [{ "kind": "value-validity", "mode": "bounded" }],
-                "domains": ["integer"]
-            }))],
-        };
-        let admitted = hello
-            .admit_process(4096)
-            .expect("FSL admits the configured process manifest");
-        let mut linked = build_linked_providers(&[]).expect("one registry is built");
-        linked
-            .register_admitted([(admitted.descriptor().clone(), admitted.manifest().clone())])
-            .expect("the already admitted descriptor is registered once");
-        let driven = drive(
-            &FslCg,
-            CompileInput {
-                source,
-                package_name: "configured-call",
-                path,
-                bytes: bytes.as_bytes(),
-                packages: &packages,
-                limits,
-                cancel: cancel.clone(),
-            },
-            linked.registry(),
-            None,
-            GenerationInput::default(),
-        )
-        .expect("the same source is negotiated and generated once by the driver");
-
-        assert_eq!(call_run.package_name().as_str(), driven.emitted().name());
-        assert_eq!(call_run.requirements().members().len(), 1);
-        assert_eq!(
-            driven.request_items.len(),
-            2,
-            "the package has two functions"
-        );
-        let projection = project_call_items(
-            call_run.package_name().as_str(),
-            call_run.requirements(),
-            &driven,
-        )
-        .expect("same-package call items join the retained driver request");
-        assert_eq!(projection.items.len(), 1);
-        assert_eq!(projection.routed.len(), 1);
-        let member = &call_run.requirements().members()[0];
-        assert_eq!(projection.items[0].index(), member.request_index());
-        assert_eq!(projection.items[0].occurrence(), member.occurrence());
-        assert_eq!(
-            projection.routed[0].request_index,
-            member.request_index().get()
-        );
-
-        let manifest = linked.manifest_snapshot();
-        let request = ProcessProviderRequest {
-            emitted_package: driven.emitted(),
-            deadline_ms: 4096,
-            manifest: &manifest,
-            provider_request: ProviderRequest::new(&projection.routed),
-            fsl_items: &projection.items,
-            cancel: &cancel,
-        };
-        let wire = serde_json::to_value(
-            super::encode_fr331_request(request).expect("the selected call forms one request"),
-        )
-        .expect("FR-331 request serializes");
-        let wire_items = wire["request"]["items"]
-            .as_array()
-            .expect("request items are an array");
-        assert_eq!(wire_items.len(), 1, "unselected package items are excluded");
-        assert_eq!(wire_items[0]["request_index"], member.request_index().get());
-        assert_eq!(wire_items[0]["backend"], "agent-ix/provider/fr331-fixture");
-    }
+    use super::HostProcessProvider;
+    use crate::test_support::with_provider_request;
 
     #[derive(Debug, Deserialize)]
     struct Hello {
@@ -718,11 +499,11 @@ mod tests {
                 admit_hello(manifest, ProviderOrigin::Process)
             },
             |request: ProcessProviderRequest<'_>| {
-                assert!(!request.emitted_package.bytes().is_empty());
-                assert_eq!(request.deadline_ms, 4096);
+                assert!(!request.request.package().bytes().is_empty());
+                assert_eq!(request.request.deadline_ms(), 600_000);
                 assert!(!request.manifest.is_empty());
                 Ok(serde_json::json!({
-                    "items": request.provider_request.items().iter().map(|item| item.request_index).collect::<Vec<_>>()
+                    "items": request.request.items().iter().map(|item| item.index().get()).collect::<Vec<_>>()
                 }))
             },
             |manifest: &Hello, result: &serde_json::Value| {
@@ -778,19 +559,16 @@ mod tests {
             ProviderOrigin::Process
         );
 
-        // An empty request is intentional while CG IR-629 has no process
-        // BackendKind; this adapter test cannot claim routed Process items.
-        let package = crate::test_support::emitted_package();
         let manifest = linked.manifest_snapshot();
-        let request = ProcessProviderRequest {
-            emitted_package: &package,
-            deadline_ms: 4096,
-            manifest: &manifest,
-            provider_request: ProviderRequest::new(&[]),
-            fsl_items: &[],
-            cancel: &cancel,
-        };
-        let results = session.invoke(request).expect("host returns typed result");
+        let (session, results) = with_provider_request(move |request| {
+            let results = session.invoke(ProcessProviderRequest {
+                request,
+                manifest: &manifest,
+                cancel: &cancel,
+            });
+            (session, results)
+        });
+        let results = results.expect("host returns typed result");
         assert!(conversion_called.load(Ordering::Acquire));
         assert_eq!(results.items.len(), 1);
         assert_eq!(results.items[0].request_index, 23);
@@ -891,18 +669,15 @@ mod tests {
             })
         );
 
-        let package = crate::test_support::emitted_package();
-        let request = ProcessProviderRequest {
-            emitted_package: &package,
-            deadline_ms: 4096,
-            manifest: &manifest,
-            provider_request: ProviderRequest::new(&[]),
-            fsl_items: &[],
-            cancel: &cancel,
-        };
-        session
-            .invoke(request)
-            .expect("fixture responds to request");
+        let (session, invoked) = with_provider_request(move |request| {
+            let invoked = session.invoke(ProcessProviderRequest {
+                request,
+                manifest: &manifest,
+                cancel: &cancel,
+            });
+            (session, invoked)
+        });
+        invoked.expect("fixture responds to request");
         let finished = session.shutdown().expect("session ends cleanly");
         assert_eq!(finished.manifest.manifest.len(), 1);
         assert_eq!(finished.manifest.manifest[0]["domains"][0], "integer");
@@ -945,16 +720,13 @@ mod tests {
         let mut session = provider
             .start(&python_path(), &arguments, limits(), &cancel)
             .expect("fixture hello is admitted");
-        let package = crate::test_support::emitted_package();
-        let request = ProcessProviderRequest {
-            emitted_package: &package,
-            deadline_ms: 4096,
-            manifest: &[],
-            provider_request: ProviderRequest::new(&[]),
-            fsl_items: &[],
-            cancel: &cancel,
-        };
-        let error = session.invoke(request);
+        let error = with_provider_request(move |request| {
+            session.invoke(ProcessProviderRequest {
+                request,
+                manifest: &[],
+                cancel: &cancel,
+            })
+        });
         let rejected = match error {
             Err(super::AdapterError::Request(PluginError::ResultValidation(_))) => true,
             Err(super::AdapterError::Request(PluginError::WithDiagnostics { cause, .. })) => {
