@@ -1400,6 +1400,23 @@ fn start_providers(
             }
         }
     }
+    // FR-006-AC-26: distinct sessions with one admitted identity stop before
+    // negotiation, close every session, and return the CLI's InvalidRequest
+    // input refusal naming the identity.
+    let mut identities = BTreeSet::new();
+    let repeated = started.iter().find_map(|session| {
+        let identity = filament_driver::ProcessProviderSession::descriptor(session)
+            .id()
+            .as_str()
+            .to_owned();
+        (!identities.insert(identity.clone())).then_some(identity)
+    });
+    if let Some(identity) = repeated {
+        shut(started);
+        return Err(format!(
+            "configured process providers repeat admitted identity `{identity}`"
+        ));
+    }
     let admissions = started.iter().map(|session| {
         (
             filament_driver::ProcessProviderSession::descriptor(session).clone(),

@@ -842,6 +842,79 @@ fn configured_process_normal_exit_shuts_down_active_session() {
     );
 }
 
+/// Trace: FR-006-AC-25, FR-006-AC-1, FR-006-AC-3; both configured providers
+/// start and are admitted before negotiation, each under its own admitted
+/// identity; only the provider the call's requirements select receives a
+/// request, its typed `proved` result is retained on the settled item, and
+/// both sessions are shut down. QSL-2192.
+#[test]
+fn configured_run_invokes_only_the_selected_process_and_retains_its_typed_result() {
+    let directory = tempfile::tempdir().expect("create isolated two-provider test directory");
+    let identities = [PROVIDER_BACKEND, "fsl.test-process-provider-zeta"];
+    let request_markers = [
+        directory.path().join("request-selected"),
+        directory.path().join("request-other"),
+    ];
+    let shutdown_markers = [
+        directory.path().join("shutdown-selected"),
+        directory.path().join("shutdown-other"),
+    ];
+    let providers = (0..2)
+        .map(|index| {
+            vec![
+                identities[index].to_owned(),
+                "unbounded".to_owned(),
+                "proved".to_owned(),
+                request_markers[index].display().to_string(),
+                shutdown_markers[index].display().to_string(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    let (request, config) = provider_run(directory.path(), &providers);
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .arg("--provider-config")
+        .arg(&config)
+        .args(["--format", "json"])
+        .output()
+        .expect("run production fsl binary with two providers");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let sent: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(&request_markers[0]).expect("the selected provider received a request"),
+    )
+    .expect("the request body is JSON");
+    assert_eq!(
+        sent["request"]["items"][0]["backend"], PROVIDER_BACKEND,
+        "{sent}"
+    );
+    let manifest: Vec<&str> = sent["manifest"]
+        .as_array()
+        .expect("the request's registry snapshot")
+        .iter()
+        .filter_map(|entry| entry["backend"].as_str())
+        .collect();
+    assert!(
+        identities
+            .iter()
+            .all(|identity| manifest.contains(identity)),
+        "both admitted providers are registered before negotiation: {manifest:?}"
+    );
+    assert!(
+        !request_markers[1].exists(),
+        "the unselected provider records no invocation"
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the execute outcome");
+    let items = document["items"].as_array().expect("settled items");
+    assert!(!items.is_empty(), "{document}");
+    for item in items {
+        assert_eq!(item["record"]["result"], "proved", "{document}");
+        assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{document}");
+    }
+    assert!(shutdown_markers.iter().all(|marker| marker.is_file()));
+}
+
 /// Trace: FR-006-AC-26; duplicate admitted identities refuse before any
 /// request and close both sessions. QSL-2192.
 #[test]
@@ -875,9 +948,14 @@ fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() 
         .args(["--format", "json"])
         .output()
         .expect("run production fsl binary with duplicate identities");
+    let message =
+        format!("configured process providers repeat admitted identity `{PROVIDER_BACKEND}`");
     assert_eq!(output.status.code(), Some(20), "{output:?}");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains(PROVIDER_BACKEND), "{stderr}");
+    assert_eq!(
+        output.stdout,
+        expected_document_bytes(Code::InvalidRequest, &message)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), message);
     assert!(request_markers.iter().all(|marker| !marker.exists()));
     assert!(shutdown_markers.iter().all(|marker| marker.is_file()));
 }
