@@ -33,6 +33,44 @@ impl LimitOverrides {
         self.apply_parts(limits, None, &mut call.accounting)
     }
 
+    /// Apply stage settings to the bounds an operation accepts.
+    ///
+    /// Accounting settings require a call and are unavailable to front-end
+    /// operations such as parse and check.
+    pub fn apply_to_limits<T: SettingLimits>(&self, limits: &mut T) -> Result<(), LimitError> {
+        let available = limits.bounds();
+        let mut updates = Vec::with_capacity(self.0.len());
+        for (name, value) in &self.0 {
+            match name {
+                SettingName::Stage(setting)
+                    if available.iter().any(|(available, _)| available == setting) =>
+                {
+                    updates.push((*setting, *value));
+                }
+                SettingName::Stage(setting) => {
+                    return Err(LimitError::OperationUnavailable {
+                        setting: SettingName::Stage(*setting),
+                    });
+                }
+                SettingName::Accounting(_) => {
+                    return Err(LimitError::OperationUnavailable { setting: *name });
+                }
+            }
+        }
+        for (setting, value) in updates {
+            // `bounds()` and `set_bound()` are the paired FSL API for an
+            // operation's exposed settings.
+            let updated = limits.set_bound(setting, value);
+            debug_assert!(updated, "FSL bound listed by bounds() must be settable");
+            if !updated {
+                return Err(LimitError::OperationUnavailable {
+                    setting: SettingName::Stage(setting),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Apply settings to the actual stage, observation and accounting limits of a clause run.
     pub fn apply_to_clause(&self, request: &mut ClauseRunRequest) -> Result<(), LimitError> {
         self.apply_parts(

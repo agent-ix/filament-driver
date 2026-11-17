@@ -122,9 +122,9 @@ fn help_exit_code() -> ExitCode {
     }
     help.push_str(concat!(
         "\nSource operands:\n",
-        "  parse <authority> <identity> <file> [--format json|text]\n",
+        "  parse <authority> <identity> <file> [--limit name=value] [--format json|text]\n",
         "  format <authority> <identity> <file> [--format json|text]\n",
-        "  check <source-path> [--model <file>] [--library <file>]...\n",
+        "  check <source-path> [--model <file>] [--library <file>]... [--limit name=value]\n",
         "      [--dependent-bytes <bytes>] [--format json|text]\n",
         "  compile <request-file> [--clocks <json-file>] [--output <file>]\n",
         "      [--format json|text]\n",
@@ -478,26 +478,43 @@ struct CheckOptions {
     model: Option<PathBuf>,
     libraries: Vec<PathBuf>,
     dependent_bytes: usize,
+    limits: LimitOverrides,
 }
 
 struct SourceOptions {
     source: SourceIdentity,
     path: PathBuf,
+    limits: LimitOverrides,
 }
 
 impl SourceOptions {
     fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
+        let limit_usage = if verb == Verb::Parse {
+            " [--limit name=value]"
+        } else {
+            ""
+        };
         let usage = || {
             format!(
-                "usage: fsl {} <authority> <identity> <file> [--format json|text]",
-                verb.name()
+                "usage: fsl {} <authority> <identity> <file>{limit_usage} [--format json|text]",
+                verb.name(),
             )
         };
         let mut positionals = Vec::new();
+        let mut limit_operands = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--limit" && verb == Verb::Parse {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
             }
@@ -516,9 +533,11 @@ impl SourceOptions {
         let identity = identity
             .to_str()
             .ok_or_else(|| format!("{} identity label must be valid UTF-8", verb.name()))?;
+        let limits = parse_frontend_limit_operands(&limit_operands, &fsl_cst::Limits::default())?;
         Ok(Self {
             source: SourceIdentity::new(authority, identity),
             path: PathBuf::from(*path),
+            limits,
         })
     }
 }
@@ -566,12 +585,13 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
-    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--format json|text]";
+    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--format json|text]";
 
     fn parse(arguments: &[OsString]) -> Result<Self, String> {
         let mut positionals = Vec::new();
         let mut model = None;
         let mut libraries = Vec::new();
+        let mut limit_operands = Vec::new();
         let mut dependent_bytes = RunLimits::default().dependent_bytes;
         let mut dependent_bytes_supplied = false;
         let mut index = 0;
@@ -619,6 +639,15 @@ impl CheckOptions {
                 index += 2;
                 continue;
             }
+            if argument == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
+                index += 2;
+                continue;
+            }
             if argument.starts_with('-') {
                 return Err(format!("unknown check option `{argument}`"));
             }
@@ -628,13 +657,45 @@ impl CheckOptions {
         if positionals.len() != 1 {
             return Err(Self::USAGE.to_owned());
         }
+        let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
             path: positionals.remove(0),
             model,
             libraries,
             dependent_bytes,
+            limits,
         })
     }
+}
+
+fn parse_frontend_limit_operands(
+    operands: &[String],
+    bounds: &impl SettingLimits,
+) -> Result<LimitOverrides, String> {
+    LimitOverrides::parse(operands).map_err(|error| {
+        let accepted = bounds
+            .bounds()
+            .into_iter()
+            .map(|(setting, _)| setting.name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{error}; settings accepted by this command: {accepted}")
+    })
+}
+
+fn apply_frontend_limits(
+    overrides: &LimitOverrides,
+    bounds: &mut impl SettingLimits,
+    operation: &str,
+) -> Result<(), String> {
+    overrides
+        .apply_to_limits(bounds)
+        .map_err(|error| match error {
+            filament_driver::LimitError::OperationUnavailable { setting } => format!(
+                "limit setting `{}` is unavailable for the `{operation}` operation",
+                setting.name()
+            ),
+        })
 }
 
 impl RunOptions {
@@ -1395,7 +1456,10 @@ fn compile(options: CompileOptions) -> CommandResult {
 
 /// Check one source through FSL's typed front-end and serialize its S4 outcome.
 fn check_source(options: CheckOptions) -> CommandResult {
-    let limits = SpineLimits::default();
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "check") {
+        return CommandResult::input_refusal(Operation::Check, error);
+    }
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1536,7 +1600,14 @@ fn source_preflight(
 
 /// Parse one source through FSL and serialize its typed parse outcome.
 fn parse_source(options: SourceOptions) -> CommandResult {
-    let limits = SpineLimits::default();
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits.source, "parse") {
+        return CommandResult::input_refusal(Operation::Parse, error);
+    }
+    if let Some(refusal) = source_preflight(&options, Operation::Parse, limits.source.source_bytes)
+    {
+        return refusal;
+    }
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1994,19 +2065,18 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     }
     if verb == Verb::Parse {
         return match SourceOptions::parse(verb, raw_arguments) {
-            Ok(options) => {
+            Ok(options) if format == OutputFormat::Text => {
                 if let Some(refusal) = source_preflight(
                     &options,
                     Operation::Parse,
                     SpineLimits::default().source.source_bytes,
                 ) {
                     refusal
-                } else if format == OutputFormat::Text {
-                    text_rendering_unavailable(Operation::Parse, "parse")
                 } else {
-                    parse_source(options)
+                    text_rendering_unavailable(Operation::Parse, "parse")
                 }
             }
+            Ok(options) => parse_source(options),
             Err(error) => CommandResult::input_refusal(Operation::Parse, error),
         };
     }
