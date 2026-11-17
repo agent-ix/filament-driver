@@ -34,9 +34,10 @@ path = "src/lib.rs"
 # may depend on its interface. It is downstream of CG because CG -> FSL
 # (`fsl-replay`) is a normal edge and Cargo refuses a package cycle.
 #
-# The FSL layer crates and CG are tracked on `main` of their repositories, the
-# same spelling CG and FSL use for their own `filament-contract-model` edge, so
-# the graph resolves one copy of it. The exact commits are in Cargo.lock.
+# The FSL layer crates and CG are tracked on `main` of their repositories.
+# `filament-contract-model` is tracked on tag `v0.1.0`, the same spelling CG and
+# FSL use for their own edge, so the graph resolves one copy of it. The exact
+# commits are in Cargo.lock.
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", branch = "main" }
@@ -47,7 +48,7 @@ fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", branc
 fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", branch = "main" }
 filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
-filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", branch = "main" }
+filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.0" }
 filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", branch = "main", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
 filament-observation = { git = "https://github.com/agent-ix/filament-observation", branch = "main" }

@@ -524,20 +524,22 @@ mod tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            wire_arguments: Vec::new(),
+            snapshot: None,
         };
         let objects = fsl_semantics::model::object_environment::ObjectEnvironment::default();
-        let call_run = fsl_replay::run_with_requirements(
-            source.clone(),
-            "configured-call".to_owned(),
+        let call_run = fsl_replay::run_with_requirements(&fsl_replay::RequirementsRun {
+            source: source.clone(),
+            package_name: "configured-call".to_owned(),
             path,
-            bytes.as_bytes(),
-            &packages,
-            &dependencies,
+            bytes: bytes.as_bytes(),
+            packages: &packages,
+            dependencies: &dependencies,
             limits,
-            &call,
-            &objects,
-            &cancel,
-        )
+            call: &call,
+            objects: &objects,
+            cancel: &cancel,
+        })
         .expect("the selected call completes with its FSL requirement members");
 
         let hello = ManifestStage {

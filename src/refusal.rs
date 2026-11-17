@@ -888,6 +888,7 @@ fn package_read_refusal_cause(cause: CheckedPackageRefusalCause) -> &'static str
         CheckedPackageRefusalCause::InexactNumber => "inexact-number",
         CheckedPackageRefusalCause::InvalidSemanticGraph => "invalid-semantic-graph",
         CheckedPackageRefusalCause::InvalidTaskSet => "invalid-task-set",
+        CheckedPackageRefusalCause::ClockReadOutsideConstraint => "clock-read-outside-constraint",
     }
 }
 
@@ -1072,6 +1073,7 @@ fn compile_code(refusal: &CompileRefusal) -> String {
 fn compile_cause(refusal: &CompileRefusal) -> Option<&'static str> {
     match refusal {
         CompileRefusal::Source(_)
+        | CompileRefusal::SourceDiagnostics { .. }
         | CompileRefusal::Forms { .. }
         | CompileRefusal::Intake { .. }
         | CompileRefusal::OperationClause { .. }
@@ -1082,7 +1084,8 @@ fn compile_cause(refusal: &CompileRefusal) -> Option<&'static str> {
         CompileRefusal::UnitList(refusal) => refusal.cause(),
         CompileRefusal::Limit(limit) => Some(limit.kind().catalog_cause()),
         CompileRefusal::Profile { refusals, .. } => refusals.first().map(|refusal| refusal.cause()),
-        CompileRefusal::Check { refusals, .. } => {
+        CompileRefusal::Check { refusals, .. }
+        | CompileRefusal::CheckDiagnostics { refusals, .. } => {
             refusals.first().and_then(|refusal| refusal.cause.cause())
         }
         CompileRefusal::DependencyInput(refusal) => refusal.cause(),

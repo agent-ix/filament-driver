@@ -23,7 +23,7 @@ use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
 use fsl_replay::spine::{parse, Call, CompileRefusal, DependencyInput, ParseRequest, SpineLimits};
-use fsl_replay::{run_with_requirements, CallOutcome, RunRefusal};
+use fsl_replay::{run_with_requirements, CallOutcome, RequirementsRun, RunRefusal};
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
@@ -1050,6 +1050,12 @@ fn run(options: RunOptions) -> CommandResult {
             }
             return run_clause_request(*request, &options.limits);
         }
+        PreparedRun::TlLowering(_) => {
+            return CommandResult::input_refusal(
+                Operation::Execute,
+                "FR-931 tl_lowering requests are not run by the driver yet",
+            );
+        }
     };
     let command::FunctionRunInput {
         source,
@@ -1100,7 +1106,8 @@ fn run_clause_request(
         return CommandResult::input_refusal(Operation::Monitor, error.to_string());
     }
     let name = match &request.selection {
-        ClauseRunSelection::Clause(selection) => selection.name.clone(),
+        ClauseRunSelection::Clause(selection)
+        | ClauseRunSelection::ClauseWithPath { selection, .. } => selection.name.clone(),
         ClauseRunSelection::Function { name, .. }
         | ClauseRunSelection::Temporal { name, .. }
         | ClauseRunSelection::SampledTemporal { name, .. } => name.clone(),
@@ -1166,18 +1173,18 @@ fn run_configured_providers(
 
     // This is the one interpreter call. The driver performs the separate
     // package negotiation/generation pipeline below and does not call execute.
-    let call_run = run_with_requirements(
-        source.clone(),
-        package_name.to_owned(),
+    let call_run = run_with_requirements(&RequirementsRun {
+        source: source.clone(),
+        package_name: package_name.to_owned(),
         path,
         bytes,
-        &packages,
-        &dependencies,
+        packages: &packages,
+        dependencies: &dependencies,
         limits,
-        &call,
-        &objects,
-        &cancel,
-    );
+        call: &call,
+        objects: &objects,
+        cancel: &cancel,
+    });
     let call_run = match call_run {
         Ok(run) => run,
         Err(refusal) => {
@@ -1429,6 +1436,7 @@ fn compile(options: CompileOptions) -> CommandResult {
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
+        ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
         Ok(outcome) => CommandResult::document(outcome.document().clone()),
@@ -1482,10 +1490,11 @@ fn check_source(options: CheckOptions) -> CommandResult {
                 dependent_bytes: options.dependent_bytes,
                 ..command::CheckInputs::default()
             };
-            return match command::check_outcome(Path::new(&options.path), &inputs) {
-                Ok(document) => CommandResult::document(document),
-                Err(error) => CommandResult::document(error.outcome_document(Operation::Check)),
-            };
+            return CommandResult::document(
+                command::check_outcome(Path::new(&options.path), &inputs)
+                    .document()
+                    .clone(),
+            );
         }
     };
 
@@ -1524,10 +1533,11 @@ fn check_source(options: CheckOptions) -> CommandResult {
         dependent_bytes: options.dependent_bytes,
         ..command::CheckInputs::default()
     };
-    match command::check_outcome(Path::new(&options.path), &inputs) {
-        Ok(document) => CommandResult::document(document),
-        Err(error) => CommandResult::document(error.outcome_document(Operation::Check)),
-    }
+    CommandResult::document(
+        command::check_outcome(Path::new(&options.path), &inputs)
+            .document()
+            .clone(),
+    )
 }
 
 /// Observe the TC-018 refused-range selection at the typed check boundary.
@@ -2604,6 +2614,8 @@ mod configured_run_tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            wire_arguments: Vec::new(),
+            snapshot: None,
         };
         let executable = python_path();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2774,6 +2786,8 @@ mod configured_run_tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            wire_arguments: Vec::new(),
+            snapshot: None,
         };
         let executable = python_path();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))

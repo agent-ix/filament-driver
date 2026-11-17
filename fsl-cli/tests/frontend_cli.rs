@@ -1043,6 +1043,7 @@ fn analyze_unsupported_item_is_typed() {
 
 /// FR-022-AC-8: the registry FSL builds from its engine set is the one the
 /// driver negotiates over, so the outcome lists FSL's registered engines.
+/// Each registry entry is FSL FR-635's `{backend, tool}` object.
 #[trace("TC-036", "FR-022-AC-8")]
 #[test]
 fn analyze_routes_through_engines_registry() {
@@ -1052,7 +1053,7 @@ fn analyze_routes_through_engines_registry() {
         .as_array()
         .unwrap_or_else(|| panic!("a registry member: {document}"))
         .iter()
-        .filter_map(serde_json::Value::as_str)
+        .filter_map(|entry| entry["backend"].as_str())
         .collect();
     assert!(backends.contains(&"en-1"), "{backends:?}");
     assert_eq!(

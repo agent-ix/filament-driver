@@ -88,7 +88,7 @@ fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
 
 fn check_outcome_bytes(path: &'static str) -> Vec<u8> {
     command::check_outcome(Path::new(path), &CheckInputs::default())
-        .expect("FSL runs a check over the fixture")
+        .document()
         .to_bytes()
         .expect("FSL serializes its check outcome")
 }
@@ -100,7 +100,7 @@ fn package_outcome_bytes(path: &'static str) -> Vec<u8> {
     let dependencies = DependencyInput::default();
     let packages = std::collections::BTreeMap::new();
     let cancel = Cancel::new();
-    let result = parse(
+    let document = match parse(
         &ParseRequest {
             source: &source,
             path,
@@ -108,21 +108,28 @@ fn package_outcome_bytes(path: &'static str) -> Vec<u8> {
         },
         limits.source,
         &cancel,
-    )
-    .and_then(|parsed| {
-        select(parsed.value(), &packages, limits.model, &cancel).and_then(|models| {
-            check(
+    ) {
+        Err(failure) => OutcomeDocument::from_package(&Err(failure)),
+        Ok(parsed) => match select(parsed.value(), &packages, limits.model, &cancel) {
+            Err(failure) => OutcomeDocument::from_package(&Err(failure)),
+            Ok(models) => match check(
                 parsed.value(),
                 path.to_owned(),
                 models.value(),
                 &dependencies,
                 limits,
                 &cancel,
-            )
-            .and_then(|checked| package(checked.value(), PackageLimits::default(), &cancel))
-        })
-    });
-    OutcomeDocument::from_package(&result)
+            ) {
+                Err(failure) => OutcomeDocument::from_package(&Err(failure)),
+                Ok(checked) => OutcomeDocument::from_package(&package(
+                    checked.value(),
+                    PackageLimits::default(),
+                    &cancel,
+                )),
+            },
+        },
+    };
+    document
         .to_bytes()
         .expect("FSL serializes its package outcome")
 }
