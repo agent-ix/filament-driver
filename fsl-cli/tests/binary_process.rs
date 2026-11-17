@@ -480,46 +480,6 @@ fn run_without_engine_executes_with_the_interpreter() {
     );
 }
 
-/// Trace: FR-002-AC-13; `parse`, the one verb without an FSL text renderer here, refuses before lifecycle execution.
-#[test]
-fn unavailable_text_renderers_return_typed_unsupported_refusals() {
-    let cases = [vec![
-        "parse",
-        "issuer",
-        "document",
-        "missing-text-renderer.fsl",
-    ]];
-
-    for arguments in cases {
-        let verb = arguments[0];
-        for suffix in [vec![], vec!["--format", "text"]] {
-            let output = Command::new(FSL)
-                .args(arguments.iter().copied().chain(suffix.iter().copied()))
-                .output()
-                .expect("run fsl with unavailable typed text rendering");
-            assert_eq!(
-                output.status.code(),
-                Some(i32::from(Category::Unsupported.exit_code())),
-                "{verb} {suffix:?}"
-            );
-            assert!(output.stdout.is_empty(), "{verb} {suffix:?}");
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            assert!(
-                stderr.contains("unimplemented_capability"),
-                "{verb} {suffix:?}: {stderr}"
-            );
-            assert!(
-                stderr.contains(&format!("text rendering for `{verb}`")),
-                "{verb} {suffix:?}: {stderr}"
-            );
-            assert!(
-                !stderr.contains("could not read source"),
-                "{verb}: {stderr}"
-            );
-        }
-    }
-}
-
 /// Trace: FR-002-AC-3, FR-002-AC-9; JSON is the unchanged FSL outcome encoded by the kit.
 #[test]
 fn machine_run_writes_the_canonical_fsl_outcome() {

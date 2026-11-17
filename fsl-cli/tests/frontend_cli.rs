@@ -1974,3 +1974,45 @@ fn run_takes_the_integer_division_law_from_its_request() {
         String::from_utf8_lossy(&output.stdout)
     );
 }
+
+#[trace("TC-2456", "FR-865-AC-3")]
+#[test]
+fn parse_defaults_to_the_text_form_with_header_and_result_lines() {
+    let source = SOURCE;
+    let default = fsl(&["parse", "issuer", "document", source]);
+    let text = fsl(&["parse", "issuer", "document", source, "--format", "text"]);
+    let json = fsl(&["parse", "issuer", "document", source, "--format", "json"]);
+    assert_eq!(default.status.code(), Some(0));
+    assert_eq!(default.status.code(), json.status.code());
+    assert_eq!(default.stdout, text.stdout, "text is the default");
+    let body = String::from_utf8(default.stdout).expect("text is UTF-8");
+    assert!(!body.starts_with('{'), "{body}");
+    let mut lines = body.lines();
+    assert_eq!(
+        lines.next(),
+        Some("parse: success (exit 0) at S2"),
+        "{body}"
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|line| line.starts_with("result: parsed ")),
+        "{body}"
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("json output is the document");
+    assert_eq!(document["category"], "success");
+}
+
+#[trace("TC-2456", "FR-865-AC-4")]
+#[test]
+fn parse_help_row_names_text_as_the_default() {
+    let output = fsl(&["--help"]);
+    let help = String::from_utf8(output.stdout).expect("help is UTF-8");
+    let line = help
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some("parse"))
+        .expect("parse help row");
+    assert!(line.contains("text by default"), "{line}");
+    assert!(!line.contains("unavailable"), "{line}");
+}
