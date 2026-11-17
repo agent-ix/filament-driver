@@ -30,10 +30,11 @@ and FR-006-AC-5 through FR-006-AC-23.
    `RequirementItem`/`CandidateOutcome`, using the same request data used to
    build typed CG negotiation; take the selected backend from CG's routed
    output. Supply the snapshot and constructed request data with the package,
-   its package identity and the selected configuration entry's `deadline_ms`
-   to the adapter serialization check. Verify that value is taken from that
-   entry unchanged, not from a default, ambient state, or another provider's
-   entry. The selected-provider production composition test exercises the
+   its package identity and the run limit set's `deadline_ms`
+   to the adapter serialization check. Verify that value is the
+   `--provider-limit deadline_ms` value unchanged, or FSL FR-287's default
+   when the option is absent, and never read from the configuration document
+   or a provider's registration. The selected-provider production composition test exercises the
    Process seam and retains its typed result in `CommandResult`; the production
    binary tests separately cover duplicate-identity refusal and active-session
    signal cleanup. These checks do not claim FSL terminal settlement for the
@@ -44,8 +45,8 @@ and FR-006-AC-5 through FR-006-AC-23.
    contains the emitted package's RFC 8785 bytes as unpadded base64url,
    the request carries no `package_id`, the `fsl-cli`
    adapter serializes the supplied manifest snapshot without reconstructing
-   it or adding members, and `deadline_ms` equals the validated value in the
-   selected provider's configuration entry. Verify bounds appear only at
+   it or adding members, and `deadline_ms` equals the run limit set's
+   `deadline_ms`. Verify bounds appear only at
    `items[].extent.bounds` and
    `items[].temporal.subject.proof_bounds`, with no request-level `domains` or
    `limits` member. FSpec TC-271 owns the CG negotiation checks for FSpec
@@ -142,8 +143,7 @@ define or infer terminal mappings.
 - Request fields are serialized by the `fsl-cli` adapter from their named
   owners: `package` from
   the `EmittedPackage`; `manifest` from the driver's registered-candidate
-  records; `deadline_ms` unchanged from the selected provider's validated
-  configuration entry; each
+  records; `deadline_ms` unchanged from the run limit set; each
   item's request index, claim locus, kind, extent/bounds and candidate set from
   the corresponding retained FSL `RequirementItem`/`CandidateOutcome`, using
   the same request data used to build typed CG negotiation; and its selected

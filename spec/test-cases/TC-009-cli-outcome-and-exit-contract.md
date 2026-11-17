@@ -15,8 +15,8 @@ relationships:
 Verify that the driver CLI exposes the specified verbs, preserves typed
 outcomes in `filament-outcome/1` documents and uses FSL's single exit function.
 
-Scope: FR-002-AC-1 through FR-002-AC-6 and FR-002-AC-8 through FR-002-AC-13,
-FR-002-AC-17, plus FR-014-AC-4.
+Scope: FR-002-AC-1 through FR-002-AC-6 and FR-002-AC-8 through FR-002-AC-12,
+FR-002-AC-17, plus FR-014-AC-4. TC-040 verifies FR-002-AC-13 and FR-002-AC-18.
 
 ## Test Procedure
 
@@ -50,12 +50,9 @@ FR-002-AC-17, plus FR-014-AC-4.
    write-failure and broken-pipe behavior through the CLI.
 9. Inspect machine-mode serialization and verify the CLI calls ix-cli-kit's
    `json` module to encode the unchanged FSL `filament-outcome/1` value.
-10. Invoke parse, check, compile and run with omitted output format and with
-    `--format text`. Verify each returns the operation-specific FSL
-    `UnimplementedCapability` result, exits with the unsupported category's
-    code, writes no stdout, and does not start the requested lifecycle. Verify
-    that machine mode still runs and serializes the FSL outcome, and that
-    format text still returns FSL-formatted source.
+10. Invoke format with omitted output format and verify it writes
+    FSL-formatted source. Default text output of parse, check, compile and
+    run is verified by TC-040.
 
 11. From an empty working directory, invoke the built `fsl` binary with no
     arguments and separately with each of `--help`, `-h` and `help` as its
@@ -92,9 +89,7 @@ under test are owned by `fsl-cli/src/cli.rs`.
   category through FSL's exit function; a broken pipe ends quietly with the
   outcome's code.
 - An unnamed configuration file is not read.
-- Until FSL's typed outcome renderer is available, parse, check, compile and
-  run text requests fail closed with their operation-specific typed
-  unsupported result; they do not silently succeed with empty stdout.
+- Format writes FSL-formatted source in text mode.
 - The version output reports the `fsl-cli` package semver; the kit's
   built-binary agreement check compares it with `CARGO_PKG_VERSION` and
   passes.

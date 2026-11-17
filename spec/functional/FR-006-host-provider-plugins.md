@@ -17,6 +17,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-069
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-287
+    type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-964
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-561
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-777
+    type: depends_on
 ---
 # FR-006: Route negotiated items to process providers
 
@@ -33,8 +41,14 @@ settlement path used for first-party providers.
 
 - The caller-named plugin executable path.
 - Explicit process-provider configuration supplied to the `fsl-cli`
-  composition by `--provider-config <path>`: an executable path, argument
-  vector, a per-provider `deadline_ms`, and `ProcessProviderLimits` per entry.
+  composition by `--provider-config <path>`: FSpec FR-561's
+  `filament.provider-config/v1` document, which lists plugins only, each
+  entry an executable `path` and optional `arguments`.
+- The run's one provider limit set, resolved from `--provider-limit
+  <name>=<value>` options with FSL FR-287's names and defaults and carried
+  as `ProviderOptions.provider_limits` (FSL FR-964): `deadline_ms` and the
+  transport limits `max_frame_bytes`, `max_total_bytes`, `grace_ms`,
+  `max_stderr_bytes`, `max_memory_bytes` and `max_cpu_ms`.
 - The admitted provider manifest, negotiated provider identity and routed
   request items.
 - The emitted checked-package bytes, frame and session-byte limits, stderr
@@ -61,30 +75,54 @@ settlement path used for first-party providers.
   lifecycle and failure contract. It SHALL use FR-331's provider envelope and
   FSL-owned typed terminal values; it SHALL NOT define a second wire format or
   infer terminal categories from provider-specific evidence or diagnostics.
-- The `fsl-cli` `run` command SHALL accept `--provider-config <path>` to name
-  the process-provider configuration file. The file SHALL be UTF-8 JSON with
-  one top-level field, `providers`, whose value is an array. Each entry SHALL
-  have exactly `executable` (the executable path), `argv` (an array of argument
-  strings, including an explicit empty array when no arguments are needed),
-  `deadline_ms`, and `limits` fields. `deadline_ms` SHALL be a positive safe
-  JSON integer from 1 through 9,007,199,254,740,991 inclusive, the FR-331
-  `deadline_ms` range. It is the caller-supplied deadline for that provider's
-  FR-331 request, not a host resource limit. The `limits` object SHALL contain
-  exactly the required unsigned integer fields in the `u64` range:
-  `max_frame_bytes`,
-  `max_total_bytes`, `max_stderr_bytes`, and `cancellation_grace_ms`. Byte
-  fields are byte counts; duration fields are milliseconds.
-- The `fsl-cli` composition SHALL reject an unreadable or missing file,
-  malformed JSON, missing or wrongly typed required fields, and unknown fields
-  at every object level before starting any provider. It SHALL also reject a
-  missing, non-integer, zero, negative, or out-of-range `deadline_ms` before
-  starting any provider.
+- Every provider-routing verb of `fsl-cli` (`analyze`, `prove`, `monitor`,
+  `run`, `replay`, `generate`; FSL FR-287, FSpec FR-561) SHALL accept
+  `--provider-config <path>` and `--provider-limit <name>=<value>`. `run`
+  meets this requirement now. `analyze` and `monitor` refuse both options
+  under the deviations FR-022 (QSL-2283) and FR-025 (QSL-2132) state, each
+  of which lifts when its ticket lands. A verb that routes no items SHALL refuse both options as
+  unknown, exit 20 (FSpec FR-301).
+- The configuration file SHALL be FSpec FR-561's
+  `filament.provider-config/v1` document: a JSON object with exactly
+  `format` (the string `filament.provider-config/v1`) and `providers` (an
+  array, empty for no plugin). Each entry SHALL have a required non-blank
+  `path`, the plugin executable, resolved against the directory of the
+  configuration document when relative, and an optional `arguments` array of
+  strings passed to the plugin in order, `[]` when absent. The document lists
+  plugins only: it SHALL hold no deadline and no limit, so one configuration
+  serves runs of any size, and an entry member such as `deadline_ms` or
+  `limits` is an unknown member.
+- The `fsl-cli` composition SHALL read the configuration document before any
+  stage runs and before any plugin starts, and SHALL refuse as FSpec FR-561
+  states: a missing or unreadable file names the path; a document that is
+  not JSON, a missing `format` or `providers`, an unknown member at any
+  object level, an entry with no or a blank `path`, or `arguments` that are
+  not an array of strings refuses `invalid-request` naming the file and the
+  member; another `format` refuses `unknown_wire`/`unsupported-wire`. Each
+  refusal exits 20 with empty stdout in text and machine mode alike (FSpec
+  FR-561), with the diagnostic on stderr, and starts no provider.
+- `--provider-limit` SHALL set one limit of the run's limit set by FSL
+  FR-287's names, units and defaults, may be given once per name, and is
+  accepted with or without `--provider-config`. The composition SHALL read
+  every `--provider-limit` before any stage runs and before any plugin
+  starts. An argument with no `=`, an unknown name, a name given twice, or a
+  value that is empty, zero, signed, has a leading zero, a non-digit or a
+  unit suffix, or exceeds 9,007,199,254,740,991 SHALL refuse
+  `invalid-request` naming `--provider-limit` and the argument, exit 20 with
+  empty stdout in text and machine mode alike (FSL FR-287), and start no
+  plugin.
+- The limit set is one per run (FSpec FR-777): every provider of the run,
+  linked or process, works under the same set. The composition SHALL read no
+  provider limit from the configuration document, a provider's registration,
+  an environment variable or another file; a limit the caller does not give
+  takes FSL FR-287's default.
 - For each configured entry, the `fsl-cli` composition SHALL start the named
   executable and admit its hello before negotiation. The identity in that
   once-admitted hello descriptor SHALL be the sole identity used to register
   and route that process provider. The composition SHALL pass the entry's
-  executable, `argv`, `deadline_ms`, and limits unchanged to the
-  process-provider seam.
+  resolved `path` and `arguments` unchanged, and the run's limit set, to the
+  process-provider seam, and SHALL hold each plugin session to the set's
+  transport limits.
 - The `fsl-cli` composition SHALL start and admit every configured entry
   before beginning negotiation.
 - If distinct configured process sessions return the same identity from their
@@ -118,11 +156,12 @@ settlement path used for first-party providers.
   without reconstructing it or adding members.
 - The `fsl-cli` adapter SHALL build each request's `package` from the emitted
   package's exact bytes. The request carries no `package_id`.
-- The `fsl-cli` adapter SHALL copy the `deadline_ms` supplied in the caller's
-  selected provider configuration entry into the process-provider request and
-  copy that same value unchanged into the FR-331 request. It SHALL NOT derive a
-  deadline from a default, ambient state, or another provider entry. It SHALL
-  NOT add request-level `domains` or `limits`.
+- The `fsl-cli` adapter SHALL copy the run limit set's `deadline_ms` (the
+  `--provider-limit deadline_ms` value, or FSL FR-287's default 600000) into
+  the process-provider request and copy that same value unchanged into the
+  FR-331 request. It SHALL NOT derive a deadline from the configuration
+  document, ambient state, or a provider's registration. It SHALL NOT add
+  request-level `domains` or `limits`.
 - The `fsl-cli` adapter SHALL serialize each item's request index, claim
   locus, kind, extent/bounds and candidate set from the corresponding retained
   FSL `RequirementItem`/`CandidateOutcome`, using the same request data used to
@@ -161,7 +200,7 @@ settlement path used for first-party providers.
   FSL, which has no process request-body reader.
 - The `fsl-cli` adapter SHALL request graceful shutdown of every active
   plugin session before normal command termination. On Linux and macOS, if
-  graceful shutdown exceeds `RunLimits.cancellation_grace`, it SHALL terminate
+  graceful shutdown exceeds the run limit set's `grace_ms`, it SHALL terminate
   the process tree and await cleanup within the one-second bound in FR-013.
   On Windows, the merged host's forced cleanup path terminates the Job Object
   through `terminate_tree`/`terminate_job`; native Windows evidence remains
@@ -169,7 +208,7 @@ settlement path used for first-party providers.
   IR-674 and specified by FR-013-AC-14.
 - When `fsl-cli` on Linux or macOS receives SIGINT or SIGTERM while a plugin
   session is starting, running or shutting down, it SHALL request cancellation
-  through the caller-owned FSL handle, allow `RunLimits.cancellation_grace` to
+  through the caller-owned FSL handle, allow the run limit set's `grace_ms` to
   expire or the session to settle, terminate any remaining
   plugin process tree, and await cleanup within the one-second bound in
   FR-013 before exiting. The CLI SHALL restore the default signal disposition
@@ -187,14 +226,14 @@ settlement path used for first-party providers.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-006-AC-1 | When negotiation selects a process provider, the driver invokes its process-provider seam with the configuration entry associated with that provider's once-admitted hello identity, one `EmittedPackage` value, that entry's caller-supplied deadline, the registered-candidate manifest snapshot and exactly that provider's negotiated items; `fsl-cli` implements the seam with `filament-plugin-host` and passes the once-admitted hello descriptor to the driver's existing registry. | Partial (TC-013, TC-028; production dispatch and typed-result retention are tested; complete field projection and later-start failure cleanup remain partial) |
+| FR-006-AC-1 | When negotiation selects a process provider, the driver invokes its process-provider seam with the configuration entry associated with that provider's once-admitted hello identity, one `EmittedPackage` value, the run limit set's `deadline_ms` and transport limits, the registered-candidate manifest snapshot and exactly that provider's negotiated items; `fsl-cli` implements the seam with `filament-plugin-host` and passes the once-admitted hello descriptor to the driver's existing registry. | Partial (TC-013, TC-028; production dispatch and typed-result retention are tested; complete field projection and later-start failure cleanup remain partial) |
 | FR-006-AC-2 | Validated typed results returned through the process-provider seam enter the same driver proof settlement path as first-party provider results when FSL defines their terminal mapping; results without a current FSL mapping remain typed and unmapped, while unrelated routed items retain their own results. | Planned (TC-013; no end-to-end claim from an injected boundary; IR-672, IR-677, QSL-490 and QSL-655) |
-| FR-006-AC-3 | Before normal CLI command termination, the adapter requests graceful shutdown of every active plugin session; on Linux and macOS, if `RunLimits.cancellation_grace` expires first, the process tree terminates and cleanup completes within one second. The merged Windows host force-terminates the Job Object through `terminate_tree`/`terminate_job`; native Windows evidence remains planned. Kill-on-close is separately planned under IR-674. | Partial (TC-013, TC-028; normal host shutdown and production signal cleanup are covered, but the one-second forced-cleanup guarantee lacks a production binary assertion) |
-| FR-006-AC-4 | On Linux or macOS, handled SIGINT or SIGTERM while a plugin session is starting, running or shutting down requests cancellation through the caller-owned FSL handle, waits for settlement or `RunLimits.cancellation_grace` expiry, and cleans up the plugin process tree before the CLI restores the default disposition and re-raises the signal. No FSL cancellation cause is claimed; with no active session, the platform's default signal disposition is retained. | Test |
+| FR-006-AC-3 | Before normal CLI command termination, the adapter requests graceful shutdown of every active plugin session; on Linux and macOS, if the run limit set's `grace_ms` expires first, the process tree terminates and cleanup completes within one second. The merged Windows host force-terminates the Job Object through `terminate_tree`/`terminate_job`; native Windows evidence remains planned. Kill-on-close is separately planned under IR-674. | Partial (TC-013, TC-028; normal host shutdown and production signal cleanup are covered, but the one-second forced-cleanup guarantee lacks a production binary assertion) |
+| FR-006-AC-4 | On Linux or macOS, handled SIGINT or SIGTERM while a plugin session is starting, running or shutting down requests cancellation through the caller-owned FSL handle, waits for settlement or the run limit set's `grace_ms` expiry, and cleans up the plugin process tree before the CLI restores the default disposition and re-raises the signal. No FSL cancellation cause is claimed; with no active session, the platform's default signal disposition is retained. | Test |
 | FR-006-AC-5 | The driver composes the request manifest snapshot from the lossless FR-331 DTO retained in each registered-candidate registry record, covering linked and process providers; the `fsl-cli` adapter serializes that snapshot without reconstructing or adding members. | Planned (TC-013) |
 | FR-006-AC-6 | The `fsl-cli` adapter serializes `package` as the unpadded base64url encoding of the emitted package's exact bytes. | Planned (TC-013) |
 | FR-006-AC-7 | Retired: the request carries no `package_id`; the `fsl-cli` adapter serializes the package bytes from the `EmittedPackage` value. | Not applicable |
-| FR-006-AC-8 | The `fsl-cli` adapter serializes `deadline_ms` equal to the `deadline_ms` in the selected provider's validated `--provider-config` entry, unchanged. | Test (TC-013, TC-028) |
+| FR-006-AC-8 | The `fsl-cli` adapter serializes `deadline_ms` equal to the run limit set's `deadline_ms`: the `--provider-limit deadline_ms=<value>` value unchanged, or 600000 when the option is not given; two configured providers of one run receive equal `deadline_ms`. | Test (TC-013, TC-028) |
 | FR-006-AC-9 | The `fsl-cli` adapter serializes a request without top-level `domains` or `limits` members. | Planned (TC-013) |
 | FR-006-AC-10 | The `fsl-cli` adapter serializes each item's request index, claim locus and kind from the corresponding retained FSL `RequirementItem`/`CandidateOutcome`, using the same request data used to build typed CG negotiation. | Partial (TC-013; production composition checks index, claim and kind; full field coverage remains incomplete) |
 | FR-006-AC-11 | The `fsl-cli` adapter serializes each item's selected backend from CG's routed output and its candidate set from the corresponding retained FSL `RequirementItem`/`CandidateOutcome`, using the same request data used to build typed CG negotiation. | Test (TC-013) |
@@ -210,10 +249,12 @@ settlement path used for first-party providers.
 | FR-006-AC-21 | For a preserved non-canonical-package response, the driver's shared settlement path maps each failed routed item to FSL `TerminalValue::Failed`. | Planned (TC-013; IR-677 and FSL settlement API) |
 | FR-006-AC-22 | For package-mismatch and non-canonical-package responses, the driver's shared settlement path carries each typed FR-272 diagnostic separately in FSL `OutcomeDiagnostic`. | Planned (TC-013; IR-677 and FSL settlement API) |
 | FR-006-AC-23 | Settling a failed process-provider response leaves unrelated provider results unchanged. | Planned (TC-013; IR-677 and FSL settlement API) |
-| FR-006-AC-24 | The `--provider-config` file accepts only the documented strict JSON shape; missing/unreadable files, malformed JSON, missing or wrongly typed fields, a `deadline_ms` that is missing, non-integer, outside 1..=9,007,199,254,740,991, and unknown fields at any object level are rejected before any provider starts. In machine mode, these failures use the existing `Operation::Execute` `Code::InvalidRequest` input-refusal result and serialize that typed outcome once. | Test (TC-028) |
+| FR-006-AC-24 | The `--provider-config` file accepts only FSpec FR-561's `filament.provider-config/v1` shape (`format`, `providers`, entries with `path` and optional `arguments`); a missing or unreadable file refuses naming the path; a non-JSON document, a missing `format` or `providers`, an unknown member at any object level (including an entry member `deadline_ms` or `limits`), an entry with no or a blank `path`, and `arguments` that are not strings refuse `invalid-request` naming the file and the member; `format` `filament.provider-config/v2` refuses `unknown_wire`/`unsupported-wire`; each exits 20 with empty stdout under both `--format text` and `--format json` and starts no provider. A relative `path` resolves against the document's directory. | Test (TC-028) |
 | FR-006-AC-25 | The `fsl-cli` composition starts and admits every configured provider before negotiation, and uses each admitted hello descriptor as the sole provider identity for subsequent selection and dispatch. | Partial (TC-028; selected-provider production dispatch is tested; later-start/hello failure cleanup remains untested) |
 | FR-006-AC-26 | If distinct configured sessions return the same admitted identity, the composition begins no negotiation and closes all sessions; it preserves a FSL registration refusal, or returns the existing CLI `InvalidRequest` input refusal when FSL treats repeated identical admission as idempotent. | Test (TC-028; idempotent duplicate admission path) |
 | FR-006-AC-27 | If a configured provider fails to start or admit its hello, the composition begins no negotiation, closes all earlier active sessions, and preserves the original typed host failure. | Planned (TC-028) |
+| FR-006-AC-28 | `fsl run --provider-config providers.json` with no `--provider-limit` sends the fixture plugin a request whose `deadline_ms` is 600000 and holds it to a 67108864-byte frame limit; with `--provider-limit deadline_ms=250 --provider-limit max_frame_bytes=1048576` the request carries `deadline_ms` 250 and a 1048577-byte result frame settles the item `failed` with the frame-length tool failure naming limit 1048576; `--provider-limit` is accepted without `--provider-config`. | Test (TC-041) |
+| FR-006-AC-29 | `fsl run` with `--provider-limit max_frames=4`, `deadline_ms`, `deadline_ms=0`, `deadline_ms=10s`, `deadline_ms=010`, `max_total_bytes=9007199254740992`, or `deadline_ms=5` given twice each refuses `invalid-request` naming `--provider-limit` and the argument, exits 20 with empty stdout under both `--format text` and `--format json`, and starts no plugin; `fsl parse --provider-limit deadline_ms=5` and `fsl parse --provider-config providers.json` refuse the option as unknown, exit 20. | Test (TC-041) |
 
 ## Dependencies
 
@@ -240,3 +281,5 @@ settlement path used for first-party providers.
   composition is implemented, with remaining request-field and failure-path
   coverage identified in the acceptance rows.
 - [TC-013](../test-cases/TC-013-plugin-host-protocol-and-failures.md).
+- FSL FR-287 names `--provider-limit`, its limits and defaults; FSL FR-964 carries them as `ProviderOptions.provider_limits`; FSpec FR-561 defines the plugins-only configuration document; FSpec FR-777 makes the limit set one per run.
+- [TC-041](../test-cases/TC-041-set-provider-limits-per-run.md), verifying AC-28 and AC-29.
