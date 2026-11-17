@@ -434,8 +434,8 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
         .expect("run with the CLI observation limit");
     assert_eq!(request_limited.status.code(), Some(22));
     assert_eq!(cli_limited.status.code(), Some(22));
-    assert!(request_limited.stderr.is_empty());
-    assert!(cli_limited.stderr.is_empty());
+    assert!(request_limited.stderr.is_empty(), "{}", String::from_utf8_lossy(&request_limited.stderr));
+    assert!(cli_limited.stderr.is_empty(), "{}", String::from_utf8_lossy(&cli_limited.stderr));
 
     let request_document: serde_json::Value =
         serde_json::from_slice(&request_limited.stdout).expect("request limit outcome JSON");
@@ -485,10 +485,11 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
 /// Trace: QSL-2015; the removed `observation.document_bytes` flag remains unknown.
 #[test]
 fn observation_document_bytes_is_not_a_cli_limit_setting() {
+    let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
         .args([
             "run",
-            RUN_REQUEST,
+            request.as_str(),
             "--limit",
             "observation.document_bytes=10",
             "--format",
