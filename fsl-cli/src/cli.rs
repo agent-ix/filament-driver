@@ -123,10 +123,10 @@ fn help_exit_code() -> ExitCode {
     help.push_str(concat!(
         "\nSource operands:\n",
         "  parse <authority> <identity> <file> [--limit name=value] [--format json|text]\n",
-        "  format <authority> <identity> <file> [--format json|text]\n",
+        "  format <authority> <identity> <file> [--limit name=value] [--format json|text]\n",
         "  check <source-path> [--model <file>] [--library <file>]... [--limit name=value]\n",
         "      [--dependent-bytes <bytes>] [--format json|text]\n",
-        "  compile <request-file> [--clocks <json-file>] [--output <file>]\n",
+        "  compile <request-file> [--limit name=value] [--clocks <json-file>] [--output <file>]\n",
         "      [--format json|text]\n",
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
         "      [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>]\n",
@@ -472,6 +472,7 @@ struct CompileOptions {
     path: PathBuf,
     clocks: Option<PathBuf>,
     output: Option<PathBuf>,
+    limits: LimitOverrides,
 }
 
 struct CheckOptions {
@@ -490,7 +491,7 @@ struct SourceOptions {
 
 impl SourceOptions {
     fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
-        let limit_usage = if verb == Verb::Parse {
+        let limit_usage = if matches!(verb, Verb::Parse | Verb::Format) {
             " [--limit name=value]"
         } else {
             ""
@@ -510,7 +511,7 @@ impl SourceOptions {
                 index += 2;
                 continue;
             }
-            if argument == "--limit" && verb == Verb::Parse {
+            if argument == "--limit" && matches!(verb, Verb::Parse | Verb::Format) {
                 let value = arguments
                     .get(index + 1)
                     .and_then(|value| value.to_str())
@@ -534,7 +535,11 @@ impl SourceOptions {
         let identity = identity
             .to_str()
             .ok_or_else(|| format!("{} identity label must be valid UTF-8", verb.name()))?;
-        let limits = parse_frontend_limit_operands(&limit_operands, &fsl_cst::Limits::default())?;
+        let limits = if verb == Verb::Format {
+            LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?
+        } else {
+            parse_frontend_limit_operands(&limit_operands, &fsl_cst::Limits::default())?
+        };
         Ok(Self {
             source: SourceIdentity::new(authority, identity),
             path: PathBuf::from(*path),
@@ -548,10 +553,20 @@ impl CompileOptions {
         let mut positionals = Vec::new();
         let mut clocks = None;
         let mut output: Option<PathBuf> = None;
+        let mut limit_operands = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
             if argument == "--format" {
+                index += 2;
+                continue;
+            }
+            if argument == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
             }
@@ -573,7 +588,7 @@ impl CompileOptions {
         }
         let [path] = positionals.as_slice() else {
             return Err(
-                "usage: fsl compile <request-file> [--clocks <json-file>] [--output <file>] [--format json|text]"
+                "usage: fsl compile <request-file> [--limit name=value] [--clocks <json-file>] [--output <file>] [--format json|text]"
                     .to_owned(),
             );
         };
@@ -581,6 +596,7 @@ impl CompileOptions {
             path: PathBuf::from(*path),
             clocks,
             output,
+            limits: parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?,
         })
     }
 }
@@ -1439,6 +1455,10 @@ fn run_configured_providers(
 
 /// Compile a request through its owner and retain the actual package outcome.
 fn compile(options: CompileOptions) -> CommandResult {
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "compile") {
+        return CommandResult::input_refusal(Operation::Package, error);
+    }
     let clocks = match options
         .clocks
         .as_deref()
@@ -1650,7 +1670,14 @@ fn parse_source(options: SourceOptions) -> CommandResult {
 
 /// Format one parsed source through FSL and retain its typed outcome.
 fn format_source(options: SourceOptions) -> CommandResult {
-    let limits = fsl_cst::Limits::default();
+    let mut limits = fsl_cst::Limits::default();
+    let mut format_limits = FormatLimits::default();
+    if let Err(error) = options
+        .limits
+        .apply_to_setting_group(&mut [&mut limits, &mut format_limits])
+    {
+        return CommandResult::input_refusal(Operation::Format, error.message_for("format"));
+    }
     let bytes = match read_source(&options.path, limits.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1663,7 +1690,7 @@ fn format_source(options: SourceOptions) -> CommandResult {
     let cancel = Cancel::new();
     let result = fsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
-        .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
+        .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
     let document = OutcomeDocument::from_format(&result);
     let text_output = result.ok().map(Staged::into_value);
     CommandResult::formatted(document, text_output)

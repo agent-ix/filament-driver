@@ -71,6 +71,34 @@ impl LimitOverrides {
         Ok(())
     }
 
+    /// Apply each supplied stage setting to the first matching limit group.
+    pub fn apply_to_setting_group(
+        &self,
+        limits: &mut [&mut dyn SettingLimits],
+    ) -> Result<(), LimitError> {
+        for (name, value) in &self.0 {
+            let SettingName::Stage(setting) = name else {
+                return Err(LimitError::OperationUnavailable { setting: *name });
+            };
+            let Some(target) = limits.iter_mut().find(|target| {
+                target
+                    .bounds()
+                    .iter()
+                    .any(|(candidate, _)| candidate == setting)
+            }) else {
+                return Err(LimitError::OperationUnavailable {
+                    setting: *name,
+                });
+            };
+            if !target.set_bound(*setting, *value) {
+                return Err(LimitError::OperationUnavailable {
+                    setting: *name,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Apply settings to the actual stage, observation and accounting limits of a clause run.
     pub fn apply_to_clause(&self, request: &mut ClauseRunRequest) -> Result<(), LimitError> {
         self.apply_parts(

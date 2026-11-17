@@ -712,6 +712,81 @@ fn frontend_limit_unknown_setting_names_accepted_settings() {
     assert!(message.contains("s1.nodes"), "{message}");
 }
 
+/// Trace: QSL-2014, FR-255-AC-2; compile accepts a named limit operand.
+#[test]
+fn compile_accepts_limit_operand() {
+    let request = requests::request(SOURCE, None);
+    let output = Command::new(FSL)
+        .args([
+            "compile",
+            request.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run compile with a named limit");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty());
+}
+
+/// Trace: QSL-2014, FR-255-AC-4; format's source-byte refusal names its limit.
+#[test]
+fn format_limit_message_names_the_source_byte_setting() {
+    let directory = TemporaryDirectory::new("format-source-byte-limit");
+    let source = directory.0.join("source.native");
+    std::fs::write(&source, b"source bytes").expect("write format source fixture");
+    let output = Command::new(FSL)
+        .args([
+            "format",
+            "issuer",
+            "identity",
+            source.to_str().expect("temporary path is UTF-8"),
+            "--limit",
+            "s1.input_bytes=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run format with a low source-byte limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("format emits an outcome document");
+    let message = document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("format limit refusal has a message");
+    assert!(message.contains("s1.input_bytes"), "{message}");
+}
+
+/// Trace: QSL-2014, FR-255-AC-3; run does not offer a request member for CLI limits.
+#[test]
+fn run_limit_message_only_offers_the_cli_setting() {
+    let request = requests::request(SOURCE, None);
+    let output = Command::new(FSL)
+        .args([
+            "run",
+            request.as_str(),
+            "--limit",
+            "s1.tokens=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with a low token limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("run emits an outcome document");
+    let serialized = document.to_string();
+    assert!(serialized.contains("s1.tokens"), "{serialized}");
+    assert!(!serialized.contains("stage_limits"), "{serialized}");
+}
+
 /// Trace: FR-002-AC-1, FR-002-AC-3; text mode writes FSL's formatted UTF-8 value.
 #[test]
 fn format_writes_fsl_formatted_text_without_editing_the_source() {
