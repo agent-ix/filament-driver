@@ -2020,52 +2020,54 @@ fn compact_json(value: &serde_json::Value) -> String {
 struct MonitorOptions {
     path: PathBuf,
     input: Option<PathBuf>,
+    /// `--provider-config` and `--provider-limit`, as every provider-routing
+    /// verb takes them (FSL FR-287, FR-644).
+    providers: ProviderArguments,
 }
 
 impl MonitorOptions {
-    const USAGE: &str = "usage: fsl monitor <request-file> [--input <file>] [--format json|text]";
+    const USAGE: &str = "usage: fsl monitor <request-file> [--input <file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
         let mut input = None;
+        let mut providers = ProviderArguments::default();
         let mut index = 0;
         while index < arguments.len() {
+            if let Some(taken) = providers.take(arguments, index)? {
+                index += taken;
+                continue;
+            }
             let argument = &arguments[index];
             if argument == "--format" {
                 index += 2;
                 continue;
             }
-            if argument == "--provider-config" {
-                return Err(
-                    "`--provider-config` is not available for `monitor` yet: configured \
-                     providers are not built (QSL-2132, FSL FR-635)"
-                        .to_owned(),
-                );
-            }
             if argument == "--input" {
                 if input.is_some() {
-                    return Err("--input may be supplied only once".to_owned());
+                    return Err("--input may be supplied only once".to_owned().into());
                 }
                 let value = arguments
                     .get(index + 1)
                     .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "--input requires a path".to_owned())?;
+                    .ok_or_else(|| OptionRefusal::from("--input requires a path".to_owned()))?;
                 input = Some(PathBuf::from(value));
                 index += 2;
                 continue;
             }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown monitor option `{option}`"));
+                return Err(format!("unknown monitor option `{option}`").into());
             }
             positionals.push(argument);
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned());
+            return Err(Self::USAGE.to_owned().into());
         };
         Ok(Self {
             path: PathBuf::from(*path),
             input,
+            providers,
         })
     }
 }
@@ -2204,39 +2206,54 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         },
         None => Box::new(io::BufReader::new(io::stdin())),
     };
+    let config = match load_provider_config(&options.providers) {
+        Ok(config) => config,
+        Err(refusal) => return *refusal,
+    };
     let path = options.path.clone();
     // The run is one signal-reporting session: SIGINT or SIGTERM cancels the
     // handle with cause `requested`, the record stream ends at once even
     // while a read blocks, and FSL settles the cancelled session (exit 22).
-    let ran = crate::signals::run(move |signals| {
-        let cancel = Cancel::new();
-        let _reporting = signals.activate_reporting(cancel.clone());
-        let mut output = MonitorOutput {
-            format,
-            closed: false,
-            failure: None,
-        };
-        let records = CancellableRecords::new(reader, cancel.clone());
-        let summary = command::monitor(
-            &path,
-            records,
-            &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
-            RunLimits::default(),
-            &cancel,
-        );
-        // A stream the cancellation ended is not the complete stream, so its
-        // summary does not stand: the run is FSL's cancelled monitor run.
-        let summary = match summary {
-            Ok(_) if cancel.cause().is_some() => Err(Box::new(command::RunError {
-                cause: command::RunCause::MonitorCancelled,
-                sources: Default::default(),
-            })),
-            summary => summary,
-        };
-        (summary, output)
-    });
+    // The configured providers start inside it and FSL routes the request's
+    // `items` to them before the first record (FSL FR-644, FR-635).
+    let ran = with_started_providers(
+        config,
+        options.providers.limits,
+        true,
+        move |negotiation, engines, provider_options, cancel| {
+            let mut output = MonitorOutput {
+                format,
+                closed: false,
+                failure: None,
+            };
+            let records = CancellableRecords::new(reader, cancel.clone());
+            let summary = command::monitor(
+                &path,
+                records,
+                &mut |event| output.line(event.as_value(), || monitor_event_text(event.as_value())),
+                command::MonitorProviders {
+                    negotiate: negotiation,
+                    providers: engines,
+                    options: provider_options,
+                },
+                RunLimits::default(),
+                cancel,
+            );
+            // A stream the cancellation ended is not the complete stream, so its
+            // summary does not stand: the run is FSL's cancelled monitor run.
+            let summary = match summary {
+                Ok(_) if cancel.cause().is_some() => Err(Box::new(command::RunError {
+                    cause: command::RunCause::MonitorCancelled,
+                    sources: Default::default(),
+                })),
+                summary => summary,
+            };
+            (summary, output)
+        },
+    );
     let (summary, mut output) = match ran {
-        Ok(ran) => ran,
+        Ok(Ok(ran)) => ran,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Monitor, message),
         Err(error) => {
             return CommandResult::failure(
                 Category::InternalFailure,
@@ -2299,7 +2316,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Monitor {
         return match MonitorOptions::parse(raw_arguments) {
             Ok(options) => monitor(&options, format),
-            Err(error) => CommandResult::input_refusal(Operation::Monitor, error),
+            Err(error) => option_refusal(Operation::Monitor, &error),
         };
     }
     if verb == Verb::Run {

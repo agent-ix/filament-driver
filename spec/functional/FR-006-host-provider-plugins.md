@@ -78,9 +78,9 @@ settlement path used for first-party providers.
 - Every provider-routing verb of `fsl-cli` (`analyze`, `prove`, `monitor`,
   `run`, `replay`, `generate`; FSL FR-287, FSpec FR-561) SHALL accept
   `--provider-config <path>` and `--provider-limit <name>=<value>`. `run`,
-  `analyze` and `replay` meet this requirement now. `monitor` refuses both options
-  under the deviation FR-025 (QSL-2132) states, which lifts when its ticket
-  lands. A verb that routes no items SHALL refuse both options as
+  `analyze`, `replay` and `monitor` meet this requirement now; `monitor`
+  passes the started providers to FSL, which routes the request's `items`
+  to them (FR-025). A verb that routes no items SHALL refuse both options as
   unknown, exit 20 (FSpec FR-301).
 - The configuration file SHALL be FSpec FR-561's
   `filament.provider-config/v1` document: a JSON object with exactly
