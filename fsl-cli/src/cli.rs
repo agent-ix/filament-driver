@@ -597,10 +597,9 @@ impl CheckOptions {
         }
         let (source_identity, path) = match positionals.as_slice() {
             [path] => (None, path.clone()),
-            [authority, identity, path] => (
-                Some(SourceIdentity::new(authority, identity)),
-                path.clone(),
-            ),
+            [authority, identity, path] => {
+                (Some(SourceIdentity::new(authority, identity)), path.clone())
+            }
             _ => return Err(Self::USAGE.to_owned().into()),
         };
         if markdown && source_identity.is_none() {
@@ -1255,19 +1254,24 @@ fn check_markdown_source(
         Ok(report) => CommandResult::document(OutcomeDocument::from_native_fences(report.value())),
         Err(failure) => {
             let code = match &failure {
-                fsl_foundation::diagnostic::StageFailure::Refused(cause)
-                | fsl_foundation::diagnostic::StageFailure::RefusedWithPayload(cause, _) => {
+                fsl_foundation::diagnostic::StageFailure::Refused(cause) => cause.code(),
+                fsl_foundation::diagnostic::StageFailure::RefusedWithPayload(cause, _) => {
                     cause.code()
                 }
-                _ => Code::InternalFailure,
+                fsl_foundation::diagnostic::StageFailure::Limit(_)
+                | fsl_foundation::diagnostic::StageFailure::LimitWithPayload(_, _) => {
+                    Code::ResourceExhausted
+                }
+                fsl_foundation::diagnostic::StageFailure::Cancelled(_) => Code::Cancelled,
+                fsl_foundation::diagnostic::StageFailure::Fault(_) => Code::RuntimeInvariant,
             };
             CommandResult::document(
-                OutcomeDocument::new(Operation::Check, None, code.category()).with_diagnostics(
+                OutcomeDocument::new(Operation::Check, None, failure.category()).with_diagnostics(
                     vec![OutcomeDiagnostic::new(
                         None,
                         code.as_str(),
                         None,
-                        format!("{failure:?}"),
+                        failure.to_string(),
                     )],
                 ),
             )
