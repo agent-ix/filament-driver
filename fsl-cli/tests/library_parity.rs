@@ -17,6 +17,7 @@ use fsl_replay::spine::{
     PackageLimits, ParseRequest, SpineLimits, DEFAULT_WORK_UNITS,
 };
 use fsl_replay::OutcomeDocument;
+use ix_trace_rs::trace;
 
 #[path = "common/requests.rs"]
 mod requests;
@@ -269,5 +270,37 @@ fn binary_refusals_equal_the_library_refusals_for_a_malformed_source() {
         &fsl(&["run", run_request.as_str()]),
         &library_execute(&path, bytes, "f", Vec::new()),
         "run",
+    );
+}
+
+/// FR-002-AC-19: `fsl check` names a source that does not parse by
+/// authority `filament` and the path as given, never by a command-layer
+/// identity, and its refusal equals the library's under that identity.
+#[test]
+#[trace("TC-043", "FR-002-AC-19")]
+#[ignore = "QSL-2423: check_outcome names a malformed source fsl-command/check-source instead of filament and the path as given"]
+fn a_malformed_check_source_is_named_by_the_supplied_path() {
+    let (_directory, path) = source_file("malformed-identity", MALFORMED_SOURCE);
+    let output = fsl(&["check", &path]);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check prints one JSON document");
+    let diagnostics = document["diagnostics"]
+        .as_array()
+        .expect("the refusal carries diagnostics");
+    assert!(!diagnostics.is_empty(), "{document}");
+    for diagnostic in diagnostics {
+        assert_eq!(
+            diagnostic["locus"]["source"],
+            serde_json::json!({"authority": "filament", "identity": path}),
+            "{diagnostic}"
+        );
+    }
+    let text = document.to_string();
+    assert!(!text.contains("fsl-command"), "{text}");
+    assert!(!text.contains("check-source"), "{text}");
+    assert_parity(
+        &output,
+        &library_check(&path, MALFORMED_SOURCE.as_bytes()),
+        "check",
     );
 }
