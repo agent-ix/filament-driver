@@ -41,13 +41,13 @@ path = "src/lib.rs"
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
-fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
+fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
+fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
+fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
+fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "1bf0de0d5a3c7539c64e8b95707d06faffb17537" }
 filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.4" }
 filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", tag = "v0.1.1", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
