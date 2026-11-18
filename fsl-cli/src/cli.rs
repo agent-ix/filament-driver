@@ -128,7 +128,7 @@ fn help_exit_code() -> ExitCode {
         "  format <authority> <identity> <file> [--format json|text]\n",
         "  check <source-path> [--model <file>] [--library <file>]... [--limit name=value]\n",
         "      [--dependent-bytes <bytes>] [--format json|text]\n",
-        "  compile <request-file> [--clocks <json-file>] [--output <file>]\n",
+        "  compile <request-file> [--clocks <json-file>] [--output <file>] [--limit name=value]\n",
         "      [--format json|text]\n",
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
         "      [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>]\n",
@@ -329,6 +329,7 @@ struct CompileOptions {
     path: PathBuf,
     clocks: Option<PathBuf>,
     output: Option<PathBuf>,
+    limits: LimitOverrides,
 }
 
 struct CheckOptions {
@@ -447,6 +448,7 @@ impl CompileOptions {
         let mut positionals = Vec::new();
         let mut clocks = None;
         let mut output: Option<PathBuf> = None;
+        let mut limit_operands = Vec::new();
         let mut index = 0;
         while index < arguments.len() {
             let argument = &arguments[index];
@@ -464,6 +466,15 @@ impl CompileOptions {
                 index += 2;
                 continue;
             }
+            if argument == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
+                index += 2;
+                continue;
+            }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
                 return Err(format!("unknown compile option `{option}`"));
             }
@@ -472,14 +483,16 @@ impl CompileOptions {
         }
         let [path] = positionals.as_slice() else {
             return Err(
-                "usage: fsl compile <request-file> [--clocks <json-file>] [--output <file>] [--format json|text]"
+                "usage: fsl compile <request-file> [--clocks <json-file>] [--output <file>] [--limit name=value] [--format json|text]"
                     .to_owned(),
             );
         };
+        let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
             path: PathBuf::from(*path),
             clocks,
             output,
+            limits,
         })
     }
 }
@@ -588,14 +601,18 @@ fn parse_frontend_limit_operands(
     bounds: &impl SettingLimits,
 ) -> Result<LimitOverrides, String> {
     LimitOverrides::parse(operands).map_err(|error| {
-        let accepted = bounds
-            .bounds()
-            .into_iter()
-            .map(|(setting, _)| setting.name())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let accepted = accepted_frontend_limit_settings(bounds);
         format!("{error}; settings accepted by this command: {accepted}")
     })
+}
+
+fn accepted_frontend_limit_settings(bounds: &impl SettingLimits) -> String {
+    bounds
+        .bounds()
+        .into_iter()
+        .map(|(setting, _)| setting.name())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn apply_frontend_limits(
@@ -603,9 +620,13 @@ fn apply_frontend_limits(
     bounds: &mut impl SettingLimits,
     operation: &str,
 ) -> Result<(), String> {
-    overrides
-        .apply_to_limits(bounds)
-        .map_err(|error| error.message_for(operation))
+    overrides.apply_to_limits(bounds).map_err(|error| {
+        let accepted = accepted_frontend_limit_settings(bounds);
+        format!(
+            "{}; settings accepted by this command: {accepted}",
+            error.message_for(operation)
+        )
+    })
 }
 
 impl RunOptions {
@@ -1025,9 +1046,14 @@ fn compile(options: CompileOptions) -> CommandResult {
         Ok(clocks) => clocks,
         Err(refusal) => return clocks_refusal(Operation::Package, refusal),
     };
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "compile") {
+        return CommandResult::input_refusal(Operation::Package, error);
+    }
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
+        limits: Some(&limits),
         ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
