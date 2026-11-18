@@ -788,7 +788,7 @@ fn compile_refuses_recognized_unavailable_limit_setting() {
     let refusal: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("unavailable limit emits a refusal");
     assert_eq!(refusal["category"], "refusal");
-    assert_eq!(refusal["diagnostics"][0]["code"], "invalid_request");
+    assert_eq!(refusal["diagnostics"][0]["code"], "invalid-request");
     let message = refusal["diagnostics"][0]["message"]
         .as_str()
         .expect("limit refusal has a message");
