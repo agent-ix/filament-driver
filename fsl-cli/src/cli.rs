@@ -21,8 +21,11 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::wire_format::WireFormat;
-use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
-use fsl_replay::spine::{parse, CompileRefusal, ParseRequest, SpineLimits};
+use fsl_foundation::{SettingLimits, SettingName, Source, SourceIdentity};
+use fsl_replay::spine::{
+    check_native_fences, parse, CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest,
+    ParseRequest, SpineLimits,
+};
 use fsl_replay::RunRefusal;
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
@@ -334,6 +337,8 @@ struct CompileOptions {
 
 struct CheckOptions {
     path: String,
+    source_identity: Option<SourceIdentity>,
+    markdown: bool,
     model: Option<PathBuf>,
     libraries: Vec<PathBuf>,
     dependent_bytes: usize,
@@ -498,10 +503,11 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
-    const USAGE: &str = "usage: fsl check <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--integer-division euclidean|floor|truncating] [--format json|text]";
+    const USAGE: &str = "usage: fsl check [--markdown] <source-path> | [--markdown] <authority> <identity> <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--integer-division euclidean|floor|truncating] [--format json|text]";
 
     fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
         let mut positionals = Vec::new();
+        let mut markdown = false;
         let mut integer_division = None;
         let mut model = None;
         let mut libraries = Vec::new();
@@ -515,6 +521,14 @@ impl CheckOptions {
                 .ok_or_else(|| "check arguments must be valid UTF-8".to_owned())?;
             if argument == "--format" {
                 index += 2;
+                continue;
+            }
+            if argument == "--markdown" {
+                if markdown {
+                    return Err(OptionRefusal::Quiet(Self::USAGE.to_owned()));
+                }
+                markdown = true;
+                index += 1;
                 continue;
             }
             if argument == "--model" {
@@ -581,12 +595,22 @@ impl CheckOptions {
             positionals.push(argument.to_owned());
             index += 1;
         }
-        if positionals.len() != 1 {
+        let (source_identity, path) = match positionals.as_slice() {
+            [path] => (None, path.clone()),
+            [authority, identity, path] => (
+                Some(SourceIdentity::new(authority, identity)),
+                path.clone(),
+            ),
+            _ => return Err(Self::USAGE.to_owned().into()),
+        };
+        if markdown && source_identity.is_none() {
             return Err(Self::USAGE.to_owned().into());
         }
         let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
-            path: positionals.remove(0),
+            path,
+            source_identity,
+            markdown,
             model,
             libraries,
             dependent_bytes,
@@ -1093,6 +1117,9 @@ fn check_source(options: CheckOptions) -> CommandResult {
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "check") {
         return CommandResult::input_refusal(Operation::Check, error);
     }
+    if options.markdown {
+        return check_markdown_source(options, limits, integer_division);
+    }
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1100,7 +1127,10 @@ fn check_source(options: CheckOptions) -> CommandResult {
             return CommandResult::catalog_failure_for(Operation::Check, Code::IoError, message);
         }
     };
-    let source = SourceIdentity::new("filament", &options.path);
+    let source = options
+        .source_identity
+        .clone()
+        .unwrap_or_else(|| SourceIdentity::new("filament", &options.path));
     let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
     tc018_record_check_request(&options, &source, &bytes, limits);
@@ -1162,6 +1192,87 @@ fn check_source(options: CheckOptions) -> CommandResult {
         ..command::CheckInputs::default()
     };
     check_result(&command::check_outcome(Path::new(&options.path), &inputs))
+}
+
+/// Check each native fence in an explicitly named Markdown document (FR-662).
+fn check_markdown_source(
+    options: CheckOptions,
+    limits: SpineLimits,
+    integer_division: Option<fsl_replay::AdmittedIntegerDivision>,
+) -> CommandResult {
+    if options.model.is_some() || !options.libraries.is_empty() {
+        return CommandResult::input_refusal(
+            Operation::Check,
+            "--model and --library are not supported with --markdown".to_owned(),
+        );
+    }
+    let bytes = match read_source(&options.path, limits.source.source_bytes) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let message = format!("could not read source {}: {error}", options.path);
+            return CommandResult::catalog_failure_for(Operation::Check, Code::IoError, message);
+        }
+    };
+    let identity = options
+        .source_identity
+        .unwrap_or_else(|| SourceIdentity::new("filament", &options.path));
+    let original = match Source::read_typed(
+        identity,
+        options.path.clone(),
+        &bytes,
+        limits.source.source_bytes,
+    ) {
+        Ok(source) => source,
+        Err(_) => {
+            return check_result(&command::check_outcome(
+                Path::new(&options.path),
+                &command::CheckInputs {
+                    limits,
+                    integer_division,
+                    ..command::CheckInputs::default()
+                },
+            ));
+        }
+    };
+    let packages = fsl_semantics::model::intake::PackageInput::new();
+    let dependencies = DependencyInput::default();
+    let cancel = Cancel::new();
+    let request = NativeFenceRequest {
+        original: &original,
+        packages: &packages,
+        dependencies: &dependencies,
+        extensions: None,
+        integer_division: integer_division.as_ref(),
+    };
+    match check_native_fences(
+        &request,
+        CheckLimits {
+            spine: limits,
+            ..CheckLimits::default()
+        },
+        &cancel,
+    ) {
+        Ok(report) => CommandResult::document(OutcomeDocument::from_native_fences(report.value())),
+        Err(failure) => {
+            let code = match &failure {
+                fsl_foundation::diagnostic::StageFailure::Refused(cause)
+                | fsl_foundation::diagnostic::StageFailure::RefusedWithPayload(cause, _) => {
+                    cause.code()
+                }
+                _ => Code::InternalFailure,
+            };
+            CommandResult::document(
+                OutcomeDocument::new(Operation::Check, None, code.category()).with_diagnostics(
+                    vec![OutcomeDiagnostic::new(
+                        None,
+                        code.as_str(),
+                        None,
+                        format!("{failure:?}"),
+                    )],
+                ),
+            )
+        }
+    }
 }
 
 /// The check result with the sources the check admitted.

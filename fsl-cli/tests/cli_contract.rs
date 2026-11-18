@@ -215,6 +215,55 @@ fn check_emits_fsl_check_outcome_document() {
     assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
 }
 
+/// Trace: QSL-2019, FR-662-AC-1, FSpec-FR-563-AC-1.
+#[test]
+#[trace("FR-662-AC-1")]
+fn check_markdown_checks_each_named_native_fence() {
+    let directory = TemporaryDirectory::new("check-markdown");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let broken = format!(
+        "{healthy}function Bad using v (x: Integer): Boolean pure {{ x }}\n"
+    );
+    let document = format!(
+        "### Healthy\n\n```ix:native\n{healthy}```\n\n### Broken\n\n```ix:native\n{broken}```\n"
+    );
+    std::fs::write(directory.0.join("spec.md"), document).expect("write Markdown fixture");
+    let output = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run Markdown check");
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(document["operation"], "check", "{document}");
+    let items = document["items"].as_array().expect("fence result items");
+    assert_eq!(items.len(), 2, "{document}");
+    assert!(items[0].to_string().contains("doc#Healthy"), "{document}");
+    for fragment in ["ill_typed", "doc#Broken", "Broken", "spec.md"] {
+        assert!(items[1].to_string().contains(fragment), "{fragment}: {document}");
+    }
+
+    let without_markdown = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args(["check", "agent-ix", "doc", "spec.md", "--format", "json"])
+        .output()
+        .expect("run native check against Markdown bytes");
+    assert_eq!(without_markdown.status.code(), Some(20), "{without_markdown:?}");
+    assert!(
+        String::from_utf8_lossy(&without_markdown.stdout).contains("invalid_syntax"),
+        "{without_markdown:?}"
+    );
+}
+
 /// Trace: QSL-1972 / FR-866-AC-1; check supplies the selected domain model to FSL.
 #[test]
 fn check_with_model_checks_importing_unit() {
