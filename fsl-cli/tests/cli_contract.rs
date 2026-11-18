@@ -67,18 +67,90 @@ impl Drop for TemporaryDirectory {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-const PAID_SHORT_REQUEST: &str = concat!(
+const COUNTER_MODEL: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/paid-short/requests/paid-short.json"
+    "/tests/fixtures/analyze-counter.semantic-ir.json"
 );
-const CHARGE_CHANGES_TOTAL_REQUEST: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/charge-changes-total/requests/charge-changes-total.json"
-);
-const ACCOUNTING_WORK_UNITS_REQUEST: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/accounting-work-units/requests/work-units.json"
-);
+
+fn write_counter_clause_request(
+    directory: &Path,
+    expression: &str,
+    current_value: u64,
+    accounting_work_units: Option<u64>,
+) -> PathBuf {
+    std::fs::copy(COUNTER_MODEL, directory.join("counter-model.json"))
+        .expect("write the driver-owned Counter model");
+    std::fs::write(
+        directory.join("counter.fsl"),
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"filament.value.complete/v1\";\n\
+             model M = \"test/counter\";\n\
+             invariant CounterRule using v on M::Counter at current {{ {expression} }}\n"
+        ),
+    )
+    .expect("write the focused Counter rule");
+    std::fs::write(
+        directory.join("current.json"),
+        serde_json::json!({
+            "format": "filament.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": "counter/current"},
+            "model": {"identity": "test/counter"},
+            "observation": "current",
+            "anchor": {"kind": "handler", "name": "validate"},
+            "populations": [{
+                "population": "ix://test/counter/counters",
+                "complete": true,
+                "objects": [{
+                    "key": "a",
+                    "type": "ix://test/counter/Counter",
+                    "fields": {"value": {"integer": current_value.to_string()}}
+                }]
+            }]
+        })
+        .to_string(),
+    )
+    .expect("write the focused Counter snapshot");
+
+    let mut clause = serde_json::json!({
+        "selection": {"clause": {
+            "name": "CounterRule",
+            "observation": "current",
+            "self": {"population": "ix://test/counter/counters", "key": "a"},
+            "anchor": {"kind": "handler", "name": "validate"}
+        }},
+        "observations": {"current": "current.json"}
+    });
+    if let Some(work_units) = accounting_work_units {
+        clause["accounting"] = serde_json::json!({"work_units": work_units});
+    }
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [{
+                "format": "semantic-ir/2.0.0",
+                "source": {
+                    "file": "counter-model.json",
+                    "authority": "test",
+                    "identity": "counter-model",
+                    "document": "Counter",
+                    "formal_revision": 1
+                }
+            }],
+            "program": {"source": {
+                "file": "counter.fsl",
+                "authority": "test",
+                "identity": "counter-rules",
+                "document": "CounterRules",
+                "formal_revision": 1
+            }},
+            "clause": clause
+        }
+    });
+    let path = directory.join("request.json");
+    std::fs::write(&path, request.to_string()).expect("write Counter run request");
+    path
+}
 
 fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
     let bytes = std::fs::read(path).expect("read parse fixture");
@@ -1154,8 +1226,12 @@ fn compile_empty_program_is_invalid_package() {
 /// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
 #[test]
 fn run_paid_short_json_contains_the_state_rule_witness() {
+    let directory = TemporaryDirectory::new("state-rule-witness");
+    let request = write_counter_clause_request(&directory.0, "self.value = 3", 2, None);
     let output = Command::new(FSL)
-        .args(["run", PAID_SHORT_REQUEST, "--format", "json"])
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
         .output()
         .expect("run the paid-short state-rule example");
     assert_eq!(output.status.code(), Some(10), "{output:?}");
@@ -1169,14 +1245,14 @@ fn run_paid_short_json_contains_the_state_rule_witness() {
         serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
     assert_eq!(document["category"], "violation", "{document}");
     let item = &document["items"][0];
-    assert_eq!(item["clause"], "PaidInFull", "{item}");
+    assert_eq!(item["clause"], "CounterRule", "{item}");
     assert_eq!(item["category"], "violation", "{item}");
     let witness = item
         .get("witness")
         .filter(|witness| witness.is_object())
         .expect("the state-rule violation carries its witness");
     assert_eq!(
-        witness["value_path"]["root"]["subject"]["object_identity"], "o1",
+        witness["value_path"]["root"]["subject"]["object_identity"], "a",
         "{witness}"
     );
     assert_eq!(witness["value_path"]["kind"], "runtime_value", "{witness}");
@@ -1192,8 +1268,8 @@ fn run_paid_short_json_contains_the_state_rule_witness() {
         Some(2),
         "{witness}"
     );
-    assert_eq!(witness["operands"][0]["decimal"], "4000", "{witness}");
-    assert_eq!(witness["operands"][1]["decimal"], "4200", "{witness}");
+    assert_eq!(witness["operands"][0]["decimal"], "2", "{witness}");
+    assert_eq!(witness["operands"][1]["decimal"], "3", "{witness}");
     assert!(
         witness["decision_path"]
             .as_array()
@@ -1209,8 +1285,114 @@ fn run_paid_short_json_contains_the_state_rule_witness() {
 #[test]
 #[trace("FSpec-FR-352-AC-9")]
 fn run_charge_changes_total_json_contains_the_frame_witness() {
+    let directory = TemporaryDirectory::new("frame-witness");
+    let mut model: serde_json::Value =
+        serde_json::from_slice(include_bytes!("fixtures/analyze-counter.semantic-ir.json"))
+            .expect("read the driver-owned Counter model");
+    let counter = model["types"]
+        .as_array_mut()
+        .expect("Counter model types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == "ix://test/counter/Counter")
+        .expect("Counter object type");
+    counter["operations"][0]["frame"]["modifies"] = serde_json::json!([]);
+    std::fs::write(
+        directory.0.join("counter-model.json"),
+        serde_json::to_vec(&model).expect("encode the focused frame model"),
+    )
+    .expect("write the focused frame model");
+    std::fs::write(
+        directory.0.join("counter.fsl"),
+        concat!(
+            "language \"ix:native\" edition \"1-draft\";\n",
+            "profile v = \"filament.value.complete/v1\";\n",
+            "model M = \"test/counter\";\n",
+            "post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n"
+        ),
+    )
+    .expect("write the focused Counter operation rule");
+    let snapshot = |name: &str, observation: &str, value: u64| {
+        serde_json::json!({
+            "format": "filament.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": format!("counter/{name}")},
+            "model": {"identity": "test/counter"},
+            "observation": observation,
+            "populations": [{
+                "population": "ix://test/counter/counters",
+                "complete": true,
+                "objects": [{
+                    "key": "a",
+                    "type": "ix://test/counter/Counter",
+                    "fields": {"value": {"integer": value.to_string()}}
+                }]
+            }]
+        })
+    };
+    for (name, observation, value) in [("pre", "pre", 1), ("post", "post", 2)] {
+        std::fs::write(
+            directory.0.join(format!("{name}.json")),
+            snapshot(name, observation, value).to_string(),
+        )
+        .expect("write the focused Counter snapshot");
+    }
+    std::fs::write(
+        directory.0.join("invocation.json"),
+        serde_json::json!({
+            "format": "filament.state.invocation/v1",
+            "identity": {"authority": "test", "identity": "counter/invocation"},
+            "model": {"identity": "test/counter"},
+            "context": "ix://test/counter/Counter",
+            "operation": "inc",
+            "self": {"population": "ix://test/counter/counters", "key": "a"},
+            "pre": {"identity": {"authority": "test", "identity": "counter/pre"}},
+            "post": {"identity": {"authority": "test", "identity": "counter/post"}},
+            "parameters": {},
+            "result": null,
+            "created": [],
+            "deleted": []
+        })
+        .to_string(),
+    )
+    .expect("write the focused Counter invocation");
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [{
+                "format": "semantic-ir/2.0.0",
+                "source": {
+                    "file": "counter-model.json",
+                    "authority": "test",
+                    "identity": "counter-model",
+                    "document": "Counter",
+                    "formal_revision": 1
+                }
+            }],
+            "program": {"source": {
+                "file": "counter.fsl",
+                "authority": "test",
+                "identity": "counter-rules",
+                "document": "CounterRules",
+                "formal_revision": 1
+            }},
+            "clause": {
+                "selection": {"frame": {
+                    "operation": "M::Counter::inc",
+                    "invocation": "invocation"
+                }},
+                "observations": {
+                    "invocation": "invocation.json",
+                    "pre": "pre.json",
+                    "post": "post.json"
+                }
+            }
+        }
+    });
+    let request_path = directory.0.join("request.json");
+    std::fs::write(&request_path, request.to_string()).expect("write the frame run request");
     let output = Command::new(FSL)
-        .args(["run", CHARGE_CHANGES_TOTAL_REQUEST, "--format", "json"])
+        .arg("run")
+        .arg(&request_path)
+        .args(["--format", "json"])
         .output()
         .expect("run the charge-changes-total frame example");
     assert_eq!(output.status.code(), Some(10), "{output:?}");
@@ -1224,7 +1406,7 @@ fn run_charge_changes_total_json_contains_the_frame_witness() {
         serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
     assert_eq!(document["category"], "violation", "{document}");
     let item = &document["items"][0];
-    assert_eq!(item["clause"], "Shop::Order::charge", "{item}");
+    assert_eq!(item["clause"], "M::Counter::inc", "{item}");
     assert_eq!(item["category"], "violation", "{item}");
     assert_eq!(item["cause"]["code"], "frame_violation", "{item}");
     assert_eq!(item["cause"]["kind"], "unauthorized-change", "{item}");
@@ -1233,10 +1415,10 @@ fn run_charge_changes_total_json_contains_the_frame_witness() {
         .get("witness")
         .and_then(serde_json::Value::as_object)
         .expect("the frame violation carries its user-facing witness");
-    assert_eq!(witness["change"]["object"], "o1", "{witness:?}");
-    assert_eq!(witness["change"]["field"], "total", "{witness:?}");
-    assert_eq!(witness["before"], "4200", "{witness:?}");
-    assert_eq!(witness["after"], "9000", "{witness:?}");
+    assert_eq!(witness["change"]["object"], "a", "{witness:?}");
+    assert_eq!(witness["change"]["field"], "value", "{witness:?}");
+    assert_eq!(witness["before"], "1", "{witness:?}");
+    assert_eq!(witness["after"], "2", "{witness:?}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
@@ -1991,8 +2173,12 @@ fn run_limit_message_only_offers_the_cli_setting() {
 
 #[test]
 fn accounting_work_units_item_setting_can_be_raised_to_finish_the_run() {
+    let directory = TemporaryDirectory::new("accounting-work-units");
+    let request = write_counter_clause_request(&directory.0, "self.value = 0", 0, Some(0));
     let limited = Command::new(FSL)
-        .args(["run", ACCOUNTING_WORK_UNITS_REQUEST, "--format", "json"])
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
         .output()
         .expect("run with the request's accounting.work_units bound");
     assert_eq!(limited.status.code(), Some(22));
@@ -2015,7 +2201,7 @@ fn accounting_work_units_item_setting_can_be_raised_to_finish_the_run() {
     let completed = Command::new(FSL)
         .args([
             "run",
-            ACCOUNTING_WORK_UNITS_REQUEST,
+            request.to_str().expect("request path is valid UTF-8"),
             "--limit",
             &raised_limit,
             "--format",
