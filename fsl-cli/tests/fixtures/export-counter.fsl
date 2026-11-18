@@ -1,0 +1,7 @@
+language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+profile m = "filament.model.complete/v1";
+model Counter = "example/counter";
+pre CanInc using v on Counter::Counter::inc { self.value < 5 }
+post Inc using v on Counter::Counter::inc { pre(self.value) < 5 and self.value = pre(self.value) + 1 }
+invariant Bounded using m on Counter::Counter at current { self.value <= 5 }

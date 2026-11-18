@@ -1,0 +1,57 @@
+{
+  "contractVersion": "2.0.0",
+  "canonicalization": {"algorithm": "rfc8785-v1"},
+  "source": {"identity": "ix://example/counter/spec", "version": "1.0.0", "dialect": "spec-bundle"},
+  "package": {"identity": "example/counter", "version": "1.0.0", "mappingVersions": [], "profileVersions": []},
+  "occurrences": [],
+  "extensions": [],
+  "constructs": [
+    {"kind": {"module": "example/counter", "name": "object_type"}, "moduleVersion": "1.0.0",
+      "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.object-type/v1"}},
+    {"kind": {"module": "example/counter", "name": "population"}, "moduleVersion": "1.0.0",
+      "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.population/v1"}},
+    {"kind": {"module": "example/counter", "name": "value_type"}, "moduleVersion": "1.0.0",
+      "construct": {"identity": "none", "shape": "record", "members": {}, "meaning": "filament.meaning.model.value-type/v1"}}
+  ],
+  "types": [
+    {
+      "identity": "ix://example/counter/Level", "displayName": "ix://example/counter/Level",
+      "kind": {"module": "example/counter", "name": "value_type"}, "roles": [],
+      "origin": {"generated": {"generatorIdentity": "ix://example/counter/Level", "generatorVersion": "1.0.0", "inputIdentities": ["ix://example/counter/Level"]}},
+      "constraints": [
+        {"identity": "ix://example/counter/Level/constraints/min", "keyword": "min", "operands": {"value": "0"},
+          "appliesTo": "ix://filament/native/Integer", "diagnosticCode": "bound.min",
+          "origin": {"generated": {"generatorIdentity": "ix://example/counter/Level", "generatorVersion": "1.0.0", "inputIdentities": ["ix://example/counter/Level"]}}},
+        {"identity": "ix://example/counter/Level/constraints/max", "keyword": "max", "operands": {"value": "9"},
+          "appliesTo": "ix://filament/native/Integer", "diagnosticCode": "bound.max",
+          "origin": {"generated": {"generatorIdentity": "ix://example/counter/Level", "generatorVersion": "1.0.0", "inputIdentities": ["ix://example/counter/Level"]}}}
+      ],
+      "extensions": [], "unknownPolicy": "reject", "scalar": "integer"
+    },
+    {
+      "identity": "ix://example/counter/Counter", "displayName": "ix://example/counter/Counter",
+      "kind": {"module": "example/counter", "name": "object_type"}, "roles": [],
+      "origin": {"generated": {"generatorIdentity": "ix://example/counter/Counter", "generatorVersion": "1.0.0", "inputIdentities": ["ix://example/counter/Counter"]}},
+      "constraints": [], "extensions": [], "unknownPolicy": "reject",
+      "supertypes": [],
+      "fields": [
+        {"identity": "ix://example/counter/Counter/value", "name": "value", "typeRef": "ix://example/counter/Level",
+          "presence": "required", "nullable": false, "defaultKind": "none",
+          "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+          "origin": {"generated": {"generatorIdentity": "ix://example/counter/Counter/value", "generatorVersion": "1.0.0", "inputIdentities": ["ix://example/counter/Counter/value"]}}}
+      ],
+      "operations": [
+        {"identity": "ix://example/counter/Counter/inc", "name": "inc", "params": [], "pre": [], "post": [],
+          "origin": {"source": {"sourceIdentity": "ix://example/counter/spec", "path": "spec.fspec", "startLine": 1, "startColumn": 1}},
+          "frame": {"modifies": ["ix://example/counter/Counter/value"], "creates": [], "deletes": []}}
+      ],
+      "relationships": []
+    }
+  ],
+  "populations": [
+    {"identity": "ix://example/counter/counters", "displayName": "ix://example/counter/counters",
+      "kind": {"module": "example/counter", "name": "population"},
+      "members": ["ix://example/counter/Counter"], "extent": "closed",
+      "origin": {"generated": {"generatorIdentity": "ix://example/counter/counters", "generatorVersion": "1.0.0", "inputIdentities": ["ix://example/counter/counters"]}}}
+  ]
+}
