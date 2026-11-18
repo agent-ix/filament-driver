@@ -682,7 +682,7 @@ fn accepted_frontend_limit_settings(bounds: &impl SettingLimits) -> String {
 fn apply_frontend_limits(
     overrides: &LimitOverrides,
     bounds: &mut impl SettingLimits,
-    operation: &str,
+    operation: &'static str,
 ) -> Result<(), String> {
     overrides.apply_to_limits(bounds, operation).map_err(|error| {
         let accepted = accepted_frontend_limit_settings(bounds);
