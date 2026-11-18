@@ -207,43 +207,84 @@ fn a_bad_request_is_refused_before_any_record_with_exit_20() {
     assert!(String::from_utf8_lossy(&missing.stderr).contains("usage: fsl monitor"));
 }
 
+const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
+const PROVIDER_BACKEND: &str = "fsl.test-recording-provider";
+
+/// FSL FR-644-AC-11 (TC-2984), driver half: `fsl monitor` accepts
+/// `--provider-config`, starts the configured test plugin, and FSL routes the
+/// request's `items` to it before the first record: the events equal the
+/// stream's without `items`, and the summary carries the item `proved` by the
+/// plugin, `trusted`, and the registry naming it.
 #[trace("TC-039", "FR-025-AC-4")]
 #[test]
-fn provider_config_is_refused_naming_qsl_2132() {
+fn provider_config_routes_the_request_items_to_the_started_plugin() {
     let folder = Folder::new("providers");
-    let request = folder.request("request.json", &["Never"]);
+    let mut unit = std::fs::read_to_string(folder.path("unit.native")).expect("the unit");
+    unit.push_str("function Even using v(n: Int[0, 9]): Boolean pure { n * 2 - n = n }\n");
+    std::fs::write(folder.path("unit.native"), unit).expect("the unit with Even");
+    let plain = folder.request("plain.json", &["Reaches", "Never"]);
+    let mut request: Value =
+        serde_json::from_slice(&std::fs::read(&plain).expect("the request")).expect("json");
+    request["request"]["items"] = json!([{"claim": "Even", "backend": PROVIDER_BACKEND}]);
+    let routed = folder.path("monitor.json");
+    std::fs::write(&routed, request.to_string()).expect("the routed request");
+    let log = folder.path("requests.log");
     let config = folder.path("providers.json");
-    std::fs::write(&config, "{\"providers\": []}").unwrap();
-    let output = fsl_with_stdin(
-        &[
-            "monitor",
-            request.to_str().unwrap(),
-            "--provider-config",
-            config.to_str().unwrap(),
-        ],
-        &records(&[0]).join("\n"),
-    );
-    assert_eq!(output.status.code(), Some(20), "{output:?}");
-    assert!(output.stdout.is_empty(), "text mode writes no stdout");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("QSL-2132"));
+    std::fs::write(
+        &config,
+        json!({"format": "filament.provider-config/v1", "providers": [{"path": TEST_PROVIDER,
+            "arguments": [PROVIDER_BACKEND, "unbounded", "proved", log.to_str().unwrap()]}]})
+        .to_string(),
+    )
+    .expect("the provider configuration");
+    let input = folder.path("records.jsonl");
+    std::fs::write(&input, records(&[0, 1, 2, 1, 0]).join("\n")).expect("the records");
 
-    let json = fsl_with_stdin(
-        &[
-            "monitor",
-            request.to_str().unwrap(),
-            "--provider-config",
-            config.to_str().unwrap(),
-            "--format",
-            "json",
-        ],
-        &records(&[0]).join("\n"),
+    let output = Command::new(FSL)
+        .arg("monitor")
+        .arg(&routed)
+        .arg("--provider-config")
+        .arg(&config)
+        .arg("--input")
+        .arg(&input)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl monitor");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    let lines = json_lines(&output);
+    let (summary, events) = lines.split_last().expect("a summary line");
+    let items = summary["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a summary `items` member: {summary}"));
+    assert!(!items.is_empty(), "{summary}");
+    for item in items {
+        assert_eq!(item["record"]["result"], "proved", "{item}");
+        assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{item}");
+        assert_eq!(item["record"]["certification"], "trusted", "{item}");
+    }
+    assert!(
+        summary["registry"]
+            .as_array()
+            .is_some_and(|registry| registry.iter().any(|row| row["backend"] == PROVIDER_BACKEND)),
+        "{summary}"
     );
-    assert_eq!(json.status.code(), Some(20), "{json:?}");
-    let lines = json_lines(&json);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    assert_eq!(lines[0]["operation"], "monitor");
-    assert_eq!(lines[0]["category"], "refusal");
-    assert!(lines[0].to_string().contains("QSL-2132"), "{}", lines[0]);
+    assert!(
+        !std::fs::read_to_string(&log)
+            .expect("the plugin logged its request")
+            .is_empty()
+    );
+
+    let without = Command::new(FSL)
+        .arg("monitor")
+        .arg(&plain)
+        .arg("--input")
+        .arg(&input)
+        .args(["--format", "json"])
+        .output()
+        .expect("run fsl monitor without items");
+    let without = json_lines(&without);
+    let (_, plain_events) = without.split_last().expect("a summary line");
+    assert_eq!(events, plain_events);
 }
 
 #[trace("TC-039", "FR-025-AC-5")]
