@@ -601,14 +601,18 @@ fn parse_frontend_limit_operands(
     bounds: &impl SettingLimits,
 ) -> Result<LimitOverrides, String> {
     LimitOverrides::parse(operands).map_err(|error| {
-        let accepted = bounds
-            .bounds()
-            .into_iter()
-            .map(|(setting, _)| setting.name())
-            .collect::<Vec<_>>()
-            .join(", ");
+        let accepted = accepted_frontend_limit_settings(bounds);
         format!("{error}; settings accepted by this command: {accepted}")
     })
+}
+
+fn accepted_frontend_limit_settings(bounds: &impl SettingLimits) -> String {
+    bounds
+        .bounds()
+        .into_iter()
+        .map(|(setting, _)| setting.name())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn apply_frontend_limits(
@@ -616,9 +620,13 @@ fn apply_frontend_limits(
     bounds: &mut impl SettingLimits,
     operation: &str,
 ) -> Result<(), String> {
-    overrides
-        .apply_to_limits(bounds)
-        .map_err(|error| error.message_for(operation))
+    overrides.apply_to_limits(bounds).map_err(|error| {
+        let accepted = accepted_frontend_limit_settings(bounds);
+        format!(
+            "{}; settings accepted by this command: {accepted}",
+            error.message_for(operation)
+        )
+    })
 }
 
 impl RunOptions {

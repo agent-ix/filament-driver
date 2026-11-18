@@ -690,8 +690,8 @@ fn check_accepts_raised_node_limit() {
     assert_eq!(document["category"], "success");
 }
 
-/// Trace: QSL-2190; compile accepts every limit exposed by its FSL limits type.
-#[trace("QSL-2190")]
+/// Trace: QSL-2190, FR-003-AC-1; compile applies caller limits from FSL's bounds.
+#[trace("QSL-2190", "FR-003-AC-1")]
 #[test]
 fn compile_accepts_limit_settings() {
     let directory = TemporaryDirectory::new("compile-node-limit");
@@ -715,6 +715,22 @@ fn compile_accepts_limit_settings() {
         serde_json::to_vec(&document).expect("encode compile request"),
     )
     .expect("write compile request");
+
+    let single_override = Command::new(FSL)
+        .arg("compile")
+        .arg(&request)
+        .args(["--limit", "s1.nodes=1000000", "--format", "json"])
+        .output()
+        .expect("compile with one raised bound and other defaults");
+    assert_eq!(
+        single_override.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&single_override.stdout)
+    );
+    let single_result: serde_json::Value =
+        serde_json::from_slice(&single_override.stdout).expect("compile emits an outcome document");
+    assert_eq!(single_result["category"], "success");
 
     let mut command = Command::new(FSL);
     command.arg("compile").arg(&request);
@@ -752,6 +768,42 @@ fn compile_accepts_limit_settings() {
     assert!(message.contains("unknown.limit"), "{message}");
     assert!(message.contains("s1.nodes"), "{message}");
     assert!(message.contains("s3.nodes"), "{message}");
+}
+
+/// Trace: QSL-2190, FR-003-AC-5; compile refuses recognized settings it cannot apply.
+/// Provenance: FSL FR-869-AC-4 requires the accepted settings list on this refusal.
+#[trace("QSL-2190", "FR-003-AC-5")]
+#[test]
+fn compile_refuses_recognized_unavailable_limit_setting() {
+    let directory = TemporaryDirectory::new("compile-unavailable-limit");
+    let missing_request = directory.0.join("missing.json");
+    let output = Command::new(FSL)
+        .arg("compile")
+        .arg(&missing_request)
+        .args(["--limit", "admission.work_units=5", "--format", "json"])
+        .output()
+        .expect("compile with a recognized but unavailable limit");
+
+    assert_eq!(output.status.code(), Some(20));
+    let refusal: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("unavailable limit emits a refusal");
+    assert_eq!(refusal["category"], "refusal");
+    assert_eq!(refusal["diagnostics"][0]["code"], "invalid_request");
+    let message = refusal["diagnostics"][0]["message"]
+        .as_str()
+        .expect("limit refusal has a message");
+    assert!(message.contains("admission.work_units"), "{message}");
+    assert!(
+        message.contains("unavailable for the `compile` operation"),
+        "{message}"
+    );
+    let accepted = message
+        .split_once("settings accepted by this command: ")
+        .map(|(_, accepted)| accepted)
+        .expect("refusal lists the command's accepted settings");
+    assert!(accepted.contains("s1.nodes"), "{accepted}");
+    assert!(accepted.contains("s3.nodes"), "{accepted}");
+    assert!(!accepted.contains("admission.work_units"), "{accepted}");
 }
 
 /// Trace: QSL-2190; unknown settings identify the valid settings for the verb.
