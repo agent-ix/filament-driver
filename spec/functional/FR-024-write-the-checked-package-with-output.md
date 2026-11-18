@@ -45,8 +45,9 @@ leaves no partial file, and writes nothing when the compile refuses.
 - If `--output` is given more than once or without a path, then `fsl` SHALL
   refuse the command line, exit 20, naming `--output`, and write no file.
 - If the compile refuses at any stage, then no file is written.
-- `--output` on any verb other than `compile` is an unknown option (FSpec
-  FR-301).
+- `--output` on any verb other than `compile` and `export` is an unknown
+  option (FSpec FR-301); `fsl export --output` writes the TLA+ or Lean
+  target file through the same request override (FR-027).
 - The outcome document of a compile that writes the file is the document the
   same compile gives without it: `artifacts` stays `[]`.
 
