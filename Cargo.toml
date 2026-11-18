@@ -34,10 +34,9 @@ path = "src/lib.rs"
 # may depend on its interface. It is downstream of CG because CG -> FSL
 # (`fsl-replay`) is a normal edge and Cargo refuses a package cycle.
 #
-# The FSL layer crates and CG are tracked on `main` of their repositories.
-# `filament-contract-model` is tracked on tag `v0.1.4`, the same spelling CG and
-# FSL use for their own edge, so the graph resolves one copy of it. The exact
-# commits are in Cargo.lock.
+# The FSL crates use the revision selected by contract-codegen so their public
+# types resolve to one copy. Shared first-party crates use the same release tags
+# as codegen; Cargo.lock records the selected commits.
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
@@ -47,7 +46,7 @@ fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev 
 fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
 fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "88698958380d220c1f6b1a57114f4c6f4744ce5a" }
-filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "1bf0de0d5a3c7539c64e8b95707d06faffb17537" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
 filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.4" }
 filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", tag = "v0.1.1", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
@@ -66,6 +65,8 @@ fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", re
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
 filament-checked = { git = "https://github.com/agent-ix/filament-eval", tag = "v0.1.4" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
+
+
 
 # The filament-examples gate needs the fetched suite; `make examples-check` runs it.
 [[test]]
