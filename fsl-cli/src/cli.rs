@@ -1271,7 +1271,7 @@ fn check_markdown_source(
                         None,
                         code.as_str(),
                         None,
-                        failure.to_string(),
+                        format!("{failure:?}"),
                     )],
                 ),
             )
