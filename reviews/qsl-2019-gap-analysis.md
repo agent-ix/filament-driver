@@ -29,3 +29,13 @@ CONDITIONAL. The new check regression does not assert FR-662-AC-1's exact `ill_t
 Plan completion: not assessed.
 
 The computed `quoin matrix --repo . --json` ran on exact head `56fe07ed4f9dc7b15d99eb9d7b7534af1b449e18`; it reports 26 driver requirements and contains no local FR-662 or FSpec FR-563 criterion. Those trace ids belong to upstream repositories, so this driver matrix cannot discharge or classify them. Manual alignment against FSL FR-662-AC-1 and AC-2 found the CLI tests cover healthy/refused fence identities, refusal categories, spans and original coordinates, duplicate/headless refusal details, and deterministic output. The exact error code remains weakly asserted as recorded above. The default-build extracted-run test covers the driver invocation but is blocked by locked FSL's `program.clauses` decoder; it remains In Progress under QSL-2019 and is not counted as a defect in this driver diff. No new stub or additional unowned behavior was found in the changed slice. Semantic review was skipped; no plan was supplied. The supplied focused check test passed (2 tests); no broader tests were run.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The CLI regression now asserts the exact `ill_typed` code for the Broken native fence. |
+
+## Verdict (disposition pass 1)
+
+PASS at `697f66b2ecec89f6b0930954ded1b32db623ee1d`. The exact-code coverage gap is fixed. The extracted-run test remains blocked by locked FSL and is tracked separately, not as a driver gap. The coder reports three focused CLI tests and changed-file rustfmt passing; I did not rerun them.

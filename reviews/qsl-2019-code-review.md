@@ -35,3 +35,14 @@ CONDITIONAL. Two medium findings affect source-read identity retention and the e
 | FR-662-AC-3 | context_only | The FSL command-owner default build runs a selected extracted clause; the driver PR adds a CLI test for this path, but its execution is blocked by the locked FSL revision. |
 
 The rust review inspected only the four changed files and did not run tests or broad gates. The dispatch supplied `cargo test -p fsl-cli --test cli_contract check_markdown -- --nocapture` (2 passed) and rustfmt success. No CI workflow or aggregate/package gate changed. The computed driver matrix has no local FR-662 row; FR-662 is owned by the FSL repository. The run-extraction test remains blocked because locked FSL revision `6f5d277` rejects `program.clauses` as an unknown field; this is not attributed to the driver diff.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `check_markdown_source` now maps `Source::read_typed`'s `SourceReadRefusal` directly through `source_refusal` and serializes that diagnostic, preserving the requested source identity. The new invalid-UTF-8 CLI regression compares the output with the typed refusal and checks `agent-ix/doc`. |
+| FND-002 | fixed | The CLI regression now asserts `diagnostic["code"] == "ill_typed"`. |
+
+## Verdict (disposition pass 1)
+
+PASS at `697f66b2ecec89f6b0930954ded1b32db623ee1d`. Both findings are fixed, and no new driver defect was found in the disposition diff. The coder reports three focused CLI tests and changed-file rustfmt passing; I did not rerun them. The extracted-run test remains blocked by locked FSL and is tracked separately, not as a driver finding.
