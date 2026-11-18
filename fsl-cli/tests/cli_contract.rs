@@ -660,10 +660,8 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
-/// Trace: FSpec-FR-255-AC-1.
 /// Provenance: QSL-2015.
 #[test]
-#[trace("FSpec-FR-255-AC-1")]
 fn observation_input_bytes_request_member_matches_cli_limit() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -781,10 +779,8 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
     assert_eq!(cause["counter"], observation_bytes.len().to_string(), "{cause}");
 }
 
-/// Trace: FSpec-FR-255-AC-3.
 /// Provenance: QSL-2015.
 #[test]
-#[trace("FSpec-FR-255-AC-3")]
 fn observation_document_bytes_is_not_a_cli_limit_setting() {
     let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
@@ -858,10 +854,10 @@ fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
     assert_eq!(document["diagnostics"][0]["message"], "expected `)`");
 }
 
-/// Trace: FSpec-FR-865-AC-1, FSpec-FR-865-AC-3.
+/// Trace: FR-002-AC-13.
 /// Provenance: QSL-2202.
 #[test]
-#[trace("FSpec-FR-865-AC-1", "FSpec-FR-865-AC-3")]
+#[trace("FR-002-AC-13")]
 fn check_text_refusal_prints_its_message_once() {
     let output = Command::new(FSL)
         .args(["check", INVALID_SOURCE, "--format", "text"])
