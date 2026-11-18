@@ -67,8 +67,8 @@ written. The signal is consumed, not re-raised.
 
 - Machine mode: one canonically encoded JSON line per event, in the order FSL
   hands them over, then one line for the summary.
-- Text mode: one line per event, `<record> <clause> <category> settled|pending`,
-  then one line per clause, `<clause> <category> settled|pending`, and
+- Text mode: one line per event, `<record> <clause> <category> settled\|pending`,
+  then one line per clause, `<clause> <category> settled\|pending`, and
   `records <n> refused <m>`.
 - The exit code of the summary (FR-285). A request refused before any record is
   read writes the command-error outcome document (machine mode) or its
@@ -107,7 +107,7 @@ clauses `Reaches` (`eventually holds(r.level = 2)`) and `Never`
 | FR-025-AC-5 | A record with an unknown member between good records gives one `refusal` event naming that record, the summary counts it, the stream continues and the output equals `command::monitor`'s. | Test (TC-039) |
 | FR-025-AC-6 | With standard input held open, the event that settles `Never` is on standard output before the next record is sent or the input is closed. | Test (TC-039) |
 | FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty. | Test (TC-039) |
-| FR-025-AC-8 | In text mode, over AC-1's fixture and records, stdout holds one event line `<record> <clause> <category> settled|pending` per event, then one `<clause> <category> settled|pending` line per clause and the line `records <n> refused <m>`, and the exit is 10. | Test (TC-039) |
+| FR-025-AC-8 | In text mode, over AC-1's fixture and records, stdout holds one event line `<record> <clause> <category> settled\|pending` per event, then one `<clause> <category> settled\|pending` line per clause and the line `records <n> refused <m>`, and the exit is 10. | Test (TC-039) |
 | FR-025-AC-9 | SIGTERM or SIGINT while standard input is still open ends the run with no further record read: the last line written is an outcome document with category `incomplete`, and the process exits 22. | Test (TC-039) |
 
 ## Dependencies
