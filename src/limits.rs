@@ -3,18 +3,20 @@
 
 use fsl_foundation::{Setting, SettingLimits, SettingName, UsageRefusal};
 use fsl_replay::{
-    spine::{Call, ClauseRunRequest, SpineLimits},
     AccountingLimits, CallerLimits, ObservationLimits,
+    spine::{Call, ClauseRunRequest, SpineLimits},
 };
 
 /// A recognized caller-selected setting unavailable to the selected operation.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum LimitError {
     /// FSL recognizes the setting, but this operation does not expose it.
-    #[error("limit setting `{}` is unavailable for this operation", setting.name())]
+    #[error("limit setting `{}` is unavailable for the `{operation}` operation", setting.name())]
     OperationUnavailable {
         /// The recognized setting absent from the operation's bounds.
         setting: SettingName,
+        /// The operation that refused the setting.
+        operation: &'static str,
     },
 }
 
@@ -30,14 +32,92 @@ impl LimitOverrides {
 
     /// Apply settings exposed by the selected `run` operation.
     pub fn apply_to(&self, limits: &mut SpineLimits, call: &mut Call) -> Result<(), LimitError> {
-        self.apply_parts(limits, None, &mut call.accounting)
+        self.apply_parts(limits, None, &mut call.accounting, "run")
+    }
+
+    /// Apply stage settings exposed by a source operation.
+    pub fn apply_to_spine(
+        &self,
+        limits: &mut SpineLimits,
+        operation: &'static str,
+    ) -> Result<(), LimitError> {
+        let mut caller_limits = CallerLimits {
+            spine: *limits,
+            ..CallerLimits::default()
+        };
+        for (name, value) in &self.0 {
+            let SettingName::Stage(setting) = name else {
+                return Err(LimitError::OperationUnavailable {
+                    setting: *name,
+                    operation,
+                });
+            };
+            if !caller_limits.set_bound(*setting, *value) {
+                return Err(LimitError::OperationUnavailable {
+                    setting: *name,
+                    operation,
+                });
+            }
+        }
+        *limits = caller_limits.spine;
+        Ok(())
+    }
+
+    /// Apply each supplied setting to the first matching value in `limits`.
+    pub fn apply_to_setting_group(
+        &self,
+        limits: &mut [&mut dyn SettingLimits],
+        operation: &'static str,
+    ) -> Result<(), LimitError> {
+        let mut updates = Vec::with_capacity(self.0.len());
+        for (name, value) in &self.0 {
+            let SettingName::Stage(setting) = name else {
+                return Err(LimitError::OperationUnavailable {
+                    setting: *name,
+                    operation,
+                });
+            };
+            let Some((index, previous)) = limits.iter().enumerate().find_map(|(index, target)| {
+                target
+                    .bounds()
+                    .into_iter()
+                    .find(|(candidate, _)| candidate == setting)
+                    .map(|(_, previous)| (index, previous))
+            }) else {
+                return Err(LimitError::OperationUnavailable {
+                    setting: *name,
+                    operation,
+                });
+            };
+            updates.push((index, *setting, previous, *value));
+        }
+
+        let mut applied: Vec<(usize, Setting, u64)> = Vec::with_capacity(updates.len());
+        for (index, setting, previous, value) in updates {
+            if !limits[index].set_bound(setting, value) {
+                for (index, setting, previous) in applied.into_iter().rev() {
+                    let restored = limits[index].set_bound(setting, previous);
+                    debug_assert!(restored, "a previously applied bound must be restorable");
+                }
+                return Err(LimitError::OperationUnavailable {
+                    setting: SettingName::Stage(setting),
+                    operation,
+                });
+            }
+            applied.push((index, setting, previous));
+        }
+        Ok(())
     }
 
     /// Apply stage settings to the bounds an operation accepts.
     ///
     /// Accounting settings require a call and are unavailable to front-end
     /// operations such as parse and check.
-    pub fn apply_to_limits<T: SettingLimits>(&self, limits: &mut T) -> Result<(), LimitError> {
+    pub fn apply_to_limits<T: SettingLimits>(
+        &self,
+        limits: &mut T,
+        operation: &'static str,
+    ) -> Result<(), LimitError> {
         let available = limits.bounds();
         let mut updates = Vec::with_capacity(self.0.len());
         for (name, value) in &self.0 {
@@ -50,10 +130,14 @@ impl LimitOverrides {
                 SettingName::Stage(setting) => {
                     return Err(LimitError::OperationUnavailable {
                         setting: SettingName::Stage(*setting),
+                        operation,
                     });
                 }
                 SettingName::Accounting(_) => {
-                    return Err(LimitError::OperationUnavailable { setting: *name });
+                    return Err(LimitError::OperationUnavailable {
+                        setting: *name,
+                        operation,
+                    });
                 }
             }
         }
@@ -65,6 +149,7 @@ impl LimitOverrides {
             if !updated {
                 return Err(LimitError::OperationUnavailable {
                     setting: SettingName::Stage(setting),
+                    operation,
                 });
             }
         }
@@ -77,6 +162,7 @@ impl LimitOverrides {
             &mut request.limits,
             Some(&mut request.observation_limits),
             &mut request.accounting,
+            "run",
         )
     }
 
@@ -85,6 +171,7 @@ impl LimitOverrides {
         limits: &mut SpineLimits,
         mut observation: Option<&mut ObservationLimits>,
         accounting: &mut filament_exact::ScalarLimits,
+        operation: &'static str,
     ) -> Result<(), LimitError> {
         let mut available: Vec<Setting> = limits
             .bounds()
@@ -108,6 +195,7 @@ impl LimitOverrides {
                     if !available.contains(setting) {
                         return Err(LimitError::OperationUnavailable {
                             setting: SettingName::Stage(*setting),
+                            operation,
                         });
                     }
                     // `bounds()` and `set_bound()` are the paired FSL API for
@@ -117,10 +205,17 @@ impl LimitOverrides {
                     if !updated {
                         return Err(LimitError::OperationUnavailable {
                             setting: SettingName::Stage(*setting),
+                            operation,
                         });
                     }
                 }
                 SettingName::Accounting(setting) => {
+                    if operation != "run" {
+                        return Err(LimitError::OperationUnavailable {
+                            setting: SettingName::Accounting(*setting),
+                            operation,
+                        });
+                    }
                     updated_accounting.set_bound(*setting, *value);
                 }
             }
@@ -143,7 +238,7 @@ impl LimitError {
     /// Format the refusal for the selected operation.
     pub fn message_for(&self, operation: &str) -> String {
         match self {
-            Self::OperationUnavailable { setting } => format!(
+            Self::OperationUnavailable { setting, .. } => format!(
                 "limit setting `{}` is unavailable for the `{operation}` operation",
                 setting.name()
             ),
@@ -161,8 +256,8 @@ mod tests {
     use fsl_foundation::{
         AccountingSetting, Setting, SettingLimits, SettingName, UsageCause, UsageRefusal,
     };
-    use fsl_replay::spine::{default_accounting, Call, SpineLimits};
     use fsl_replay::AccountingLimits;
+    use fsl_replay::spine::{Call, SpineLimits, default_accounting};
 
     use super::{LimitError, LimitOverrides};
 
@@ -309,6 +404,7 @@ mod tests {
             overrides.apply_to(&mut limits, &mut call),
             Err(LimitError::OperationUnavailable {
                 setting: SettingName::Stage(Setting::ExploreStates),
+                operation: "run",
             })
         );
         assert_eq!(limits, before);
@@ -316,6 +412,30 @@ mod tests {
             AccountingLimits(call.accounting).bounds(),
             before_accounting
         );
+    }
+
+    /// Trace: FR-003-AC-5, a later unavailable group setting is atomic.
+    #[ix_trace_rs::trace("FR-003-AC-5")]
+    #[test]
+    fn unavailable_group_setting_leaves_prior_bounds_unchanged() {
+        let before = SpineLimits::default();
+        let mut limits = before;
+        let overrides = LimitOverrides::parse(&[
+            "s1.input_bytes=5".to_owned(),
+            "observation.input_bytes=7".to_owned(),
+        ])
+        .expect("both settings are recognized by FSL");
+        let mut groups: [&mut dyn SettingLimits; 1] = [&mut limits];
+
+        assert_eq!(
+            overrides.apply_to_setting_group(&mut groups, "check"),
+            Err(LimitError::OperationUnavailable {
+                setting: SettingName::Stage(Setting::ObservationInputBytes),
+                operation: "check",
+            })
+        );
+        drop(groups);
+        assert_eq!(limits, before);
     }
 
     /// Trace: FR-003-AC-1, FR-003-AC-4, FR-003-AC-6.
@@ -392,6 +512,7 @@ mod tests {
             overrides.apply_to(&mut limits, &mut call),
             Err(LimitError::OperationUnavailable {
                 setting: SettingName::Stage(Setting::ExploreStates),
+                operation: "run",
             })
         );
     }

@@ -2,6 +2,10 @@
 //! Entry point for the user-facing `fsl` executable.
 
 mod analyze_provider;
+#[allow(
+    dead_code,
+    reason = "FR-331 request members await the remaining FSL projection support"
+)]
 mod backend_provider;
 mod cli;
 mod clocks;

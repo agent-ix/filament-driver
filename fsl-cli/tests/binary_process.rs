@@ -946,6 +946,12 @@ fn assert_configured_process_signal_cleans_active_session(signal_number: i32, mo
     use std::process::Stdio;
     use std::time::{Duration, Instant};
 
+    let warmup = Command::new(FSL)
+        .arg("--version")
+        .output()
+        .expect("warm the production fsl binary before the timed signal run");
+    assert_eq!(warmup.status.code(), Some(0), "warmup: {warmup:?}");
+
     let directory = tempfile::tempdir().expect("create isolated signal test directory");
     let request_marker = directory.path().join("request.json");
     let ready_marker = directory.path().join("descendant-ready");

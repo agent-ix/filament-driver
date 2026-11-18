@@ -5,19 +5,25 @@
     reason = "process launch failures should fail this integration test"
 )]
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
-use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
-use fsl_foundation::diagnostic::{Code, Staged};
-use fsl_foundation::{SettingLimits, Source, SourceIdentity};
-use fsl_replay::spine::{
-    check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
+use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
+use fsl_foundation::{
+    SettingLimits, Source, SourceIdentity,
+    diagnostic::{Code, Staged},
 };
-use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
+use fsl_replay::{
+    Operation, OutcomeDiagnostic, OutcomeDocument,
+    spine::{
+        DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
+    },
+};
 use ix_cli_kit::version::Agreement;
 use ix_trace_rs::trace;
 
@@ -66,6 +72,246 @@ impl Drop for TemporaryDirectory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+const COUNTER_MODEL: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/analyze-counter.semantic-ir.json"
+);
+const PARENT_ORDER_PACKAGE: &str = "test/parent-order";
+const PARENT_ORDER_POPULATION: &str = "ix://test/parent-order/config_history";
+const PARENT_ORDER_TYPE: &str = "ix://test/parent-order/ConfigVersion";
+const PARENT_ORDER_PROGRAM: &str = concat!(
+    "language \"ix:native\" edition \"1-draft\";\n",
+    "profile v = \"filament.model.complete/v1\";\n",
+    "model Config = \"test/parent-order\";\n",
+    "invariant ParentOrder using v on Config::ConfigVersion at current { ",
+    "present(self.parent) implies ",
+    "deref(value(self.parent)).versionNumber < self.versionNumber }\n"
+);
+
+fn parent_order_model() -> serde_json::Value {
+    serde_json::json!({
+        "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {
+            "identity": "ix://test/parent-order/spec",
+            "version": "1.0.0",
+            "dialect": "spec-bundle"
+        },
+        "package": {
+            "identity": PARENT_ORDER_PACKAGE,
+            "version": "1.0.0",
+            "mappingVersions": [],
+            "profileVersions": []
+        },
+        "occurrences": [],
+        "extensions": [],
+        "constructs": [
+            {
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "object_type"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "filament.meaning.model.object-type/v1"
+                }
+            },
+            {
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "population"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "filament.meaning.model.population/v1"
+                }
+            },
+            {
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "value_type"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "filament.meaning.model.value-type/v1"
+                }
+            }
+        ],
+        "types": [
+            {
+                "identity": "ix://test/parent-order/VersionNumber",
+                "displayName": "VersionNumber",
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "value_type"},
+                "roles": [],
+                "origin": {"generated": {
+                    "generatorIdentity": "ix://test/parent-order/VersionNumber",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://test/parent-order/VersionNumber"]
+                }},
+                "extensions": [],
+                "unknownPolicy": "reject",
+                "scalar": "integer",
+                "constraints": []
+            },
+            {
+                "identity": PARENT_ORDER_TYPE,
+                "displayName": "ConfigVersion",
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "object_type"},
+                "roles": [],
+                "origin": {"generated": {
+                    "generatorIdentity": PARENT_ORDER_TYPE,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [PARENT_ORDER_TYPE]
+                }},
+                "constraints": [],
+                "extensions": [],
+                "unknownPolicy": "reject",
+                "supertypes": [],
+                "fields": [
+                    {
+                        "identity": "ix://test/parent-order/ConfigVersion/versionNumber",
+                        "name": "versionNumber",
+                        "typeRef": "ix://test/parent-order/VersionNumber",
+                        "presence": "required",
+                        "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true
+                        },
+                        "origin": {"generated": {
+                            "generatorIdentity": "ix://test/parent-order/ConfigVersion/versionNumber",
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": ["ix://test/parent-order/ConfigVersion/versionNumber"]
+                        }}
+                    },
+                    {
+                        "identity": "ix://test/parent-order/ConfigVersion/parent",
+                        "name": "parent",
+                        "typeRef": PARENT_ORDER_TYPE,
+                        "presence": "optional",
+                        "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true
+                        },
+                        "origin": {"generated": {
+                            "generatorIdentity": "ix://test/parent-order/ConfigVersion/parent",
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": ["ix://test/parent-order/ConfigVersion/parent"]
+                        }}
+                    }
+                ],
+                "operations": []
+            }
+        ],
+        "populations": [{
+            "identity": PARENT_ORDER_POPULATION,
+            "displayName": "config_history",
+            "kind": {"module": PARENT_ORDER_PACKAGE, "name": "population"},
+            "members": [PARENT_ORDER_TYPE],
+            "extent": "closed",
+            "origin": {"generated": {
+                "generatorIdentity": PARENT_ORDER_POPULATION,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [PARENT_ORDER_POPULATION]
+            }}
+        }]
+    })
+}
+
+fn write_parent_order_model(directory: &Path, filename: &str) {
+    std::fs::write(
+        directory.join(filename),
+        serde_json::to_vec(&parent_order_model()).expect("encode the test-local ParentOrder model"),
+    )
+    .expect("write the test-local ParentOrder model");
+}
+
+fn write_counter_clause_request(
+    directory: &Path,
+    expression: &str,
+    current_value: u64,
+    accounting_work_units: Option<u64>,
+) -> PathBuf {
+    std::fs::copy(COUNTER_MODEL, directory.join("counter-model.json"))
+        .expect("write the driver-owned Counter model");
+    std::fs::write(
+        directory.join("counter.fsl"),
+        format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"filament.value.complete/v1\";\n\
+             model M = \"test/counter\";\n\
+             invariant CounterRule using v on M::Counter at current {{ {expression} }}\n"
+        ),
+    )
+    .expect("write the focused Counter rule");
+    std::fs::write(
+        directory.join("current.json"),
+        serde_json::json!({
+            "format": "filament.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": "counter/current"},
+            "model": {"identity": "test/counter"},
+            "observation": "current",
+            "anchor": {"kind": "handler", "name": "validate"},
+            "populations": [{
+                "population": "ix://test/counter/counters",
+                "complete": true,
+                "objects": [{
+                    "key": "a",
+                    "type": "ix://test/counter/Counter",
+                    "fields": {"value": {"integer": current_value.to_string()}}
+                }]
+            }]
+        })
+        .to_string(),
+    )
+    .expect("write the focused Counter snapshot");
+
+    let mut clause = serde_json::json!({
+        "selection": {"clause": {
+            "name": "CounterRule",
+            "observation": "current",
+            "self": {"population": "ix://test/counter/counters", "key": "a"},
+            "anchor": {"kind": "handler", "name": "validate"}
+        }},
+        "observations": {"current": "current.json"}
+    });
+    if let Some(work_units) = accounting_work_units {
+        clause["accounting"] = serde_json::json!({"work_units": work_units});
+    }
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [{
+                "format": "semantic-ir/2.0.0",
+                "source": {
+                    "file": "counter-model.json",
+                    "authority": "test",
+                    "identity": "counter-model",
+                    "document": "Counter",
+                    "formal_revision": 1
+                }
+            }],
+            "program": {"source": {
+                "file": "counter.fsl",
+                "authority": "test",
+                "identity": "counter-rules",
+                "document": "CounterRules",
+                "formal_revision": 1
+            }},
+            "clause": clause
+        }
+    });
+    let path = directory.join("request.json");
+    std::fs::write(&path, request.to_string()).expect("write Counter run request");
+    path
 }
 
 fn parse_outcome_bytes(path: &'static str) -> Vec<u8> {
@@ -372,18 +618,39 @@ fn check_markdown_source_read_refusal_keeps_requested_identity() {
 /// Provenance: QSL-2019.
 #[test]
 #[trace("FSpec-TC-1243", "FSpec-FR-563-AC-2")]
-#[ignore = "QSL-2443 waits for FSL Markdown clause extraction support"]
 fn run_executes_a_selected_markdown_clause_in_the_default_build() {
     let directory = TemporaryDirectory::new("run-markdown-extraction");
-    let body = std::fs::read_to_string(SOURCE).expect("read native source fixture");
-    let markdown = format!("### Healthy\n\n```ix:native\n{body}```\n");
+    let markdown = format!(
+        "# Doc\n\n## Invariants\n\n### Healthy\n\n```ix:native\n{PARENT_ORDER_PROGRAM}```\n"
+    );
     std::fs::write(directory.0.join("spec.md"), markdown).expect("write Markdown fixture");
+    write_parent_order_model(&directory.0, "spine-model.semantic-ir.json");
+    std::fs::write(
+        directory.0.join("spine-model.semantic-ir.json.license"),
+        "SPDX-License-Identifier: AGPL-3.0-only\n",
+    )
+    .expect("write the domain package license metadata");
     std::fs::write(
         directory.0.join("current.json"),
         serde_json::json!({
             "format": "filament.state.snapshot/v1",
             "identity": {"authority": "agent-ix", "identity": "current"},
-            "observation": "current"
+            "model": {"identity": PARENT_ORDER_PACKAGE},
+            "observation": "current",
+            "anchor": {"kind": "handler", "name": "validate"},
+            "populations": [{
+                "population": PARENT_ORDER_POPULATION,
+                "complete": true,
+                "objects": [
+                    {"key": "root", "type": PARENT_ORDER_TYPE,
+                     "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}}},
+                    {"key": "child", "type": PARENT_ORDER_TYPE,
+                     "fields": {"versionNumber": {"integer": "2"},
+                      "parent": {"present": {"reference": {
+                          "population": PARENT_ORDER_POPULATION, "key": "root"
+                      }}}}}
+                ]
+            }]
         })
         .to_string(),
     )
@@ -391,23 +658,37 @@ fn run_executes_a_selected_markdown_clause_in_the_default_build() {
     let request = serde_json::json!({
         "format": "native-run/1",
         "request": {
-            "models": [],
+            "models": [{
+                "format": "semantic-ir/2.0.0",
+                "source": {
+                    "file": "spine-model.semantic-ir.json",
+                    "authority": "agent-ix",
+                    "identity": "test:fr-664:spine-model.semantic-ir.json",
+                    "document": "SpineModel",
+                    "formal_revision": 1
+                }
+            }],
             "program": {
                 "source": {
                     "file": "spec.md",
                     "authority": "agent-ix",
-                    "identity": "doc",
-                    "document": "Spec",
+                    "identity": "ix://agent-ix/spec",
+                    "document": "Doc",
                     "formal_revision": 1
                 },
                 "extraction": {
-                    "body": {"authority": "agent-ix", "identity": "doc#Healthy", "document": "Spec"}
+                    "body": {"authority": "agent-ix", "identity": "body", "document": "Body"}
                 },
-                "clauses": [{"clause": "Healthy", "package": "doc"}]
+            "clauses": [{"clause": "Healthy", "package": PARENT_ORDER_PACKAGE}]
             },
             "clause": {
                 "selection": {
-                    "function": {"name": "yes", "arguments": [], "snapshot": "current"}
+                    "clause": {
+                        "name": "ParentOrder",
+                        "observation": "current",
+                        "self": {"population": PARENT_ORDER_POPULATION, "key": "child"},
+                        "anchor": {"kind": "handler", "name": "validate"}
+                    }
                 },
                 "observations": {"current": "current.json"}
             }
@@ -438,7 +719,7 @@ fn run_executes_a_selected_markdown_clause_in_the_default_build() {
         Some(1),
         "{outcome}"
     );
-    assert!(outcome.to_string().contains("Healthy"), "{outcome}");
+    assert!(outcome.to_string().contains("ParentOrder"), "{outcome}");
 }
 
 /// Trace: TC-1743, FR-662-AC-2.
@@ -648,6 +929,289 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
+/// Trace: FR-312-AC-9, FR-312-AC-10, FR-491-AC-8, FR-287-AC-13.
+/// Provenance: QSL-2015.
+#[test]
+#[trace("FR-312-AC-9", "FR-312-AC-10", "FR-491-AC-8", "FR-287-AC-13")]
+fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock is after the Unix epoch")
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "fsl-qsl-2015-observation-limit-{}-{unique}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&directory).expect("create isolated request directory");
+    struct RemoveDirectory(std::path::PathBuf);
+    impl Drop for RemoveDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = RemoveDirectory(directory.clone());
+
+    std::fs::write(directory.join("parent-order.native"), PARENT_ORDER_PROGRAM)
+        .expect("write the test-local ParentOrder rule");
+    write_parent_order_model(&directory, "model.semantic-ir.json");
+
+    let population = PARENT_ORDER_POPULATION;
+    let object_type = PARENT_ORDER_TYPE;
+    let observation = serde_json::json!({
+        "format": "filament.state.snapshot/v1",
+        "identity": {"authority": "issuer", "identity": "current"},
+        "model": {"identity": PARENT_ORDER_PACKAGE},
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "populations": [{
+            "population": population,
+            "complete": true,
+            "objects": [
+                {
+                    "key": "root",
+                    "type": object_type,
+                    "fields": {
+                        "versionNumber": {"integer": "1"},
+                        "parent": {"absent": {}}
+                    }
+                },
+                {
+                    "key": "child",
+                    "type": object_type,
+                    "fields": {
+                        "versionNumber": {"integer": "2"},
+                        "parent": {"present": {"reference": {"population": population, "key": "root"}}}
+                    }
+                }
+            ]
+        }]
+    });
+    let observation_bytes = serde_json::to_vec(&observation).expect("encode observation");
+    assert!(observation_bytes.len() > 10);
+    std::fs::write(directory.join("current.json"), &observation_bytes)
+        .expect("write over-limit observation");
+    let limit = observation_bytes.len() - 1;
+
+    let request = |request_limit: Option<usize>, observation_file: &str| {
+        let mut clause = serde_json::json!({
+            "selection": {"clause": {
+                "name": "ParentOrder",
+                "observation": "current",
+                "self": {"population": population, "key": "child"},
+                "anchor": {"kind": "handler", "name": "validate"}
+            }},
+            "observations": {"current": observation_file}
+        });
+        if let Some(limit) = request_limit {
+            clause["observation_limits"] = serde_json::json!({"document_bytes": limit});
+        }
+        serde_json::json!({
+            "format": "native-run/1",
+            "request": {
+                "models": [{
+                    "format": "semantic-ir/2.0.0",
+                    "source": {
+                        "file": "model.semantic-ir.json",
+                        "authority": "test",
+                        "identity": "parent-order-model",
+                        "document": "ParentOrderModel",
+                        "formal_revision": 1
+                    }
+                }],
+                "program": {"source": {
+                    "file": "parent-order.native",
+                    "authority": "test",
+                    "identity": "parent-order-rule",
+                    "document": "ParentOrderRule",
+                    "formal_revision": 1
+                }},
+                "clause": clause
+            }
+        })
+    };
+    let request_path = directory.join("request-member.json");
+    std::fs::write(
+        &request_path,
+        serde_json::to_vec(&request(Some(limit), "current.json"))
+            .expect("encode request-member request"),
+    )
+    .expect("write request-member request");
+    let flag_path = directory.join("flag.json");
+    std::fs::write(
+        &flag_path,
+        serde_json::to_vec(&request(None, "current.json")).expect("encode CLI-limit request"),
+    )
+    .expect("write CLI-limit request");
+    let at_limit_path = directory.join("at-limit.json");
+    std::fs::write(
+        &at_limit_path,
+        serde_json::to_vec(&request(Some(observation_bytes.len()), "current.json"))
+            .expect("encode at-limit request"),
+    )
+    .expect("write at-limit request");
+    let duplicate_path = directory.join("duplicate-limit.json");
+    std::fs::write(
+        &duplicate_path,
+        serde_json::to_vec(&request(Some(limit), "missing.json"))
+            .expect("encode duplicate-limit request"),
+    )
+    .expect("write duplicate-limit request");
+
+    let request_limited = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run with the request observation limit");
+    let cli_limited = Command::new(FSL)
+        .arg("run")
+        .arg(&flag_path)
+        .args([
+            "--limit",
+            &format!("observation.input_bytes={limit}"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with the CLI observation limit");
+    assert_eq!(request_limited.status.code(), Some(22));
+    assert_eq!(cli_limited.status.code(), Some(22));
+    assert!(
+        request_limited.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&request_limited.stderr)
+    );
+    assert!(
+        cli_limited.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&cli_limited.stderr)
+    );
+
+    let request_document: serde_json::Value =
+        serde_json::from_slice(&request_limited.stdout).expect("request limit outcome JSON");
+    let cli_document: serde_json::Value =
+        serde_json::from_slice(&cli_limited.stdout).expect("CLI limit outcome JSON");
+    assert_eq!(request_document, cli_document);
+    assert_eq!(request_document["category"], "incomplete");
+    assert_eq!(request_document["items"].as_array().map(Vec::len), Some(1));
+    assert!(
+        request_document["diagnostics"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "the limit is carried by the result item, not a top-level diagnostic: {request_document}"
+    );
+    assert_eq!(
+        request_document["items"][0]["cause"]["code"],
+        "stage_limit_exceeded"
+    );
+    assert_eq!(
+        request_document["items"][0]["cause"]["kind"],
+        "input-bytes-exceeded"
+    );
+
+    let cause = &request_document["items"][0]["cause"];
+    assert_eq!(cause["limit"], "input-bytes-exceeded", "{cause}");
+    assert_eq!(cause["value"], limit, "{cause}");
+    assert_eq!(cause["setting"], "observation.input_bytes", "{cause}");
+    assert_eq!(cause["bound"], limit.to_string(), "{cause}");
+    assert_eq!(
+        cause["counter"],
+        observation_bytes.len().to_string(),
+        "{cause}"
+    );
+
+    let at_limit = Command::new(FSL)
+        .arg("run")
+        .arg(&at_limit_path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run at the observation byte limit");
+    assert_eq!(at_limit.status.code(), Some(0), "{at_limit:?}");
+    let at_limit_document: serde_json::Value =
+        serde_json::from_slice(&at_limit.stdout).expect("at-limit outcome JSON");
+    assert_eq!(
+        at_limit_document["category"], "success",
+        "{at_limit_document}"
+    );
+
+    let text = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--format", "text"])
+        .output()
+        .expect("render the request limit hint");
+    assert_eq!(text.status.code(), Some(22), "{text:?}");
+    let rendered = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        rendered.contains("--limit observation.input_bytes="),
+        "{rendered}"
+    );
+    assert!(
+        !rendered.contains("observation.document_bytes"),
+        "{rendered}"
+    );
+
+    let duplicate = Command::new(FSL)
+        .arg("run")
+        .arg(&duplicate_path)
+        .args([
+            "--limit",
+            &format!("observation.input_bytes={limit}"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with duplicate request and CLI observation limits");
+    assert_eq!(duplicate.status.code(), Some(20), "{duplicate:?}");
+    let duplicate_document: serde_json::Value =
+        serde_json::from_slice(&duplicate.stdout).expect("duplicate limit refusal JSON");
+    assert_eq!(
+        duplicate_document["category"], "refusal",
+        "{duplicate_document}"
+    );
+    assert!(
+        duplicate_document.to_string().contains("invalid-request"),
+        "{duplicate_document}"
+    );
+    assert!(
+        duplicate_document
+            .to_string()
+            .contains("observation_limits"),
+        "{duplicate_document}"
+    );
+    assert!(
+        !duplicate_document.to_string().contains("missing.json"),
+        "the duplicate request limit refuses before reading its observation: {duplicate_document}"
+    );
+}
+
+/// Trace: FSpec-FR-287-AC-13.
+/// Provenance: QSL-2015.
+#[test]
+#[trace("FSpec-FR-287-AC-13")]
+fn observation_document_bytes_is_not_a_cli_limit_setting() {
+    let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
+    let output = Command::new(FSL)
+        .args([
+            "run",
+            request.as_str(),
+            "--limit",
+            "observation.document_bytes=10",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with the removed observation limit name");
+    assert_eq!(output.status.code(), Some(20));
+    let refusal = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(refusal.contains("UnknownSetting"), "{refusal}");
+    assert!(refusal.contains("observation.input_bytes"), "{refusal}");
+}
+
 /// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
 #[test]
 fn check_does_not_read_an_unnamed_config_from_the_working_directory() {
@@ -691,8 +1255,40 @@ fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
         .output()
         .expect("run check refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &check_outcome_bytes(INVALID_SOURCE));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits JSON");
+    assert_eq!(document["diagnostics"][0]["message"], "expected `)`");
+}
+
+/// Trace: FR-002-AC-13.
+/// Provenance: QSL-2202.
+#[test]
+#[trace("FR-002-AC-13")]
+fn check_text_refusal_prints_its_message_once() {
+    let output = Command::new(FSL)
+        .args(["check", INVALID_SOURCE, "--format", "text"])
+        .output()
+        .expect("run check refusal in text mode");
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stderr.is_empty());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(text.matches("expected `)`").count(), 1, "{text}");
+}
+
+/// Trace: FSpec-FR-301-AC-3.
+/// Provenance: QSL-2202.
+#[test]
+#[trace("FSpec-FR-301-AC-3")]
+fn check_bad_option_still_reports_on_stderr() {
+    let output = Command::new(FSL)
+        .args(["check", SOURCE, "--bogus", "--format", "json"])
+        .output()
+        .expect("run check with an unknown option");
+    assert_eq!(output.status.code(), Some(20));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--bogus"), "{stderr}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check source I/O failures use FSL's typed code and serializer.
@@ -707,10 +1303,13 @@ fn check_missing_source_emits_fsl_io_error_document() {
         .output()
         .expect("run check with a missing source");
     assert_eq!(output.status.code(), Some(20));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let message = stderr.trim_end();
+    assert!(output.stderr.is_empty());
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check emits JSON");
+    let message = document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("I/O refusal has a diagnostic message");
     assert!(message.starts_with(&format!("could not read source {missing}:")));
-    assert!(stderr.ends_with('\n'));
 
     let expected = OutcomeDocument::new(Operation::Check, None, Code::IoError.category())
         .with_diagnostics(vec![OutcomeDiagnostic::new(
@@ -747,7 +1346,7 @@ fn compile_refusal_emits_fsl_package_outcome_document() {
         .output()
         .expect("run compile refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
 }
 
@@ -776,6 +1375,204 @@ fn compile_empty_program_is_invalid_package() {
     assert_eq!(document["diagnostics"][0]["cause"], "invalid-value");
 }
 
+/// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
+#[test]
+fn run_paid_short_json_contains_the_state_rule_witness() {
+    let directory = TemporaryDirectory::new("state-rule-witness");
+    let request = write_counter_clause_request(&directory.0, "self.value = 3", 2, None);
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run the paid-short state-rule example");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
+    assert_eq!(document["category"], "violation", "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["clause"], "CounterRule", "{item}");
+    assert_eq!(item["category"], "violation", "{item}");
+    let witness = item
+        .get("witness")
+        .filter(|witness| witness.is_object())
+        .expect("the state-rule violation carries its witness");
+    assert_eq!(
+        witness["value_path"]["root"]["subject"]["object_identity"], "a",
+        "{witness}"
+    );
+    assert_eq!(witness["value_path"]["kind"], "runtime_value", "{witness}");
+    assert!(
+        witness["value_path"]["steps"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "the state rule's value path is rooted at self: {witness}"
+    );
+    assert!(witness["deciding_comparison"].is_object(), "{witness}");
+    assert_eq!(
+        witness["operands"].as_array().map(Vec::len),
+        Some(2),
+        "{witness}"
+    );
+    assert_eq!(witness["operands"][0]["decimal"], "2", "{witness}");
+    assert_eq!(witness["operands"][1]["decimal"], "3", "{witness}");
+    assert!(
+        witness["decision_path"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "{witness}"
+    );
+    assert_eq!(witness["deciding_element"]["kind"], "boolean", "{witness}");
+    assert_eq!(witness["deciding_element"]["value"], false, "{witness}");
+}
+
+/// Trace: FSpec-FR-352-AC-9.
+/// Provenance: QSL-2005.
+#[test]
+#[trace("FSpec-FR-352-AC-9")]
+fn run_charge_changes_total_json_contains_the_frame_witness() {
+    let directory = TemporaryDirectory::new("frame-witness");
+    let mut model: serde_json::Value =
+        serde_json::from_slice(include_bytes!("fixtures/analyze-counter.semantic-ir.json"))
+            .expect("read the driver-owned Counter model");
+    let counter = model["types"]
+        .as_array_mut()
+        .expect("Counter model types")
+        .iter_mut()
+        .find(|ty| ty["identity"] == "ix://test/counter/Counter")
+        .expect("Counter object type");
+    counter["operations"][0]["frame"]["modifies"] = serde_json::json!([]);
+    std::fs::write(
+        directory.0.join("counter-model.json"),
+        serde_json::to_vec(&model).expect("encode the focused frame model"),
+    )
+    .expect("write the focused frame model");
+    std::fs::write(
+        directory.0.join("counter.fsl"),
+        concat!(
+            "language \"ix:native\" edition \"1-draft\";\n",
+            "profile v = \"filament.value.complete/v1\";\n",
+            "model M = \"test/counter\";\n",
+            "post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n"
+        ),
+    )
+    .expect("write the focused Counter operation rule");
+    let snapshot = |name: &str, observation: &str, value: u64| {
+        serde_json::json!({
+            "format": "filament.state.snapshot/v1",
+            "identity": {"authority": "test", "identity": format!("counter/{name}")},
+            "model": {"identity": "test/counter"},
+            "observation": observation,
+            "populations": [{
+                "population": "ix://test/counter/counters",
+                "complete": true,
+                "objects": [{
+                    "key": "a",
+                    "type": "ix://test/counter/Counter",
+                    "fields": {"value": {"integer": value.to_string()}}
+                }]
+            }]
+        })
+    };
+    for (name, observation, value) in [("pre", "pre", 1), ("post", "post", 2)] {
+        std::fs::write(
+            directory.0.join(format!("{name}.json")),
+            snapshot(name, observation, value).to_string(),
+        )
+        .expect("write the focused Counter snapshot");
+    }
+    std::fs::write(
+        directory.0.join("invocation.json"),
+        serde_json::json!({
+            "format": "filament.state.invocation/v1",
+            "identity": {"authority": "test", "identity": "counter/invocation"},
+            "model": {"identity": "test/counter"},
+            "context": "ix://test/counter/Counter",
+            "operation": "inc",
+            "self": {"population": "ix://test/counter/counters", "key": "a"},
+            "pre": {"identity": {"authority": "test", "identity": "counter/pre"}},
+            "post": {"identity": {"authority": "test", "identity": "counter/post"}},
+            "parameters": {},
+            "result": null,
+            "created": [],
+            "deleted": []
+        })
+        .to_string(),
+    )
+    .expect("write the focused Counter invocation");
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [{
+                "format": "semantic-ir/2.0.0",
+                "source": {
+                    "file": "counter-model.json",
+                    "authority": "test",
+                    "identity": "counter-model",
+                    "document": "Counter",
+                    "formal_revision": 1
+                }
+            }],
+            "program": {"source": {
+                "file": "counter.fsl",
+                "authority": "test",
+                "identity": "counter-rules",
+                "document": "CounterRules",
+                "formal_revision": 1
+            }},
+            "clause": {
+                "selection": {"frame": {
+                    "operation": "M::Counter::inc",
+                    "invocation": "invocation"
+                }},
+                "observations": {
+                    "invocation": "invocation.json",
+                    "pre": "pre.json",
+                    "post": "post.json"
+                }
+            }
+        }
+    });
+    let request_path = directory.0.join("request.json");
+    std::fs::write(&request_path, request.to_string()).expect("write the frame run request");
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run the charge-changes-total frame example");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("CLI emits one JSON outcome");
+    assert_eq!(document["category"], "violation", "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["clause"], "M::Counter::inc", "{item}");
+    assert_eq!(item["category"], "violation", "{item}");
+    assert_eq!(item["cause"]["code"], "frame_violation", "{item}");
+    assert_eq!(item["cause"]["kind"], "unauthorized-change", "{item}");
+
+    let witness = item
+        .get("witness")
+        .and_then(serde_json::Value::as_object)
+        .expect("the frame violation carries its user-facing witness");
+    assert_eq!(witness["change"]["object"], "a", "{witness:?}");
+    assert_eq!(witness["change"]["field"], "value", "{witness:?}");
+    assert_eq!(witness["before"], "1", "{witness:?}");
+    assert_eq!(witness["after"], "2", "{witness:?}");
+}
+
 /// Trace: FR-002-AC-1, FR-002-AC-3; check semantic refusals retain FSL's checked outcome.
 #[test]
 fn check_semantic_refusal_emits_fsl_check_outcome_document() {
@@ -784,7 +1581,7 @@ fn check_semantic_refusal_emits_fsl_check_outcome_document() {
         .output()
         .expect("run check semantic refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert!(!output.stderr.is_empty());
+    assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &check_outcome_bytes(CHECK_INVALID_SOURCE));
 }
 
@@ -905,7 +1702,7 @@ fn parse_refusal_emits_fsl_diagnostic_cause_and_locus() {
         .output()
         .expect("run parse refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
 
     assert_fsl_document(&output.stdout, &parse_outcome_bytes(INVALID_SOURCE));
 }
@@ -1233,7 +2030,7 @@ fn format_refusal_emits_fsl_diagnostic_cause_and_locus() {
         .output()
         .expect("run format refusal");
     assert_eq!(output.status.code(), Some(20));
-    assert_eq!(output.stderr, b"expected `)`\n");
+    assert!(output.stderr.is_empty());
 
     assert_fsl_document(&output.stdout, &format_outcome_bytes(INVALID_SOURCE));
 }
@@ -1364,4 +2161,213 @@ fn built_binary_version_agrees_with_cargo_package_version() {
         .command("fsl --version", Path::new(FSL), &["--version"]);
     let result = agreement.check();
     assert!(result.is_ok(), "version agreement failed: {result:?}");
+}
+/// Trace: FR-255-AC-1, `--limit` is accepted by check and parse for S1 ceilings.
+#[test]
+fn check_and_parse_accept_raised_s1_limits_for_deep_source() {
+    let source_path =
+        std::env::temp_dir().join(format!("fsl-qsl-2014-deep-{}.native", std::process::id()));
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"filament.value.complete/v1\";\nfunction f using Complete (x: Boolean): Boolean pure {{ {}true }}\n",
+        "not ".repeat(6_000)
+    );
+    std::fs::write(&source_path, source).expect("write deep source fixture");
+    let path = source_path.to_string_lossy().into_owned();
+    for arguments in [
+        vec![
+            "parse",
+            "issuer",
+            "deep",
+            path.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ],
+        vec![
+            "check",
+            path.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ],
+    ] {
+        let output = Command::new(FSL)
+            .args(arguments)
+            .output()
+            .expect("run source command with raised S1 node limit");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(output.stderr.is_empty());
+    }
+    std::fs::remove_file(source_path).expect("remove deep source fixture");
+}
+
+/// Trace: FR-255-AC-2, compile accepts a named limit operand.
+#[test]
+fn compile_accepts_limit_operand() {
+    let request = requests::request(SOURCE, None);
+    let output = Command::new(FSL)
+        .args([
+            "compile",
+            request.as_str(),
+            "--limit",
+            "s1.nodes=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run compile with a named limit");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty());
+}
+
+/// Trace: FR-255-AC-4, the format source-byte refusal names the accepted setting.
+#[test]
+fn format_limit_message_names_the_source_byte_setting() {
+    let source_path =
+        std::env::temp_dir().join(format!("fsl-qsl-2014-format-{}.native", std::process::id()));
+    std::fs::write(&source_path, b"source bytes").expect("write format source fixture");
+    let path = source_path.to_string_lossy().into_owned();
+    let output = Command::new(FSL)
+        .args([
+            "format",
+            "issuer",
+            "identity",
+            path.as_str(),
+            "--limit",
+            "s1.input_bytes=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run format with a low source-byte limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("s1.input_bytes"), "{document}");
+    std::fs::remove_file(source_path).expect("remove format source fixture");
+}
+
+/// Trace: FR-255-AC-4, format applies the selected output-byte limit.
+#[test]
+fn format_accepts_and_applies_output_byte_limit() {
+    let output = Command::new(FSL)
+        .args([
+            "format",
+            "issuer",
+            "document",
+            SOURCE,
+            "--limit",
+            "format.output_bytes=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run format with a low output-byte limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("format.output_bytes"), "{document}");
+}
+
+/// Trace: FR-255-AC-6, unknown limits keep FSL's accepted-setting list.
+#[test]
+fn unknown_limit_setting_lists_accepted_settings() {
+    let output = Command::new(FSL)
+        .args([
+            "parse",
+            "issuer",
+            "document",
+            SOURCE,
+            "--limit",
+            "not.a.setting=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run parse with an unknown limit setting");
+    assert_eq!(output.status.code(), Some(20));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("not.a.setting"), "{document}");
+    assert!(document.contains("s1.nodes"), "{document}");
+    assert!(document.contains("format.output_bytes"), "{document}");
+}
+
+/// Trace: FR-255-AC-3, run limit diagnostics omit request-stage settings.
+#[test]
+fn run_limit_message_only_offers_the_cli_setting() {
+    let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
+    let output = Command::new(FSL)
+        .args([
+            "run",
+            request.as_str(),
+            "--limit",
+            "s1.tokens=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with a low token limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("s1.tokens"), "{document}");
+    assert!(!document.contains("stage_limits"), "{document}");
+}
+
+#[test]
+fn accounting_work_units_item_setting_can_be_raised_to_finish_the_run() {
+    let directory = TemporaryDirectory::new("accounting-work-units");
+    let request = write_counter_clause_request(&directory.0, "self.value = 0", 0, Some(0));
+    let limited = Command::new(FSL)
+        .arg("run")
+        .arg(&request)
+        .args(["--format", "json"])
+        .output()
+        .expect("run with the request's accounting.work_units bound");
+    assert_eq!(limited.status.code(), Some(22));
+    assert!(limited.stderr.is_empty());
+
+    let limited_document: serde_json::Value =
+        serde_json::from_slice(&limited.stdout).expect("limited run outcome JSON");
+    assert_eq!(
+        limited_document["category"], "incomplete",
+        "{limited_document}"
+    );
+    let cause = &limited_document["items"][0]["cause"];
+    assert_eq!(cause["code"], "resource_exhausted", "{cause}");
+    let setting = cause["setting"]
+        .as_str()
+        .expect("the stopped state-rule item names its setting");
+    assert_eq!(setting, "accounting.work_units");
+
+    let raised_limit = format!("{setting}=100000");
+    let completed = Command::new(FSL)
+        .args([
+            "run",
+            request.to_str().expect("request path is valid UTF-8"),
+            "--limit",
+            &raised_limit,
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with the item's named accounting limit raised");
+    assert_eq!(completed.status.code(), Some(0));
+    assert!(completed.stderr.is_empty());
+
+    let completed_document: serde_json::Value =
+        serde_json::from_slice(&completed.stdout).expect("completed run outcome JSON");
+    assert_eq!(
+        completed_document["category"], "success",
+        "{completed_document}"
+    );
 }

@@ -57,7 +57,7 @@ signal-hook = "=0.4.6"
 tempfile = "=3.27.0"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
 libc = "=0.2.190"
-filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", branch = "main" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "e7dc182508d0edbe1e0099dc800d900a63cbe11d" }
 filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.4" }
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
 regex = "=1.13.1"

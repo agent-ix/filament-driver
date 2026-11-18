@@ -9,26 +9,26 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use filament_driver::{
-    build_linked_providers, execute, ExecutionEngine, ExecutionFailure, ExecutionRequest,
-    LimitOverrides, ObjectEnvironment, ProcessProvider, ProcessProviderLimits,
-    ProcessProviderRequest, ProviderResults,
+    ExecutionEngine, ExecutionFailure, ExecutionRequest, LimitOverrides, ObjectEnvironment,
+    ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProviderResults,
+    build_linked_providers, execute,
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, PreparedRun, RunLimits};
-use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
+use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::wire_format::WireFormat;
-use fsl_foundation::{SettingLimits, SettingName, Source, SourceIdentity};
-use fsl_replay::spine::{
-    check_native_fences, parse, CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest,
-    ParseRequest, SpineLimits,
-};
+use fsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
 use fsl_replay::RunRefusal;
+use fsl_replay::spine::{
+    CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest, ParseRequest, SpineLimits,
+    check_native_fences, parse,
+};
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
-use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
+use ix_cli_kit::exit::{RESERVED_COMMAND_NOT_FOUND, caller_exit_code};
 use ix_cli_kit::streams::{self, Diagnostics};
 
 use crate::provider_config::{OptionRefusal, ProviderArguments};
@@ -395,7 +395,7 @@ struct SourceOptions {
 
 impl SourceOptions {
     fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
-        let limit_usage = if verb == Verb::Parse {
+        let limit_usage = if matches!(verb, Verb::Parse | Verb::Format) {
             " [--limit name=value]"
         } else {
             ""
@@ -415,11 +415,11 @@ impl SourceOptions {
                 index += 2;
                 continue;
             }
-            if argument == "--limit" && verb == Verb::Parse {
+            if argument == "--limit" && matches!(verb, Verb::Parse | Verb::Format) {
                 let value = arguments
                     .get(index + 1)
                     .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                    .ok_or_else(|| "--limit requires a setting=value operand".to_owned())?;
                 limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
@@ -439,7 +439,28 @@ impl SourceOptions {
         let identity = identity
             .to_str()
             .ok_or_else(|| format!("{} identity label must be valid UTF-8", verb.name()))?;
-        let limits = parse_frontend_limit_operands(&limit_operands, &fsl_cst::Limits::default())?;
+        let cst_limits = fsl_cst::Limits::default();
+        let mut accepted_bounds = cst_limits.bounds();
+        if verb == Verb::Format {
+            accepted_bounds.extend(FormatLimits::default().bounds());
+        }
+        let limits = parse_frontend_limit_operands_with_bounds(&limit_operands, accepted_bounds)?;
+        match verb {
+            Verb::Parse => {
+                let mut cst_limits = cst_limits;
+                limits
+                    .apply_to_limits(&mut cst_limits, "parse")
+                    .map_err(|error| error.message_for("parse"))?;
+            }
+            Verb::Format => {
+                let mut cst_limits = cst_limits;
+                let mut format_limits = FormatLimits::default();
+                limits
+                    .apply_to_setting_group(&mut [&mut cst_limits, &mut format_limits], "format")
+                    .map_err(|error| error.message_for("format"))?;
+            }
+            _ => {}
+        }
         Ok(Self {
             source: SourceIdentity::new(authority, identity),
             path: PathBuf::from(*path),
@@ -461,6 +482,15 @@ impl CompileOptions {
                 index += 2;
                 continue;
             }
+            if argument == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires a setting=value operand".to_owned())?;
+                limit_operands.push(value.to_owned());
+                index += 2;
+                continue;
+            }
             if argument == "--clocks" {
                 clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
                 index += 2;
@@ -468,15 +498,6 @@ impl CompileOptions {
             }
             if argument == "--output" {
                 output = Some(output_operand(arguments.get(index + 1), output.is_some())?);
-                index += 2;
-                continue;
-            }
-            if argument == "--limit" {
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
-                limit_operands.push(value.to_owned());
                 index += 2;
                 continue;
             }
@@ -623,8 +644,19 @@ fn parse_frontend_limit_operands(
     operands: &[String],
     bounds: &impl SettingLimits,
 ) -> Result<LimitOverrides, String> {
+    parse_frontend_limit_operands_with_bounds(operands, bounds.bounds())
+}
+
+fn parse_frontend_limit_operands_with_bounds(
+    operands: &[String],
+    bounds: Vec<(Setting, u64)>,
+) -> Result<LimitOverrides, String> {
     LimitOverrides::parse(operands).map_err(|error| {
-        let accepted = accepted_frontend_limit_settings(bounds);
+        let accepted = bounds
+            .into_iter()
+            .map(|(setting, _)| setting.name())
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("{error}; settings accepted by this command: {accepted}")
     })
 }
@@ -641,15 +673,17 @@ fn accepted_frontend_limit_settings(bounds: &impl SettingLimits) -> String {
 fn apply_frontend_limits(
     overrides: &LimitOverrides,
     bounds: &mut impl SettingLimits,
-    operation: &str,
+    operation: &'static str,
 ) -> Result<(), String> {
-    overrides.apply_to_limits(bounds).map_err(|error| {
-        let accepted = accepted_frontend_limit_settings(bounds);
-        format!(
-            "{}; settings accepted by this command: {accepted}",
-            error.message_for(operation)
-        )
-    })
+    overrides
+        .apply_to_limits(bounds, operation)
+        .map_err(|error| {
+            let accepted = accepted_frontend_limit_settings(bounds);
+            format!(
+                "{}; settings accepted by this command: {accepted}",
+                error.message_for(operation)
+            )
+        })
 }
 
 impl RunOptions {
@@ -762,6 +796,7 @@ struct CommandResult {
     category: Category,
     document: Option<OutcomeDocument>,
     diagnostic: Option<String>,
+    diagnostic_on_stderr: bool,
     text_output: Option<String>,
     /// The FSL FR-621 `analyze` document, written in machine mode in place
     /// of `document`.
@@ -778,6 +813,7 @@ impl CommandResult {
             category: document.category(),
             document: Some(document),
             diagnostic: None,
+            diagnostic_on_stderr: false,
             text_output: None,
             analyze_document: None,
             stderr_line: None,
@@ -790,6 +826,7 @@ impl CommandResult {
             category,
             document: None,
             diagnostic: Some(message.into()),
+            diagnostic_on_stderr: true,
             text_output: None,
             analyze_document: None,
             stderr_line: None,
@@ -802,6 +839,7 @@ impl CommandResult {
             category: document.category(),
             document: Some(document),
             diagnostic: None,
+            diagnostic_on_stderr: false,
             text_output,
             analyze_document: None,
             stderr_line: None,
@@ -811,7 +849,9 @@ impl CommandResult {
 
     /// An input refusal raised before FSL runs, recorded with FSL's native code.
     fn input_refusal(operation: Operation, message: impl Into<String>) -> Self {
-        Self::catalog_failure_for(operation, Code::InvalidRequest, message)
+        let mut result = Self::catalog_failure_for(operation, Code::InvalidRequest, message);
+        result.diagnostic_on_stderr = true;
+        result
     }
 
     fn catalog_failure_for(operation: Operation, code: Code, message: impl Into<String>) -> Self {
@@ -835,12 +875,25 @@ impl CommandResult {
     }
 }
 
-fn write_result_diagnostics<W: Write>(result: &CommandResult, sink: &mut W) -> io::Result<()> {
+fn write_result_diagnostics<W: Write>(
+    result: &CommandResult,
+    format: OutputFormat,
+    sink: &mut W,
+) -> io::Result<()> {
     if let Some(line) = &result.stderr_line {
         return writeln!(sink, "{line}");
     }
     if let Some(message) = &result.diagnostic {
-        return write_diagnostic(sink, "DriverDiagnostic", message);
+        if result.diagnostic_on_stderr
+            || (format != OutputFormat::Json && result.text_output.is_none())
+        {
+            return write_diagnostic(sink, "DriverDiagnostic", message);
+        }
+    }
+    // The selected primary output already carries FSL's diagnostics: as
+    // structured members in JSON or as rendered lines in text mode.
+    if format == OutputFormat::Json || result.text_output.is_some() {
+        return Ok(());
     }
     if let Some(document) = &result.document {
         for diagnostic in document.diagnostics() {
@@ -889,6 +942,43 @@ fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -
     .with_diagnostic(message)
 }
 
+/// Convert accepted observation settings to FSL's typed request override.
+/// Other run settings continue through the selected run path.
+fn observation_limits_override(
+    limits: &LimitOverrides,
+) -> (Option<fsl_replay::ObservationLimits>, bool) {
+    let mut observation = fsl_replay::ObservationLimits::default();
+    let observation_bounds = observation
+        .bounds()
+        .into_iter()
+        .map(|(setting, _)| setting)
+        .collect::<Vec<_>>();
+    let mut supplied_observation = false;
+    let mut only_observation = true;
+
+    for (name, value) in limits.values() {
+        let SettingName::Stage(setting) = name else {
+            only_observation = false;
+            continue;
+        };
+        if !observation_bounds.contains(setting) {
+            only_observation = false;
+            continue;
+        }
+        let updated = observation.set_bound(*setting, *value);
+        debug_assert!(
+            updated,
+            "an observation bound listed by bounds() must be settable"
+        );
+        supplied_observation |= updated;
+    }
+
+    (
+        supplied_observation.then_some(observation),
+        only_observation,
+    )
+}
+
 /// Run one native-run/1 request. With `--provider-config` or
 /// `--provider-limit` the run goes through FSL's `run_with_providers` with
 /// the configured process providers registered beside FSL's engines and the
@@ -924,8 +1014,11 @@ fn run(options: RunOptions) -> CommandResult {
             if !exposed.iter().any(|(available, _)| available == stage) {
                 return CommandResult::input_refusal(
                     Operation::Execute,
-                    filament_driver::LimitError::OperationUnavailable { setting: *setting }
-                        .message_for("run"),
+                    filament_driver::LimitError::OperationUnavailable {
+                        setting: *setting,
+                        operation: "run",
+                    }
+                    .message_for("run"),
                 );
             }
         }
@@ -945,22 +1038,59 @@ fn run(options: RunOptions) -> CommandResult {
         Ok(clocks) => clocks,
         Err(refusal) => return clocks_refusal(Operation::Execute, refusal),
     };
+    let (observation_limits, only_observation_limits) =
+        observation_limits_override(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
+        observation: observation_limits.as_ref(),
         ..command::RequestOverrides::default()
     };
+    if has_extraction_request(&options.path, options.intake_limits.request_bytes) {
+        if !only_observation_limits {
+            return CommandResult::input_refusal(
+                Operation::Execute,
+                "only observation limits are supported for an extracted Markdown clause run",
+            );
+        }
+        let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
+            Ok(negotiation) => negotiation,
+            Err(error) => {
+                return CommandResult::failure(
+                    Category::InternalFailure,
+                    format!("could not initialize FSL engine negotiation: {error:?}"),
+                );
+            }
+        };
+        return match command::run_with_limits_and_overrides(
+            &options.path,
+            options.intake_limits,
+            &overrides,
+            &negotiation,
+        ) {
+            Ok(result) => {
+                let render_sources = fsl_command::render_sources(result.sources());
+                match result.outcome {
+                    Some(document) => {
+                        CommandResult::document(document).with_sources(render_sources)
+                    }
+                    None => native_result(result.value.as_value().clone(), result.exit_code),
+                }
+            }
+            Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
+        };
+    }
     let prepared =
         match command::prepare_run_with_overrides(&options.path, options.intake_limits, &overrides)
         {
             Ok(prepared) => prepared,
             Err(error) => {
-                return CommandResult::document(error.outcome_document(Operation::Execute))
+                return CommandResult::document(error.outcome_document(Operation::Execute));
             }
         };
     let input = match prepared {
         PreparedRun::Function(prepared) => prepared.into_input(),
         PreparedRun::Clause(request) => {
-            return run_clause_request(*request.into_request(), &options.limits)
+            return run_clause_request(*request.into_request(), &options.limits);
         }
         PreparedRun::TlLowering(_) => {
             return CommandResult::input_refusal(
@@ -1000,6 +1130,36 @@ fn run(options: RunOptions) -> CommandResult {
             CommandResult::document(failure.into_document()).with_sources(render_sources)
         }
     }
+}
+
+/// Select FSL's extraction-aware run entry for a native-run request carrying
+/// `program.extraction`. The bounded dispatch read does not open dependent
+/// observation or source files; FSL remains their sole reader.
+fn has_extraction_request(path: &Path, request_limit: usize) -> bool {
+    let Ok(read_limit) = u64::try_from(request_limit) else {
+        return false;
+    };
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::new();
+    if file
+        .take(read_limit.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() > request_limit
+    {
+        return false;
+    }
+    let Ok(document) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    document.get("format").and_then(serde_json::Value::as_str) == Some("native-run/1")
+        && document
+            .get("request")
+            .and_then(|request| request.get("program"))
+            .and_then(|program| program.get("extraction"))
+            .is_some()
 }
 
 /// Dispatch typed clause dispositions to FSL's existing document producers.
@@ -1050,7 +1210,7 @@ fn run_clause_request(
             match OutcomeDocument::from_clause_runs(last_stage, [(name.as_str(), &report)]) {
                 Ok(document) => document,
                 Err(error) => {
-                    return CommandResult::failure(Category::InternalFailure, error.to_string())
+                    return CommandResult::failure(Category::InternalFailure, error.to_string());
                 }
             }
         }
@@ -1382,7 +1542,14 @@ fn parse_source(options: SourceOptions) -> CommandResult {
 
 /// Format one parsed source through FSL and retain its typed outcome.
 fn format_source(options: SourceOptions) -> CommandResult {
-    let limits = fsl_cst::Limits::default();
+    let mut limits = fsl_cst::Limits::default();
+    let mut format_limits = FormatLimits::default();
+    if let Err(error) = options
+        .limits
+        .apply_to_setting_group(&mut [&mut limits, &mut format_limits], "format")
+    {
+        return CommandResult::input_refusal(Operation::Format, error.to_string());
+    }
     let bytes = match read_source(&options.path, limits.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1395,7 +1562,7 @@ fn format_source(options: SourceOptions) -> CommandResult {
     let cancel = Cancel::new();
     let result = fsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
         .map_err(FormatRefusal::DiagnosedSource)
-        .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
+        .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
     let document = OutcomeDocument::from_format(&result);
     let text_output = result.ok().map(Staged::into_value);
     CommandResult::formatted(document, text_output)
@@ -1712,7 +1879,7 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
             return CommandResult::failure(
                 Category::InternalFailure,
                 format!("could not initialize process signal handling: {error}"),
-            )
+            );
         }
     };
     match written {
@@ -1750,13 +1917,13 @@ fn with_started_providers<T: Send + 'static>(
     limits: fsl_analyze::provider::ProviderLimits,
     reporting: bool,
     entry: impl FnOnce(
-            &filament_driver::AnalyzeNegotiation,
-            Vec<fsl_analyze::analyze::Engine>,
-            &fsl_analyze::provider::ProviderOptions,
-            &Cancel,
-        ) -> T
-        + Send
-        + 'static,
+        &filament_driver::AnalyzeNegotiation,
+        Vec<fsl_analyze::analyze::Engine>,
+        &fsl_analyze::provider::ProviderOptions,
+        &Cancel,
+    ) -> T
+    + Send
+    + 'static,
 ) -> io::Result<Result<T, String>> {
     crate::signals::run(move |signals| {
         let cancel = Cancel::new();
@@ -1809,7 +1976,7 @@ fn run_with_providers(
             return CommandResult::failure(
                 Category::InternalFailure,
                 format!("could not initialize process signal handling: {error}"),
-            )
+            );
         }
     };
     match written {
@@ -1864,7 +2031,7 @@ fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
             return CommandResult::failure(
                 Category::InternalFailure,
                 format!("could not initialize process signal handling: {error}"),
-            )
+            );
         }
     };
     match written {
@@ -1917,6 +2084,7 @@ fn native_result(document: serde_json::Value, exit_code: u8) -> CommandResult {
         category,
         document: None,
         diagnostic: None,
+        diagnostic_on_stderr: false,
         text_output: Some(document.to_string()),
         analyze_document: Some(document),
         stderr_line: None,
@@ -1947,6 +2115,7 @@ fn analyze_result(
         category,
         document: None,
         diagnostic: None,
+        diagnostic_on_stderr: false,
         text_output,
         analyze_document: Some(document),
         stderr_line: None,
@@ -2201,7 +2370,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
                 return CommandResult::input_refusal(
                     Operation::Monitor,
                     format!("could not open --input `{}`: {error}", path.display()),
-                )
+                );
             }
         },
         None => Box::new(io::BufReader::new(io::stdin())),
@@ -2258,7 +2427,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
             return CommandResult::failure(
                 Category::InternalFailure,
                 format!("could not initialize process signal handling: {error}"),
-            )
+            );
         }
     };
     let summary = match summary {
@@ -2292,6 +2461,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         category,
         document: None,
         diagnostic: None,
+        diagnostic_on_stderr: false,
         text_output: None,
         analyze_document: None,
         stderr_line: None,
@@ -2416,7 +2586,14 @@ fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult
         &Cancel::new(),
     ) {
         Ok(staged) => {
-            result.text_output = Some(staged.into_value().as_str().to_owned());
+            let mut rendered = staged.into_value().as_str().to_owned();
+            if let Some(hint) = observation_input_limit_hint(document) {
+                if !rendered.is_empty() {
+                    rendered.push('\n');
+                }
+                rendered.push_str(&hint);
+            }
+            result.text_output = Some(rendered);
             result
         }
         Err(_) => CommandResult::failure(
@@ -2424,6 +2601,24 @@ fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult
             "could not render the outcome document as text",
         ),
     }
+}
+
+/// Add the driver's accepted CLI spelling when a request-provided observation
+/// input limit stops a clause run. The structured FSL result remains unchanged.
+fn observation_input_limit_hint(document: &OutcomeDocument) -> Option<String> {
+    let value = serde_json::to_value(document).ok()?;
+    let items = value.get("items")?.as_array()?;
+    let cause = items.iter().find_map(|item| {
+        let cause = item.get("cause")?;
+        (cause.get("code")?.as_str()? == "stage_limit_exceeded"
+            && cause.get("kind")?.as_str()? == "input-bytes-exceeded"
+            && cause.get("setting")?.as_str()? == "observation.input_bytes")
+            .then(|| cause.get("bound")?.as_str())
+            .flatten()
+    })?;
+    Some(format!(
+        "Hint: retry with --limit observation.input_bytes={cause}"
+    ))
 }
 
 /// Refuse a verb this build accepts but does not route (FSpec FR-522): an
@@ -2515,7 +2710,7 @@ fn emit_result(result: &CommandResult, format: OutputFormat) -> Category {
         }
     }
     let mut stderr = io::stderr().lock();
-    let _ = write_result_diagnostics(result, &mut stderr);
+    let _ = write_result_diagnostics(result, format, &mut stderr);
     category
 }
 
@@ -2536,7 +2731,7 @@ pub(super) fn entrypoint() -> ExitCode {
             if exit_result == RESERVED_COMMAND_NOT_FOUND {
                 if format == OutputFormat::Text {
                     let mut stderr = io::stderr().lock();
-                    let _ = write_result_diagnostics(&result, &mut stderr);
+                    let _ = write_result_diagnostics(&result, format, &mut stderr);
                 }
                 process_exit_code(result.category)
             } else {
@@ -2563,7 +2758,7 @@ mod outcome_tests {
     use filament_semantic_value::catalog::Category;
     use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 
-    use super::{process_exit_code, write_diagnostic, write_result_diagnostics, CommandResult};
+    use super::{CommandResult, process_exit_code, write_diagnostic, write_result_diagnostics};
 
     /// Trace: FR-002-AC-2, FR-002-AC-4; one FSL exit result reaches process exit unchanged through the kit.
     #[test]
@@ -2621,8 +2816,8 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        parse_invocation, read_source, CheckOptions, ExecutionEngine, Invocation, OptionRefusal,
-        OutputFormat, RunOptions, Verb,
+        CheckOptions, ExecutionEngine, Invocation, OptionRefusal, OutputFormat, RunOptions, Verb,
+        parse_invocation, read_source,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
@@ -2632,10 +2827,11 @@ mod tests {
     fn unavailable_limit_error_is_generic_and_cli_message_names_operation() {
         let error = filament_driver::LimitError::OperationUnavailable {
             setting: SettingName::Stage(Setting::ExploreStates),
+            operation: "run",
         };
         assert_eq!(
             error.to_string(),
-            "limit setting `explore.states` is unavailable for this operation"
+            "limit setting `explore.states` is unavailable for the `run` operation"
         );
         assert_eq!(
             error.message_for("run"),
