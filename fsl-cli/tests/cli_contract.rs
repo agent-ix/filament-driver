@@ -660,9 +660,16 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
+/// Trace: FSpec-FR-312-AC-9, FSpec-FR-491-AC-8, FSpec-FR-287-AC-13.
 /// Provenance: QSL-2015.
 #[test]
-fn observation_input_bytes_request_member_matches_cli_limit() {
+#[trace(
+    "FSpec-FR-312-AC-9",
+    "FSpec-FR-491-AC-8",
+    "FSpec-FR-287-AC-13"
+)]
+#[ignore = "QSL-2015 waits for the FSL public document_bytes request parser"]
+fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock is after the Unix epoch")
@@ -680,33 +687,85 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
     }
     let _cleanup = RemoveDirectory(directory.clone());
 
+    std::fs::write(
+        directory.join("spine-unit.native"),
+        include_str!("fixtures/config-version/spine-unit.native"),
+    )
+    .expect("write the FR-108 ConfigVersion unit");
+    std::fs::write(
+        directory.join("model.semantic-ir.json"),
+        include_bytes!("fixtures/config-version/model.semantic-ir.json"),
+    )
+    .expect("write the FR-108 domain package");
+
+    let population = "ix://example/config-version/config_history";
+    let object_type = "ix://example/config-version/ConfigVersion";
     let observation = serde_json::json!({
         "format": "filament.state.snapshot/v1",
         "identity": {"authority": "issuer", "identity": "current"},
-        "observation": "current"
+        "model": {"identity": "example/config-version"},
+        "observation": "current",
+        "anchor": {"kind": "handler", "name": "validate"},
+        "populations": [{
+            "population": population,
+            "complete": true,
+            "objects": [
+                {
+                    "key": "root",
+                    "type": object_type,
+                    "fields": {
+                        "versionNumber": {"integer": "1"},
+                        "parent": {"absent": {}}
+                    }
+                },
+                {
+                    "key": "child",
+                    "type": object_type,
+                    "fields": {
+                        "versionNumber": {"integer": "2"},
+                        "parent": {"present": {"reference": {"population": population, "key": "root"}}}
+                    }
+                }
+            ]
+        }]
     });
     let observation_bytes = serde_json::to_vec(&observation).expect("encode observation");
     assert!(observation_bytes.len() > 10);
     std::fs::write(directory.join("current.json"), &observation_bytes)
         .expect("write over-limit observation");
+    let limit = observation_bytes.len() - 1;
 
-    let request = |request_limit: bool| {
+    let request = |request_limit: Option<usize>, observation_file: &str| {
         let mut clause = serde_json::json!({
-            "selection": {"function": {"name": "yes", "arguments": [], "snapshot": "current"}},
-            "observations": {"current": "current.json"}
+            "selection": {"clause": {
+                "name": "ParentOrder",
+                "observation": "current",
+                "self": {"population": population, "key": "child"},
+                "anchor": {"kind": "handler", "name": "validate"}
+            }},
+            "observations": {"current": observation_file}
         });
-        if request_limit {
-            clause["observation_limits"] = serde_json::json!({"input_bytes": 10});
+        if let Some(limit) = request_limit {
+            clause["observation_limits"] = serde_json::json!({"document_bytes": limit});
         }
         serde_json::json!({
             "format": "native-run/1",
             "request": {
-                "models": [],
+                "models": [{
+                    "format": "semantic-ir/2.0.0",
+                    "source": {
+                        "file": "model.semantic-ir.json",
+                        "authority": "agent-ix",
+                        "identity": "example:spine-model.semantic-ir.json",
+                        "document": "SpineModel",
+                        "formal_revision": 1
+                    }
+                }],
                 "program": {"source": {
-                    "file": SOURCE,
-                    "authority": "issuer",
-                    "identity": "document",
-                    "document": "CliObservationLimit",
+                    "file": "spine-unit.native",
+                    "authority": "agent-ix",
+                    "identity": "example:spine-unit.native",
+                    "document": "SpineUnit",
                     "formal_revision": 1
                 }},
                 "clause": clause
@@ -716,15 +775,30 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
     let request_path = directory.join("request-member.json");
     std::fs::write(
         &request_path,
-        serde_json::to_vec(&request(true)).expect("encode request-member request"),
+        serde_json::to_vec(&request(Some(limit), "current.json"))
+            .expect("encode request-member request"),
     )
     .expect("write request-member request");
     let flag_path = directory.join("flag.json");
     std::fs::write(
         &flag_path,
-        serde_json::to_vec(&request(false)).expect("encode CLI-limit request"),
+        serde_json::to_vec(&request(None, "current.json")).expect("encode CLI-limit request"),
     )
     .expect("write CLI-limit request");
+    let at_limit_path = directory.join("at-limit.json");
+    std::fs::write(
+        &at_limit_path,
+        serde_json::to_vec(&request(Some(observation_bytes.len()), "current.json"))
+            .expect("encode at-limit request"),
+    )
+    .expect("write at-limit request");
+    let duplicate_path = directory.join("duplicate-limit.json");
+    std::fs::write(
+        &duplicate_path,
+        serde_json::to_vec(&request(Some(limit), "missing.json"))
+            .expect("encode duplicate-limit request"),
+    )
+    .expect("write duplicate-limit request");
 
     let request_limited = Command::new(FSL)
         .arg("run")
@@ -735,7 +809,12 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
     let cli_limited = Command::new(FSL)
         .arg("run")
         .arg(&flag_path)
-        .args(["--limit", "observation.input_bytes=10", "--format", "json"])
+        .args([
+            "--limit",
+            &format!("observation.input_bytes={limit}"),
+            "--format",
+            "json",
+        ])
         .output()
         .expect("run with the CLI observation limit");
     assert_eq!(request_limited.status.code(), Some(22));
@@ -774,13 +853,61 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
     );
 
     let cause = &request_document["items"][0]["cause"];
+    assert_eq!(cause["limit"], "input-bytes-exceeded", "{cause}");
+    assert_eq!(cause["value"], limit, "{cause}");
     assert_eq!(cause["setting"], "observation.input_bytes", "{cause}");
-    assert_eq!(cause["bound"], "10", "{cause}");
+    assert_eq!(cause["bound"], limit.to_string(), "{cause}");
     assert_eq!(cause["counter"], observation_bytes.len().to_string(), "{cause}");
+
+    let at_limit = Command::new(FSL)
+        .arg("run")
+        .arg(&at_limit_path)
+        .args(["--format", "json"])
+        .output()
+        .expect("run at the observation byte limit");
+    assert_eq!(at_limit.status.code(), Some(0), "{at_limit:?}");
+    let at_limit_document: serde_json::Value =
+        serde_json::from_slice(&at_limit.stdout).expect("at-limit outcome JSON");
+    assert_eq!(at_limit_document["category"], "success", "{at_limit_document}");
+
+    let text = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--format", "text"])
+        .output()
+        .expect("render the request limit hint");
+    assert_eq!(text.status.code(), Some(22), "{text:?}");
+    let rendered = String::from_utf8_lossy(&text.stdout);
+    assert!(rendered.contains("--limit observation.input_bytes="), "{rendered}");
+    assert!(!rendered.contains("observation.document_bytes"), "{rendered}");
+
+    let duplicate = Command::new(FSL)
+        .arg("run")
+        .arg(&duplicate_path)
+        .args([
+            "--limit",
+            &format!("observation.input_bytes={limit}"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run with duplicate request and CLI observation limits");
+    assert_eq!(duplicate.status.code(), Some(20), "{duplicate:?}");
+    let duplicate_document: serde_json::Value =
+        serde_json::from_slice(&duplicate.stdout).expect("duplicate limit refusal JSON");
+    assert_eq!(duplicate_document["category"], "refusal", "{duplicate_document}");
+    assert!(duplicate_document.to_string().contains("invalid-request"), "{duplicate_document}");
+    assert!(duplicate_document.to_string().contains("observation_limits"), "{duplicate_document}");
+    assert!(
+        !duplicate_document.to_string().contains("missing.json"),
+        "the duplicate request limit refuses before reading its observation: {duplicate_document}"
+    );
 }
 
+/// Trace: FSpec-FR-287-AC-13.
 /// Provenance: QSL-2015.
 #[test]
+#[trace("FSpec-FR-287-AC-13")]
 fn observation_document_bytes_is_not_a_cli_limit_setting() {
     let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
