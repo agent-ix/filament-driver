@@ -951,6 +951,43 @@ fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -
     .with_diagnostic(message)
 }
 
+/// Convert accepted observation settings to FSL's typed request override.
+/// Other run settings continue through the selected run path.
+fn observation_limits_override(
+    limits: &LimitOverrides,
+) -> (Option<fsl_replay::ObservationLimits>, bool) {
+    let mut observation = fsl_replay::ObservationLimits::default();
+    let observation_bounds = observation
+        .bounds()
+        .into_iter()
+        .map(|(setting, _)| setting)
+        .collect::<Vec<_>>();
+    let mut supplied_observation = false;
+    let mut only_observation = true;
+
+    for (name, value) in limits.values() {
+        let SettingName::Stage(setting) = name else {
+            only_observation = false;
+            continue;
+        };
+        if !observation_bounds.contains(setting) {
+            only_observation = false;
+            continue;
+        }
+        let updated = observation.set_bound(*setting, *value);
+        debug_assert!(
+            updated,
+            "an observation bound listed by bounds() must be settable"
+        );
+        supplied_observation |= updated;
+    }
+
+    (
+        supplied_observation.then_some(observation),
+        only_observation,
+    )
+}
+
 /// Run one native-run/1 request. With `--provider-config` or
 /// `--provider-limit` the run goes through FSL's `run_with_providers` with
 /// the configured process providers registered beside FSL's engines and the
@@ -1010,15 +1047,18 @@ fn run(options: RunOptions) -> CommandResult {
         Ok(clocks) => clocks,
         Err(refusal) => return clocks_refusal(Operation::Execute, refusal),
     };
+    let (observation_limits, only_observation_limits) =
+        observation_limits_override(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
+        observation: observation_limits.as_ref(),
         ..command::RequestOverrides::default()
     };
     if has_extraction_request(&options.path, options.intake_limits.request_bytes) {
-        if !options.limits.values().is_empty() {
+        if !only_observation_limits {
             return CommandResult::input_refusal(
                 Operation::Execute,
-                "`--limit` is not supported for an extracted Markdown clause run",
+                "only observation limits are supported for an extracted Markdown clause run",
             );
         }
         let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
