@@ -501,15 +501,6 @@ impl CompileOptions {
                 index += 2;
                 continue;
             }
-            if argument == "--limit" {
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
-                limit_operands.push(value.to_owned());
-                index += 2;
-                continue;
-            }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
                 return Err(format!("unknown compile option `{option}`"));
             }
@@ -1229,10 +1220,6 @@ fn run_clause_request(
 
 /// Compile a request through its owner and retain the actual package outcome.
 fn compile(options: CompileOptions) -> CommandResult {
-    let mut limits = SpineLimits::default();
-    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "compile") {
-        return CommandResult::input_refusal(Operation::Package, error);
-    }
     let clocks = match options
         .clocks
         .as_deref()
