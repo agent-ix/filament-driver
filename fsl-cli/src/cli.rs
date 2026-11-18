@@ -1253,27 +1253,30 @@ fn check_markdown_source(
     ) {
         Ok(report) => CommandResult::document(OutcomeDocument::from_native_fences(report.value())),
         Err(failure) => {
-            let code = match &failure {
-                fsl_foundation::diagnostic::StageFailure::Refused(cause) => cause.code(),
+            let (category, code) = match &failure {
+                fsl_foundation::diagnostic::StageFailure::Refused(cause) => {
+                    let code = cause.code();
+                    (code.category(), code)
+                }
                 fsl_foundation::diagnostic::StageFailure::RefusedWithPayload(cause, _) => {
-                    cause.code()
+                    let code = cause.code();
+                    (code.category(), code)
                 }
                 fsl_foundation::diagnostic::StageFailure::Limit(_)
                 | fsl_foundation::diagnostic::StageFailure::LimitWithPayload(_, _) => {
-                    Code::ResourceExhausted
+                    (Category::Incomplete, Code::ResourceExhausted)
                 }
-                fsl_foundation::diagnostic::StageFailure::Cancelled(_) => Code::Cancelled,
-                fsl_foundation::diagnostic::StageFailure::Fault(_) => Code::RuntimeInvariant,
+                fsl_foundation::diagnostic::StageFailure::Cancelled(_) => {
+                    (Category::Incomplete, Code::Cancelled)
+                }
+                fsl_foundation::diagnostic::StageFailure::Fault(_) => {
+                    (Category::InternalFailure, Code::RuntimeInvariant)
+                }
             };
             CommandResult::document(
-                OutcomeDocument::new(Operation::Check, None, failure.category()).with_diagnostics(
-                    vec![OutcomeDiagnostic::new(
-                        None,
-                        code.as_str(),
-                        None,
-                        format!("{failure:?}"),
-                    )],
-                ),
+                OutcomeDocument::new(Operation::Check, None, category).with_diagnostics(vec![
+                    OutcomeDiagnostic::new(None, code.as_str(), None, format!("{failure:?}")),
+                ]),
             )
         }
     }
