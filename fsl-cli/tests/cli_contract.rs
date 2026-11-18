@@ -773,27 +773,10 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
         "input-bytes-exceeded"
     );
 
-    fn has_limit_message(value: &serde_json::Value, observed_bytes: &str) -> bool {
-        match value {
-            serde_json::Value::String(message) => {
-                message.contains("observation.input_bytes")
-                    && message.contains("10")
-                    && message.contains(observed_bytes)
-            }
-            serde_json::Value::Array(values) => values
-                .iter()
-                .any(|value| has_limit_message(value, observed_bytes)),
-            serde_json::Value::Object(values) => values
-                .values()
-                .any(|value| has_limit_message(value, observed_bytes)),
-            _ => false,
-        }
-    }
-    assert!(
-        has_limit_message(&request_document, &observation_bytes.len().to_string()),
-        "a message names observation.input_bytes, limit 10, and observed size {}: {request_document}",
-        observation_bytes.len()
-    );
+    let cause = &request_document["items"][0]["cause"];
+    assert_eq!(cause["setting"], "observation.input_bytes", "{cause}");
+    assert_eq!(cause["bound"], "10", "{cause}");
+    assert_eq!(cause["counter"], observation_bytes.len().to_string(), "{cause}");
 }
 
 /// Trace: QSL-2015; the removed `observation.document_bytes` flag remains unknown.
@@ -1793,7 +1776,7 @@ fn unknown_limit_setting_lists_accepted_settings() {
 /// Trace: FR-255-AC-3, run limit diagnostics omit request-stage settings.
 #[test]
 fn run_limit_message_only_offers_the_cli_setting() {
-    let request = requests::request(SOURCE, None);
+    let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
         .args([
             "run",
