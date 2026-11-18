@@ -82,7 +82,7 @@ Test: `tests/dependency_edges.rs`, `tc_005_driver_edges_match_the_adr_011_allow_
   current dependency test together with the CLI-to-kit edge. `ix-cli-kit`
   remains outside the driver's closure. The driver's closure
   remains cache-free and host-free.
-- CG's one normal or build edge into FSL is `fsl-replay`.
+- CG's normal and build edges into FSL are exactly `fsl-package` and `fsl-replay`.
 - The graph holds one copy of `filament-contract-model`: the driver's own
   direct dependency, CG's `filament-contract-ir` and FSL's `fsl-package` all
   resolve the same package id (by identity, not just by revision string).

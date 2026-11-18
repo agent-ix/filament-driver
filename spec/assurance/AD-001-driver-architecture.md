@@ -202,7 +202,7 @@ add library-source intake or expand that baseline contract.
   their layer/model APIs; downstream components and `filament-cache` may
   consume its cache interface. The `filament-driver` package does not depend on
   `filament-cache` or `filament-plugin-host`; `fsl-cli` composes the driver, cache
-  and process host. CG's FSL seam remains `fsl-replay`; the driver may call FSL
+  and process host. CG's FSL seam is `fsl-package` and `fsl-replay`; the driver may call FSL
   layer crates directly (ADR-011 §6.1, FB-11).
 - IR admission and checked types come from `filament-contract-model`, not a
   driver-local representation. The driver, CG and FSL use one copy of that
