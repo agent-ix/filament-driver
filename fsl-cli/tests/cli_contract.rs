@@ -232,7 +232,7 @@ fn check_markdown_checks_each_named_native_fence() {
     let document = format!(
         "### Healthy\n\n```ix:native\n{healthy}```\n\n### Broken\n\n```ix:native\n{broken}```\n"
     );
-    std::fs::write(directory.0.join("spec.md"), document).expect("write Markdown fixture");
+    std::fs::write(directory.0.join("spec.md"), &document).expect("write Markdown fixture");
     let output = Command::new(FSL)
         .current_dir(&directory.0)
         .args([
