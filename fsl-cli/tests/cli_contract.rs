@@ -448,7 +448,7 @@ fn check_markdown_refuses_doubled_and_headless_fences() {
             doubled["diagnostics"][0]["cause"],
             "extraction-clause-count"
         );
-        assert_eq!(doubled["diagnostics"][0]["code"], "extraction_clause_count");
+        assert_eq!(doubled["diagnostics"][0]["code"], "extraction-clause-count");
         assert_eq!(doubled["details"]["actual"], 2);
     }
 
