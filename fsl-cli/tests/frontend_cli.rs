@@ -2016,3 +2016,147 @@ fn parse_help_row_names_text_as_the_default() {
     assert!(line.contains("text by default"), "{line}");
     assert!(!line.contains("unavailable"), "{line}");
 }
+
+fn simulation_item(settings: serde_json::Value) -> serde_json::Value {
+    serde_json::json!([{"kind": "simulation", "simulation": settings}])
+}
+
+/// FSL FR-634-AC-3, FR-181: `fsl analyze` runs a sampled simulation item
+/// and writes the traces; the same seed gives the same document twice, and
+/// the seed is echoed. QSL-2132.
+#[trace("TC-036", "FR-022-AC-9")]
+#[trace("TC-1594", "FR-634-AC-3")]
+#[test]
+fn analyze_simulation_is_deterministic_for_seed() {
+    let settings = serde_json::json!({"mode": "sample", "seed": 5, "samples": 3, "max_steps": 20});
+    let request = AnalyzeRequest::new("sim-seed", simulation_item(settings), serde_json::json!({}));
+    let (first, exit) = request.json();
+    let (second, _) = request.json();
+    assert_eq!(exit, Some(0), "{first}");
+    assert_eq!(first, second);
+    let item = &first["items"][0];
+    assert_eq!(item["category"], "success", "{item}");
+    assert_eq!(item["seed"], "5", "{item}");
+    assert_eq!(item["traces"].as_array().map(Vec::len), Some(3), "{item}");
+    assert!(
+        item.get("record").is_none(),
+        "a simulation settles no claim"
+    );
+}
+
+/// FSL FR-634: enumeration through the binary reports the Counter's four
+/// states and one trace. QSL-2132.
+#[trace("TC-036", "FR-022-AC-9")]
+#[trace("TC-1594", "FR-634-AC-1")]
+#[test]
+fn analyze_simulation_enumerates_the_counter() {
+    let request = AnalyzeRequest::new(
+        "sim-enumerate",
+        simulation_item(serde_json::json!({"mode": "enumerate"})),
+        serde_json::json!({}),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(0), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["coverage"]["states"], "4", "{item}");
+    assert_eq!(item["coverage"]["transitions"], "3", "{item}");
+    assert_eq!(item["traces"].as_array().map(Vec::len), Some(1), "{item}");
+}
+
+/// FSL FR-634 "Refusals": a simulation with zero steps refuses the whole
+/// request, exit 20. QSL-2132.
+#[trace("TC-036", "FR-022-AC-9")]
+#[trace("TC-1594", "FR-634")]
+#[test]
+fn analyze_simulation_with_zero_steps_is_refused() {
+    let settings = serde_json::json!({"mode": "sample", "seed": 1, "samples": 1, "max_steps": 0});
+    let request = AnalyzeRequest::new("sim-zero", simulation_item(settings), serde_json::json!({}));
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert!(document.to_string().contains("max_steps"), "{document}");
+}
+
+/// FSL FR-635-AC-3: a `backend` the registry does not hold settles
+/// `invalid-request` `unknown-backend`. QSL-2132.
+#[trace("TC-036", "FR-022-AC-9")]
+#[trace("TC-1595", "FR-635-AC-3")]
+#[test]
+fn analyze_unregistered_provider_is_refused_with_unknown_backend() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-none", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(20), "{document}");
+    assert!(
+        document.to_string().contains("unknown-backend"),
+        "{document}"
+    );
+}
+
+/// FSL FR-281: a provider answering with an outcome that is not a FR-331
+/// result settles the item `inconclusive`, never `proved`. QSL-2132.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_provider_garbage_is_inconclusive() {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-garbage", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "garbage"]);
+    let output = analyze_with_config(&request, &config);
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("a document");
+    assert_eq!(
+        document["items"][0]["record"]["result"], "inconclusive",
+        "{document}"
+    );
+}
+
+/// FSL FR-281, FR-635: a provider that reports a violation settles the item
+/// `refuted` once the native replay reproduces its counterexample, and the
+/// document carries that counterexample. QSL-2132.
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_external_provider_refutes_with_evidence() {
+    let mut program = even_program();
+    program.extend_from_slice(b"function Odd using v(n: Integer): Boolean pure { n = 1 }\n");
+    let items = serde_json::json!([
+        {"claim": "Odd", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-refuted", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "odd.fsl",
+        &program,
+    );
+    // The provider spells the parameter as an expanded node identity, which the
+    // document's own claim node holds as its third path segment.
+    let proved = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "proved"]);
+    let first: serde_json::Value =
+        serde_json::from_slice(&analyze_with_config(&request, &proved).stdout).expect("a document");
+    let parameter = first["items"][0]["request"]["claim"]["node"]["path"][2].to_string();
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "refuted"]);
+    let output = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(&config)
+        .args(["--format", "json"])
+        .env("FSL_TEST_PROVIDER_PARAMETER", parameter)
+        .output()
+        .expect("run fsl analyze --provider-config");
+    assert_eq!(output.status.code(), Some(10), "{output:?}");
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("a document");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{document}");
+    assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{document}");
+    assert_eq!(item["counterexample"]["type"], "assignments", "{document}");
+    assert_eq!(
+        item["counterexample"]["values"][0]["value"]["value"], "0",
+        "{document}"
+    );
+}

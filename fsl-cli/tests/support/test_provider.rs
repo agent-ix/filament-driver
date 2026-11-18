@@ -2,7 +2,9 @@
 //! A `filament.plugin-wire/v1` process provider for the `fsl analyze
 //! --provider-config` tests (FSL FR-635): it sends one `hello` whose FR-331
 //! manifest advertises (`value-validity`, `<mode>`) over `integer`, then
-//! answers every request item with `<result>` until `shutdown`.
+//! answers every request item with `<result>` until `shutdown`. The result
+//! `refuted` also reports the integer 0 for the parameter whose node identity
+//! is in `FSL_TEST_PROVIDER_PARAMETER`.
 //!
 //! Usage: `fsl-test-provider <backend> <mode> <result> [<request-log>|-]
 //! [<shutdown-marker>|-] [<descendant-ready> <descendant-leaked>]`.
@@ -132,6 +134,30 @@ fn main() -> io::Result<()> {
                 })
             })
             .collect();
+        // `refuted` reports the integer 0 for the one parameter whose expanded
+        // node identity the test passes in `FSL_TEST_PROVIDER_PARAMETER`.
+        let parameter: Value = std::env::var("FSL_TEST_PROVIDER_PARAMETER")
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or(Value::Null);
+        let counterexamples: Vec<Value> = if result == "refuted" {
+            body["request"]["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|item| {
+                    let values = vec![json!({"parameter": parameter,
+                        "value": {"type": "integer", "value": "0"}})];
+                    json!({
+                        "request_index": item["request_index"],
+                        "backend": backend,
+                        "counterexample": {"type": "assignments", "values": values},
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         write_frame(
             &mut output,
             &json!({
@@ -141,6 +167,7 @@ fn main() -> io::Result<()> {
                     "capability_vocabulary": VOCABULARY,
                     "results": results,
                     "dispositions": [],
+                    "counterexamples": counterexamples,
                 },
             }),
         )?;

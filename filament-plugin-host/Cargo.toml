@@ -9,11 +9,11 @@ repository = "https://github.com/agent-ix/filament-driver"
 publish = false
 
 [dependencies]
-quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", features = ["serde_json"] }
+quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "v0.3.1", features = ["serde_json"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.20"
-filament-exact = { git = "https://github.com/agent-ix/filament-exact", branch = "main" }
+filament-exact = { git = "https://github.com/agent-ix/filament-exact", tag = "v0.3.0" }
 process-wrap = { version = "=10.0.1", default-features = false, features = ["std", "process-group", "job-object"] }
 
 [target.'cfg(unix)'.dependencies]
