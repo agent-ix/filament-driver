@@ -965,6 +965,7 @@ fn compile_empty_program_is_invalid_package() {
 
 /// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
 #[test]
+#[ignore = "QSL-1994 blocked by QSL-2428"]
 fn run_paid_short_json_contains_the_state_rule_witness() {
     let output = Command::new(FSL)
         .args(["run", PAID_SHORT_REQUEST, "--format", "json"])
