@@ -47,7 +47,8 @@ command-line design:
 | --- | --- | --- |
 | `parse`, `check`, `compile`, `run` | works | Run the FSL stage of that name on one source file and print FSL's result document. Use `--format json`. |
 | `format` | works | Print the source in FSL's canonical layout. |
-| `analyze`, `monitor`, `prove`, `replay`, `generate`, `inspect`, `render` | planned | Recognized, and end as `unsupported` (exit 21) until a handler is written. |
+| `analyze`, `monitor`, `replay` | works | Read a `native-analyze/1`, `native-monitor/1` or `native-replay/1` request file and print FSL's result. |
+| `prove`, `generate`, `inspect`, `render` | planned | Recognized, and end as `unsupported` (exit 21) with a typed `unsupported_operation` result naming the verb. |
 
 `parse` and `format` take two logical source labels followed by the file path:
 

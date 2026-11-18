@@ -77,8 +77,8 @@ settlement path used for first-party providers.
   infer terminal categories from provider-specific evidence or diagnostics.
 - Every provider-routing verb of `fsl-cli` (`analyze`, `prove`, `monitor`,
   `run`, `replay`, `generate`; FSL FR-287, FSpec FR-561) SHALL accept
-  `--provider-config <path>` and `--provider-limit <name>=<value>`. `run`
-  and `analyze` meet this requirement now. `monitor` refuses both options
+  `--provider-config <path>` and `--provider-limit <name>=<value>`. `run`,
+  `analyze` and `replay` meet this requirement now. `monitor` refuses both options
   under the deviation FR-025 (QSL-2132) states, which lifts when its ticket
   lands. A verb that routes no items SHALL refuse both options as
   unknown, exit 20 (FSpec FR-301).

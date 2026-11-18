@@ -297,8 +297,9 @@ and awaits FSL AR2 / QSL-514.
 This reconciliation integrates the merged SP-D1–D9 specifications from driver
 PRs #15 and #17. TC-018 was added in PR #18 to verify the binary boundary for
 FR-002. IR-616 specifies caller-owned library cancellation and the
-post-handoff source-provision lifetime; CLI signal and deadline triggers
-remain planned. IR-606 adapted the orchestrator to current upstream lifecycle APIs.
+post-handoff source-provision lifetime; `fsl analyze` and `fsl monitor`
+cancel it on SIGINT and SIGTERM (FR-022, FR-025), and analyze also on the
+request's `deadline_ms`. IR-606 adapted the orchestrator to current upstream lifecycle APIs.
 IR-607 through IR-610 deliver the remaining CLI, options, providers, cache,
 AOT and proof execution chain. IR-609 separates driver/cache integration
 (FR-007, TC-014) from the downstream cache implementation (FR-012,

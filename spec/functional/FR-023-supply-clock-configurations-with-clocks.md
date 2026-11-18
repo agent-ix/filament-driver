@@ -49,10 +49,12 @@ unchanged, and FSL itself refuses a request that carries `clocks` as well.
   outcome document's `last_stage` is null (FSL FR-286, FR-287-AC-11). The driver
   adds no check of its own.
 - A replay request document has no `clocks` member (FSL FR-640-AC-8): replay
-  reads its clocks from the proving package. A driver reader of a replay
-  request document SHALL refuse a `clocks` member there `invalid-request` at
-  stage `request`. The driver has no replay verb yet, so this obligation has
-  no code path and no test until QSL-2292 adds that verb.
+  reads its clocks from the proving package. `fsl replay <request-file>` hands
+  the `native-replay/1` file to FSL's one replay reader (FSL FR-862), which
+  refuses a `clocks` member there `invalid-request` at stage `request`, exit
+  20, naming `clocks`, with no result; `fsl replay` takes no `--clocks`. The
+  driver adds no reader of its own, and refuses a request file of another
+  format before FSL runs it, so `replay` never runs a run request.
 - If the `--clocks` file is larger than the request byte limit, `fsl` SHALL
   refuse it with code `resource_exhausted` (category incomplete, exit 22), cause
   `clocks-file-too-large`, naming `--clocks` and the limit, as FSL refuses an

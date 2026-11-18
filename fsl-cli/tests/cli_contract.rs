@@ -900,7 +900,9 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     // fixes only the exit code, never empty output.
     let monitor_line = command_line("monitor");
     assert!(monitor_line.contains("native-monitor/1"), "{monitor_line}");
-    for command in ["prove", "replay", "generate", "inspect", "render"] {
+    let replay_line = command_line("replay");
+    assert!(replay_line.contains("native-replay/1"), "{replay_line}");
+    for command in ["prove", "generate", "inspect", "render"] {
         assert!(command_line(command).contains("unsupported_operation"));
         let unavailable = Command::new(FSL)
             .args([command, "--format", "json"])
