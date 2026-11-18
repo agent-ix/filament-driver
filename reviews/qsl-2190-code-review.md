@@ -35,3 +35,14 @@ REQUEST CHANGES. The implementation uses the existing typed limit helpers, but t
 | FR-869-AC-4 | examined | `fsl parse a b x.fsl --limit s3.nodes=5`, `fsl check x.fsl --limit accounting.work_units=5`, `fsl check x.fsl --limit emit.output_bytes=5` and `fsl compile req.json --limit admission.work_units=5` each exit 20 `invalid-request` naming the setting and the command's accepted settings, before reading a file; `--limit s9.nodes=1`, `--limit s1.nodes=ten` and `--limit s1.nodes=5 --limit s1.nodes=6` each refuse with FR-255 Behavior 6's usage refusal naming the operand. |
 
 The source uses the existing `LimitOverrides` parser/application helper and forwards the resulting `SpineLimits` through `RequestOverrides`. The CLI help and usage text include the new option. The test exercises a deep compile with all exposed bounds raised and checks refusal for an unknown setting. No duplication, panic path, gate narrowing, or unrelated production gap was found. Rust-style API, implementation, boundary, safety, and testing guidance was applied. The focused test output was provided by the owner; no package-wide tests or aggregate gates were run.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The test now binds the compile limit behavior to FR-003-AC-1. |
+| FND-002 | fixed | The test now asserts the recognized-but-unavailable setting, the compile operation name, and accepted settings before a missing request can be read. |
+
+## Verdict (disposition pass 1)
+
+APPROVE at `6b2a7b132e901a20b0ee34bcd7177f39ba39ddbd`. Both findings are fixed. The coder's focused test and rustfmt results were provided; I did not run builds or tests.

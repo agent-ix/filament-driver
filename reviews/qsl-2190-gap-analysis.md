@@ -30,3 +30,14 @@ FAIL. FR-003-AC-1 remains untagged in the computed Test Matrix, and FR-869-AC-4'
 Plan completion: not assessed.
 
 The computed matrix was run on PR head `15e4dcdc1c406c18255b40c098cde59d79dc6759` and compared with base `main`. FR-003-AC-1 is untagged on both revisions; the added test does not change its matrix status. Reverse-gap inspection found the new `compile --limit` parsing and propagation is owned by FR-003. Manual alignment against the FSL revision pinned in the driver lock found the compile unavailable-setting case from FR-869-AC-4 absent in the added tests. No stub or hollow assertion was found in the changed production/test lines. Semantic review was skipped because it was not explicitly requested.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The compile success test now carries the FR-003-AC-1 trace tag. |
+| FND-002 | fixed | A compile test now asserts the unavailable admission setting and accepted settings list required by FR-869-AC-4. |
+
+## Verdict (disposition pass 1)
+
+PASS at `6b2a7b132e901a20b0ee34bcd7177f39ba39ddbd`. Both findings are fixed. The supplied focused test and rustfmt evidence was not rerun.
