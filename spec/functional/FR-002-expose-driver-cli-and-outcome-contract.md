@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-865
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-866
+    type: depends_on
   - target: ix://agent-ix/filament-specification/FR-718
     type: depends_on
   - target: ix://agent-ix/filament-specification/FR-301
@@ -129,6 +131,15 @@ the fallback when that function returns reserved value `5`.
   diagnostic's code, cause and locus, every item's result, category and
   cause, and the result. None of these verbs SHALL refuse text mode as
   `UnimplementedCapability`.
+- `fsl check <file>` SHALL name the source it checks by the file the caller
+  supplied: authority `filament` and identity the path exactly as given on
+  the command line, on every path, a source that does not parse included.
+  Every diagnostic locus and the admitted sources of its outcome SHALL carry
+  that identity, never an authority or identity of the command layer, so a
+  diagnostic locates the file the caller wrote. The binary's refusal of a
+  source SHALL be byte-equal, with the same exit status, to the document the
+  library parse and check give for the same bytes under that identity, as
+  FSL FR-866 states for `check_outcome`.
 - The CLI SHALL take the source values for `RenderSources` from the admitted
   sources exposed by FSL's compile, run and check outcomes and `RunError`,
   and SHALL NOT read a source a second time to render it.
@@ -188,6 +199,7 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-16 | If a non-`BrokenPipe` primary stdout write or flush fails and stderr is writable, stderr contains an `OutputFailure` diagnostic that identifies the failed output. | Test (TC-018) |
 | FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results, and states that `text` is the default output format and `--format json` selects machine output. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
 | FR-002-AC-18 | `fsl run nosuch.json` and `fsl compile nosuch.json` without `--format` refuse with the I/O failure's FSL code and exit 20, as under `--format json`, never `UnimplementedCapability` or exit 21, and stdout holds the text form of that refusal document; the text of a refused `check` names each diagnostic's code, cause and source position; `--format bogus` on each of the four verbs refuses `invalid-request`, exit 20, naming `--format` and `bogus`, before any file is opened. | Test (TC-040) |
+| FR-002-AC-19 | `fsl check P --format json` over a source at path `P` that does not parse writes the `check` refusal whose every diagnostic locus names `{"authority": "filament", "identity": P}`, with `P` exactly as given, and that contains neither `fsl-command` nor `check-source`; its stdout is byte-equal to the canonical encoding of the document FSL's `parse` gives for the same bytes under that identity, plus a newline, with that document's exit status, and `compile` and `run` over requests naming the same source refuse equally to their library operations. | Test (TC-043) |
 
 ## Dependencies
 
@@ -205,6 +217,8 @@ the fallback when that function returns reserved value `5`.
 - [TC-009](../test-cases/TC-009-cli-outcome-and-exit-contract.md).
 - [TC-018](../test-cases/TC-018-binary-process-boundary.md), adding verification for AC-2 through AC-4 and AC-6.
 - [TC-040](../test-cases/TC-040-write-text-outcomes-by-default.md), verifying AC-13 and AC-18.
+- [TC-043](../test-cases/TC-043-name-the-checked-source-by-the-supplied-path.md), verifying AC-19.
+- FSL FR-866 defines the identity `check_outcome` gives the checked source.
 
 AC-14 adopts FSL FR-287-AC-8's quiet behavior only when a primary stdout write
 or flush actually reports `BrokenPipe`. A text-mode write of the rendered
