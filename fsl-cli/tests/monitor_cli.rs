@@ -107,6 +107,11 @@ fn library_lines(request: &Path, lines: &[String]) -> (Vec<String>, u8) {
         request,
         lines.iter().map(|line| Ok(line.clone().into_bytes())),
         &mut |event| encoded.push(canonical(event.as_value())),
+        fsl_command::command::MonitorProviders {
+            negotiate: &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
+            providers: Vec::new(),
+            options: &fsl_analyze::provider::ProviderOptions::default(),
+        },
         RunLimits::default(),
         &Cancel::new(),
     )
@@ -210,22 +215,32 @@ fn a_bad_request_is_refused_before_any_record_with_exit_20() {
 const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
 const PROVIDER_BACKEND: &str = "fsl.test-recording-provider";
 
-/// FSL FR-644-AC-11 (TC-2984), driver half: `fsl monitor` accepts
-/// `--provider-config`, starts the configured test plugin, and FSL routes the
-/// request's `items` to it before the first record: the events equal the
-/// stream's without `items`, and the summary carries the item `proved` by the
-/// plugin, `trusted`, and the registry naming it.
-#[trace("TC-039", "FR-025-AC-4")]
+/// FR-025-AC-4 (TC-044, FSL FR-644-AC-8 and AC-11): `fsl monitor` accepts
+/// `--provider-config` and `--provider-limit`, starts the configured test
+/// plugin, and FSL routes the request's `items` to it before the first
+/// record: the events equal the run's without `items` and without the
+/// option, the summary carries each item `proved` by the plugin, `trusted`,
+/// and the registry naming it. The limit reaches the plugin's request, a
+/// request without `items` sends the plugin nothing, and no option is
+/// refused.
+#[trace("TC-044", "FR-025-AC-4")]
 #[test]
 fn provider_config_routes_the_request_items_to_the_started_plugin() {
     let folder = Folder::new("providers");
-    let mut unit = std::fs::read_to_string(folder.path("unit.native")).expect("the unit");
-    unit.push_str("function Even using v(n: Int[0, 9]): Boolean pure { n * 2 - n = n }\n");
+    let unit = std::fs::read_to_string(folder.path("unit.native")).expect("the unit");
+    // A profile line precedes the declarations.
+    let mut unit = unit.replacen(
+        "profile i = ",
+        "profile v = \"filament.value.complete/v1\";\nprofile i = ",
+        1,
+    );
+    unit.push_str("function Even using v(n: Integer): Boolean pure { n * 2 - n = n }\n");
     std::fs::write(folder.path("unit.native"), unit).expect("the unit with Even");
     let plain = folder.request("plain.json", &["Reaches", "Never"]);
     let mut request: Value =
         serde_json::from_slice(&std::fs::read(&plain).expect("the request")).expect("json");
-    request["request"]["items"] = json!([{"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    request["request"]["items"] =
+        json!([{"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
     let routed = folder.path("monitor.json");
     std::fs::write(&routed, request.to_string()).expect("the routed request");
     let log = folder.path("requests.log");
@@ -239,20 +254,30 @@ fn provider_config_routes_the_request_items_to_the_started_plugin() {
     .expect("the provider configuration");
     let input = folder.path("records.jsonl");
     std::fs::write(&input, records(&[0, 1, 2, 1, 0]).join("\n")).expect("the records");
+    let run = |request: &Path, options: &[&str]| {
+        Command::new(FSL)
+            .arg("monitor")
+            .arg(request)
+            .args(options)
+            .arg("--input")
+            .arg(&input)
+            .args(["--format", "json"])
+            .output()
+            .expect("run fsl monitor")
+    };
+    let config_arguments = ["--provider-config", config.to_str().unwrap()];
+    let bare = run(&plain, &[]);
+    assert_eq!(bare.status.code(), Some(10), "{bare:?}");
+    let bare_lines = json_lines(&bare);
+    let (_, bare_events) = bare_lines.split_last().expect("a summary line");
 
-    let output = Command::new(FSL)
-        .arg("monitor")
-        .arg(&routed)
-        .arg("--provider-config")
-        .arg(&config)
-        .arg("--input")
-        .arg(&input)
-        .args(["--format", "json"])
-        .output()
-        .expect("run fsl monitor");
+    let output = run(&routed, &config_arguments);
     assert_eq!(output.status.code(), Some(10), "{output:?}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("QSL-2132"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("QSL-2132"));
     let lines = json_lines(&output);
     let (summary, events) = lines.split_last().expect("a summary line");
+    assert_eq!(events, bare_events);
     let items = summary["items"]
         .as_array()
         .unwrap_or_else(|| panic!("a summary `items` member: {summary}"));
@@ -265,26 +290,38 @@ fn provider_config_routes_the_request_items_to_the_started_plugin() {
     assert!(
         summary["registry"]
             .as_array()
-            .is_some_and(|registry| registry.iter().any(|row| row["backend"] == PROVIDER_BACKEND)),
+            .is_some_and(|registry| registry
+                .iter()
+                .any(|row| row["backend"] == PROVIDER_BACKEND)),
         "{summary}"
     );
-    assert!(
-        !std::fs::read_to_string(&log)
-            .expect("the plugin logged its request")
-            .is_empty()
-    );
+    assert!(!std::fs::read_to_string(&log)
+        .expect("the plugin logged its request")
+        .is_empty());
 
-    let without = Command::new(FSL)
-        .arg("monitor")
-        .arg(&plain)
-        .arg("--input")
-        .arg(&input)
-        .args(["--format", "json"])
-        .output()
-        .expect("run fsl monitor without items");
-    let without = json_lines(&without);
-    let (_, plain_events) = without.split_last().expect("a summary line");
-    assert_eq!(events, plain_events);
+    std::fs::remove_file(&log).expect("the request log");
+    let limited = run(
+        &routed,
+        &[
+            "--provider-config",
+            config.to_str().unwrap(),
+            "--provider-limit",
+            "deadline_ms=4096",
+        ],
+    );
+    assert_eq!(limited.status.code(), Some(10), "{limited:?}");
+    let logged = std::fs::read_to_string(&log).expect("the plugin logged its request");
+    let sent: Value = serde_json::from_str(&logged).expect("a logged request body");
+    assert_eq!(sent["request"]["deadline_ms"], 4096, "{sent}");
+
+    std::fs::remove_file(&log).expect("the request log");
+    let without = run(&plain, &config_arguments);
+    assert_eq!(without.status.code(), Some(10), "{without:?}");
+    assert!(
+        !std::fs::read_to_string(&log).is_ok_and(|requests| !requests.is_empty()),
+        "a request without items sent the plugin a request"
+    );
+    assert_eq!(json_lines(&without), bare_lines);
 }
 
 #[trace("TC-039", "FR-025-AC-5")]

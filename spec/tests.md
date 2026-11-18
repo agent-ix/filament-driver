@@ -136,7 +136,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | TC-039 | Stream observations with the fsl monitor verb | Integration | FR-025-AC-1..FR-025-AC-8 | ✅ See the FR-025 row. |
 | TC-040 | Write the text outcome by default for parse, check, compile and run | Integration | FR-002-AC-13, FR-002-AC-18 | 🚧 Planned (QSL-1973). See the FR-002-AC-13 row. |
 | TC-041 | Set the provider limits once per run with --provider-limit | Integration | FR-006-AC-8, FR-006-AC-24, FR-006-AC-28, FR-006-AC-29, FR-014-AC-6 | 🚧 Planned (QSL-2335). See the FR-006-AC-28 row. |
-| FR-025 | FR-025-AC-1..FR-025-AC-9 | TC-039 | 🚧 `fsl-cli/tests/monitor_cli.rs` runs the `fsl` binary over a Reaches/Never stream; `--provider-config` awaits QSL-2132; `a_signal_ends_an_open_stream_as_a_cancelled_run` signals an open stream (AC-9). Ticket QSL-2313 (driver half of QSL-1977). |
+| FR-025 | FR-025-AC-1..FR-025-AC-9 | TC-039, TC-044 | 🚧 `fsl-cli/tests/monitor_cli.rs` runs the `fsl` binary over a Reaches/Never stream; `provider_config_routes_the_request_items_to_the_started_plugin` routes the request items to a started plugin (AC-4, TC-044); `a_signal_ends_an_open_stream_as_a_cancelled_run` signals an open stream (AC-9). Ticket QSL-2313 (driver half of QSL-1977). |
 | TC-042 | Write the replay outcome document and its text with fsl replay | Integration | FR-026-AC-1..FR-026-AC-4 | 🚧 See the FR-026 row. |
 | FR-026 | FR-026-AC-1..FR-026-AC-4 | TC-042 | 🚧 `fsl-cli/tests/replay_cli.rs` stubs, ignored until the text result lines land (QSL-2292). |
 
