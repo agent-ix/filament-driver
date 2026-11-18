@@ -1445,16 +1445,23 @@ profile v = "filament.value.complete/v1";
 type Big = Int[0, 1267650600228229401496703205376];
 type R = Rational[0, 9; 1, 9];
 type D = Decimal[0, 1000; 0, 2; exact];
+type F = Float64[nearest-even];
+type T = Text[0, 8; nfc];
 enum Color { Red, Green }
 record P { x: Int[0, 9]; y: Int[0, 9]; }
+tuple Tp(Int[0, 5], Int[0, 5]);
 function id_bool using v(a: Boolean): Boolean pure { a }
 function id_big using v(a: Big): Big pure { a }
 function id_rat using v(a: R): R pure { a }
 function id_dec using v(a: D): D pure { a }
+function id_flt using v(a: F): F pure { a }
 function id_str using v(a: String): String pure { a }
+function id_txt using v(a: T): T pure { a }
 function id_enum using v(a: Color): Color pure { a }
 function id_rec using v(a: P): P pure { a }
+function id_tup using v(a: Tp): Tp pure { a }
 function id_seq using v(a: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { a }
+function id_set using v(a: Set<Int[0, 9]>[0, 3]): Set<Int[0, 9]>[0, 3] pure { a }
 function id_opt using v(a: Option<Int[0, 9]>): Option<Int[0, 9]> pure { a }
 "#;
 
@@ -1554,12 +1561,31 @@ fn run_returns_decimal_result() {
     assert_run_value("id_dec", value.clone(), value);
 }
 
+/// FSL FR-650-AC-1: a Float64 result is preserved by its bit encoding.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_float_result() {
+    let value = serde_json::json!({"kind": "float64", "bits": "3ff0000000000000"});
+    assert_run_value("id_flt", value.clone(), value);
+}
+
 /// FSL FR-650-AC-1: a String result keeps its text.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_string_result() {
     let value = serde_json::json!({"kind": "string", "text": "abc"});
     assert_run_value("id_str", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: a Text result is normalized to NFC.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_text_result() {
+    assert_run_value(
+        "id_txt",
+        serde_json::json!({"kind": "text", "text": "e\u{0301}"}),
+        serde_json::json!({"kind": "text", "text": "\u{00e9}"}),
+    );
 }
 
 /// FSL FR-650-AC-1: an enumeration result is the variant form.
@@ -1579,6 +1605,16 @@ fn run_returns_record_result() {
     assert_run_value("id_rec", value.clone(), value);
 }
 
+/// FSL FR-650-AC-1: a tuple result carries each ordered component.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_tuple_result() {
+    let value = serde_json::json!({"tuple": {"type": "Tp", "components": [
+        {"integer": "2"}, {"integer": "1"}
+    ]}});
+    assert_run_value("id_tup", value.clone(), value);
+}
+
 /// FSL FR-650-AC-1: a Sequence result keeps its order and repeats.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
@@ -1586,6 +1622,17 @@ fn run_returns_sequence_result() {
     let value =
         serde_json::json!({"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]});
     assert_run_value("id_seq", value.clone(), value);
+}
+
+/// FSL FR-650-AC-1: Set results use canonical order and remove duplicates.
+#[trace("TC-1700", "FR-650-AC-1")]
+#[test]
+fn run_returns_set_result() {
+    assert_run_value(
+        "id_set",
+        serde_json::json!({"set": [{"integer": "3"}, {"integer": "1"}]}),
+        serde_json::json!({"set": [{"integer": "1"}, {"integer": "3"}]}),
+    );
 }
 
 /// FSL FR-650-AC-1: an Option result is `present` or `absent`.
@@ -1611,15 +1658,11 @@ const POPULATION_MODEL: &str = concat!(
     "/tests/fixtures/population-model.semantic-ir.json"
 );
 
-/// FSL FR-650-AC-6: a result type with no run value form refuses
-/// `unknown_required_feature`/`unsupported-feature` with exit 21, a non-null
-/// cause and no result, before any call. FSL FR-286's `filament-outcome/1`
-/// diagnostic has no `details` member, so the driver document names the
-/// function in its message.
+/// FSL FR-650-AC-6: a result form unavailable to execution is refused during
+/// checking, before call selection or evaluation.
 #[trace("TC-1705", "FR-650-AC-6")]
 #[test]
-#[ignore = "QSL-2182: needs a formless result reachable from source (collection over population)"]
-fn unsupported_result_names_function_and_cause() {
+fn unsupported_result_refuses_during_check() {
     let directory = TestDirectory(
         std::env::temp_dir().join(format!("fsl-run-formless-{}", std::process::id())),
     );
@@ -1643,19 +1686,19 @@ fn unsupported_result_names_function_and_cause() {
         .args(["--format", "json"])
         .output()
         .expect("run fsl run");
-    assert_eq!(output.status.code(), Some(21), "{output:?}");
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("one outcome document");
-    assert_eq!(document["category"], "unsupported", "{document}");
+    assert_eq!(document["category"], "refusal", "{document}");
     assert_eq!(document["operation"], "execute", "{document}");
     assert!(document["result"].is_null(), "{document}");
+    assert_eq!(document["last_stage"], "S3", "{document}");
     let diagnostics = document["diagnostics"].as_array().expect("diagnostics");
     assert_eq!(diagnostics.len(), 1, "{document}");
     let diagnostic = &diagnostics[0];
-    assert_eq!(diagnostic["code"], "unknown_required_feature", "{document}");
-    assert_eq!(diagnostic["cause"], "unsupported-feature", "{document}");
-    let message = diagnostic["message"].as_str().expect("a message");
-    assert!(message.contains("function give"), "{message}");
+    assert_eq!(diagnostic["code"], "ill_typed", "{document}");
+    assert_eq!(diagnostic["cause"], "operator-ineligible", "{document}");
+    assert_eq!(diagnostic["locus"]["kind"], "region", "{document}");
 }
 
 #[trace("TC-2456", "FR-865-AC-3")]
