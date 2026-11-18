@@ -9,7 +9,7 @@ source = "git+https://github.com/agent-ix/filament-core-data?tag=agent-ix-semant
 dependencies = [
  "agent-ix-semantic-ir",
  "clap",
- "quire-rs",
+ "quire-rs 0.53.0",
  "serde",
  "serde_json",
 ]
@@ -903,6 +903,7 @@ dependencies = [
  "fsl-package",
  "fsl-route",
  "fsl-semantics",
+ "fsl-source",
  "ix-trace-rs",
  "num-bigint",
  "num-integer",
@@ -949,6 +950,19 @@ dependencies = [
  "thiserror",
  "unicode-ident",
  "unicode-normalization",
+]
+
+[[package]]
+name = "fsl-source"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=88698958380d220c1f6b1a57114f4c6f4744ce5a#88698958380d220c1f6b1a57114f4c6f4744ce5a"
+dependencies = [
+ "fsl-foundation",
+ "ix-trace-rs",
+ "quire-rs 0.62.2",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1751,6 +1765,26 @@ dependencies = [
 name = "quire-rs"
 version = "0.53.0"
 source = "git+https://github.com/agent-ix/quire-rs?rev=71a1f970bebc8d7267424dda26cf4c665bcc5ae5#71a1f970bebc8d7267424dda26cf4c665bcc5ae5"
+dependencies = [
+ "agent-ix-semantic-schema",
+ "globset",
+ "ignore",
+ "indexmap",
+ "jsonschema 0.56.0",
+ "loom",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "yaml_serde",
+]
+
+[[package]]
+name = "quire-rs"
+version = "0.62.2"
+source = "git+https://github.com/agent-ix/quire-rs?tag=v0.62.2#335be94e8490b1d186a4d168eb5b2e7bab9a4f68"
 dependencies = [
  "agent-ix-semantic-schema",
  "globset",

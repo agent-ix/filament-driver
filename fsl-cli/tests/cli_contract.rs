@@ -13,7 +13,7 @@ use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::{Code, Staged};
-use fsl_foundation::{SettingLimits, SourceIdentity};
+use fsl_foundation::{SettingLimits, Source, SourceIdentity};
 use fsl_replay::spine::{
     check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
 };
@@ -213,6 +213,299 @@ fn check_emits_fsl_check_outcome_document() {
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
+}
+
+/// Trace: TC-1743, FR-662-AC-1, FSpec-TC-1243, FSpec-FR-563-AC-1, FSpec-FR-563-AC-2.
+/// Provenance: QSL-2019.
+#[test]
+#[trace(
+    "TC-1743",
+    "FR-662-AC-1",
+    "FSpec-TC-1243",
+    "FSpec-FR-563-AC-1",
+    "FSpec-FR-563-AC-2"
+)]
+fn check_markdown_checks_each_named_native_fence() {
+    let directory = TemporaryDirectory::new("check-markdown");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let broken = format!("{healthy}function Bad using v (x: Integer): Boolean pure {{ x }}\n");
+    let document = format!(
+        "### Healthy\n\n```ix:native\n{healthy}```\n\n### Broken\n\n```ix:native\n{broken}```\n"
+    );
+    std::fs::write(directory.0.join("spec.md"), &document).expect("write Markdown fixture");
+    let output = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run Markdown check");
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(outcome["operation"], "check", "{outcome}");
+    assert_eq!(outcome["category"], "refusal", "{outcome}");
+    let items = outcome["items"].as_array().expect("fence result items");
+    assert_eq!(items.len(), 2, "{outcome}");
+    assert_eq!(items[0]["category"], "success", "{outcome}");
+    assert_eq!(items[0]["unit"]["document"]["authority"], "agent-ix");
+    assert_eq!(items[0]["unit"]["document"]["identity"], "doc");
+    assert_eq!(items[0]["unit"]["path"], "spec.md");
+    assert_eq!(items[0]["unit"]["clause"], "Healthy");
+    assert_eq!(items[0]["unit"]["body"]["identity"], "doc#Healthy");
+    assert_eq!(items[0]["diagnostics"], serde_json::json!([]));
+
+    let broken_item = &items[1];
+    assert_eq!(broken_item["category"], "refusal", "{outcome}");
+    let unit = &broken_item["diagnostics"][0]["unit"];
+    assert_eq!(unit["document"]["authority"], "agent-ix");
+    assert_eq!(unit["document"]["identity"], "doc");
+    assert_eq!(unit["path"], "spec.md");
+    assert_eq!(unit["clause"], "Broken");
+    assert_eq!(unit["body"]["authority"], "agent-ix");
+    assert_eq!(unit["body"]["identity"], "doc#Broken");
+
+    let diagnostic = &broken_item["diagnostics"][0];
+    assert!(!diagnostic["cause"].is_null(), "{outcome}");
+    assert_eq!(diagnostic["code"], "ill_typed", "{outcome}");
+    let body_start = broken.rfind(" x }").expect("ill-typed expression") + 1;
+    assert_eq!(diagnostic["locus"]["kind"], "region", "{outcome}");
+    assert_eq!(diagnostic["locus"]["source"]["identity"], "doc#Broken");
+    assert_eq!(diagnostic["locus"]["start"], body_start);
+    assert_eq!(diagnostic["locus"]["end"], body_start + 1);
+
+    let original_start = document.rfind(" x }").expect("ill-typed expression") + 1;
+    let prefix = &document[..original_start];
+    let expected_line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let expected_column = prefix
+        .rsplit('\n')
+        .next()
+        .expect("last source line")
+        .chars()
+        .count()
+        + 1;
+    let original = &diagnostic["original_regions"][0];
+    assert_eq!(original["kind"], "located", "{outcome}");
+    assert_eq!(original["file"], "spec.md");
+    assert_eq!(original["span"]["start"]["line"], expected_line);
+    assert_eq!(original["span"]["start"]["column"], expected_column);
+
+    let without_markdown = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args(["check", "agent-ix", "doc", "spec.md", "--format", "json"])
+        .output()
+        .expect("run native check against Markdown bytes");
+    assert_eq!(
+        without_markdown.status.code(),
+        Some(20),
+        "{without_markdown:?}"
+    );
+    let plain_document: serde_json::Value =
+        serde_json::from_slice(&without_markdown.stdout).expect("one native check outcome");
+    assert_eq!(plain_document["operation"], "check");
+    assert_eq!(plain_document["category"], "refusal");
+    assert!(
+        plain_document.to_string().contains("invalid_syntax"),
+        "{plain_document}"
+    );
+}
+
+/// Trace: FR-002-AC-3.
+/// Provenance: QSL-2019, FND-001.
+#[test]
+#[trace("FR-002-AC-3")]
+fn check_markdown_source_read_refusal_keeps_requested_identity() {
+    let directory = TemporaryDirectory::new("check-markdown-source-refusal");
+    let path = directory.0.join("spec.md");
+    std::fs::write(&path, [0xff]).expect("write invalid UTF-8 source fixture");
+    let output = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run Markdown check on invalid UTF-8");
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+
+    let limits = SpineLimits::default();
+    let refusal = Source::read_typed(
+        SourceIdentity::new("agent-ix", "doc"),
+        "spec.md",
+        &[0xff],
+        limits.source.source_bytes,
+    )
+    .expect_err("invalid UTF-8 must be refused at source admission");
+    let diagnostic = fsl_cst::diagnostic::source_refusal(*refusal, limits.source.source_bytes);
+    let expected = OutcomeDocument::new(Operation::Check, None, diagnostic.code.category())
+        .with_diagnostics(vec![OutcomeDiagnostic::from_source_diagnostic(&diagnostic)])
+        .to_bytes()
+        .expect("serialize typed source refusal");
+    assert_fsl_document(&output.stdout, &expected);
+
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(outcome["category"], "refusal", "{outcome}");
+    assert_eq!(outcome["diagnostics"][0]["code"], "invalid_utf8");
+    assert_eq!(
+        outcome["diagnostics"][0]["locus"]["source"]["authority"],
+        "agent-ix"
+    );
+    assert_eq!(
+        outcome["diagnostics"][0]["locus"]["source"]["identity"],
+        "doc"
+    );
+}
+
+/// Trace: FSpec-TC-1243, FSpec-FR-563-AC-2.
+/// Provenance: QSL-2019.
+#[test]
+#[trace("FSpec-TC-1243", "FSpec-FR-563-AC-2")]
+fn run_executes_a_selected_markdown_clause_in_the_default_build() {
+    let directory = TemporaryDirectory::new("run-markdown-extraction");
+    let body = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let markdown = format!("### Healthy\n\n```ix:native\n{body}```\n");
+    std::fs::write(directory.0.join("spec.md"), markdown).expect("write Markdown fixture");
+    std::fs::write(
+        directory.0.join("current.json"),
+        serde_json::json!({
+            "format": "filament.state.snapshot/v1",
+            "identity": {"authority": "agent-ix", "identity": "current"},
+            "observation": "current"
+        })
+        .to_string(),
+    )
+    .expect("write observation fixture");
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [],
+            "program": {
+                "source": {
+                    "file": "spec.md",
+                    "authority": "agent-ix",
+                    "identity": "doc",
+                    "document": "Spec",
+                    "formal_revision": 1
+                },
+                "extraction": {
+                    "body": {"authority": "agent-ix", "identity": "doc#Healthy", "document": "Spec"}
+                },
+                "clauses": [{"clause": "Healthy", "package": "doc"}]
+            },
+            "clause": {
+                "selection": {
+                    "function": {"name": "yes", "arguments": [], "snapshot": "current"}
+                },
+                "observations": {"current": "current.json"}
+            }
+        }
+    });
+    let request_path = directory.0.join("request.json");
+    std::fs::write(&request_path, request.to_string()).expect("write run request");
+
+    let output = Command::new(FSL)
+        .current_dir(&directory.0)
+        .arg("run")
+        .arg("request.json")
+        .args(["--format", "json"])
+        .output()
+        .expect("run extracted clause");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let outcome: serde_json::Value = serde_json::from_slice(&output.stdout).expect("outcome JSON");
+    assert_eq!(outcome["format"], "filament-outcome/1", "{outcome}");
+    assert_eq!(outcome["operation"], "monitor", "{outcome}");
+    assert_eq!(outcome["category"], "success", "{outcome}");
+    assert_eq!(
+        outcome["items"].as_array().map(Vec::len),
+        Some(1),
+        "{outcome}"
+    );
+    assert!(outcome.to_string().contains("Healthy"), "{outcome}");
+}
+
+/// Trace: TC-1743, FR-662-AC-2.
+/// Provenance: QSL-2019.
+#[test]
+#[trace("TC-1743", "FR-662-AC-2")]
+fn check_markdown_refuses_doubled_and_headless_fences() {
+    let directory = TemporaryDirectory::new("check-markdown-refusals");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let document = format!(
+        "```ix:native\n{healthy}```\n\n### Twice\n\n```ix:native\n{healthy}```\n\n```ix:native\n{healthy}```\n\n### Stable\n\n```ix:native\n{healthy}```\n"
+    );
+    std::fs::write(directory.0.join("spec.md"), &document).expect("write Markdown fixture");
+
+    let run_check = || {
+        Command::new(FSL)
+            .current_dir(&directory.0)
+            .args([
+                "check",
+                "--markdown",
+                "agent-ix",
+                "doc",
+                "spec.md",
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("run Markdown check")
+    };
+    let output = run_check();
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let repeated = run_check();
+    assert_eq!(repeated.status.code(), Some(20), "{repeated:?}");
+    assert_eq!(
+        output.stdout, repeated.stdout,
+        "fence report is deterministic"
+    );
+
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(report["operation"], "check", "{report}");
+    assert_eq!(report["category"], "refusal", "{report}");
+    let items = report["items"].as_array().expect("fence result items");
+    assert_eq!(items.len(), 4, "{report}");
+
+    let headless = &items[0];
+    assert_eq!(headless["category"], "refusal", "{headless}");
+    assert_eq!(headless["unit"]["clause"], serde_json::Value::Null);
+    assert_eq!(headless["diagnostics"][0]["cause"], "missing-name");
+    assert_eq!(headless["diagnostics"][0]["code"], "missing_declaration");
+    assert_eq!(headless["first_line"], 2);
+
+    for doubled in [&items[1], &items[2]] {
+        assert_eq!(doubled["category"], "refusal", "{doubled}");
+        assert_eq!(doubled["unit"]["clause"], "Twice");
+        assert_eq!(
+            doubled["diagnostics"][0]["cause"],
+            "extraction-clause-count"
+        );
+        assert_eq!(doubled["diagnostics"][0]["code"], "extraction-clause-count");
+        assert_eq!(doubled["details"]["actual"], 2);
+    }
+
+    let stable = &items[3];
+    assert_eq!(stable["category"], "success", "{stable}");
+    assert_eq!(stable["unit"]["clause"], "Stable");
+    assert_eq!(stable["unit"]["body"]["identity"], "doc#Stable");
+    assert_eq!(stable["diagnostics"], serde_json::json!([]));
 }
 
 /// Trace: QSL-1972 / FR-866-AC-1; check supplies the selected domain model to FSL.
