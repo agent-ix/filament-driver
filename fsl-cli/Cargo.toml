@@ -30,7 +30,7 @@ tc018-test-adapter = []
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
 base64 = "=0.23.1"
 fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
+fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45", features = ["quire-extraction"] }
 fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
 fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
 fsl-cst = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
