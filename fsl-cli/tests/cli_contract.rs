@@ -247,13 +247,13 @@ fn check_markdown_checks_each_named_native_fence() {
         .output()
         .expect("run Markdown check");
     assert_eq!(output.status.code(), Some(20), "{output:?}");
-    let document: serde_json::Value =
+    let outcome: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("one outcome document");
-    assert_eq!(document["operation"], "check", "{document}");
-    assert_eq!(document["category"], "refusal", "{document}");
-    let items = document["items"].as_array().expect("fence result items");
-    assert_eq!(items.len(), 2, "{document}");
-    assert_eq!(items[0]["category"], "success", "{document}");
+    assert_eq!(outcome["operation"], "check", "{outcome}");
+    assert_eq!(outcome["category"], "refusal", "{outcome}");
+    let items = outcome["items"].as_array().expect("fence result items");
+    assert_eq!(items.len(), 2, "{outcome}");
+    assert_eq!(items[0]["category"], "success", "{outcome}");
     assert_eq!(items[0]["unit"]["document"]["authority"], "agent-ix");
     assert_eq!(items[0]["unit"]["document"]["identity"], "doc");
     assert_eq!(items[0]["unit"]["path"], "spec.md");
@@ -262,7 +262,7 @@ fn check_markdown_checks_each_named_native_fence() {
     assert_eq!(items[0]["diagnostics"], serde_json::json!([]));
 
     let broken_item = &items[1];
-    assert_eq!(broken_item["category"], "refusal", "{document}");
+    assert_eq!(broken_item["category"], "refusal", "{outcome}");
     let unit = &broken_item["diagnostics"][0]["unit"];
     assert_eq!(unit["document"]["authority"], "agent-ix");
     assert_eq!(unit["document"]["identity"], "doc");
@@ -272,13 +272,13 @@ fn check_markdown_checks_each_named_native_fence() {
     assert_eq!(unit["body"]["identity"], "doc#Broken");
 
     let diagnostic = &broken_item["diagnostics"][0];
-    assert!(!diagnostic["cause"].is_null(), "{document}");
+    assert!(!diagnostic["cause"].is_null(), "{outcome}");
     assert!(
         !diagnostic["code"].as_str().unwrap_or_default().is_empty(),
-        "{document}"
+        "{outcome}"
     );
     let body_start = broken.rfind(" x }").expect("ill-typed expression") + 1;
-    assert_eq!(diagnostic["locus"]["kind"], "region", "{document}");
+    assert_eq!(diagnostic["locus"]["kind"], "region", "{outcome}");
     assert_eq!(diagnostic["locus"]["source"]["identity"], "doc#Broken");
     assert_eq!(diagnostic["locus"]["start"], body_start);
     assert_eq!(diagnostic["locus"]["end"], body_start + 1);
@@ -294,7 +294,7 @@ fn check_markdown_checks_each_named_native_fence() {
         .count()
         + 1;
     let original = &diagnostic["original_regions"][0];
-    assert_eq!(original["kind"], "located", "{document}");
+    assert_eq!(original["kind"], "located", "{outcome}");
     assert_eq!(original["file"], "spec.md");
     assert_eq!(original["span"]["start"]["line"], expected_line);
     assert_eq!(original["span"]["start"]["column"], expected_column);
