@@ -302,3 +302,73 @@ fn a_replay_request_over_a_compiled_package_replays() {
         "clocks",
     );
 }
+
+/// FR-026-AC-1: machine mode writes the `results` document as one canonical
+/// line with the input arm's settlement.
+#[trace("TC-042", "FR-026-AC-1")]
+#[test]
+#[ignore = "QSL-2292: the replay output contract (FR-026) is not verified yet"]
+fn machine_mode_writes_the_results_document_as_one_line() {
+    let directory = tempfile::tempdir().expect("a test folder");
+    let package = compile_package(directory.path());
+    let request = write(directory.path(), "replay.json", &replay_request(&package));
+    let output = replay(&request, "json");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let text = String::from_utf8(output.stdout.clone()).expect("UTF-8");
+    assert!(text.ends_with('\n') && text.matches('\n').count() == 1, "{text}");
+    let document = document(&output);
+    assert_eq!(document["results"][0]["arm"], "input", "{document}");
+    assert_eq!(
+        document["results"][0]["settlement"], "reproduced-without-witness",
+        "{document}"
+    );
+}
+
+/// FR-026-AC-2: text mode writes the outcome header and one result line per
+/// row.
+#[trace("TC-042", "FR-026-AC-2")]
+#[test]
+#[ignore = "QSL-2292: fsl replay writes no result line in text mode yet"]
+fn text_mode_writes_the_header_and_one_result_line() {
+    let directory = tempfile::tempdir().expect("a test folder");
+    let package = compile_package(directory.path());
+    let request = write(directory.path(), "replay.json", &replay_request(&package));
+    let output = fsl(&["replay", request.to_str().expect("a UTF-8 path")]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let text = String::from_utf8(output.stdout).expect("UTF-8");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            "replay: success (exit 0) at S8",
+            "result 0: input reproduced-without-witness"
+        ],
+        "{text}"
+    );
+}
+
+/// FR-026-AC-3 and AC-4 (negative): a refused replay and a request of
+/// another format write the refusal header in text mode and no result line.
+#[trace("TC-042", "FR-026-AC-3")]
+#[trace("TC-042", "FR-026-AC-4")]
+#[test]
+#[ignore = "QSL-2292: the replay text refusal form (FR-026) is not verified yet"]
+fn text_mode_refusals_write_no_result_line() {
+    let directory = tempfile::tempdir().expect("a test folder");
+    let package = compile_package(directory.path());
+    let mut request = replay_request(&package);
+    request["request"]["clocks"] = json!({"plant": {"kind": "timed", "unit": "ms"}});
+    let clocks = write(directory.path(), "clocks.json", &request);
+    let run = write(
+        directory.path(),
+        "run.json",
+        &json!({"format": "native-run/1", "request": {"models": []}}),
+    );
+    for path in [clocks, run] {
+        let output = fsl(&["replay", path.to_str().expect("a UTF-8 path")]);
+        assert_eq!(output.status.code(), Some(refusal_code()), "{output:?}");
+        let text = String::from_utf8(output.stdout).expect("UTF-8");
+        assert!(text.starts_with("replay: refusal (exit 20)"), "{text}");
+        assert!(!text.lines().any(|line| line.starts_with("result ")), "{text}");
+    }
+}

@@ -11,7 +11,7 @@ This authored verification inventory integrates FR-001 and SP-D1 through
 SP-D9 (FR-002 through FR-010) from IR-527, FR-011 from IR-616, FR-012 for
 the downstream cache component, FR-013 for the process plugin host, and FR-014
 for the CLI package boundary, and planned FR-015 for admitted monitor program
-preparation. It covers FR-001 through FR-025 and TC-001 through TC-041.
+preparation. It covers FR-001 through FR-026 and TC-001 through TC-042.
 Discrete FR and TC artifacts remain authoritative;
 this matrix is their index, not a computed implementation-coverage report.
 
@@ -137,6 +137,8 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | TC-040 | Write the text outcome by default for parse, check, compile and run | Integration | FR-002-AC-13, FR-002-AC-18 | 🚧 Planned (QSL-1973). See the FR-002-AC-13 row. |
 | TC-041 | Set the provider limits once per run with --provider-limit | Integration | FR-006-AC-8, FR-006-AC-24, FR-006-AC-28, FR-006-AC-29, FR-014-AC-6 | 🚧 Planned (QSL-2335). See the FR-006-AC-28 row. |
 | FR-025 | FR-025-AC-1..FR-025-AC-9 | TC-039 | 🚧 `fsl-cli/tests/monitor_cli.rs` runs the `fsl` binary over a Reaches/Never stream; `--provider-config` awaits QSL-2132; `a_signal_ends_an_open_stream_as_a_cancelled_run` signals an open stream (AC-9). Ticket QSL-2313 (driver half of QSL-1977). |
+| TC-042 | Write the replay results and its text outcome with fsl replay | Integration | FR-026-AC-1..FR-026-AC-4 | 🚧 See the FR-026 row. |
+| FR-026 | FR-026-AC-1..FR-026-AC-4 | TC-042 | 🚧 `fsl-cli/tests/replay_cli.rs` stubs, ignored until the text result lines land (QSL-2292). |
 
 ## Test Case Summary
 
