@@ -1734,15 +1734,7 @@ fn project_descriptor(
         origin,
         domains: descriptor.domains().cloned(),
         bounds: bounds.cloned(),
-        profile: cg::BackendProfile {
-            evidence_kinds: descriptor
-                .evidence_kinds()
-                .iter()
-                .copied()
-                .map(cg_evidence_kind)
-                .collect(),
-            ..cg::BackendProfile::default()
-        },
+        profile: crate::analyze::profile_of(descriptor),
     })
 }
 
@@ -1979,7 +1971,7 @@ fn cg_extent(item: &RequirementItem) -> cg::ExtentClassification {
 mod origin_projection_tests {
     use fsl_foundation::BackendId;
     use fsl_route::{BackendDescriptor, Candidate, ProviderOrigin, Registry};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use filament_contract_codegen as cg;
 
@@ -2007,6 +1999,51 @@ mod origin_projection_tests {
             .register(descriptor(origin, identity))
             .expect("one descriptor registers");
         registry
+    }
+
+    fn profiled_descriptor() -> BackendDescriptor {
+        let candidate = Candidate::new(
+            BackendId::from_wire("profiled-provider").expect("identity is nonempty"),
+        );
+        let evidence_kinds = ["exact"];
+        fsl_route::descriptor_from_manifest(
+            candidate,
+            ProviderOrigin::Linked,
+            [
+                (Some("temporal-satisfaction"), Some("unbounded")),
+                (Some("probabilistic-satisfaction"), Some("bounded")),
+            ],
+            fsl_route::ManifestMembers {
+                evidence_kinds: Some(&evidence_kinds),
+                ..Default::default()
+            },
+        )
+        .expect("FSL accepts the typed descriptor")
+        .with_dynamics(
+            Some(BTreeSet::from([
+                fsl_route::DynamicsKind::Discrete,
+                fsl_route::DynamicsKind::Hybrid,
+            ])),
+            Some(fsl_route::SolverBounds {
+                max_solver_steps: Some(10),
+                max_solver_time: Some(5),
+            }),
+        )
+        .expect("hybrid dynamics have finite solver bounds")
+        .with_fairness_kinds([
+            filament_semantic_value::fairness::FairnessKind::Weak,
+            filament_semantic_value::fairness::FairnessKind::Strong,
+        ])
+        .with_state_graph_forms([
+            fsl_route::StateGraphFormKind::Possible,
+            fsl_route::StateGraphFormKind::AlwaysPossible,
+            fsl_route::StateGraphFormKind::UniquePath,
+        ])
+        .with_reductions([
+            fsl_foundation::ReductionKind::Symmetry,
+            fsl_foundation::ReductionKind::PartialOrder,
+            fsl_foundation::ReductionKind::StateConstraint,
+        ])
     }
 
     /// Trace: FR-005-AC-5, TC-012.
@@ -2046,6 +2083,43 @@ mod origin_projection_tests {
             Some(BTreeMap::from([("max_states".to_owned(), 8)]))
         );
         assert_eq!(process.bounds, None);
+    }
+
+    /// Trace: FR-005-AC-5, TC-012.
+    #[test]
+    fn backend_profile_projection_preserves_every_routing_capability() {
+        let descriptor = profiled_descriptor();
+        let projected = project_descriptor(&descriptor, None)
+            .expect("the complete FSL profile projects into CG");
+
+        assert_eq!(
+            projected.profile.dynamics,
+            BTreeSet::from([cg::Dynamics::Discrete, cg::Dynamics::Hybrid])
+        );
+        assert_eq!(
+            projected.profile.fairness_kinds,
+            BTreeSet::from([cg::FairnessKind::Weak, cg::FairnessKind::Strong])
+        );
+        assert_eq!(
+            projected.profile.state_graph_forms,
+            BTreeSet::from([
+                cg::StateGraphForm::Possible,
+                cg::StateGraphForm::AlwaysPossible,
+                cg::StateGraphForm::UniquePath,
+            ])
+        );
+        assert_eq!(
+            projected.profile.reductions,
+            BTreeSet::from([
+                cg::Reduction::Symmetry,
+                cg::Reduction::PartialOrder,
+                cg::Reduction::Constraint,
+            ])
+        );
+        assert_eq!(
+            projected.profile.evidence_kinds,
+            BTreeSet::from([cg::EvidenceKind::Exact])
+        );
     }
 
     /// Trace: FR-005-AC-17, TC-013.

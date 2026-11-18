@@ -21,7 +21,7 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::wire_format::WireFormat;
-use fsl_foundation::{SettingLimits, SettingName, Source, SourceIdentity};
+use fsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
 use fsl_replay::spine::{
     check_native_fences, parse, CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest,
     ParseRequest, SpineLimits,
@@ -439,7 +439,28 @@ impl SourceOptions {
         let identity = identity
             .to_str()
             .ok_or_else(|| format!("{} identity label must be valid UTF-8", verb.name()))?;
-        let limits = parse_frontend_limit_operands(&limit_operands, &fsl_cst::Limits::default())?;
+        let cst_limits = fsl_cst::Limits::default();
+        let mut accepted_bounds = cst_limits.bounds();
+        if verb == Verb::Format {
+            accepted_bounds.extend(FormatLimits::default().bounds());
+        }
+        let limits = parse_frontend_limit_operands_with_bounds(&limit_operands, accepted_bounds)?;
+        match verb {
+            Verb::Parse => {
+                let mut cst_limits = cst_limits;
+                limits
+                    .apply_to_limits(&mut cst_limits, "parse")
+                    .map_err(|error| error.message_for("parse"))?;
+            }
+            Verb::Format => {
+                let mut cst_limits = cst_limits;
+                let mut format_limits = FormatLimits::default();
+                limits
+                    .apply_to_setting_group(&mut [&mut cst_limits, &mut format_limits], "format")
+                    .map_err(|error| error.message_for("format"))?;
+            }
+            _ => {}
+        }
         Ok(Self {
             source: SourceIdentity::new(authority, identity),
             path: PathBuf::from(*path),
@@ -632,8 +653,19 @@ fn parse_frontend_limit_operands(
     operands: &[String],
     bounds: &impl SettingLimits,
 ) -> Result<LimitOverrides, String> {
+    parse_frontend_limit_operands_with_bounds(operands, bounds.bounds())
+}
+
+fn parse_frontend_limit_operands_with_bounds(
+    operands: &[String],
+    bounds: Vec<(Setting, u64)>,
+) -> Result<LimitOverrides, String> {
     LimitOverrides::parse(operands).map_err(|error| {
-        let accepted = accepted_frontend_limit_settings(bounds);
+        let accepted = bounds
+            .into_iter()
+            .map(|(setting, _)| setting.name())
+            .collect::<Vec<_>>()
+            .join(", ");
         format!("{error}; settings accepted by this command: {accepted}")
     })
 }

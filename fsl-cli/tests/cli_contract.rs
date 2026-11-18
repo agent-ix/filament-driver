@@ -1746,6 +1746,27 @@ fn format_limit_message_names_the_source_byte_setting() {
     std::fs::remove_file(source_path).expect("remove format source fixture");
 }
 
+/// Trace: FR-255-AC-4, format applies the selected output-byte limit.
+#[test]
+fn format_accepts_and_applies_output_byte_limit() {
+    let output = Command::new(FSL)
+        .args([
+            "format",
+            "issuer",
+            "document",
+            SOURCE,
+            "--limit",
+            "format.output_bytes=1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run format with a low output-byte limit");
+    assert_eq!(output.status.code(), Some(22));
+    let document = String::from_utf8_lossy(&output.stdout);
+    assert!(document.contains("format.output_bytes"), "{document}");
+}
+
 /// Trace: FR-255-AC-6, unknown limits keep FSL's accepted-setting list.
 #[test]
 fn unknown_limit_setting_lists_accepted_settings() {
