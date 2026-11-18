@@ -225,7 +225,7 @@ fn provider_config_routes_the_request_items_to_the_started_plugin() {
     let plain = folder.request("plain.json", &["Reaches", "Never"]);
     let mut request: Value =
         serde_json::from_slice(&std::fs::read(&plain).expect("the request")).expect("json");
-    request["request"]["items"] = json!([{"claim": "Even", "backend": PROVIDER_BACKEND}]);
+    request["request"]["items"] = json!([{"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
     let routed = folder.path("monitor.json");
     std::fs::write(&routed, request.to_string()).expect("the routed request");
     let log = folder.path("requests.log");
