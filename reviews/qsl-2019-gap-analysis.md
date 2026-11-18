@@ -39,3 +39,7 @@ The computed `quoin matrix --repo . --json` ran on exact head `56fe07ed4f9dc7b15
 ## Verdict (disposition pass 1)
 
 PASS at `697f66b2ecec89f6b0930954ded1b32db623ee1d`. The exact-code coverage gap is fixed. The extracted-run test remains blocked by locked FSL and is tracked separately, not as a driver gap. The coder reports three focused CLI tests and changed-file rustfmt passing; I did not rerun them.
+
+## Verdict (disposition pass 2)
+
+PASS at `14d2519b22bef22c6206a4eba102011d83f5d4b1`. The exact-code assertion remains present after the rebase and lockfile refresh; no new gap was found in the updated PR diff. The coder reports three focused CLI tests and changed-file rustfmt passing; I did not rerun them. The extracted-run criterion remains blocked pending FSL #2891 and is tracked separately.

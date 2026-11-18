@@ -46,3 +46,7 @@ The rust review inspected only the four changed files and did not run tests or b
 ## Verdict (disposition pass 1)
 
 PASS at `697f66b2ecec89f6b0930954ded1b32db623ee1d`. Both findings are fixed, and no new driver defect was found in the disposition diff. The coder reports three focused CLI tests and changed-file rustfmt passing; I did not rerun them. The extracted-run test remains blocked by locked FSL and is tracked separately, not as a driver finding.
+
+## Verdict (disposition pass 2)
+
+PASS at `14d2519b22bef22c6206a4eba102011d83f5d4b1`. Rebase and lockfile refresh leave both prior fixes intact: source-read refusals retain their typed identity, and the CLI regression asserts `ill_typed`. No new driver finding was found in the updated PR diff. The coder reports three focused CLI tests and changed-file rustfmt passing; I did not rerun them. The extracted-run criterion remains blocked pending FSL #2891 and is tracked separately.
