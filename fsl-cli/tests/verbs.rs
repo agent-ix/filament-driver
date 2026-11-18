@@ -10,7 +10,7 @@ use ix_trace_rs::trace;
 use serde_json::Value;
 
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
-const UNROUTED: [&str; 5] = ["prove", "replay", "generate", "inspect", "render"];
+const UNROUTED: [&str; 4] = ["prove", "generate", "inspect", "render"];
 const ALL_VERBS: [&str; 12] = [
     "parse", "format", "check", "compile", "run", "analyze", "monitor", "prove", "replay",
     "generate", "inspect", "render",

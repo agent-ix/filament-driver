@@ -45,9 +45,10 @@ requirement defines no exit table or mapping.
 This requirement specifies the library API first so realtime and embedded
 callers can cancel without a process signal or timer. A CLI signal/deadline
 adapter is a separate thin frontend layer: it may own signal handling or a
-timer and cancel the same handle with the corresponding FSL cause. That CLI
-adapter is planned separately; this requirement claims no signal handler,
-timeout, timer, or signal-to-cause mapping.
+timer and cancel the same handle with the corresponding FSL cause. The CLI
+adapter is FR-022's and FR-025's (`fsl analyze` and `fsl monitor`); this
+requirement claims no signal handler, timeout, timer, or signal-to-cause
+mapping.
 
 ## Inputs
 
@@ -76,7 +77,7 @@ timeout, timer, or signal-to-cause mapping.
   or CG generation under this requirement.
 - The library does not read a clock. A caller or separate CLI frontend that
   owns a deadline requests cancellation using FSL's `Deadline` cause.
-- The CLI's signal and timeout adapter remains planned and outside this
+- The CLI's signal and deadline adapter (FR-022, FR-025) is outside this
   library requirement's implementation scope.
 
 ## Acceptance Criteria

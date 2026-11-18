@@ -20,6 +20,7 @@ use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
+use fsl_foundation::wire_format::WireFormat;
 use fsl_foundation::{SettingLimits, SettingName, SourceIdentity};
 use fsl_replay::spine::{parse, CompileRefusal, ParseRequest, SpineLimits};
 use fsl_replay::RunRefusal;
@@ -132,6 +133,8 @@ fn help_exit_code() -> ExitCode {
         "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
         "      [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>]\n",
         "      [--clocks <json-file>] [--format json|text]\n",
+        "  replay <request-file> [--provider-config <path>] [--provider-limit name=value]\n",
+        "      [--format json|text]\n",
         "\nOptions:\n",
         "  --format text|json|dot  Select output format (default: text).\n",
         "                         dot is accepted only for inspect.\n",
@@ -218,7 +221,8 @@ impl Verb {
             Self::Monitor => {
                 "Executes a native-monitor/1 request over a record stream; --format json or text."
             }
-            Self::Prove | Self::Replay | Self::Generate | Self::Inspect | Self::Render => {
+            Self::Replay => "Executes a native-replay/1 request; --format json or text.",
+            Self::Prove | Self::Generate | Self::Inspect | Self::Render => {
                 "Recognized; this build does not route it and returns an unsupported_operation result."
             }
         }
@@ -1267,20 +1271,20 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
     Ok(bytes)
 }
 
-/// The operands of `fsl analyze`: one `native-analyze/1` request file, an
-/// optional `--provider-config` file and the `--provider-limit` set. The
-/// request document carries every analysis setting (FSL FR-620); the
-/// provider configuration names the process providers registered beside
+/// The operands of `fsl analyze` and `fsl replay`: one request file
+/// (`native-analyze/1` or `native-replay/1`), an optional
+/// `--provider-config` file and the `--provider-limit` set. The request
+/// document carries every analysis or replay setting (FSL FR-620, FR-862);
+/// the provider configuration names the process providers registered beside
 /// FSL's engines (FSL FR-287, FR-635; FSpec FR-561).
-struct AnalyzeOptions {
+struct RequestOptions {
     path: PathBuf,
     providers: ProviderArguments,
 }
 
-impl AnalyzeOptions {
-    const USAGE: &str = "usage: fsl analyze <request-file> [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
-
-    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
+impl RequestOptions {
+    fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, OptionRefusal> {
+        let name = verb.name();
         let mut positionals = Vec::new();
         let mut providers = ProviderArguments::default();
         let mut index = 0;
@@ -1295,13 +1299,17 @@ impl AnalyzeOptions {
                 continue;
             }
             if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown analyze option `{option}`").into());
+                return Err(format!("unknown {name} option `{option}`").into());
             }
             positionals.push(argument);
             index += 1;
         }
         let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned().into());
+            return Err(format!(
+                "usage: fsl {name} <request-file> [--provider-config <path>] \
+                 [--provider-limit name=value] [--format json|text]"
+            )
+            .into());
         };
         Ok(Self {
             path: PathBuf::from(*path),
@@ -1541,7 +1549,7 @@ fn start_configured_provider(
 /// The run is one signal-reporting session: SIGINT or SIGTERM cancels FSL's
 /// handle with cause `requested`, and the verb writes the outcome FSL settles
 /// for it (FSL FR-624 `cancelled`, exit 22) rather than dying by the signal.
-fn analyze(options: &AnalyzeOptions, format: OutputFormat) -> CommandResult {
+fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     let config = match load_provider_config(&options.providers) {
         Ok(config) => config,
         Err(refusal) => return *refusal,
@@ -1669,6 +1677,85 @@ fn run_with_providers(
         },
         Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
     }
+}
+
+/// `fsl replay`: FSL replays the `native-replay/1` request's FSpec FR-336
+/// replay request (FSL FR-862, FSpec FR-715) and the verb writes the FR-323
+/// `results` document in machine mode and FSL's FR-865 text of the replay
+/// outcome otherwise, with FSL's exit code. The request is read only by FSL's
+/// one replay reader, which refuses a `clocks` member at stage `request`
+/// because a replay takes its clocks from the proving package (FSL FR-640).
+/// A request file of another format is refused before FSL runs, so `replay`
+/// never runs or analyzes it. `--provider-config` and `--provider-limit` are
+/// read and the providers started and shut down as for `run` (FR-006).
+fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
+    let config = match load_provider_config(&options.providers) {
+        Ok(config) => config,
+        Err(refusal) => return *refusal,
+    };
+    if let Some(other) = other_request_format(&options.path) {
+        return with_format(
+            CommandResult::input_refusal(
+                Operation::Replay,
+                format!(
+                    "`replay` reads a `{}` request; `{}` has format `{other}`",
+                    WireFormat::ReplayRequest.as_str(),
+                    options.path.display()
+                ),
+            ),
+            format,
+        );
+    }
+    let path = options.path.clone();
+    let ran = with_started_providers(
+        config,
+        options.providers.limits,
+        false,
+        move |negotiation, engines, provider_options, cancel| {
+            command::run_with_providers(&path, negotiation, engines, provider_options, cancel)
+        },
+    );
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Replay, message),
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            )
+        }
+    };
+    match written {
+        Ok(result) => match (format, result.outcome) {
+            (OutputFormat::Text, Some(document)) => {
+                with_format(CommandResult::document(document), format)
+            }
+            _ => native_result(result.value.as_value().clone(), result.exit_code),
+        },
+        Err(error) => with_format(
+            CommandResult::document(error.outcome_document(Operation::Replay)),
+            format,
+        ),
+    }
+}
+
+/// The `format` of the request file at `path` when it is a JSON object
+/// naming a format other than `native-replay/1`. A file that cannot be read
+/// or is not such an object is left to FSL's reader, which refuses it with
+/// its own cause.
+fn other_request_format(path: &Path) -> Option<String> {
+    let limit = RunLimits::default().request_bytes;
+    let file = File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.take(u64::try_from(limit).ok()?.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > limit {
+        return None;
+    }
+    let document: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let format = document.get("format")?.as_str()?;
+    (format != WireFormat::ReplayRequest.as_str()).then(|| format.to_owned())
 }
 
 /// A run result FSL writes as its native document rather than an FR-286
@@ -2056,9 +2143,15 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
 /// Dispatch the root verb while preserving its FSL-owned result category.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
     if verb == Verb::Analyze {
-        return match AnalyzeOptions::parse(raw_arguments) {
+        return match RequestOptions::parse(verb, raw_arguments) {
             Ok(options) => analyze(&options, format),
             Err(error) => option_refusal(Operation::Analyze, &error),
+        };
+    }
+    if verb == Verb::Replay {
+        return match RequestOptions::parse(verb, raw_arguments) {
+            Ok(options) => replay(&options, format),
+            Err(error) => option_refusal(Operation::Replay, &error),
         };
     }
     if verb == Verb::Monitor {
@@ -2128,7 +2221,6 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
 fn unrouted_operation(verb: Verb) -> Option<Operation> {
     match verb {
         Verb::Prove => Some(Operation::Prove),
-        Verb::Replay => Some(Operation::Replay),
         Verb::Generate => Some(Operation::Generate),
         Verb::Inspect => Some(Operation::Inspect),
         Verb::Render => Some(Operation::Render),
@@ -2138,7 +2230,8 @@ fn unrouted_operation(verb: Verb) -> Option<Operation> {
         | Verb::Compile
         | Verb::Run
         | Verb::Analyze
-        | Verb::Monitor => None,
+        | Verb::Monitor
+        | Verb::Replay => None,
     }
 }
 
