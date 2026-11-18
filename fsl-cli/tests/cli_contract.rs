@@ -11,11 +11,11 @@ use std::process::Command;
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
-use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
+use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
 use fsl_foundation::diagnostic::{Code, Staged};
 use fsl_foundation::{SettingLimits, Source, SourceIdentity};
 use fsl_replay::spine::{
-    check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
+    DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 use ix_cli_kit::version::Agreement;
@@ -384,18 +384,42 @@ fn check_markdown_source_read_refusal_keeps_requested_identity() {
 /// Provenance: QSL-2019.
 #[test]
 #[trace("FSpec-TC-1243", "FSpec-FR-563-AC-2")]
-#[ignore = "QSL-2443 waits for FSL Markdown clause extraction support"]
 fn run_executes_a_selected_markdown_clause_in_the_default_build() {
     let directory = TemporaryDirectory::new("run-markdown-extraction");
-    let body = std::fs::read_to_string(SOURCE).expect("read native source fixture");
-    let markdown = format!("### Healthy\n\n```ix:native\n{body}```\n");
+    let body = include_str!("fixtures/config-version/spine-unit.native");
+    let markdown = format!("# Doc\n\n## Invariants\n\n### Healthy\n\n```ix:native\n{body}```\n");
     std::fs::write(directory.0.join("spec.md"), markdown).expect("write Markdown fixture");
+    std::fs::write(
+        directory.0.join("spine-model.semantic-ir.json"),
+        include_bytes!("fixtures/config-version/model.semantic-ir.json"),
+    )
+    .expect("write the FR-108 domain package");
+    std::fs::write(
+        directory.0.join("spine-model.semantic-ir.json.license"),
+        include_bytes!("fixtures/config-version/model.semantic-ir.json.license"),
+    )
+    .expect("write the domain package license metadata");
     std::fs::write(
         directory.0.join("current.json"),
         serde_json::json!({
             "format": "filament.state.snapshot/v1",
             "identity": {"authority": "agent-ix", "identity": "current"},
-            "observation": "current"
+            "model": {"identity": "example/config-version"},
+            "observation": "current",
+            "anchor": {"kind": "handler", "name": "validate"},
+            "populations": [{
+                "population": "ix://example/config-version/config_history",
+                "complete": true,
+                "objects": [
+                    {"key": "root", "type": "ix://example/config-version/ConfigVersion",
+                     "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}}},
+                    {"key": "child", "type": "ix://example/config-version/ConfigVersion",
+                     "fields": {"versionNumber": {"integer": "2"},
+                      "parent": {"present": {"reference": {
+                          "population": "ix://example/config-version/config_history", "key": "root"
+                      }}}}}
+                ]
+            }]
         })
         .to_string(),
     )
@@ -403,23 +427,37 @@ fn run_executes_a_selected_markdown_clause_in_the_default_build() {
     let request = serde_json::json!({
         "format": "native-run/1",
         "request": {
-            "models": [],
+            "models": [{
+                "format": "semantic-ir/2.0.0",
+                "source": {
+                    "file": "spine-model.semantic-ir.json",
+                    "authority": "agent-ix",
+                    "identity": "test:fr-664:spine-model.semantic-ir.json",
+                    "document": "SpineModel",
+                    "formal_revision": 1
+                }
+            }],
             "program": {
                 "source": {
                     "file": "spec.md",
                     "authority": "agent-ix",
-                    "identity": "doc",
-                    "document": "Spec",
+                    "identity": "ix://agent-ix/spec",
+                    "document": "Doc",
                     "formal_revision": 1
                 },
                 "extraction": {
-                    "body": {"authority": "agent-ix", "identity": "doc#Healthy", "document": "Spec"}
+                    "body": {"authority": "agent-ix", "identity": "body", "document": "Body"}
                 },
-                "clauses": [{"clause": "Healthy", "package": "doc"}]
+            "clauses": [{"clause": "Healthy", "package": "example/config-version"}]
             },
             "clause": {
                 "selection": {
-                    "function": {"name": "yes", "arguments": [], "snapshot": "current"}
+                    "clause": {
+                        "name": "ParentOrder",
+                        "observation": "current",
+                        "self": {"population": "ix://example/config-version/config_history", "key": "child"},
+                        "anchor": {"kind": "handler", "name": "validate"}
+                    }
                 },
                 "observations": {"current": "current.json"}
             }
@@ -450,7 +488,7 @@ fn run_executes_a_selected_markdown_clause_in_the_default_build() {
         Some(1),
         "{outcome}"
     );
-    assert!(outcome.to_string().contains("Healthy"), "{outcome}");
+    assert!(outcome.to_string().contains("ParentOrder"), "{outcome}");
 }
 
 /// Trace: TC-1743, FR-662-AC-2.
@@ -663,13 +701,7 @@ fn check_with_library_checks_importing_unit() {
 /// Trace: FR-312-AC-9, FR-312-AC-10, FR-491-AC-8, FR-287-AC-13.
 /// Provenance: QSL-2015.
 #[test]
-#[trace(
-    "FR-312-AC-9",
-    "FR-312-AC-10",
-    "FR-491-AC-8",
-    "FR-287-AC-13"
-)]
-#[ignore = "QSL-2015 waits for the FSL public document_bytes request parser"]
+#[trace("FR-312-AC-9", "FR-312-AC-10", "FR-491-AC-8", "FR-287-AC-13")]
 fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -858,7 +890,11 @@ fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
     assert_eq!(cause["value"], limit, "{cause}");
     assert_eq!(cause["setting"], "observation.input_bytes", "{cause}");
     assert_eq!(cause["bound"], limit.to_string(), "{cause}");
-    assert_eq!(cause["counter"], observation_bytes.len().to_string(), "{cause}");
+    assert_eq!(
+        cause["counter"],
+        observation_bytes.len().to_string(),
+        "{cause}"
+    );
 
     let at_limit = Command::new(FSL)
         .arg("run")
@@ -869,7 +905,10 @@ fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
     assert_eq!(at_limit.status.code(), Some(0), "{at_limit:?}");
     let at_limit_document: serde_json::Value =
         serde_json::from_slice(&at_limit.stdout).expect("at-limit outcome JSON");
-    assert_eq!(at_limit_document["category"], "success", "{at_limit_document}");
+    assert_eq!(
+        at_limit_document["category"], "success",
+        "{at_limit_document}"
+    );
 
     let text = Command::new(FSL)
         .arg("run")
@@ -879,8 +918,14 @@ fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
         .expect("render the request limit hint");
     assert_eq!(text.status.code(), Some(22), "{text:?}");
     let rendered = String::from_utf8_lossy(&text.stdout);
-    assert!(rendered.contains("--limit observation.input_bytes="), "{rendered}");
-    assert!(!rendered.contains("observation.document_bytes"), "{rendered}");
+    assert!(
+        rendered.contains("--limit observation.input_bytes="),
+        "{rendered}"
+    );
+    assert!(
+        !rendered.contains("observation.document_bytes"),
+        "{rendered}"
+    );
 
     let duplicate = Command::new(FSL)
         .arg("run")
@@ -896,9 +941,20 @@ fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
     assert_eq!(duplicate.status.code(), Some(20), "{duplicate:?}");
     let duplicate_document: serde_json::Value =
         serde_json::from_slice(&duplicate.stdout).expect("duplicate limit refusal JSON");
-    assert_eq!(duplicate_document["category"], "refusal", "{duplicate_document}");
-    assert!(duplicate_document.to_string().contains("invalid-request"), "{duplicate_document}");
-    assert!(duplicate_document.to_string().contains("observation_limits"), "{duplicate_document}");
+    assert_eq!(
+        duplicate_document["category"], "refusal",
+        "{duplicate_document}"
+    );
+    assert!(
+        duplicate_document.to_string().contains("invalid-request"),
+        "{duplicate_document}"
+    );
+    assert!(
+        duplicate_document
+            .to_string()
+            .contains("observation_limits"),
+        "{duplicate_document}"
+    );
     assert!(
         !duplicate_document.to_string().contains("missing.json"),
         "the duplicate request limit refuses before reading its observation: {duplicate_document}"
@@ -1097,7 +1153,6 @@ fn compile_empty_program_is_invalid_package() {
 
 /// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
 #[test]
-#[ignore = "QSL-1994 blocked by QSL-2428"]
 fn run_paid_short_json_contains_the_state_rule_witness() {
     let output = Command::new(FSL)
         .args(["run", PAID_SHORT_REQUEST, "--format", "json"])
@@ -1124,24 +1179,29 @@ fn run_paid_short_json_contains_the_state_rule_witness() {
         witness["value_path"]["root"]["subject"]["object_identity"], "o1",
         "{witness}"
     );
+    assert_eq!(witness["value_path"]["kind"], "runtime_value", "{witness}");
     assert!(
         witness["value_path"]["steps"]
             .as_array()
-            .is_some_and(|steps| {
-                steps
-                    .iter()
-                    .any(|step| step["name"] == "charged" || step["name"] == "total")
-            }),
-        "the witness identifies the deciding field: {witness}"
+            .is_some_and(Vec::is_empty),
+        "the state rule's value path is rooted at self: {witness}"
     );
+    assert!(witness["deciding_comparison"].is_object(), "{witness}");
+    assert_eq!(
+        witness["operands"].as_array().map(Vec::len),
+        Some(2),
+        "{witness}"
+    );
+    assert_eq!(witness["operands"][0]["decimal"], "4000", "{witness}");
+    assert_eq!(witness["operands"][1]["decimal"], "4200", "{witness}");
     assert!(
-        ["4000", "4200"].contains(
-            &witness["deciding_element"]["decimal"]
-                .as_str()
-                .unwrap_or("")
-        ),
-        "the witness carries the decisive paid/total value: {witness}"
+        witness["decision_path"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "{witness}"
     );
+    assert_eq!(witness["deciding_element"]["kind"], "boolean", "{witness}");
+    assert_eq!(witness["deciding_element"]["value"], false, "{witness}");
 }
 
 /// Trace: FSpec-FR-352-AC-9.
