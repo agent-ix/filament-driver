@@ -1222,15 +1222,13 @@ fn check_markdown_source(
         limits.source.source_bytes,
     ) {
         Ok(source) => source,
-        Err(_) => {
-            return check_result(&command::check_outcome(
-                Path::new(&options.path),
-                &command::CheckInputs {
-                    limits,
-                    integer_division,
-                    ..command::CheckInputs::default()
-                },
-            ));
+        Err(refusal) => {
+            let diagnostic =
+                fsl_cst::diagnostic::source_refusal(*refusal, limits.source.source_bytes);
+            return CommandResult::document(
+                OutcomeDocument::new(Operation::Check, None, diagnostic.code.category())
+                    .with_diagnostics(vec![OutcomeDiagnostic::from_source_diagnostic(&diagnostic)]),
+            );
         }
     };
     let packages = fsl_semantics::model::intake::PackageInput::new();

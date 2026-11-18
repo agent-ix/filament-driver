@@ -13,7 +13,7 @@ use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::{Code, Staged};
-use fsl_foundation::{SettingLimits, SourceIdentity};
+use fsl_foundation::{SettingLimits, Source, SourceIdentity};
 use fsl_replay::spine::{
     check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
 };
@@ -273,10 +273,7 @@ fn check_markdown_checks_each_named_native_fence() {
 
     let diagnostic = &broken_item["diagnostics"][0];
     assert!(!diagnostic["cause"].is_null(), "{outcome}");
-    assert!(
-        !diagnostic["code"].as_str().unwrap_or_default().is_empty(),
-        "{outcome}"
-    );
+    assert_eq!(diagnostic["code"], "ill_typed", "{outcome}");
     let body_start = broken.rfind(" x }").expect("ill-typed expression") + 1;
     assert_eq!(diagnostic["locus"]["kind"], "region", "{outcome}");
     assert_eq!(diagnostic["locus"]["source"]["identity"], "doc#Broken");
@@ -316,6 +313,58 @@ fn check_markdown_checks_each_named_native_fence() {
     assert!(
         plain_document.to_string().contains("invalid_syntax"),
         "{plain_document}"
+    );
+}
+
+/// Trace: FR-002-AC-3.
+/// Provenance: QSL-2019, FND-001.
+#[test]
+#[trace("FR-002-AC-3")]
+fn check_markdown_source_read_refusal_keeps_requested_identity() {
+    let directory = TemporaryDirectory::new("check-markdown-source-refusal");
+    let path = directory.0.join("spec.md");
+    std::fs::write(&path, [0xff]).expect("write invalid UTF-8 source fixture");
+    let output = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run Markdown check on invalid UTF-8");
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+
+    let limits = SpineLimits::default();
+    let refusal = Source::read_typed(
+        SourceIdentity::new("agent-ix", "doc"),
+        "spec.md",
+        &[0xff],
+        limits.source.source_bytes,
+    )
+    .expect_err("invalid UTF-8 must be refused at source admission");
+    let diagnostic = fsl_cst::diagnostic::source_refusal(*refusal, limits.source.source_bytes);
+    let expected = OutcomeDocument::new(Operation::Check, None, diagnostic.code.category())
+        .with_diagnostics(vec![OutcomeDiagnostic::from_source_diagnostic(&diagnostic)])
+        .to_bytes()
+        .expect("serialize typed source refusal");
+    assert_fsl_document(&output.stdout, &expected);
+
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(outcome["category"], "refusal", "{outcome}");
+    assert_eq!(outcome["diagnostics"][0]["code"], "invalid_utf8");
+    assert_eq!(
+        outcome["diagnostics"][0]["locus"]["source"]["authority"],
+        "agent-ix"
+    );
+    assert_eq!(
+        outcome["diagnostics"][0]["locus"]["source"]["identity"],
+        "doc"
     );
 }
 
