@@ -660,13 +660,14 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
-/// Trace: FSpec-FR-312-AC-9, FSpec-FR-491-AC-8, FSpec-FR-287-AC-13.
+/// Trace: FR-312-AC-9, FR-312-AC-10, FR-491-AC-8, FR-287-AC-13.
 /// Provenance: QSL-2015.
 #[test]
 #[trace(
-    "FSpec-FR-312-AC-9",
-    "FSpec-FR-491-AC-8",
-    "FSpec-FR-287-AC-13"
+    "FR-312-AC-9",
+    "FR-312-AC-10",
+    "FR-491-AC-8",
+    "FR-287-AC-13"
 )]
 #[ignore = "QSL-2015 waits for the FSL public document_bytes request parser"]
 fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
