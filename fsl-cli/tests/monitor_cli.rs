@@ -466,8 +466,9 @@ fn text_mode_writes_event_lines_then_clause_lines_and_the_counts() {
         [
             "0 Reaches pending pending",
             "0 Never pending pending",
+            "2 Reaches success settled",
             "2 Never violation settled",
-            "Reaches pending pending",
+            "Reaches success settled",
             "Never violation settled",
             "records 5 refused 0",
         ]
