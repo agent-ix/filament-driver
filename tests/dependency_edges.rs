@@ -255,12 +255,12 @@ fn tc_005_driver_edges_match_the_adr_011_allow_list() {
         );
     }
 
-    // §7.1 / FB-05: CG's one normal or build edge into FSL is `fsl-replay`.
+    // §7.1 / FB-05 (FSL T12-A): CG's normal and build edges into FSL are `fsl-package` and `fsl-replay`.
     let cg = graph.ids_named("filament-contract-codegen");
     assert_eq!(cg.len(), 1, "one CG revision");
     let cg_fsl: Vec<&Package> = graph.deps_of(cg[0]).filter(|p| p.is_fsl()).collect();
     let cg_fsl_names: Vec<&str> = cg_fsl.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(cg_fsl_names, ["fsl-replay"]);
+    assert_eq!(cg_fsl_names, ["fsl-package", "fsl-replay"]);
 
     // The driver's model crate is the one CG's IR crate re-exports, so a
     // `CheckedPackageV2` the driver reads is the type CG generates from.
