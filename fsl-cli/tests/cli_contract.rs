@@ -660,8 +660,10 @@ fn check_with_library_checks_importing_unit() {
     assert!(output.stderr.is_empty());
 }
 
-/// Trace: QSL-2015; request and CLI entry points share the observation byte limit outcome.
+/// Trace: FSpec-FR-255-AC-1.
+/// Provenance: QSL-2015.
 #[test]
+#[trace("FSpec-FR-255-AC-1")]
 fn observation_input_bytes_request_member_matches_cli_limit() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -779,8 +781,10 @@ fn observation_input_bytes_request_member_matches_cli_limit() {
     assert_eq!(cause["counter"], observation_bytes.len().to_string(), "{cause}");
 }
 
-/// Trace: QSL-2015; the removed `observation.document_bytes` flag remains unknown.
+/// Trace: FSpec-FR-255-AC-3.
+/// Provenance: QSL-2015.
 #[test]
+#[trace("FSpec-FR-255-AC-3")]
 fn observation_document_bytes_is_not_a_cli_limit_setting() {
     let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
@@ -854,8 +858,10 @@ fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
     assert_eq!(document["diagnostics"][0]["message"], "expected `)`");
 }
 
-/// Trace: QSL-2202; text refusals render the diagnostic once on stdout.
+/// Trace: FSpec-FR-865-AC-1, FSpec-FR-865-AC-3.
+/// Provenance: QSL-2202.
 #[test]
+#[trace("FSpec-FR-865-AC-1", "FSpec-FR-865-AC-3")]
 fn check_text_refusal_prints_its_message_once() {
     let output = Command::new(FSL)
         .args(["check", INVALID_SOURCE, "--format", "text"])
@@ -867,8 +873,10 @@ fn check_text_refusal_prints_its_message_once() {
     assert_eq!(text.matches("expected `)`").count(), 1, "{text}");
 }
 
-/// Trace: QSL-2202; a usage refusal remains on stderr in JSON mode.
+/// Trace: FSpec-FR-301-AC-3.
+/// Provenance: QSL-2202.
 #[test]
+#[trace("FSpec-FR-301-AC-3")]
 fn check_bad_option_still_reports_on_stderr() {
     let output = Command::new(FSL)
         .args(["check", SOURCE, "--bogus", "--format", "json"])
@@ -1012,8 +1020,10 @@ fn run_paid_short_json_contains_the_state_rule_witness() {
     );
 }
 
-/// Trace: QSL-2005; a frame violation reports the changed field and its values.
+/// Trace: FSpec-FR-352-AC-9.
+/// Provenance: QSL-2005.
 #[test]
+#[trace("FSpec-FR-352-AC-9")]
 fn run_charge_changes_total_json_contains_the_frame_witness() {
     let output = Command::new(FSL)
         .args(["run", CHARGE_CHANGES_TOTAL_REQUEST, "--format", "json"])
