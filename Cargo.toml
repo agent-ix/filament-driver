@@ -40,14 +40,14 @@ path = "src/lib.rs"
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
-fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45" }
-filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "e7dc182508d0edbe1e0099dc800d900a63cbe11d" }
-filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.4" }
+fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d" }
+fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d" }
+fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d" }
+fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "e5319efb2ccf3ec17e70218f0b0a8533596c8e25" }
+filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.5" }
 filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", tag = "v0.1.1", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
 filament-observation = { git = "https://github.com/agent-ix/filament-observation", tag = "v0.1.1" }
@@ -61,9 +61,9 @@ thiserror = "=2.0.20"
 
 [dev-dependencies]
 # FR-020-AC-14: `PathGuard::new` and `RequirementRecord::with_path_condition`.
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "b74146405bc8e213252d4096a017c5de0d6afe45", features = ["test-support"] }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "869b4762d79dd316747a5c493739e4376bb50b0d", features = ["test-support"] }
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
-filament-checked = { git = "https://github.com/agent-ix/filament-eval", tag = "v0.1.4" }
+filament-checked = { git = "https://github.com/agent-ix/filament-eval", tag = "v0.1.6" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
 
 
