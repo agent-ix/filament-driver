@@ -5,19 +5,25 @@
     reason = "process launch failures should fail this integration test"
 )]
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
 use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
-use fsl_foundation::diagnostic::{Code, Staged};
-use fsl_foundation::{SettingLimits, Source, SourceIdentity};
-use fsl_replay::spine::{
-    DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
+use fsl_foundation::{
+    SettingLimits, Source, SourceIdentity,
+    diagnostic::{Code, Staged},
 };
-use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
+use fsl_replay::{
+    Operation, OutcomeDiagnostic, OutcomeDocument,
+    spine::{
+        DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
+    },
+};
 use ix_cli_kit::version::Agreement;
 use ix_trace_rs::trace;
 
@@ -71,6 +77,162 @@ const COUNTER_MODEL: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/analyze-counter.semantic-ir.json"
 );
+const PARENT_ORDER_PACKAGE: &str = "test/parent-order";
+const PARENT_ORDER_POPULATION: &str = "ix://test/parent-order/config_history";
+const PARENT_ORDER_TYPE: &str = "ix://test/parent-order/ConfigVersion";
+const PARENT_ORDER_PROGRAM: &str = concat!(
+    "language \"ix:native\" edition \"1-draft\";\n",
+    "profile v = \"filament.model.complete/v1\";\n",
+    "model Config = \"test/parent-order\";\n",
+    "invariant ParentOrder using v on Config::ConfigVersion at current { ",
+    "present(self.parent) implies ",
+    "deref(value(self.parent)).versionNumber < self.versionNumber }\n"
+);
+
+fn parent_order_model() -> serde_json::Value {
+    serde_json::json!({
+        "contractVersion": "2.0.0",
+        "canonicalization": {"algorithm": "rfc8785-v1"},
+        "source": {
+            "identity": "ix://test/parent-order/spec",
+            "version": "1.0.0",
+            "dialect": "spec-bundle"
+        },
+        "package": {
+            "identity": PARENT_ORDER_PACKAGE,
+            "version": "1.0.0",
+            "mappingVersions": [],
+            "profileVersions": []
+        },
+        "occurrences": [],
+        "extensions": [],
+        "constructs": [
+            {
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "object_type"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "filament.meaning.model.object-type/v1"
+                }
+            },
+            {
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "population"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "filament.meaning.model.population/v1"
+                }
+            },
+            {
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "value_type"},
+                "moduleVersion": "1.0.0",
+                "construct": {
+                    "identity": "none",
+                    "shape": "record",
+                    "members": {},
+                    "meaning": "filament.meaning.model.value-type/v1"
+                }
+            }
+        ],
+        "types": [
+            {
+                "identity": "ix://test/parent-order/VersionNumber",
+                "displayName": "VersionNumber",
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "value_type"},
+                "roles": [],
+                "origin": {"generated": {
+                    "generatorIdentity": "ix://test/parent-order/VersionNumber",
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": ["ix://test/parent-order/VersionNumber"]
+                }},
+                "extensions": [],
+                "unknownPolicy": "reject",
+                "scalar": "integer",
+                "constraints": []
+            },
+            {
+                "identity": PARENT_ORDER_TYPE,
+                "displayName": "ConfigVersion",
+                "kind": {"module": PARENT_ORDER_PACKAGE, "name": "object_type"},
+                "roles": [],
+                "origin": {"generated": {
+                    "generatorIdentity": PARENT_ORDER_TYPE,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [PARENT_ORDER_TYPE]
+                }},
+                "constraints": [],
+                "extensions": [],
+                "unknownPolicy": "reject",
+                "supertypes": [],
+                "fields": [
+                    {
+                        "identity": "ix://test/parent-order/ConfigVersion/versionNumber",
+                        "name": "versionNumber",
+                        "typeRef": "ix://test/parent-order/VersionNumber",
+                        "presence": "required",
+                        "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true
+                        },
+                        "origin": {"generated": {
+                            "generatorIdentity": "ix://test/parent-order/ConfigVersion/versionNumber",
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": ["ix://test/parent-order/ConfigVersion/versionNumber"]
+                        }}
+                    },
+                    {
+                        "identity": "ix://test/parent-order/ConfigVersion/parent",
+                        "name": "parent",
+                        "typeRef": PARENT_ORDER_TYPE,
+                        "presence": "optional",
+                        "nullable": false,
+                        "defaultKind": "none",
+                        "multiplicity": {
+                            "lower": 1,
+                            "upper": 1,
+                            "ordered": false,
+                            "unique": true
+                        },
+                        "origin": {"generated": {
+                            "generatorIdentity": "ix://test/parent-order/ConfigVersion/parent",
+                            "generatorVersion": "1.0.0",
+                            "inputIdentities": ["ix://test/parent-order/ConfigVersion/parent"]
+                        }}
+                    }
+                ],
+                "operations": []
+            }
+        ],
+        "populations": [{
+            "identity": PARENT_ORDER_POPULATION,
+            "displayName": "config_history",
+            "kind": {"module": PARENT_ORDER_PACKAGE, "name": "population"},
+            "members": [PARENT_ORDER_TYPE],
+            "extent": "closed",
+            "origin": {"generated": {
+                "generatorIdentity": PARENT_ORDER_POPULATION,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [PARENT_ORDER_POPULATION]
+            }}
+        }]
+    })
+}
+
+fn write_parent_order_model(directory: &Path, filename: &str) {
+    std::fs::write(
+        directory.join(filename),
+        serde_json::to_vec(&parent_order_model()).expect("encode the test-local ParentOrder model"),
+    )
+    .expect("write the test-local ParentOrder model");
+}
 
 fn write_counter_clause_request(
     directory: &Path,
@@ -458,17 +620,14 @@ fn check_markdown_source_read_refusal_keeps_requested_identity() {
 #[trace("FSpec-TC-1243", "FSpec-FR-563-AC-2")]
 fn run_executes_a_selected_markdown_clause_in_the_default_build() {
     let directory = TemporaryDirectory::new("run-markdown-extraction");
-    let body = include_str!("fixtures/config-version/spine-unit.native");
-    let markdown = format!("# Doc\n\n## Invariants\n\n### Healthy\n\n```ix:native\n{body}```\n");
+    let markdown = format!(
+        "# Doc\n\n## Invariants\n\n### Healthy\n\n```ix:native\n{PARENT_ORDER_PROGRAM}```\n"
+    );
     std::fs::write(directory.0.join("spec.md"), markdown).expect("write Markdown fixture");
-    std::fs::write(
-        directory.0.join("spine-model.semantic-ir.json"),
-        include_bytes!("fixtures/config-version/model.semantic-ir.json"),
-    )
-    .expect("write the FR-108 domain package");
+    write_parent_order_model(&directory.0, "spine-model.semantic-ir.json");
     std::fs::write(
         directory.0.join("spine-model.semantic-ir.json.license"),
-        include_bytes!("fixtures/config-version/model.semantic-ir.json.license"),
+        "SPDX-License-Identifier: AGPL-3.0-only\n",
     )
     .expect("write the domain package license metadata");
     std::fs::write(
@@ -476,19 +635,19 @@ fn run_executes_a_selected_markdown_clause_in_the_default_build() {
         serde_json::json!({
             "format": "filament.state.snapshot/v1",
             "identity": {"authority": "agent-ix", "identity": "current"},
-            "model": {"identity": "example/config-version"},
+            "model": {"identity": PARENT_ORDER_PACKAGE},
             "observation": "current",
             "anchor": {"kind": "handler", "name": "validate"},
             "populations": [{
-                "population": "ix://example/config-version/config_history",
+                "population": PARENT_ORDER_POPULATION,
                 "complete": true,
                 "objects": [
-                    {"key": "root", "type": "ix://example/config-version/ConfigVersion",
+                    {"key": "root", "type": PARENT_ORDER_TYPE,
                      "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}}},
-                    {"key": "child", "type": "ix://example/config-version/ConfigVersion",
+                    {"key": "child", "type": PARENT_ORDER_TYPE,
                      "fields": {"versionNumber": {"integer": "2"},
                       "parent": {"present": {"reference": {
-                          "population": "ix://example/config-version/config_history", "key": "root"
+                          "population": PARENT_ORDER_POPULATION, "key": "root"
                       }}}}}
                 ]
             }]
@@ -520,14 +679,14 @@ fn run_executes_a_selected_markdown_clause_in_the_default_build() {
                 "extraction": {
                     "body": {"authority": "agent-ix", "identity": "body", "document": "Body"}
                 },
-            "clauses": [{"clause": "Healthy", "package": "example/config-version"}]
+            "clauses": [{"clause": "Healthy", "package": PARENT_ORDER_PACKAGE}]
             },
             "clause": {
                 "selection": {
                     "clause": {
                         "name": "ParentOrder",
                         "observation": "current",
-                        "self": {"population": "ix://example/config-version/config_history", "key": "child"},
+                        "self": {"population": PARENT_ORDER_POPULATION, "key": "child"},
                         "anchor": {"kind": "handler", "name": "validate"}
                     }
                 },
@@ -792,23 +951,16 @@ fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
     }
     let _cleanup = RemoveDirectory(directory.clone());
 
-    std::fs::write(
-        directory.join("spine-unit.native"),
-        include_str!("fixtures/config-version/spine-unit.native"),
-    )
-    .expect("write the FR-108 ConfigVersion unit");
-    std::fs::write(
-        directory.join("model.semantic-ir.json"),
-        include_bytes!("fixtures/config-version/model.semantic-ir.json"),
-    )
-    .expect("write the FR-108 domain package");
+    std::fs::write(directory.join("parent-order.native"), PARENT_ORDER_PROGRAM)
+        .expect("write the test-local ParentOrder rule");
+    write_parent_order_model(&directory, "model.semantic-ir.json");
 
-    let population = "ix://example/config-version/config_history";
-    let object_type = "ix://example/config-version/ConfigVersion";
+    let population = PARENT_ORDER_POPULATION;
+    let object_type = PARENT_ORDER_TYPE;
     let observation = serde_json::json!({
         "format": "filament.state.snapshot/v1",
         "identity": {"authority": "issuer", "identity": "current"},
-        "model": {"identity": "example/config-version"},
+        "model": {"identity": PARENT_ORDER_PACKAGE},
         "observation": "current",
         "anchor": {"kind": "handler", "name": "validate"},
         "populations": [{
@@ -860,17 +1012,17 @@ fn observation_input_bytes_request_and_cli_limits_have_the_same_outcome() {
                     "format": "semantic-ir/2.0.0",
                     "source": {
                         "file": "model.semantic-ir.json",
-                        "authority": "agent-ix",
-                        "identity": "example:spine-model.semantic-ir.json",
-                        "document": "SpineModel",
+                        "authority": "test",
+                        "identity": "parent-order-model",
+                        "document": "ParentOrderModel",
                         "formal_revision": 1
                     }
                 }],
                 "program": {"source": {
-                    "file": "spine-unit.native",
-                    "authority": "agent-ix",
-                    "identity": "example:spine-unit.native",
-                    "document": "SpineUnit",
+                    "file": "parent-order.native",
+                    "authority": "test",
+                    "identity": "parent-order-rule",
+                    "document": "ParentOrderRule",
                     "formal_revision": 1
                 }},
                 "clause": clause
