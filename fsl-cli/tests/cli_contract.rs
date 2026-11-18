@@ -13,7 +13,7 @@ use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::{Code, Staged};
-use fsl_foundation::SourceIdentity;
+use fsl_foundation::{SettingLimits, SourceIdentity};
 use fsl_replay::spine::{
     check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
 };
@@ -668,12 +668,17 @@ fn default_node_limit_still_stops_deep_nest() {
 fn check_accepts_raised_node_limit() {
     let directory = TemporaryDirectory::new("check-node-limit");
     let source = write_deep_source(&directory, 6_000);
-    let output = Command::new(FSL)
-        .arg("check")
-        .arg(&source)
-        .args(["--limit", "s1.nodes=1000000", "--format", "json"])
+    let mut command = Command::new(FSL);
+    command.arg("check").arg(&source);
+    for (setting, _) in SpineLimits::default().bounds() {
+        command
+            .arg("--limit")
+            .arg(format!("{}=1000000", setting.name()));
+    }
+    let output = command
+        .args(["--format", "json"])
         .output()
-        .expect("check a deep source with a raised node limit");
+        .expect("check a deep source with caller-raised limits");
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -683,6 +688,70 @@ fn check_accepts_raised_node_limit() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("check emits an outcome document");
     assert_eq!(document["category"], "success");
+}
+
+/// Trace: QSL-2190; compile accepts every limit exposed by its FSL limits type.
+#[trace("QSL-2190")]
+#[test]
+fn compile_accepts_limit_settings() {
+    let directory = TemporaryDirectory::new("compile-node-limit");
+    let source = write_deep_source(&directory, 6_000);
+    let request = directory.0.join("compile.json");
+    let document = serde_json::json!({
+        "format": "native-compile/1",
+        "request": {
+            "models": [],
+            "program": {"source": {
+                "file": source,
+                "authority": "issuer",
+                "identity": "deep",
+                "document": "Deep",
+                "formal_revision": 1
+            }}
+        }
+    });
+    std::fs::write(
+        &request,
+        serde_json::to_vec(&document).expect("encode compile request"),
+    )
+    .expect("write compile request");
+
+    let mut command = Command::new(FSL);
+    command.arg("compile").arg(&request);
+    for (setting, _) in SpineLimits::default().bounds() {
+        command
+            .arg("--limit")
+            .arg(format!("{}=1000000", setting.name()));
+    }
+    let output = command
+        .args(["--format", "json"])
+        .output()
+        .expect("compile a deep source with caller-raised limits");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("compile emits an outcome document");
+    assert_eq!(result["category"], "success");
+
+    let invalid = Command::new(FSL)
+        .arg("compile")
+        .arg(&request)
+        .args(["--limit", "unknown.limit=7", "--format", "json"])
+        .output()
+        .expect("compile with an unknown limit setting");
+    assert_eq!(invalid.status.code(), Some(20));
+    let refusal: serde_json::Value =
+        serde_json::from_slice(&invalid.stdout).expect("invalid limit emits a refusal document");
+    let message = refusal["diagnostics"][0]["message"]
+        .as_str()
+        .expect("limit refusal has a message");
+    assert!(message.contains("unknown.limit"), "{message}");
+    assert!(message.contains("s1.nodes"), "{message}");
+    assert!(message.contains("s3.nodes"), "{message}");
 }
 
 /// Trace: QSL-2190; unknown settings identify the valid settings for the verb.
