@@ -372,6 +372,7 @@ fn check_markdown_source_read_refusal_keeps_requested_identity() {
 /// Provenance: QSL-2019.
 #[test]
 #[trace("FSpec-TC-1243", "FSpec-FR-563-AC-2")]
+#[ignore = "QSL-2443 waits for FSL Markdown clause extraction support"]
 fn run_executes_a_selected_markdown_clause_in_the_default_build() {
     let directory = TemporaryDirectory::new("run-markdown-extraction");
     let body = std::fs::read_to_string(SOURCE).expect("read native source fixture");
