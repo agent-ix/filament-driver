@@ -303,8 +303,8 @@ fn a_replay_request_over_a_compiled_package_replays() {
     );
 }
 
-/// FR-026-AC-1: machine mode writes the `results` document as one canonical
-/// line with the input arm's settlement.
+/// FR-026-AC-1: machine mode writes the replay outcome document, carrying the
+/// `replayed` result, as one canonical line.
 #[trace("TC-042", "FR-026-AC-1")]
 #[test]
 #[ignore = "QSL-2292: the replay output contract (FR-026) is not verified yet"]
@@ -317,9 +317,11 @@ fn machine_mode_writes_the_results_document_as_one_line() {
     let text = String::from_utf8(output.stdout.clone()).expect("UTF-8");
     assert!(text.ends_with('\n') && text.matches('\n').count() == 1, "{text}");
     let document = document(&output);
-    assert_eq!(document["results"][0]["arm"], "input", "{document}");
+    assert_eq!(document["operation"], "replay", "{document}");
+    assert_eq!(document["result"]["kind"], "replayed", "{document}");
+    assert_eq!(document["result"]["results"][0]["arm"], "input", "{document}");
     assert_eq!(
-        document["results"][0]["settlement"], "reproduced-without-witness",
+        document["result"]["results"][0]["settlement"], "reproduced-without-witness",
         "{document}"
     );
 }
