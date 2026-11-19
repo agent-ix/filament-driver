@@ -32,14 +32,15 @@ input not routed. Scope: FR-002-AC-23.
    `fsl inspect --handoff <copy> --format json` over each and compare with
    `inspect_handoff(<copy>)`.
 5. Run `fsl inspect --handoff <path> --format json` with `<path>` a path that
-   does not exist, an empty directory, and a regular file; compare each with
-   `inspect_handoff(<path>)`.
-6. Make `H` unreadable to the test's file probe (record every file the
-   process opens, or remove read permission on `H` on Unix) and run
-   `fsl inspect --handoff`, `fsl inspect --handoff H extra`,
-   `fsl inspect --handoff H --handoff H` and
-   `fsl inspect --handoff H --format dot`, each with `--format json` except
-   the last.
+   does not exist, an empty directory, a regular file, and `./-odd`, a copy
+   of `H` in a directory named `-odd`; compare each with
+   `inspect_handoff(<path>)` for the path exactly as given.
+6. Remove read permission on `H` (Unix) so any read of it fails, and run, in
+   JSON mode except where `--format` is the subject:
+   `fsl inspect --handoff`, `fsl inspect --handoff --format json`,
+   `fsl inspect --handoff H extra`, `fsl inspect --handoff H --handoff H`,
+   `fsl inspect --handoff H --format dot`, `fsl inspect --handoff H --bogus`
+   and `fsl inspect H --bogus`.
 7. Run `fsl inspect H --format json` without `--handoff`.
 
 Test: `fsl-cli/tests/cli_contract.rs` `inspect_handoff_verifies_the_package_and_sidecar`.
@@ -52,10 +53,14 @@ Test: `fsl-cli/tests/cli_contract.rs` `inspect_handoff_verifies_the_package_and_
 - Step 4: `H1` refuses with the `SelectionRefusal` naming that count's axis,
   `H2` with the strict reader's typed refusal; each byte-equal to FSL's
   document, exit 20.
-- Step 5: each byte-equal to `inspect_handoff`'s refusal for that path,
-  exit 20.
-- Step 6: each refuses `invalid-request`, operation `inspect`, exit 20,
-  naming the missing operand, `extra`, `--handoff`, and `--format` with
-  `dot` respectively; no run reads a file under `H`.
+- Step 5: each byte-equal to `inspect_handoff`'s document for that path;
+  the first three refuse, exit 20; `./-odd` succeeds, exit 0, showing that
+  `--handoff` took the `-`-leading argument as its directory.
+- Step 6: each refuses `invalid-request`, exit 20, naming in turn the
+  missing operand, the missing operand (`--format` is an `inspect` option, so
+  it is not taken as the directory), `extra`, `--handoff`, `--format` with
+  `dot`, `--bogus` and `--bogus` (the unknown option refuses before the
+  not-routed result); no stdout document carries a read failure for `H`,
+  because none of these reads it.
 - Step 7: `unsupported` with cause `operation-not-routed` naming `inspect`,
   exit 21.

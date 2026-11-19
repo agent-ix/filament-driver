@@ -147,7 +147,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-022 | FR-022-AC-11 | TC-047 | 🚧 Planned (QSL-2234): `fsl analyze` registers FSL's reference hybrid provider beside the configured providers. The process-provider half (TC-047 step 4) also depends on FSL's `Engine::hybrid_process` (QSL-2532). |
 | FR-002 | FR-002-AC-23 | TC-048 | 🚧 Planned (QSL-2601): `fsl inspect --handoff` routes to FSL's `inspect_handoff`; malformed handoff invocations and `--format dot` refuse before reading; other `inspect` inputs stay not routed. |
 | TC-048 | Verify a checked-package handoff with fsl inspect --handoff | Integration | FR-002-AC-23 | 🚧 See the FR-002-AC-23 row. |
-| FR-002 | FR-002-AC-24..FR-002-AC-26 | TC-049 | 🚧 Planned (QSL-2602, QSL-2603): one option table read by parsers and help, per-verb `--help`, root-only `--version`, `--color` refused; `--extensions` on `parse` and `check` awaits QSL-2603. |
+| FR-002 | FR-002-AC-24..FR-002-AC-26 | TC-049 | 🚧 Planned (QSL-2602, QSL-2603): one option table read by parsers and help, per-verb `--help`, root-only `--version`, `--color` refused; `--extensions` on `parse` and `check` awaits QSL-2603; the filament-docs generator update for the per-verb sections is QSL-2608. |
 | TC-049 | List every accepted option in root and per-verb help | Integration | FR-002-AC-24..FR-002-AC-26 | 🚧 See the FR-002-AC-24 row. |
 
 ## Test Case Summary
