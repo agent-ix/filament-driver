@@ -2008,6 +2008,7 @@ mod origin_projection_tests {
             BackendId::from_wire("profiled-provider").expect("identity is nonempty"),
         );
         let evidence_kinds = ["exact"];
+        let domains = ["integer"];
         fsl_route::descriptor_from_manifest(
             candidate,
             ProviderOrigin::Linked,
@@ -2016,6 +2017,7 @@ mod origin_projection_tests {
                 (Some("probabilistic-satisfaction"), Some("bounded")),
             ],
             fsl_route::ManifestMembers {
+                domains: Some(&domains),
                 evidence_kinds: Some(&evidence_kinds),
                 ..Default::default()
             },
