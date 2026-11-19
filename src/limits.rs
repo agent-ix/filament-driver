@@ -156,6 +156,31 @@ impl LimitOverrides {
         Ok(())
     }
 
+    /// Apply compile-stage and caller-supplied export ceilings for `fsl export`.
+    /// Export limits are optional in FSL's bounds view, so this applies them
+    /// directly while routing the remaining settings through the shared API.
+    pub fn apply_to_export(&self, limits: &mut SpineLimits) -> Result<(), LimitError> {
+        let mut export = limits.export;
+        let mut compile = Vec::new();
+        for (name, value) in &self.0 {
+            match name {
+                SettingName::Stage(Setting::ExportOutputBytes) => {
+                    export.output_bytes = Some(*value);
+                }
+                SettingName::Stage(Setting::ExportNodes) => {
+                    export.nodes = Some(*value);
+                }
+                SettingName::Stage(Setting::ExportWorkUnits) => {
+                    export.work_units = Some(*value);
+                }
+                _ => compile.push((*name, *value)),
+            }
+        }
+        Self(compile).apply_to_limits(limits, "export")?;
+        limits.export = export;
+        Ok(())
+    }
+
     /// Apply settings to the actual stage, observation and accounting limits of a clause run.
     pub fn apply_to_clause(&self, request: &mut ClauseRunRequest) -> Result<(), LimitError> {
         self.apply_parts(

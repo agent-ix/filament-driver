@@ -774,6 +774,16 @@ fn apply_frontend_limits(
         })
 }
 
+fn apply_export_limits(overrides: &LimitOverrides, limits: &mut SpineLimits) -> Result<(), String> {
+    overrides.apply_to_export(limits).map_err(|error| {
+        let accepted = accepted_frontend_limit_settings(limits);
+        format!(
+            "{}; settings accepted by this command: {accepted}",
+            error.message_for("export")
+        )
+    })
+}
+
 impl RunOptions {
     const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
 
@@ -1254,7 +1264,7 @@ fn run(options: RunOptions) -> CommandResult {
 /// text only after the request assembled successfully.
 fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     let mut limits = SpineLimits::default();
-    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "export") {
+    if let Err(error) = apply_export_limits(&options.limits, &mut limits) {
         return CommandResult::input_refusal(Operation::Export, error);
     }
     let overrides = command::RequestOverrides {
@@ -1265,6 +1275,12 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     let Some(request_path) = options.request.as_deref() else {
         return CommandResult::input_refusal(Operation::Export, ExportOptions::USAGE);
     };
+    if has_export_request_member(request_path, RunLimits::default().request_bytes) == Some(false) {
+        return CommandResult::input_refusal(
+            Operation::Export,
+            "the request must include an `export` member",
+        );
+    }
     let runner = match command::run_with_overrides(request_path, &overrides, &DriverNegotiation) {
         Ok(result) => result,
         Err(error) if matches!(error.cause, command::RunCause::OutputGivenTwice) => {
@@ -1284,6 +1300,23 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         );
     };
     with_format(CommandResult::document(document), format)
+}
+
+/// Detect a valid native-run request that lacks the export member without
+/// consuming an unbounded or malformed request before FSL handles it.
+fn has_export_request_member(path: &Path, maximum_bytes: usize) -> Option<bool> {
+    let file = File::open(path).ok()?;
+    let read_limit = u64::try_from(maximum_bytes).ok()?.checked_add(1)?;
+    let mut bytes = Vec::new();
+    file.take(read_limit).read_to_end(&mut bytes).ok()?;
+    if bytes.len() > maximum_bytes {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    if value.get("format").and_then(serde_json::Value::as_str) != Some("native-run/1") {
+        return None;
+    }
+    Some(value.get("request")?.as_object()?.contains_key("export"))
 }
 
 /// The export request does not settle routed capability items. This
@@ -3100,7 +3133,7 @@ mod tests {
         let mut limits = SpineLimits::default();
         parsed
             .limits
-            .apply_to_limits(&mut limits, "export")
+            .apply_to_export(&mut limits)
             .expect("supported export and compile limits");
         assert_eq!(limits.export.output_bytes, Some(4096));
         assert_eq!(limits.export.nodes, Some(20));
