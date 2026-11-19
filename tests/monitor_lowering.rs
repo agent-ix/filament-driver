@@ -396,7 +396,7 @@ fn assert_argument(
 fn excluded_source_forms_stop_at_original_operation_without_partial_tuple() {
     const SOURCE: &str = r#"language "ix:native" edition "1-draft";
 profile v = "filament.value.complete/v1";
-function modValue using v(a: Integer, b: Integer): Integer pure { a mod b }
+function modValue using v(a: Integer, b: Integer): Integer pure { a mod 2 }
 function literalValue using v(): Integer pure { 0 }
 function helperValue using v(a: Integer): Integer pure { a }
 function callValue using v(a: Integer): Integer pure { helperValue(a) }
