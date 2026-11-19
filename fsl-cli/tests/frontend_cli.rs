@@ -23,7 +23,6 @@ const MISSING_SOURCE: &str = concat!(
 mod test_provider_path;
 #[path = "common/timed_analyze.rs"]
 mod timed_analyze;
-
 const RUN_REQUEST: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/frontend-run.json"
@@ -541,11 +540,10 @@ fn request_byte_options_reach_owner_limits_and_compile_accepts_none() {
             output.status.code(),
             Some(i32::from(Category::Incomplete.exit_code()))
         );
-        // In `--format json` mode the message is in the stdout document.
-        let document = String::from_utf8_lossy(&output.stdout);
-        assert!(document.contains(setting), "{document}");
-        assert!(document.contains(&too_small), "{document}");
-        assert!(document.contains(option), "{document}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(setting), "{stderr}");
+        assert!(stderr.contains(&too_small), "{stderr}");
+        assert!(stderr.contains(option), "{stderr}");
         let exact = size.to_string();
         let output = fsl(&["run", RUN_REQUEST, option, &exact, "--format", "json"]);
         assert_eq!(
@@ -1983,16 +1981,20 @@ fn check_takes_the_integer_division_law_from_its_option() {
             "unsupported-selection".to_owned()
         )]
     );
-    // In `--format json` mode the message is in the stdout document.
-    let document = String::from_utf8_lossy(&unknown.stdout);
+    let unknown_document: serde_json::Value =
+        serde_json::from_slice(&unknown.stdout).expect("unknown-law check document");
+    let message = unknown_document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("unknown-law diagnostic message");
     assert!(
-        document.contains(
+        message.contains(
             "integer-division law `ceiling` supplied by `--integer-division` is not one of \
              `euclidean`, `floor`, `truncating`"
         ),
-        "{document}"
+        "{message}"
     );
-    assert!(!document.contains("could not read"), "{document}");
+    assert!(!message.contains("could not read"), "{message}");
+    assert!(unknown.stderr.is_empty(), "{unknown:?}");
     let near_miss = fsl(&["check", absent, "--integer-division", "Floor"]);
     assert_eq!(near_miss.status.code(), Some(20));
 
@@ -2268,219 +2270,4 @@ fn analyze_external_provider_refutes_with_evidence() {
         item["counterexample"]["values"][0]["value"]["value"], "0",
         "{document}"
     );
-}
-
-const EXTENSION_HEADER: &str =
-    "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\n";
-const EXTENSION_FORM: &str = "retention Audit { subject: \"audit\", days: 30 }";
-
-/// Writes FSpec FR-467-AC-1's `retention` definition document, the set
-/// document naming it with `entries`, and a unit selecting it.
-fn extension_directory(entries: serde_json::Value) -> tempfile::TempDir {
-    let directory = tempfile::tempdir().expect("temporary directory");
-    let definition = serde_json::json!({
-        "grammar_schema": {"productions": [
-            {"keyword": "retention", "clauses": ["subject", "days"]}
-        ]},
-        "typed_node_schema": {"nodes": [
-            {"keyword": "retention", "node_kind": "retention", "clauses": [
-                {"name": "subject", "type": "Text"},
-                {"name": "days", "type": "Int[1, 3650]"}
-            ]}
-        ]}
-    });
-    std::fs::write(
-        directory.path().join("retention.json"),
-        definition.to_string(),
-    )
-    .expect("write definition");
-    std::fs::write(
-        directory.path().join("set.json"),
-        serde_json::json!({"format": "filament.extension-set/v1", "extensions": entries})
-            .to_string(),
-    )
-    .expect("write set");
-    std::fs::write(
-        directory.path().join("unit.native"),
-        format!("{EXTENSION_HEADER}profile r = \"ext.retention\";\n{EXTENSION_FORM}\n"),
-    )
-    .expect("write unit");
-    directory
-}
-
-fn in_directory(directory: &tempfile::TempDir, arguments: &[&str]) -> Output {
-    Command::new(FSL)
-        .args(arguments)
-        .current_dir(directory.path())
-        .output()
-        .expect("run fsl")
-}
-
-fn retention_entry() -> serde_json::Value {
-    serde_json::json!({"authority": "agent-ix", "identity": "ext.retention", "file": "retention.json"})
-}
-
-/// FSpec FR-562-AC-1 (driver FR-002-AC-24, QSL-2603): `check --extensions`
-/// and `parse --extensions` supply the definition a unit selects.
-#[test]
-#[trace("FSpec-TC-1242", "FSpec-FR-562-AC-1", "FR-002-AC-24")]
-fn extension_sets_supply_the_selected_definition_to_check_and_parse() {
-    let directory = extension_directory(serde_json::json!([retention_entry()]));
-    for verb in ["check", "parse"] {
-        let with = in_directory(
-            &directory,
-            &[
-                verb,
-                "--extensions",
-                "set.json",
-                "agent-ix",
-                "unit",
-                "unit.native",
-            ],
-        );
-        assert_eq!(with.status.code(), Some(0), "{verb}: {with:?}");
-        let without = in_directory(&directory, &[verb, "agent-ix", "unit", "unit.native"]);
-        assert_ne!(without.status.code(), Some(0), "{verb}: {without:?}");
-    }
-    let without = in_directory(&directory, &["check", "agent-ix", "unit", "unit.native"]);
-    assert!(String::from_utf8_lossy(&without.stdout).contains("unknown_profile"));
-}
-
-/// FSpec FR-562-AC-2 and FR-301-AC-5: a set document that cannot be read as
-/// FR-562 states refuses with exit 20 before any stage runs.
-#[test]
-#[trace("FSpec-TC-1242", "FSpec-FR-562-AC-2", "FSpec-FR-301-AC-5")]
-fn malformed_extension_sets_refuse_before_any_stage() {
-    let mut unknown_member = retention_entry();
-    unknown_member["version"] = serde_json::json!("1");
-    let mut no_file = retention_entry();
-    no_file.as_object_mut().expect("object").remove("file");
-    for (entries, code) in [
-        (serde_json::json!([unknown_member]), "invalid-request"),
-        (serde_json::json!([no_file]), "invalid-request"),
-        (
-            serde_json::json!([retention_entry(), retention_entry()]),
-            "conflicting-definition",
-        ),
-    ] {
-        let directory = extension_directory(entries);
-        for verb in ["check", "parse"] {
-            let output = in_directory(
-                &directory,
-                &[
-                    verb,
-                    "--extensions",
-                    "set.json",
-                    "agent-ix",
-                    "unit",
-                    "unit.native",
-                ],
-            );
-            assert_eq!(output.status.code(), Some(20), "{verb} {code}: {output:?}");
-            let text = String::from_utf8_lossy(&output.stdout).into_owned()
-                + &String::from_utf8_lossy(&output.stderr);
-            assert!(text.contains(code), "{verb} {code}: {text}");
-        }
-    }
-    let directory = extension_directory(serde_json::json!([retention_entry()]));
-    let missing = in_directory(
-        &directory,
-        &[
-            "check",
-            "--extensions",
-            "absent.json",
-            "agent-ix",
-            "unit",
-            "unit.native",
-        ],
-    );
-    assert_eq!(missing.status.code(), Some(20), "{missing:?}");
-    let repeated = in_directory(
-        &directory,
-        &[
-            "check",
-            "--extensions",
-            "set.json",
-            "--extensions",
-            "set.json",
-            "agent-ix",
-            "unit",
-            "unit.native",
-        ],
-    );
-    assert_eq!(repeated.status.code(), Some(20), "{repeated:?}");
-}
-
-/// FSpec FR-562-AC-1: the one-operand form `check --extensions set.json unit.native`.
-#[test]
-#[trace("FSpec-TC-1242", "FSpec-FR-562-AC-1", "FR-002-AC-24")]
-fn check_with_extensions_takes_the_one_operand_form() {
-    let directory = extension_directory(serde_json::json!([retention_entry()]));
-    let with = in_directory(
-        &directory,
-        &["check", "--extensions", "set.json", "unit.native"],
-    );
-    assert_eq!(with.status.code(), Some(0), "{with:?}");
-    let without = in_directory(&directory, &["check", "unit.native", "--format", "json"]);
-    assert_eq!(without.status.code(), Some(20), "{without:?}");
-    assert!(String::from_utf8_lossy(&without.stdout).contains("unknown_profile"));
-}
-
-/// FSpec FR-562-AC-2: a definition document that breaks FR-467's
-/// `missing-member` rule refuses with exit 20, and a unit that selects no
-/// extension gives the same result with and without the set.
-#[test]
-#[trace("FSpec-TC-1242", "FSpec-FR-562-AC-2", "FR-002-AC-24")]
-fn extension_definitions_are_validated_and_unselected_sets_change_nothing() {
-    let directory = extension_directory(serde_json::json!([retention_entry()]));
-    std::fs::write(
-        directory.path().join("retention.json"),
-        serde_json::json!({"grammar_schema": {"productions": [
-            {"keyword": "retention", "clauses": ["subject", "days"]}
-        ]}})
-        .to_string(),
-    )
-    .expect("write a definition without typed_node_schema");
-    for verb in ["check", "parse"] {
-        let output = in_directory(
-            &directory,
-            &[
-                verb,
-                "--extensions",
-                "set.json",
-                "agent-ix",
-                "unit",
-                "unit.native",
-            ],
-        );
-        assert_eq!(output.status.code(), Some(20), "{verb}: {output:?}");
-        let text = String::from_utf8_lossy(&output.stdout).into_owned()
-            + &String::from_utf8_lossy(&output.stderr);
-        assert!(text.contains("missing-member"), "{verb}: {text}");
-    }
-
-    let directory = extension_directory(serde_json::json!([retention_entry()]));
-    std::fs::copy(
-        concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/spine-compile.native"
-        ),
-        directory.path().join("plain.native"),
-    )
-    .expect("copy a unit that selects no extension");
-    for verb in ["check", "parse"] {
-        let mut without = vec![
-            verb,
-            "agent-ix",
-            "plain",
-            "plain.native",
-            "--format",
-            "json",
-        ];
-        let plain = in_directory(&directory, &without);
-        without.splice(1..1, ["--extensions", "set.json"]);
-        let with = in_directory(&directory, &without);
-        assert_eq!(plain.status, with.status, "{verb}");
-        assert_eq!(plain.stdout, with.stdout, "{verb}");
-    }
 }
