@@ -1,0 +1,32 @@
+language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+type Channel = Int[0, 9];
+type Ratio = Rational[0, 9; 1, 9];
+type Price = Decimal[0, 1000; 0, 2; exact];
+type Gain = Float64[nearest-even];
+type Label = Text[0, 8; nfc];
+enum Light { Red, Green }
+record Point { x: Channel; y: Channel; }
+tuple Pair(Channel, Channel);
+record Sample {
+    ratio: Ratio; price: Price; gain: Gain;
+    code: String; label: Label; light: Light;
+    point: Point; pair: Pair;
+    readings: Sequence<Channel>[0, 3]; channels: Set<Channel>[0, 3];
+    opening: Option<Channel>; last: Option<Channel>;
+}
+
+function negate using v(input: Boolean): Boolean pure { not input }
+function successor using v(input: Int[0, 1267650600228229401496703205375]): Int[0, 1267650600228229401496703205376] pure { input + 1 }
+function ratioOf using v(input: Sample): Ratio pure { input.ratio }
+function priceOf using v(input: Sample): Price pure { input.price }
+function gainOf using v(input: Sample): Gain pure { input.gain }
+function codeOf using v(input: Sample): String pure { input.code }
+function labelOf using v(input: Sample): Label pure { input.label }
+function lightOf using v(input: Sample): Light pure { input.light }
+function pointOf using v(input: Sample): Point pure { input.point }
+function pairOf using v(input: Sample): Pair pure { input.pair }
+function readingsOf using v(input: Sample): Sequence<Channel>[0, 3] pure { input.readings }
+function channelsOf using v(input: Sample): Set<Channel>[0, 3] pure { input.channels }
+function firstOf using v(input: Sample): Option<Channel> pure { input.opening }
+function lastOf using v(input: Sample): Option<Channel> pure { input.last }
