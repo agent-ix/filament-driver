@@ -1185,6 +1185,7 @@ fn run(options: RunOptions) -> CommandResult {
         dependencies: &dependencies,
         limits,
         call,
+        integer_division,
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),
         engine: options.engine,

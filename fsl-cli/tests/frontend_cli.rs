@@ -484,6 +484,7 @@ fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
                 dependencies: &input.dependencies,
                 limits: fsl_replay::spine::SpineLimits::default(),
                 call: input.call,
+                integer_division: input.integer_division,
                 object_environment: &ObjectEnvironment::default(),
                 cancel: filament_exact::Cancel::new(),
                 engine: ExecutionEngine::Interpreter,

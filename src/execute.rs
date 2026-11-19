@@ -66,6 +66,8 @@ pub struct ExecutionRequest<'a> {
     pub limits: SpineLimits,
     /// The named function and its admitted values.
     pub call: Call,
+    /// Request-selected integer-division law, when the native-run request supplies one.
+    pub integer_division: Option<fsl_replay::AdmittedIntegerDivision>,
     /// The caller-owned object context used unchanged by FSL evaluation.
     pub object_environment: &'a ObjectEnvironment,
     /// The caller-owned cancellation handle for this run.
@@ -137,18 +139,34 @@ impl ExecutionFailure {
 /// AOT and JIT selections return Unsupported before compiling the source.
 pub fn execute(request: ExecutionRequest<'_>) -> Result<ExecutionResult, ExecutionFailure> {
     execute_using(request, |request, object_environment| {
-        fsl_replay::spine::run(
-            request.source.clone(),
-            request.package_name.to_owned(),
-            request.path,
-            request.bytes,
-            request.packages,
-            request.dependencies,
-            request.limits,
-            &request.call,
-            object_environment,
-            &request.cancel,
-        )
+        if let Some(integer_division) = request.integer_division {
+            fsl_replay::spine::run_with_integer_division(
+                request.source.clone(),
+                request.package_name.to_owned(),
+                request.path,
+                request.bytes,
+                request.packages,
+                request.dependencies,
+                request.limits,
+                &request.call,
+                object_environment,
+                integer_division,
+                &request.cancel,
+            )
+        } else {
+            fsl_replay::spine::run(
+                request.source.clone(),
+                request.package_name.to_owned(),
+                request.path,
+                request.bytes,
+                request.packages,
+                request.dependencies,
+                request.limits,
+                &request.call,
+                object_environment,
+                &request.cancel,
+            )
+        }
     })
 }
 
@@ -226,6 +244,7 @@ mod tests {
                 clocks: Default::default(),
                 live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             },
+            integer_division: None,
             object_environment: &EMPTY_OBJECT_ENVIRONMENT,
             cancel: Cancel::new(),
             engine,
@@ -423,6 +442,7 @@ mod tests {
                 clocks: Default::default(),
                 live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             },
+            integer_division: None,
             object_environment: environment,
             cancel: Cancel::new(),
             engine: ExecutionEngine::Interpreter,
