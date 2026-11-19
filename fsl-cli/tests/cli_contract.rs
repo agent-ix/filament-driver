@@ -2005,7 +2005,6 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
 
 /// Trace: QSL-2192; the library owns formatted text and the CLI passes it through unchanged.
 #[test]
-#[ignore = "QSL-2192: language FR-286-AC-16 OutcomeDocument::from_format result not implemented"]
 fn format_json_result_carries_text() {
     let text = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE])
