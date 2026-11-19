@@ -29,6 +29,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-specification/FR-301
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-665
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-522
+    type: depends_on
+  - target: ix://agent-ix/filament-specification/FR-562
+    type: depends_on
   - target: ix://agent-ix/ix-cli-kit/FR-008
     type: depends_on
 ---
@@ -67,8 +73,12 @@ the fallback when that function returns reserved value `5`.
   `--format`, parse, check, compile and run write the FSL FR-865 text form
   of the same `filament-outcome/1` document that `--format json` writes, and
   analyze and monitor write the text forms FR-022 and FR-025 give them.
-- Root help text for a help invocation, as specified by AC-17; help does not
-  produce a lifecycle outcome document.
+- Root help text for a help invocation, as specified by AC-17 and AC-24, and
+  one verb's section of that help for `fsl <verb> --help`, as specified by
+  AC-25; help does not produce a lifecycle outcome document.
+- For `fsl inspect --handoff <directory>`, the `filament-outcome/1` document
+  with operation `inspect` that FSL's `inspect_handoff` returns, or its text
+  form (AC-23).
 - The exit status returned by FSL's category exit function, except that a
   reserved-code mapping invariant failure returns code `30`, and a
   signal-terminated active plugin invocation re-raises the signal after
@@ -157,6 +167,47 @@ the fallback when that function returns reserved value `5`.
 - If `--format` names a value other than `text`, `json`, or `dot` on
   `inspect`, the CLI SHALL refuse `invalid-request`, exit 20, naming
   `--format` and the value, before reading any file.
+- `fsl inspect --handoff <directory>` SHALL call FSL's
+  `fsl_command::command::inspect_handoff` with the directory exactly as given
+  and write the `filament-outcome/1` document it returns, operation
+  `inspect`, unchanged under `--format json` and in its FSL FR-865 text form
+  under `--format text` or without `--format`, with that document's category
+  exit result. FSpec FR-301 and FSL FR-665 put this form in the default build:
+  it is how a user verifies a checked-package handoff that `fsl compile`
+  wrote. Success, exit 0, means the strict reader admitted the package and it
+  agrees with the selection sidecar; any other result is the reader's typed
+  refusal or the `SelectionRefusal`, exit 20.
+- The driver SHALL make no decision of its own about the handoff directory: a
+  missing path, a file in place of a directory, an empty directory and a
+  changed byte all reach `inspect_handoff`, and the CLI writes the refusal it
+  returns. The CLI adds no existence probe that could disagree with the
+  reader.
+- `--handoff` SHALL take the next argument verbatim as its directory, even
+  when it starts with `-` (`fsl inspect --handoff ./-odd` names `./-odd`),
+  except when that argument is itself an option name the `inspect` entry of
+  the option table lists: then the directory operand is missing.
+- The handoff form SHALL take exactly one directory operand after `--handoff`
+  and no other operand. A missing directory operand, a second operand or a
+  repeated `--handoff` SHALL refuse `invalid-request`, operation `inspect`,
+  exit 20, naming the missing operand, the extra operand or `--handoff`,
+  before any file is read.
+- `--format dot` together with `--handoff` SHALL refuse `invalid-request`,
+  operation `inspect`, exit 20, naming `--format` and `dot`, before any file
+  is read: a handoff verification result is an outcome document, not a graph,
+  so it has no DOT rendering.
+- An `inspect` invocation without `--handoff` stays a verb form this build
+  does not route: `unsupported` with cause `operation-not-routed` naming
+  `inspect` (FSpec FR-522), exit 21, under every accepted `--format` value
+  including `dot`, whatever positional operands it carries.
+- The CLI SHALL decide an `inspect` invocation in this order, and the first
+  step that refuses decides the result: (1) the root `--format` checks of
+  AC-18 (exit 20); (2) an option the `inspect` entry of the option table does
+  not list, with or without `--handoff` (`invalid-request` naming it, exit
+  20); (3) `--help` or `-h` (AC-25, exit 0); (4) the handoff operand shape
+  and `--format dot` with `--handoff` (exit 20); (5) with `--handoff`, the
+  call to `inspect_handoff`, and without it the not-routed result (exit
+  21). An unknown option is a mistake in the invocation whatever form it
+  meant, so it refuses before the not-routed result.
 - Analyze and monitor keep the text forms FR-022 and FR-025 specify. Format
   continues to write FSL's formatted source as its text output.
 - `fsl run` SHALL route every prepared run FSL's `prepare_run_with_overrides`
@@ -200,6 +251,65 @@ the fallback when that function returns reserved value `5`.
   format and `--format json` selects machine output.
 - When root help is written successfully, the CLI SHALL return FSL's success
   exit result and write no stderr output.
+- The `fsl-cli` package SHALL hold one option table. For each verb that
+  executes operations it records the verb's usage lines (operand forms) and,
+  in a fixed order, every option the verb's parser accepts, with the option's
+  value form (for example `--limit name=value`,
+  `--engine interpreter|aot|jit`) and whether the option may repeat.
+- Each verb's option parser SHALL derive the options it accepts only from
+  its table entry: the parser and the help generator take the table as an
+  argument, and no option name appears as a literal in `fsl-cli`'s parsing
+  code outside the table. The parser SHALL refuse every option-shaped
+  argument (one starting with `-`, other than a value an option consumes)
+  that its entry does not list, as `invalid-request` with the verb's
+  operation, exit 20, naming the option, before any file is read. The CLI
+  generates root help and verb help from that same table. With no second
+  list of options, the help cannot name an option the parser refuses and the
+  parser cannot accept an option the help omits.
+- Root help SHALL keep its current layout, which the filament-docs reference
+  generator reads: the `Usage:` lines, then a `Commands:` section with one
+  line per recognized verb (a verb this build does not route keeps the
+  description that starts `Recognized;`), then a `Source operands:` section
+  with each routed verb's usage lines from the table (including
+  `inspect [options] --handoff <directory>`), then the `Options:`
+  section of root options. Root help SHALL add, for each verb that
+  executes operations in `Commands:` order and after `Options:`, one section headed
+  `<verb> options:` followed by one line per table option in table order:
+  two spaces, the option name, one space and its value form when it takes a
+  value, and ` (repeatable)` when it may repeat. Sections are separated by
+  one blank line. `inspect` is listed among the verbs that execute
+  operations, through its `--handoff` form.
+- `fsl <verb> --help` SHALL print the verb's usage lines, each starting
+  `Usage: fsl <verb> ` for the first and `       fsl <verb> ` for the rest,
+  then one blank line, then the verb's `<verb> options:` section exactly as
+  root help prints it. A user who types `fsl run --help` learns the run
+  options without reading the whole root help.
+- The CLI SHALL decide an invocation of a verb that executes operations in
+  this order, and the first step that refuses decides the result: (1) the
+  root `--format` checks of AC-18 and the `dot` restriction (exit 20), even
+  when `--help` is present; (2) an option-shaped argument the verb's table
+  entry does not list (`invalid-request`, exit 20); (3) `--help` or `-h` in
+  option position (help, exit 0); (4) the verb's operand and value checks;
+  (5) the operation. Help applies only to verbs that execute operations: for
+  `prove`, `generate` and `render`, `--help` is not a help request and the
+  invocation gives FSpec FR-522's `unsupported`/`operation-not-routed`
+  result, exit 21.
+- When help is written in step 3, the CLI SHALL return FSL's success exit
+  result, write no stderr, read no file and start no lifecycle operation.
+- `--version` and `-V` are root options only. No verb's table entry lists
+  them, so after a verb each refuses in step 2 as `invalid-request`, exit 20,
+  naming the option.
+- The CLI SHALL accept no `--color` option on any verb.
+- The CLI SHALL emit no ANSI escape sequence of its own on stdout or
+  stderr: its text output
+  and diagnostics are plain text, so no option selects colour and the
+  `NO_COLOR` environment variable has nothing to switch off. Bytes the CLI
+  echoes from its input, such as formatted source or a source line quoted in
+  a diagnostic, are the caller's bytes and are exempt. `--color` is an
+  option no table entry lists and refuses in step 2. AD-001 plans the
+  adoption of ix-cli-kit's `streams` module, which handles colour; coloured
+  output, with an option to select it, is a later requirement with its own
+  specification, not part of this contract.
 - When the user invokes `fsl --version`, the CLI SHALL report the semantic
   version declared by the `fsl-cli` Cargo package.
 - When `fsl-cli` runs its built-binary version-agreement check, it SHALL
@@ -236,6 +346,10 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-20 | `fsl run R --format json`, `R` FSL FR-931-AC-1's request `{"clause": "Low"}` over the ConfigVersion model, writes the `tl_lowering` record with `disposition` `supported`, `correspondence` `mltl.closed-trace/v1` and `formula` `G[0,3] p0`, exit 0, and its stdout is byte-equal to the canonical encoding of the document FSL's `fsl_command::command::run` returns for `R`, plus a newline; it never writes the "not run by the driver" input refusal. `fsl run R --limit s1.nodes=1 --format json` writes FSL's typed limit outcome naming `s1.nodes` with configured value 1, category `incomplete`, no lowering record, exit 22; `--limit s1.nodes=50000` gives the unlimited run's bytes, exit 0. | Test (TC-046) |
 | FR-002-AC-21 | `fsl run P --format json`, `P` FSL FR-1039-AC-1's request selecting the `half` unit's checked package as `package` `{file}` with the `call` `half`, run with the source file removed, completes with `-4`, exit 0, byte-equal to FSL's `run` for `P` plus a newline; the same request with `integer_division` gives FSL's `invalid-request` refusal naming `integer_division`, exit 20. | Test (TC-046) |
 | FR-002-AC-22 | `fsl run Q --format json`, `Q` FSL FR-960-AC-1's request calling `sq` with `x = 3` and `call.requirements` `{}`, with no `--provider-config`, writes stdout byte-equal to the canonical encoding of the document `run_with_providers_and_limits_and_overrides` returns for `Q` with the providers `[Engine::hybrid_reference()]` and default limits, plus a newline: value `{"integer": "16"}` and three settled requirement entries, exit 0. With `--provider-config` starting a fixture provider whose admitted backend is `fsl-hybrid-reference`, the run refuses `invalid-request` naming `providers`, exit 20, because that backend is already registered. | Test (TC-046) |
+| FR-002-AC-23 | Over a handoff directory `H` written by `fsl compile` from a `native-compile/1` request carrying FSL FR-665-AC-1's `handoff` member, `fsl inspect --handoff H --format json` writes stdout byte-equal to the canonical encoding of the document `fsl_command::command::inspect_handoff(H)` returns, plus a newline: operation `inspect`, category success, exit 0; without `--format` it writes that document's FSL FR-865 text form, exit 0. Over a copy of `H` whose `selection.json` names one node count more, and over a copy whose `checked-package.json` has one changed byte, each run refuses with the `SelectionRefusal` or strict-reader refusal `inspect_handoff` returns, byte-equal to it, exit 20. A path that does not exist, an empty directory, a regular file, and a directory named `-odd` given as `./-odd` each yield the document `inspect_handoff` returns for that path exactly as given (refusal, exit 20, for the first three). `fsl inspect --handoff` with no further argument, `fsl inspect --handoff --format json`, `fsl inspect --handoff H extra` and `fsl inspect --handoff H --handoff H` each refuse `invalid-request`, operation `inspect`, exit 20, naming the missing operand, the missing operand, `extra` and `--handoff`; `fsl inspect --handoff H --format dot` refuses `invalid-request`, exit 20, naming `--format` and `dot`; `fsl inspect --handoff H --bogus` and `fsl inspect H --bogus` each refuse `invalid-request`, exit 20, naming `--bogus`; none of these reads a file under `H`. `fsl inspect H --format json` without `--handoff` writes `unsupported`/`operation-not-routed` naming `inspect`, exit 21. | Test (TC-048) |
+| FR-002-AC-24 | For every verb that executes operations and every option `o` in its `fsl-cli` option table entry, `o` appears on its own line in the verb's `<verb> options:` section of root help and the built parser accepts `o` with a well-formed value (no `invalid-request` naming `o`). For every verb that executes operations and every option name `p` that is listed in another verb's entry or is one of `--version`, `-V`, `--color` and `--bogus`, but is not in this verb's entry, `fsl <verb> p` refuses `invalid-request`, exit 20, naming `p`. Removing one option from a copy of the table and running the parser and the help generator over that copy makes the parser refuse that option, exit 20 naming it, and makes the help omit it; a parser that accepts an option outside its table entry, or a help line that names one, fails this criterion. No option name (a string literal starting `-`) appears in `fsl-cli`'s parsing code outside the table. The entries include `--integer-division` and `--markdown` on `check`, `--extensions <file>` on `parse` and `check` (FSpec FR-562), every option of `analyze`, `monitor`, `replay` and `export`, `--provider-limit name=value` on `run`, and `--handoff <directory>` on `inspect`. Root help keeps the `Commands:`, `Source operands:` and `Options:` sections and the `Recognized;` description of each verb this build does not route. | Test (TC-049) |
+| FR-002-AC-25 | `fsl check --help`, `fsl check -h` and `fsl check nosuch.fsl --help`, from an empty working directory, each write exactly the following to stdout, exit 0, write no stderr and read no file: `Usage: fsl check [options] <source-path>` / `       fsl check [options] <authority> <identity> <source-path>` / (blank) / `check options:` / `  --markdown` / `  --model <file>` / `  --library <file> (repeatable)` / `  --dependent-bytes <bytes>` / `  --limit name=value (repeatable)` / `  --integer-division euclidean\|floor\|truncating` / `  --extensions <file>` / `  --format text\|json`, each line ending in a newline; the same `check options:` section appears in root help. For every other verb that executes operations, `fsl <verb> --help` writes that verb's usage lines, a blank line and its `<verb> options:` section byte-equal to root help's, exit 0. `fsl prove --help` writes FSpec FR-522's `unsupported`/`operation-not-routed` result naming `prove`, exit 21, and so do `generate` and `render`. `fsl run --format bogus --help` refuses `invalid-request`, exit 20, naming `--format` and `bogus`, and `fsl run --bogus --help` refuses `invalid-request`, exit 20, naming `--bogus`. `fsl <verb> --version` and `fsl <verb> -V` for each verb that executes operations refuse `invalid-request`, exit 20, naming the option, before any file is read. | Test (TC-049) |
+| FR-002-AC-26 | `fsl run R --color always`, `fsl run R --color never` and `--color` on every other verb that executes operations refuse `invalid-request`, exit 20, naming `--color`, before `R` or any other named file is read, and no help section contains `--color`. Over inputs that contain no `0x1B` byte, no `fsl` invocation of TC-049 writes the byte `0x1B` to stdout or stderr, with or without `NO_COLOR` set. | Test (TC-049) |
 
 ## Dependencies
 
@@ -259,6 +373,20 @@ the fallback when that function returns reserved value `5`.
   `PreparedLowering::clause_request_mut`; FSL FR-1039 defines the package run.
   [TC-046](../test-cases/TC-046-run-tl-lowering-and-package-requests.md)
   verifies AC-20, AC-21 and AC-22; FSL FR-960 defines `call.requirements`.
+- FSL FR-665 defines `inspect_handoff` and the handoff directory; FSpec FR-301
+  gives `inspect --handoff` its exit contract and FSpec FR-522 the not-routed
+  refusal. [TC-048](../test-cases/TC-048-verify-a-checked-package-handoff-with-fsl-inspect.md)
+  verifies AC-23.
+- FSpec FR-562 defines `--extensions` on `parse` and `check`. The
+  filament-docs CLI reference generator reads root help's `Commands:`,
+  `Source operands:` and `Options:` sections and the `Recognized;` prefix,
+  which is why AC-24 keeps that layout and adds the per-verb sections after
+  it.
+- [AD-001](../assurance/AD-001-driver-architecture.md) plans ix-cli-kit
+  `streams` adoption, whose colour handling would arrive under its own
+  requirement with a colour option; AC-26 governs until then.
+  [TC-049](../test-cases/TC-049-list-every-accepted-option-in-help.md)
+  verifies AC-24, AC-25 and AC-26.
 
 AC-14 adopts FSL FR-287-AC-8's quiet behavior only when a primary stdout write
 or flush actually reports `BrokenPipe`. A text-mode write of the rendered
