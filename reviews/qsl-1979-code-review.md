@@ -3,10 +3,12 @@ id: SR-17940486709564847047967
 title: "Code review — fsl-cli export route"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/filament-driver; fsl-cli/src/cli.rs, fsl-cli/tests/replay_cli.rs; FR-027, FR-024"
+scope: "agent-ix/filament-driver; fsl-cli/src/cli.rs, fsl-cli/tests/replay_cli.rs; FR-027, FR-024, FSL FR-865"
 review_set: subset
 relationships:
   - target: ix://agent-ix/filament-driver/FR-027
+    type: references
+  - target: ix://agent-ix/filament-spec-language/FR-865
     type: references
 ---
 
@@ -29,6 +31,7 @@ Reviewed PR #176 at `5d3917e75c2d60f894819e6319359bd335777a51` against current d
 | FR-027-AC-5 | examined | `fsl export --evidence e.json --format json` writes FSL's evidence outcome document with operation `export`; `fsl export --evidence e.json --output m.tla` and `fsl export <request> --evidence e.json` each refuse `invalid-request` naming `--evidence`, exit 20, with nothing written to the output path; `fsl compile <request> --evidence e.json` refuses as an unknown option, exit 20. |
 | FR-024-AC-1 | context_only | `fsl compile <request> --output <file>` writes bytes equal to the library result and to the request member's output, resolving relative paths against the working directory. |
 | FR-024-AC-3 | context_only | A request carrying `output` with `--output` is refused by FSL, naming `output` and `--output`, with no file written. |
+| FSL FR-865-AC-7 | context_only | `render_outcome` with `RenderForm::Text` over the counter export writes the four success lines; over the export under `export.output_bytes` 1 it writes `export: incomplete (exit 22) at S4`, `bytes written: 0` and a line naming `export.output_bytes`. |
 
 ## Findings
 
@@ -46,6 +49,24 @@ FND-003: FR-027 allows repeatable `--limit` values for `export.*` and settings a
 
 ## Verification
 
-- Focused command: `cargo test --locked -p fsl-cli --bin fsl export -- --nocapture`, through `locked-build.sh`, with debug info and incremental compilation disabled. Result: PASS, 5 passed, 0 failed, 39 filtered; target cleaned after the green gate.
+- Previous head `5d3917e75c2d60f894819e6319359bd335777a51`: focused command `cargo test --locked -p fsl-cli --bin fsl export -- --nocapture` passed 5 tests; that result predates this fix round.
+- Current head `6b8cfa4be264ec069e0bdd00948d1f46064d834e`: coder reports the focused build stopped before tests with 63 duplicate-type errors at the `filament-contract-runtime v0.1.1` tag / FSL revision boundary. No rebuild was run in this disposition pass as directed.
 - Aggregate and package-wide gates were not run under the standing targeted-check instruction.
 - No assurance profile in `spec/` applies to this CLI change.
+
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | `export_text` duplicates FSL's existing renderer and omits the limit diagnostic required for incomplete exports | fsl-cli/src/cli.rs:1264-1299 |
+
+The public `fsl_inspect::render_outcome` is already available through the FSL dependency. This implementation adds a second renderer in the driver and always formats only the header, target, byte count and output path; FR-865-AC-7 requires an additional diagnostic line naming `export.output_bytes` for an incomplete export. This is a high-severity duplication and wrong-output defect.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

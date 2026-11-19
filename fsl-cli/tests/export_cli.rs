@@ -230,6 +230,31 @@ fn export_text_names_the_target_size_and_path() {
     );
 }
 
+/// FR-027-AC-4 / FR-865-AC-7: canonical text rendering retains the export
+/// limit diagnostic when the outcome is incomplete.
+#[test]
+#[trace("TC-045", "FR-027-AC-4")]
+#[trace("TC-2996", "FR-865-AC-7")]
+fn export_text_names_output_byte_limit_for_incomplete_export() {
+    let directory = folder();
+    request(directory.path(), None);
+    let output = fsl(
+        directory.path(),
+        &[
+            "export",
+            "request.json",
+            "--output",
+            "m.tla",
+            "--limit",
+            "export.output_bytes=1",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(22), "{output:?}");
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("export.output_bytes"), "{text}");
+    assert!(!directory.path().join("m.tla").exists());
+}
+
 /// FR-027-AC-5: `--evidence` reaches FSL's evidence intake on `export`
 /// only, and refuses `--output` and a request operand beside it.
 #[test]

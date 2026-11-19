@@ -1249,50 +1249,7 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
             "FSL returned an export result without its outcome document",
         );
     };
-    let text_output = (format == OutputFormat::Text).then(|| export_text(&document));
-    match text_output {
-        Some(Ok(text_output)) => CommandResult::formatted(document, Some(text_output)),
-        Some(Err(error)) => CommandResult::failure(Category::InternalFailure, error),
-        None => CommandResult::document(document),
-    }
-}
-
-/// Render FSL's export outcome in the four-line text form required by FR-865.
-fn export_text(document: &OutcomeDocument) -> Result<String, String> {
-    let value = serde_json::to_value(document).map_err(|error| error.to_string())?;
-    let export = value
-        .pointer("/result/export/export")
-        .or_else(|| value.pointer("/result/export"))
-        .ok_or_else(|| "FSL's export outcome has no export result".to_owned())?;
-    let category = value
-        .get("category")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "FSL's export outcome has no category".to_owned())?;
-    let stage = value
-        .get("last_stage")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "FSL's export outcome has no last_stage".to_owned())?;
-    let target_family = export
-        .get("target_family")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "FSL's export outcome has no target_family".to_owned())?;
-    let profile = export
-        .get("mapping_profile_id")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "FSL's export outcome has no mapping_profile_id".to_owned())?;
-    let output = export.get("output");
-    let bytes_written = output
-        .and_then(|output| output.get("bytes_written"))
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    let output_path = output
-        .and_then(|output| output.get("path"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("none");
-    Ok(format!(
-        "export: {category} (exit {}) at {stage}\ntarget: {target_family} {profile}\nbytes written: {bytes_written}\noutput: {output_path}\n",
-        document.category().exit_code()
-    ))
+    with_format(CommandResult::document(document), format)
 }
 
 /// The export request does not settle routed capability items. This
