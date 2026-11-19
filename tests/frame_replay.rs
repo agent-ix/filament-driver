@@ -155,7 +155,7 @@ impl Fixture {
                 unwind: 2,
             },
             cg::StateFrameRoleIdentities::new(
-                fsl_replay::ObligationIdentity::new(
+                fsl_package::ObligationIdentity::new(
                     clause.site.node.clone(),
                     None,
                     u32::try_from(clause.site.occurrence.origin().ordinal()).unwrap(),
