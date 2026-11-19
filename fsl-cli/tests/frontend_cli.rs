@@ -1437,74 +1437,31 @@ fn analyze_text_mode_prints_item_lines() {
     );
 }
 
-/// FSL FR-650's identity fixture, cut to the kinds the driver's `run` checks
-/// here: each function returns its argument, so one call checks the argument
-/// form and the result form of one kind.
-const RUN_VALUE_FIXTURE: &str = r#"language "ix:native" edition "1-draft";
-profile v = "filament.value.complete/v1";
-type Big = Int[0, 1267650600228229401496703205376];
-type R = Rational[0, 9; 1, 9];
-type D = Decimal[0, 1000; 0, 2; exact];
-type F = Float64[nearest-even];
-type T = Text[0, 8; nfc];
-enum Color { Red, Green }
-record P { x: Int[0, 9]; y: Int[0, 9]; }
-tuple Tp(Int[0, 5], Int[0, 5]);
-function id_bool using v(a: Boolean): Boolean pure { a }
-function id_big using v(a: Big): Big pure { a }
-function id_rat using v(a: R): R pure { a }
-function id_dec using v(a: D): D pure { a }
-function id_flt using v(a: F): F pure { a }
-function id_str using v(a: String): String pure { a }
-function id_txt using v(a: T): T pure { a }
-function id_enum using v(a: Color): Color pure { a }
-function id_rec using v(a: P): P pure { a }
-function id_tup using v(a: Tp): Tp pure { a }
-function id_seq using v(a: Sequence<Int[0, 9]>[0, 3]): Sequence<Int[0, 9]>[0, 3] pure { a }
-function id_set using v(a: Set<Int[0, 9]>[0, 3]): Set<Int[0, 9]>[0, 3] pure { a }
-function id_opt using v(a: Option<Int[0, 9]>): Option<Int[0, 9]> pure { a }
-"#;
-
-/// Run `function` of [`RUN_VALUE_FIXTURE`] through `fsl run --format json`
-/// with `arguments`, from a request written in its own folder.
-fn run_value_fixture(label: &str, function: &str, arguments: serde_json::Value) -> Output {
+/// Run a function of the driver’s sample-reading program through the CLI.
+fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde_json::Value) {
     let directory = TestDirectory(
-        std::env::temp_dir().join(format!("fsl-run-value-{label}-{}", std::process::id())),
+        std::env::temp_dir().join(format!("fsl-run-value-{function}-{}", std::process::id())),
     );
     let _ = std::fs::remove_dir_all(&directory.0);
     std::fs::create_dir_all(&directory.0).expect("a request folder");
-    std::fs::write(directory.0.join("run-values.fsl"), RUN_VALUE_FIXTURE).expect("the source");
+    let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/run-sample.fsl");
     let request = serde_json::json!({"format": "native-run/1", "request": {
         "models": [],
-        "program": {"source": {"file": "run-values.fsl", "authority": "issuer",
-            "identity": "document", "document": "RunValues", "formal_revision": 1}},
-        "call": {"function": function, "arguments": arguments},
+        "program": {"source": {"file": source, "authority": "issuer",
+            "identity": "document", "document": "Sample", "formal_revision": 1}},
+        "call": {"function": function, "arguments": [{"parameter": "input", "value": argument}]},
     }});
     let path = directory.0.join("run.json");
     std::fs::write(&path, request.to_string()).expect("the request file");
-    Command::new(FSL)
-        .arg("run")
-        .arg(&path)
-        .args(["--format", "json"])
-        .output()
-        .expect("run fsl run")
-}
-
-/// Assert `function(a = argument)` completes with `expected`, exit 0.
-fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde_json::Value) {
-    let output = run_value_fixture(
-        function,
-        function,
-        serde_json::json!([{"parameter": "a", "value": argument}]),
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{function}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let output = fsl(&[
+        "run",
+        path.to_str().expect("UTF-8 path"),
+        "--format",
+        "json",
+    ]);
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(output.status.code(), Some(0), "{function}: {document}");
     assert_eq!(document["category"], "success", "{document}");
     assert_eq!(
         document["result"],
@@ -1513,33 +1470,56 @@ fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde
     );
 }
 
-/// FSL FR-650-AC-1: a Boolean result is `{"boolean": b}`, from the Boolean
-/// form and from the bare integer `1`.
+/// Each accessor extracts a different type from this one native record.
+fn sample() -> serde_json::Value {
+    serde_json::json!({"record": {"type": "Sample", "fields": {
+        "ratio": {"kind": "rational", "numerator": "4", "denominator": "6"},
+        "price": {"kind": "decimal", "coefficient": "150", "scale": "2"},
+        "gain": {"kind": "float64", "bits": "3ff0000000000000"},
+        "code": {"kind": "string", "text": "abc"},
+        "label": {"kind": "text", "text": "e\u{0301}"},
+        "light": {"variant": {"type": "Light", "case": "Green"}},
+        "point": {"record": {"type": "Point", "fields": {
+            "x": {"integer": "1"}, "y": {"integer": "2"}}}},
+        "pair": {"tuple": {"type": "Pair", "components": [{"integer": "2"}, {"integer": "1"}]}},
+        "readings": {"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]},
+        "channels": {"set": [{"integer": "3"}, {"integer": "1"}]},
+        "first": {"present": {"integer": "3"}},
+        "last": {"absent": {}}
+    }}})
+}
+
+/// FSL FR-650-AC-1: Boolean arguments in either spelling produce a Boolean result.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_boolean_result() {
-    let expected = serde_json::json!({"boolean": true});
     assert_run_value(
-        "id_bool",
+        "negate",
+        serde_json::json!({"boolean": false}),
         serde_json::json!({"boolean": true}),
-        expected.clone(),
     );
-    assert_run_value("id_bool", serde_json::json!(1), expected);
+    assert_run_value(
+        "negate",
+        serde_json::json!(1),
+        serde_json::json!({"boolean": false}),
+    );
 }
 
-/// FSL FR-650-AC-1, FR-650-AC-2: an integer result is `{"integer": "<decimal>"}`
-/// at any magnitude, from a bare JSON integer too.
+/// FSL FR-650-AC-1, FR-650-AC-2: integer results retain their full magnitude.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[trace("TC-1701", "FR-650-AC-2")]
 #[test]
 fn run_returns_integer_result() {
     assert_run_value(
-        "id_big",
-        serde_json::json!(7),
+        "successor",
+        serde_json::json!(6),
         serde_json::json!({"integer": "7"}),
     );
-    let big = serde_json::json!({"integer": "1267650600228229401496703205376"});
-    assert_run_value("id_big", big.clone(), big);
+    assert_run_value(
+        "successor",
+        serde_json::json!({"integer": "1267650600228229401496703205375"}),
+        serde_json::json!({"integer": "1267650600228229401496703205376"}),
+    );
 }
 
 /// FSL FR-650-AC-1: a Rational result is normalized.
@@ -1547,8 +1527,8 @@ fn run_returns_integer_result() {
 #[test]
 fn run_returns_rational_result() {
     assert_run_value(
-        "id_rat",
-        serde_json::json!({"kind": "rational", "numerator": "4", "denominator": "6"}),
+        "ratioOf",
+        sample(),
         serde_json::json!({"kind": "rational", "numerator": "2", "denominator": "3"}),
     );
 }
@@ -1558,7 +1538,7 @@ fn run_returns_rational_result() {
 #[test]
 fn run_returns_decimal_result() {
     let value = serde_json::json!({"kind": "decimal", "coefficient": "150", "scale": "2"});
-    assert_run_value("id_dec", value.clone(), value);
+    assert_run_value("priceOf", sample(), value);
 }
 
 /// FSL FR-650-AC-1: a Float64 result is preserved by its bit encoding.
@@ -1566,7 +1546,7 @@ fn run_returns_decimal_result() {
 #[test]
 fn run_returns_float_result() {
     let value = serde_json::json!({"kind": "float64", "bits": "3ff0000000000000"});
-    assert_run_value("id_flt", value.clone(), value);
+    assert_run_value("gainOf", sample(), value);
 }
 
 /// FSL FR-650-AC-1: a String result keeps its text.
@@ -1574,7 +1554,7 @@ fn run_returns_float_result() {
 #[test]
 fn run_returns_string_result() {
     let value = serde_json::json!({"kind": "string", "text": "abc"});
-    assert_run_value("id_str", value.clone(), value);
+    assert_run_value("codeOf", sample(), value);
 }
 
 /// FSL FR-650-AC-1: a Text result is normalized to NFC.
@@ -1582,8 +1562,8 @@ fn run_returns_string_result() {
 #[test]
 fn run_returns_text_result() {
     assert_run_value(
-        "id_txt",
-        serde_json::json!({"kind": "text", "text": "e\u{0301}"}),
+        "labelOf",
+        sample(),
         serde_json::json!({"kind": "text", "text": "\u{00e9}"}),
     );
 }
@@ -1592,27 +1572,27 @@ fn run_returns_text_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_enum_result() {
-    let value = serde_json::json!({"variant": {"type": "Color", "case": "Green"}});
-    assert_run_value("id_enum", value.clone(), value);
+    let value = serde_json::json!({"variant": {"type": "Light", "case": "Green"}});
+    assert_run_value("lightOf", sample(), value);
 }
 
 /// FSL FR-650-AC-1: a record result carries every field.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_record_result() {
-    let value = serde_json::json!({"record": {"type": "P", "fields": {
+    let value = serde_json::json!({"record": {"type": "Point", "fields": {
         "x": {"integer": "1"}, "y": {"integer": "2"}}}});
-    assert_run_value("id_rec", value.clone(), value);
+    assert_run_value("pointOf", sample(), value);
 }
 
 /// FSL FR-650-AC-1: a tuple result carries each ordered component.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_tuple_result() {
-    let value = serde_json::json!({"tuple": {"type": "Tp", "components": [
+    let value = serde_json::json!({"tuple": {"type": "Pair", "components": [
         {"integer": "2"}, {"integer": "1"}
     ]}});
-    assert_run_value("id_tup", value.clone(), value);
+    assert_run_value("pairOf", sample(), value);
 }
 
 /// FSL FR-650-AC-1: a Sequence result keeps its order and repeats.
@@ -1621,16 +1601,16 @@ fn run_returns_tuple_result() {
 fn run_returns_sequence_result() {
     let value =
         serde_json::json!({"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]});
-    assert_run_value("id_seq", value.clone(), value);
+    assert_run_value("readingsOf", sample(), value);
 }
 
-/// FSL FR-650-AC-1: Set results use canonical order and remove duplicates.
+/// FSL FR-650-AC-1: Set results use canonical order.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_set_result() {
     assert_run_value(
-        "id_set",
-        serde_json::json!({"set": [{"integer": "3"}, {"integer": "1"}]}),
+        "channelsOf",
+        sample(),
         serde_json::json!({"set": [{"integer": "1"}, {"integer": "3"}]}),
     );
 }
@@ -1640,9 +1620,9 @@ fn run_returns_set_result() {
 #[test]
 fn run_returns_option_result() {
     let present = serde_json::json!({"present": {"integer": "3"}});
-    assert_run_value("id_opt", present.clone(), present);
+    assert_run_value("firstOf", sample(), present);
     let absent = serde_json::json!({"absent": {}});
-    assert_run_value("id_opt", absent.clone(), absent);
+    assert_run_value("lastOf", sample(), absent);
 }
 
 /// A unit whose `give` returns a collection over a population: FSL FR-650's
