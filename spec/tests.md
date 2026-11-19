@@ -59,7 +59,7 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-002 | FR-002-AC-11 | TC-009 | ✅ `fsl-cli/tests/cli_contract.rs::version_command_reports_the_fsl_cli_package_version` checks `--version` against the `fsl-cli` Cargo package version. |
 | FR-002 | FR-002-AC-12 | TC-009 | ✅ `fsl-cli/tests/cli_contract.rs::built_binary_version_agrees_with_cargo_package_version` checks the built binary with `ix_cli_kit::version::Agreement::command`. |
 | FR-002 | FR-002-AC-13, FR-002-AC-18 | TC-040 | 🚧 Planned (QSL-1973): default text output through FSL FR-865 `render_outcome`, equal exit status in both modes, missing-file and `--format bogus` refusals. The superseded `unavailable_text_renderers_return_typed_unsupported_refusals` test is removed with the code change. |
-| FR-002 | FR-002-AC-20, FR-002-AC-21 | TC-046 | 🚧 Planned (QSL-2348): `fsl run` routes TL lowering and package requests through FSL's executors and applies `--limit` to the lowering's clause request. |
+| FR-002 | FR-002-AC-20..FR-002-AC-22 | TC-046 | 🚧 Planned (QSL-2348, QSL-2234): `fsl run` routes TL lowering and package requests through FSL's executors, applies `--limit` to the lowering's clause request, and registers the reference hybrid provider when it settles requirement items. |
 | FR-003 | FR-003-AC-1, FR-003-AC-3 | TC-010 | ✅ `src/limits.rs` applies each exposed value through FSL bounds and `CallerLimits::set_bound`; `src/execute.rs::caller_source_limit_preserves_configured_bound_and_field` checks typed metadata through the driver wrapper; `binary_process.rs` checks incomplete stage-limit status and completion after raising the bound. |
 | FR-003 | FR-003-AC-2, FR-003-AC-7, FR-003-AC-8 | TC-010 | ✅ `src/limits.rs` asserts FSL parser refusal causes; `binary_process.rs::fsl_rejects_unknown_malformed_and_duplicate_limits_before_source_read` checks operands and pre-stage refusal. |
 | FR-003 | FR-003-AC-4 | TC-010 | ✅ Inspection: `src/limits.rs` uses FSL `parse_operands`, selected-operation `bounds()`, and `CallerLimits::set_bound`; the driver grammar/table is removed. |
@@ -142,9 +142,9 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | FR-026 | FR-026-AC-1..FR-026-AC-4 | TC-042 | 🚧 `fsl-cli/tests/replay_cli.rs` stubs, ignored until the text result lines land (QSL-2292). |
 | TC-045 | Write a TLA+ or Lean export with fsl export | Integration | FR-027-AC-1..FR-027-AC-5 | 🚧 See the FR-027 row. |
 | FR-027 | FR-027-AC-1..FR-027-AC-5 | TC-045 | 🚧 `fsl-cli/tests/export_cli.rs` stubs, ignored until `fsl export` and FSL's export entry land (QSL-2359). |
-| TC-046 | Run TL lowering and package requests with the fsl binary | Integration | FR-002-AC-20, FR-002-AC-21 | 🚧 See the FR-002-AC-20 row. |
+| TC-046 | Run TL lowering and package requests with the fsl binary | Integration | FR-002-AC-20..FR-002-AC-22 | 🚧 See the FR-002-AC-20 row. |
 | TC-047 | Decide hybrid claims with FSL's reference provider through fsl analyze | Integration | FR-022-AC-11 | 🚧 See the FR-022-AC-11 row. |
-| FR-022 | FR-022-AC-11 | TC-047 | 🚧 Planned (QSL-2234): `fsl analyze` registers FSL's reference hybrid provider beside the configured providers. |
+| FR-022 | FR-022-AC-11 | TC-047 | 🚧 Planned (QSL-2234): `fsl analyze` registers FSL's reference hybrid provider beside the configured providers. The process-provider half (TC-047 step 4) also depends on FSL's `Engine::hybrid_process` (QSL-2532). |
 
 ## Test Case Summary
 

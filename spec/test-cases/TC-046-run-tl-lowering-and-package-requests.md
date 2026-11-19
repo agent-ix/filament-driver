@@ -13,7 +13,8 @@ relationships:
 Verify that `fsl run` routes a `tl_lowering` request (FSL FR-931) and a
 package-selected request (FSL FR-1039) through FSL's executors, writes the
 document FSL's in-process `run` writes, and applies `--limit` to the lowering.
-Scope: FR-002-AC-20, FR-002-AC-21.
+Also verify that a run settling requirement items registers FSL's reference
+hybrid provider. Scope: FR-002-AC-20, FR-002-AC-21, FR-002-AC-22.
 
 ## Test Procedure
 
@@ -28,6 +29,12 @@ Scope: FR-002-AC-20, FR-002-AC-21.
    selecting it as `package` `{file}` with the `call` `half`; run
    `fsl run P --format json` and compare with FSL's `run(P)`.
 6. Add `integer_division` to `P` and run it again.
+7. Write FSL FR-960-AC-1's request `Q` calling `sq` with `x = 3` and
+   `call.requirements` `{}`; run `fsl run Q --format json` and compare with
+   `run_with_providers_and_limits_and_overrides(Q)` given the providers
+   `[Engine::hybrid_reference()]` and default limits.
+8. Run `Q` with a `--provider-config` starting a fixture provider whose
+   `hello` names the backend `fsl-hybrid-reference`.
 
 Test: `fsl-cli/tests/cli_contract.rs` `run_routes_tl_lowering_and_package_requests`.
 
@@ -42,3 +49,7 @@ Test: `fsl-cli/tests/cli_contract.rs` `run_routes_tl_lowering_and_package_reques
 - Step 4: byte-equal to step 2, exit 0.
 - Step 5: the call completes with `-4`, exit 0, byte-equal to FSL's document.
 - Step 6: `invalid-request` naming `integer_division`, exit 20.
+- Step 7: byte-equal to FSL's document, value `{"integer": "16"}`, three
+  settled requirement entries, exit 0.
+- Step 8: `invalid-request` naming `providers`, exit 20. Fails today: the
+  driver registers no reference provider, so the fixture is admitted.

@@ -23,11 +23,15 @@ Scope: FR-022-AC-11.
    `--provider-config`.
 3. Run `fsl analyze too-slow.analyze.json --format json` with no
    `--provider-config`.
-4. Write a `--provider-config` starting the fixture process provider used by
-   FR-022-AC-9, with a `hello` advertising (`value-validity`, `unbounded`) and
-   the `hybrid-dynamics` form, answering `proved`. Run three variants of the
-   slow-enough request with it: the item naming the fixture's backend, the
-   item naming `fsl-hybrid-reference`, and the item naming no backend.
+4. Depends on FSL's `Engine::hybrid_process` (FSL FR-750; tracked by QSL-2532);
+   ignored until it lands. Write a `--provider-config` starting a fixture
+   process provider whose `hello` advertises (`temporal-satisfaction`,
+   `unbounded`) with `dynamics` `["hybrid"]` and that answers `delta-complete`
+   `unsat` covering horizon 10. Run three variants of the slow-enough request
+   with it: the item naming the fixture's backend, the item naming
+   `fsl-hybrid-reference`, and the item naming no backend. Then run the
+   request with a fixture whose `hello` advertises only
+   (`temporal-satisfaction`, `bounded`).
 
 Test: `fsl-cli/tests/cli_contract.rs`
 `analyze_decides_hybrid_claims_with_the_reference_provider`.
@@ -41,8 +45,10 @@ Test: `fsl-cli/tests/cli_contract.rs`
   exit 21.
 - Step 3: one item `refuted`, backend `fsl-hybrid-reference`, category
   `violation`, exit 10.
-- Step 4: the fixture-named item is sent to the provider as one FR-331 request
-  and settles `proved`, certification `trusted`, with no `ambiguous-backend`;
+- Step 4: the fixture-named item is sent to the provider as one FR-447 request
+  and settles `proved`, `bounded-solver`, `uncertified`, naming the fixture
+  backend, exit 0, with no `ambiguous-backend`;
   the reference-named item settles `proved`, `certified`, exit 0; the unnamed
   item settles `invalid-request`, `invalid_capability`/`ambiguous-backend`,
-  naming both backends, exit 20.
+  naming both backends, exit 20; the `bounded`-only fixture refuses with exit
+  20 before any item runs.

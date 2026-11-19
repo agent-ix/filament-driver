@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-1039
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-960
+    type: depends_on
   - target: ix://agent-ix/filament-specification/FR-718
     type: depends_on
   - target: ix://agent-ix/filament-specification/FR-301
@@ -173,6 +175,17 @@ the fallback when that function returns reserved value `5`.
   every other prepared run (FR-003).
 - For a package run, the driver SHALL call `execute_package_run` on the
   prepared package and render its result and `RunError` the same way.
+- When `fsl run` settles requirement items, the driver SHALL run the request
+  through `fsl_command::command::run_with_providers_and_limits_and_overrides`
+  with `Engine::hybrid_reference()` followed by the configured providers.
+  `fsl run` settles requirement items when it is given `--provider-config` or
+  `--provider-limit` (FR-006), or when the request's `call` carries
+  `requirements` (FSL FR-960).
+- When `fsl run` settles requirement items, the driver SHALL negotiate over
+  `Engines::fsl_with_reference_hybrid()` plus the configured providers, as
+  FR-022 does for `fsl analyze`. A requirement item over hybrid
+  dynamics is then decided by the same providers whichever verb carries it
+  (FSL FR-960 routes run items by analyze's rule).
 - When the CLI resolves configuration values, it SHALL use ix-cli-kit's
   `config` module.
 - When invoked with no arguments or with `--help`, `-h` or `help` as its sole
@@ -222,6 +235,7 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-19 | `fsl check P --format json` over a source at path `P` that does not parse writes the `check` refusal whose every diagnostic locus names `{"authority": "filament", "identity": P}`, with `P` exactly as given, and that contains neither `fsl-command` nor `check-source`; its stdout is byte-equal to the canonical encoding of the document FSL's `parse` gives for the same bytes under that identity, plus a newline, with that document's exit status, and `compile` and `run` over requests naming the same source refuse equally to their library operations. | Test (TC-043) |
 | FR-002-AC-20 | `fsl run R --format json`, `R` FSL FR-931-AC-1's request `{"clause": "Low"}` over the ConfigVersion model, writes the `tl_lowering` record with `disposition` `supported`, `correspondence` `mltl.closed-trace/v1` and `formula` `G[0,3] p0`, exit 0, and its stdout is byte-equal to the canonical encoding of the document FSL's `fsl_command::command::run` returns for `R`, plus a newline; it never writes the "not run by the driver" input refusal. `fsl run R --limit s1.nodes=1 --format json` writes FSL's typed limit outcome naming `s1.nodes` with configured value 1, category `incomplete`, no lowering record, exit 22; `--limit s1.nodes=50000` gives the unlimited run's bytes, exit 0. | Test (TC-046) |
 | FR-002-AC-21 | `fsl run P --format json`, `P` FSL FR-1039-AC-1's request selecting the `half` unit's checked package as `package` `{file}` with the `call` `half`, run with the source file removed, completes with `-4`, exit 0, byte-equal to FSL's `run` for `P` plus a newline; the same request with `integer_division` gives FSL's `invalid-request` refusal naming `integer_division`, exit 20. | Test (TC-046) |
+| FR-002-AC-22 | `fsl run Q --format json`, `Q` FSL FR-960-AC-1's request calling `sq` with `x = 3` and `call.requirements` `{}`, with no `--provider-config`, writes stdout byte-equal to the canonical encoding of the document `run_with_providers_and_limits_and_overrides` returns for `Q` with the providers `[Engine::hybrid_reference()]` and default limits, plus a newline: value `{"integer": "16"}` and three settled requirement entries, exit 0. With `--provider-config` starting a fixture provider whose admitted backend is `fsl-hybrid-reference`, the run refuses `invalid-request` naming `providers`, exit 20, because that backend is already registered. | Test (TC-046) |
 
 ## Dependencies
 
@@ -244,7 +258,7 @@ the fallback when that function returns reserved value `5`.
 - FSL FR-931 defines the `tl_lowering` request, its record and
   `PreparedLowering::clause_request_mut`; FSL FR-1039 defines the package run.
   [TC-046](../test-cases/TC-046-run-tl-lowering-and-package-requests.md)
-  verifies AC-20 and AC-21.
+  verifies AC-20, AC-21 and AC-22; FSL FR-960 defines `call.requirements`.
 
 AC-14 adopts FSL FR-287-AC-8's quiet behavior only when a primary stdout write
 or flush actually reports `BrokenPipe`. A text-mode write of the rendered
