@@ -13,7 +13,7 @@ record Sample {
     code: String; label: Label; light: Light;
     point: Point; pair: Pair;
     readings: Sequence<Channel>[0, 3]; channels: Set<Channel>[0, 3];
-    first: Option<Channel>; last: Option<Channel>;
+    opening: Option<Channel>; last: Option<Channel>;
 }
 
 function negate using v(input: Boolean): Boolean pure { not input }
@@ -28,5 +28,5 @@ function pointOf using v(input: Sample): Point pure { input.point }
 function pairOf using v(input: Sample): Pair pure { input.pair }
 function readingsOf using v(input: Sample): Sequence<Channel>[0, 3] pure { input.readings }
 function channelsOf using v(input: Sample): Set<Channel>[0, 3] pure { input.channels }
-function firstOf using v(input: Sample): Option<Channel> pure { input.first }
+function firstOf using v(input: Sample): Option<Channel> pure { input.opening }
 function lastOf using v(input: Sample): Option<Channel> pure { input.last }

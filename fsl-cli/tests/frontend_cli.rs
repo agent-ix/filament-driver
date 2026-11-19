@@ -1484,7 +1484,7 @@ fn sample() -> serde_json::Value {
         "pair": {"tuple": {"type": "Pair", "components": [{"integer": "2"}, {"integer": "1"}]}},
         "readings": {"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]},
         "channels": {"set": [{"integer": "3"}, {"integer": "1"}]},
-        "first": {"present": {"integer": "3"}},
+        "opening": {"present": {"integer": "3"}},
         "last": {"absent": {}}
     }}})
 }
