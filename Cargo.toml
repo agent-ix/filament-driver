@@ -39,7 +39,7 @@ path = "src/lib.rs"
 # as codegen; Cargo.lock records the selected commits.
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
-filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
+filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", rev = "3fd65564216ad917db391caf03ead4cd90316d39" }
 fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "aab16cf821f46727006cc6407e3d6c25deee9f14" }
 fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "aab16cf821f46727006cc6407e3d6c25deee9f14" }
 fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "aab16cf821f46727006cc6407e3d6c25deee9f14" }
@@ -47,14 +47,14 @@ fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev =
 fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "aab16cf821f46727006cc6407e3d6c25deee9f14" }
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "aab16cf821f46727006cc6407e3d6c25deee9f14" }
 filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "182e65b32038dc776eaaa5dbf375103fefe80486" }
-filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.5" }
+filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", rev = "88a53d17f2f06a5e0a1e3a81380c3b7896608387" }
 filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", tag = "v0.1.1", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
-filament-observation = { git = "https://github.com/agent-ix/filament-observation", tag = "v0.1.1" }
+filament-observation = { git = "https://github.com/agent-ix/filament-observation", rev = "d9bd5f0162adc077094fe0b7e9872fc4c8c8a6e2" }
 # FSpec FR-331's linked manifest snapshot is canonicalized at registry admission.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "v0.3.1" }
 # FSL's caller-owned cancellation handle is a public driver API type.
-filament-exact = { git = "https://github.com/agent-ix/filament-exact", tag = "v0.3.0" }
+filament-exact = { git = "https://github.com/agent-ix/filament-exact", rev = "b25ff96fee8ab80418e7f7aaf8e9441c60745ab1" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "=2.0.20"
@@ -63,7 +63,7 @@ thiserror = "=2.0.20"
 # FR-020-AC-14: `PathGuard::new` and `RequirementRecord::with_path_condition`.
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "aab16cf821f46727006cc6407e3d6c25deee9f14", features = ["test-support"] }
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
-filament-checked = { git = "https://github.com/agent-ix/filament-eval", tag = "v0.1.6" }
+filament-checked = { git = "https://github.com/agent-ix/filament-eval", rev = "ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
 
 
