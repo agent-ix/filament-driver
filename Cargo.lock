@@ -440,7 +440,7 @@ name = "filament-cache"
 version = "0.1.0"
 dependencies = [
  "filament-driver",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-foundation",
  "libc",
  "quire-canonical",
  "serde",
@@ -477,16 +477,16 @@ dependencies = [
 [[package]]
 name = "filament-contract-codegen"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-contract-codegen?rev=ed0b05ee9cdd025fe74f3120b64725a02b529a7e#ed0b05ee9cdd025fe74f3120b64725a02b529a7e"
+source = "git+https://github.com/agent-ix/filament-contract-codegen?rev=182e65b32038dc776eaaa5dbf375103fefe80486#182e65b32038dc776eaaa5dbf375103fefe80486"
 dependencies = [
  "filament-contract-ir",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?tag=v0.1.5)",
+ "filament-contract-model",
  "filament-contract-runtime",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?tag=v0.1.6)",
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?tag=v0.3.0)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-replay 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
+ "filament-eval",
+ "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
+ "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
+ "fsl-package",
+ "fsl-replay",
  "ix-trace-rs",
  "libc",
  "num-bigint",
@@ -503,39 +503,13 @@ dependencies = [
 [[package]]
 name = "filament-contract-ir"
 version = "0.1.5"
-source = "git+https://github.com/agent-ix/filament-contract-ir?tag=v0.1.5#71914a075a6c9b9484b6d93596246c450f2d4a68"
+source = "git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387#88a53d17f2f06a5e0a1e3a81380c3b7896608387"
 dependencies = [
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?tag=v0.1.5)",
+ "filament-contract-model",
  "ix-trace-rs",
  "serde",
  "serde_json",
  "thiserror",
-]
-
-[[package]]
-name = "filament-contract-model"
-version = "0.1.2"
-source = "git+https://github.com/agent-ix/filament-contract-ir?tag=v0.1.5#71914a075a6c9b9484b6d93596246c450f2d4a68"
-dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?tag=v0.3.0)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5)",
- "filament-verification-contracts",
- "filament-walk",
- "ix-trace-rs",
- "jsonschema 0.17.1",
- "num-bigint",
- "num-integer",
- "num-traits",
- "quire-canonical",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "serde_stacker",
- "sha2",
- "stacker",
- "thiserror",
- "unicode-ident",
- "unicode-normalization",
 ]
 
 [[package]]
@@ -579,31 +553,21 @@ version = "0.1.4"
 dependencies = [
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?tag=v0.1.6)",
  "filament-contract-codegen",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?tag=v0.1.5)",
+ "filament-contract-model",
  "filament-contract-runtime",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?tag=v0.3.0)",
  "filament-observation 0.1.1 (git+https://github.com/agent-ix/filament-observation?tag=v0.1.1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5)",
  "fsl-analyze",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-replay 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-route 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-foundation",
+ "fsl-package",
+ "fsl-replay",
+ "fsl-route",
+ "fsl-semantics",
  "ix-trace-rs",
  "quire-canonical",
  "serde",
  "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "filament-eval"
-version = "0.1.6"
-source = "git+https://github.com/agent-ix/filament-eval?tag=v0.1.6#0fae05c379f9100c7c660244692e2eab1a6fcf25"
-dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?tag=v0.3.0)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5)",
  "thiserror",
 ]
 
@@ -797,22 +761,22 @@ dependencies = [
 [[package]]
 name = "fsl-analyze"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "base64 0.22.1",
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
+ "filament-contract-model",
+ "filament-eval",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-observation 0.1.1 (git+https://github.com/agent-ix/filament-observation?rev=d9bd5f0162adc077094fe0b7e9872fc4c8c8a6e2)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-eval 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-replay 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-route 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-eval",
+ "fsl-forms",
+ "fsl-foundation",
+ "fsl-package",
+ "fsl-replay",
+ "fsl-route",
+ "fsl-semantics",
  "ix-trace-rs",
  "num-bigint",
  "num-integer",
@@ -830,20 +794,20 @@ dependencies = [
  "base64 0.23.1",
  "filament-cache",
  "filament-contract-codegen",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?tag=v0.1.5)",
+ "filament-contract-model",
  "filament-driver",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?tag=v0.3.0)",
  "filament-plugin-host",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5)",
  "fsl-analyze",
  "fsl-command",
- "fsl-cst 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-cst",
+ "fsl-foundation",
  "fsl-inspect",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-replay 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-route 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-package",
+ "fsl-replay",
+ "fsl-route",
+ "fsl-semantics",
  "ix-cli-kit",
  "ix-trace-rs",
  "libc",
@@ -860,22 +824,22 @@ dependencies = [
 [[package]]
 name = "fsl-command"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
+ "filament-contract-model",
+ "filament-eval",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
  "fsl-analyze",
- "fsl-cst 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-eval 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-cst",
+ "fsl-eval",
+ "fsl-forms",
+ "fsl-foundation",
  "fsl-inspect",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-replay 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-route 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-package",
+ "fsl-replay",
+ "fsl-route",
+ "fsl-semantics",
  "fsl-source",
  "ix-trace-rs",
  "quire-canonical",
@@ -889,22 +853,10 @@ dependencies = [
 [[package]]
 name = "fsl-cst"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
- "logos",
- "serde_json",
-]
-
-[[package]]
-name = "fsl-cst"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-foundation",
  "ix-trace-rs",
  "logos",
  "serde_json",
@@ -913,38 +865,17 @@ dependencies = [
 [[package]]
 name = "fsl-eval"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
+ "filament-eval",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-observation 0.1.1 (git+https://github.com/agent-ix/filament-observation?rev=d9bd5f0162adc077094fe0b7e9872fc4c8c8a6e2)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
- "quire-canonical",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "fsl-eval"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-observation 0.1.1 (git+https://github.com/agent-ix/filament-observation?rev=d9bd5f0162adc077094fe0b7e9872fc4c8c8a6e2)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-forms",
+ "fsl-foundation",
+ "fsl-package",
+ "fsl-semantics",
  "ix-trace-rs",
  "quire-canonical",
  "serde",
@@ -955,48 +886,20 @@ dependencies = [
 [[package]]
 name = "fsl-forms"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
  "filament-walk",
- "fsl-cst 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
-]
-
-[[package]]
-name = "fsl-forms"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "filament-walk",
- "fsl-cst 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-cst",
+ "fsl-foundation",
  "ix-trace-rs",
 ]
 
 [[package]]
 name = "fsl-foundation"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "hashbrown 0.17.1",
- "ix-trace-rs",
- "quire-canonical",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "fsl-foundation"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
@@ -1011,17 +914,17 @@ dependencies = [
 [[package]]
 name = "fsl-inspect"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
+ "filament-contract-model",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
  "fsl-analyze",
- "fsl-eval 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-replay 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-eval",
+ "fsl-foundation",
+ "fsl-package",
+ "fsl-replay",
+ "fsl-semantics",
  "quire-canonical",
  "serde",
  "serde_json",
@@ -1030,32 +933,14 @@ dependencies = [
 [[package]]
 name = "fsl-package"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
+ "filament-contract-model",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
- "quire-canonical",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "fsl-package"
-version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-foundation",
+ "fsl-semantics",
  "ix-trace-rs",
  "quire-canonical",
  "serde",
@@ -1066,49 +951,21 @@ dependencies = [
 [[package]]
 name = "fsl-replay"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "base64 0.22.1",
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
+ "filament-contract-model",
+ "filament-eval",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-cst 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-eval 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-route 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
- "num-bigint",
- "num-integer",
- "quire-canonical",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "thiserror",
-]
-
-[[package]]
-name = "fsl-replay"
-version = "0.3.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "base64 0.22.1",
- "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
- "filament-eval 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-cst 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-eval 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-package 0.3.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-route 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-cst",
+ "fsl-eval",
+ "fsl-forms",
+ "fsl-foundation",
+ "fsl-package",
+ "fsl-route",
+ "fsl-semantics",
  "fsl-source",
  "ix-trace-rs",
  "num-bigint",
@@ -1123,27 +980,13 @@ dependencies = [
 [[package]]
 name = "fsl-route"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
- "thiserror",
-]
-
-[[package]]
-name = "fsl-route"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-semantics 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-foundation",
+ "fsl-semantics",
  "ix-trace-rs",
  "thiserror",
 ]
@@ -1151,41 +994,17 @@ dependencies = [
 [[package]]
 name = "fsl-semantics"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
  "agent-ix-extraction-frontend",
  "agent-ix-semantic-ir",
  "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
+ "filament-contract-model",
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
  "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
  "filament-walk",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38)",
- "ix-trace-rs",
- "quire-canonical",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "unicode-ident",
- "unicode-normalization",
-]
-
-[[package]]
-name = "fsl-semantics"
-version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
-dependencies = [
- "agent-ix-extraction-frontend",
- "agent-ix-semantic-ir",
- "filament-checked 0.1.6 (git+https://github.com/agent-ix/filament-eval?rev=ee1d9a3c0bc8f51e96246e5a33c69ff9a2db8db2)",
- "filament-contract-model 0.1.2 (git+https://github.com/agent-ix/filament-contract-ir?rev=88a53d17f2f06a5e0a1e3a81380c3b7896608387)",
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
- "filament-semantic-value 0.1.5 (git+https://github.com/agent-ix/filament-semantic-value?rev=3fd65564216ad917db391caf03ead4cd90316d39)",
- "filament-walk",
- "fsl-forms 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-forms",
+ "fsl-foundation",
  "ix-trace-rs",
  "quire-canonical",
  "serde",
@@ -1199,9 +1018,9 @@ dependencies = [
 [[package]]
 name = "fsl-source"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b#cde6613325543ff20f28df02118e4a3ccac70f5b"
+source = "git+https://github.com/agent-ix/filament-spec-language?rev=aab16cf821f46727006cc6407e3d6c25deee9f14#aab16cf821f46727006cc6407e3d6c25deee9f14"
 dependencies = [
- "fsl-foundation 0.1.0 (git+https://github.com/agent-ix/filament-spec-language?rev=cde6613325543ff20f28df02118e4a3ccac70f5b)",
+ "fsl-foundation",
  "ix-trace-rs",
  "quire-rs 0.62.3",
  "serde",
