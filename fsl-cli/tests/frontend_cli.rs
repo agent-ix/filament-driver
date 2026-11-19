@@ -751,6 +751,28 @@ fn one_item(claim: &str) -> serde_json::Value {
     serde_json::json!([{ "claim": claim }])
 }
 
+fn schedulability_request(name: &str, source: &str, claim: &str) -> AnalyzeRequest {
+    AnalyzeRequest::new(
+        name,
+        one_item(claim),
+        serde_json::json!({"models": [], "documents": []}),
+    )
+    .with_file(
+        "/request/program/source/file",
+        "schedulability.fsl",
+        source.as_bytes(),
+    )
+}
+
+fn schedulability_source(task_set: &str, claims: &str) -> String {
+    format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile t = \"filament.temporal.complete/v1\";\n\
+         dimension Time;\nunit ms : Time = rational(1, 1);\n\
+         {task_set}\n{claims}"
+    )
+}
+
 /// FR-022-AC-1, FSL FR-621-AC-1: a holding item prints its `proved` record
 /// and exits 0.
 #[trace("TC-036", "FR-022-AC-1")]
@@ -768,6 +790,95 @@ fn analyze_holds_prints_result_and_exit_zero() {
     assert_eq!(item["record"]["result"], "proved", "{item}");
     assert_eq!(item["record"]["basis"]["type"], "exhaustive", "{item}");
     assert!(item.get("counterexample").is_none(), "{item}");
+}
+
+/// FSL FR-633-AC-3 and FR-247-AC-1/2: EDF proves the unit-utilization Ctl
+/// oracle and refutes its WCET-6 variant through the process boundary.
+#[trace("TC-1593", "FR-633-AC-3", "FR-247-AC-1", "FR-247-AC-2")]
+#[test]
+fn analyze_edf_qpa_holds_and_refutes_through_cli() {
+    let task_set = |third| {
+        format!(
+            "taskset Ctl {{\n\
+             task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n\
+             task b periodic 6 ms deadline 6 ms wcet 2 ms priority 2 lo;\n\
+             task c periodic 12 ms deadline 12 ms wcet {third} ms priority 3 lo;\
+             }}"
+        )
+    };
+    let claim = "schedulable CtlEdf on Ctl under edf;";
+    let holds = schedulability_request(
+        "edf-holds",
+        &schedulability_source(&task_set(5), claim),
+        "CtlEdf",
+    );
+    let (document, exit) = holds.json();
+    assert_eq!(exit, Some(0), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(item["record"]["basis"]["analysis"], "edf", "{document}");
+    assert_eq!(item["record"]["certification"], "certified", "{document}");
+
+    let refuted = schedulability_request(
+        "edf-refuted",
+        &schedulability_source(&task_set(6), claim),
+        "CtlEdf",
+    );
+    let (document, exit) = refuted.json();
+    assert_eq!(exit, Some(10), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{document}");
+    let miss = &item["counterexample"]["counterexample"];
+    assert_eq!(miss["type"], "schedulability-miss", "{document}");
+    assert_eq!(miss["miss"]["kind"], "utilization", "{document}");
+    assert_eq!(miss["miss"]["utilization"]["numerator"], "13", "{document}");
+    assert_eq!(
+        miss["miss"]["utilization"]["denominator"], "12",
+        "{document}"
+    );
+}
+
+/// FSL FR-247-AC-3: AMC-rtb returns its certified Mc result, while a low-mode
+/// response miss is refuted with the task and response evidence on the wire.
+#[trace("TC-1593", "FR-247-AC-3")]
+#[test]
+fn analyze_amc_rtb_holds_and_refutes_through_cli() {
+    let task_set = |low, high| {
+        format!(
+            "taskset Mc {{\n\
+             task a periodic 4 ms deadline 4 ms wcet 1 ms priority 1 lo;\n\
+             task b periodic 6 ms deadline 6 ms wcet {low} ms priority 2 hi wcet_hi {high} ms;\
+             }}"
+        )
+    };
+    let claim = "schedulable McAmc on Mc under amc;";
+    let holds = schedulability_request(
+        "amc-holds",
+        &schedulability_source(&task_set(1, 3), claim),
+        "McAmc",
+    );
+    let (document, exit) = holds.json();
+    assert_eq!(exit, Some(0), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(item["record"]["basis"]["analysis"], "amc-rtb", "{document}");
+    assert_eq!(item["record"]["certification"], "certified", "{document}");
+
+    let refuted = schedulability_request(
+        "amc-refuted",
+        &schedulability_source(&task_set(5, 5), claim),
+        "McAmc",
+    );
+    let (document, exit) = refuted.json();
+    assert_eq!(exit, Some(10), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{document}");
+    let miss = &item["counterexample"]["counterexample"];
+    assert_eq!(miss["type"], "schedulability-miss", "{document}");
+    assert_eq!(miss["analysis"], "amc-rtb", "{document}");
+    assert_eq!(miss["miss"]["task"], "b", "{document}");
+    assert_eq!(miss["miss"]["mode"], "lo", "{document}");
+    assert_eq!(miss["miss"]["response"]["numerator"], "7", "{document}");
 }
 
 /// FR-022-AC-2, FSL FR-621-AC-2 and AC-8: a refuted item carries a
