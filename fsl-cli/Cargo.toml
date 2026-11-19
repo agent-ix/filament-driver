@@ -29,15 +29,15 @@ tc018-test-adapter = []
 [dependencies]
 filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
 base64 = "=0.23.1"
-fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38", features = ["quire-extraction"] }
-fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-cst = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38", features = ["quire-extraction"] }
-fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
+fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
+fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b", features = ["quire-extraction"] }
+fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
+fsl-cst = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
+fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
+fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b", features = ["quire-extraction"] }
+fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
 ix-cli-kit = { git = "https://github.com/agent-ix/ix-cli-kit", branch = "main" }
 # IR-609 composes the user-facing CLI with its separately bounded cache.
 filament-cache = { path = "../filament-cache" }
@@ -59,7 +59,7 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" 
 libc = "=0.2.190"
 filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "ed0b05ee9cdd025fe74f3120b64725a02b529a7e" }
 filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.5" }
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cde6613325543ff20f28df02118e4a3ccac70f5b" }
 regex = "=1.13.1"
 
 [lints]

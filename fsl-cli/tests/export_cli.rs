@@ -80,7 +80,6 @@ fn mentions(output: &Output, text: &str) {
 #[trace("TC-045", "FR-027-AC-1")]
 #[trace("FSL-TC-2995", "FSL-FR-287-AC-14")]
 #[trace("FSpec-TC-2021", "FSpec-FR-301-AC-7")]
-#[ignore = "QSL-2359: fsl export and its --output handoff are not implemented yet"]
 fn export_output_writes_the_target_text_fsl_assembles() {
     let directory = folder();
     request(directory.path(), None);
@@ -119,7 +118,6 @@ fn export_output_writes_the_target_text_fsl_assembles() {
 /// `--output` are each refused, exit 20, with no file written or changed.
 #[test]
 #[trace("TC-045", "FR-027-AC-2")]
-#[ignore = "QSL-2359: fsl export refusals are not implemented yet"]
 fn export_output_never_overwrites_and_has_one_writer() {
     let directory = folder();
     request(directory.path(), None);
@@ -172,7 +170,6 @@ fn export_output_never_overwrites_and_has_one_writer() {
 /// FR-027-AC-3: `--limit export.output_bytes` bounds the target text.
 #[test]
 #[trace("TC-045", "FR-027-AC-3")]
-#[ignore = "QSL-2359: fsl export --limit is not implemented yet"]
 fn export_limit_bounds_the_target_text() {
     let directory = folder();
     request(directory.path(), None);
@@ -209,7 +206,6 @@ fn export_limit_bounds_the_target_text() {
 /// FR-027-AC-4: the text default is FSL FR-865's four export lines.
 #[test]
 #[trace("TC-045", "FR-027-AC-4")]
-#[ignore = "QSL-2359: fsl export text mode is not implemented yet"]
 fn export_text_names_the_target_size_and_path() {
     let directory = folder();
     request(directory.path(), None);
@@ -239,7 +235,6 @@ fn export_text_names_the_target_size_and_path() {
 #[test]
 #[trace("TC-045", "FR-027-AC-5")]
 #[trace("FSpec-TC-2020", "FSpec-FR-817-AC-7")]
-#[ignore = "QSL-2359: fsl export --evidence is not implemented yet"]
 fn export_evidence_routes_to_the_intake_and_refuses_other_arguments() {
     let directory = folder();
     request(directory.path(), None);

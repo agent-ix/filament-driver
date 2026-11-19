@@ -224,6 +224,7 @@ impl Verb {
             Self::Monitor => {
                 "Executes a native-monitor/1 request over a record stream; --format json or text."
             }
+            Self::Export => "Executes an export request; --output names its target file.",
             Self::Replay => "Executes a native-replay/1 request; --format json or text.",
             Self::Prove | Self::Generate | Self::Inspect | Self::Render => {
                 "Recognized; this build does not route it and returns an unsupported_operation result."
@@ -243,6 +244,89 @@ enum Invocation {
     },
 }
 
+/// The operands of `fsl export` (FSpec FR-817).
+struct ExportOptions {
+    output: Option<PathBuf>,
+    request: Option<PathBuf>,
+    limits: LimitOverrides,
+}
+
+impl ExportOptions {
+    const USAGE: &str = "usage: fsl export <request-file> [--output <file>] [--limit name=value] [--format json|text] | fsl export --evidence <request-file> [--format json|text]";
+
+    fn parse(arguments: &[OsString]) -> Result<Self, String> {
+        let mut output = None;
+        let mut evidence = None;
+        let mut limit_operands = Vec::new();
+        let mut positionals = Vec::new();
+        let mut index = 0;
+        while index < arguments.len() {
+            if arguments[index] == "--format" {
+                index += 2;
+                continue;
+            }
+            if arguments[index] == "--output" {
+                if output.is_some() {
+                    return Err("--output may be supplied only once".to_owned());
+                }
+                let value = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--output requires a path".to_owned())?;
+                output = Some(PathBuf::from(value));
+                index += 2;
+                continue;
+            }
+            if arguments[index] == "--evidence" {
+                if evidence.is_some() {
+                    return Err("--evidence may be supplied only once".to_owned());
+                }
+                let value = arguments
+                    .get(index + 1)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| "--evidence requires a request file".to_owned())?;
+                evidence = Some(PathBuf::from(value));
+                index += 2;
+                continue;
+            }
+            if arguments[index] == "--limit" {
+                let value = arguments
+                    .get(index + 1)
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
+                limit_operands.push(value.to_owned());
+                index += 2;
+                continue;
+            }
+            if let Some(option) = arguments[index]
+                .to_str()
+                .filter(|value| value.starts_with('-'))
+            {
+                return Err(format!("unknown export option `{option}`"));
+            }
+            positionals.push(&arguments[index]);
+            index += 1;
+        }
+        let request = match (positionals.as_slice(), evidence.as_ref()) {
+            ([request], None) => Some(PathBuf::from(*request)),
+            ([], Some(_)) => None,
+            ([], None) => return Err(Self::USAGE.to_owned()),
+            (_, Some(_)) => {
+                return Err("--evidence cannot be combined with a request file".to_owned());
+            }
+        };
+        if evidence.is_some() && output.is_some() {
+            return Err("--evidence cannot be combined with --output".to_owned());
+        }
+        let request = request.or_else(|| evidence.clone());
+        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
+        Ok(Self {
+            output,
+            request,
+            limits,
+        })
+    }
+}
 /// Parse the root command surface defined by FSL ADR-029.
 fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let Some(command) = arguments.first() else {
@@ -1132,6 +1216,128 @@ fn run(options: RunOptions) -> CommandResult {
     }
 }
 
+/// Run FSL's checked-package exporter, emit its outcome, and write target
+/// text only after the request assembled successfully.
+fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
+    let mut limits = SpineLimits::default();
+    if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "export") {
+        return CommandResult::input_refusal(Operation::Export, error);
+    }
+    let overrides = command::RequestOverrides {
+        output: options.output.as_deref(),
+        limits: Some(&limits),
+        ..command::RequestOverrides::default()
+    };
+    let Some(request_path) = options.request.as_deref() else {
+        return CommandResult::input_refusal(Operation::Export, ExportOptions::USAGE);
+    };
+    let runner = match command::run_with_overrides(request_path, &overrides, &DriverNegotiation) {
+        Ok(result) => result,
+        Err(error) if matches!(error.cause, command::RunCause::OutputGivenTwice) => {
+            return CommandResult::input_refusal(
+                Operation::Export,
+                "the request's export.output cannot be combined with --output",
+            );
+        }
+        Err(error) => {
+            return CommandResult::document(error.outcome_document(Operation::Export));
+        }
+    };
+    let Some(document) = runner.outcome else {
+        return CommandResult::failure(
+            Category::InternalFailure,
+            "FSL returned an export result without its outcome document",
+        );
+    };
+    let text_output = (format == OutputFormat::Text).then(|| export_text(&document));
+    match text_output {
+        Some(Ok(text_output)) => CommandResult::formatted(document, Some(text_output)),
+        Some(Err(error)) => CommandResult::failure(Category::InternalFailure, error),
+        None => CommandResult::document(document),
+    }
+}
+
+/// Render FSL's export outcome in the four-line text form required by FR-865.
+fn export_text(document: &OutcomeDocument) -> Result<String, String> {
+    let value = serde_json::to_value(document).map_err(|error| error.to_string())?;
+    let export = value
+        .pointer("/result/export/export")
+        .or_else(|| value.pointer("/result/export"))
+        .ok_or_else(|| "FSL's export outcome has no export result".to_owned())?;
+    let category = value
+        .get("category")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "FSL's export outcome has no category".to_owned())?;
+    let stage = value
+        .get("last_stage")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "FSL's export outcome has no last_stage".to_owned())?;
+    let target_family = export
+        .get("target_family")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "FSL's export outcome has no target_family".to_owned())?;
+    let profile = export
+        .get("mapping_profile_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "FSL's export outcome has no mapping_profile_id".to_owned())?;
+    let output = export.get("output");
+    let bytes_written = output
+        .and_then(|output| output.get("bytes_written"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let output_path = output
+        .and_then(|output| output.get("path"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("none");
+    Ok(format!(
+        "export: {category} (exit {}) at {stage}\ntarget: {target_family} {profile}\nbytes written: {bytes_written}\noutput: {output_path}\n",
+        document.category().exit_code()
+    ))
+}
+
+/// The export request does not settle routed capability items. This
+/// negotiation is present only because the shared run adapter owns that
+/// parameter; if it is called, preserve the candidate result deterministically.
+struct DriverNegotiation;
+
+impl fsl_analyze::analyze::document::Negotiate for DriverNegotiation {
+    fn negotiate(
+        &self,
+        item: &fsl_analyze::analyze::ClaimItem,
+        candidates: &fsl_route::CandidateOutcome,
+    ) -> (
+        fsl_route::routing::Disposition,
+        Option<fsl_analyze::analyze::Diagnostic>,
+    ) {
+        use fsl_analyze::analyze::{Diagnostic, Payload};
+        use fsl_route::routing::Disposition;
+        use fsl_route::NegotiationOutcome;
+
+        match candidates {
+            fsl_route::CandidateOutcome::UnknownBackend(backend) => (
+                Disposition::InvalidRequest,
+                Some(Diagnostic {
+                    code: NegotiationOutcome::UnknownBackend.code(),
+                    payload: Payload::Backend(backend.clone()),
+                }),
+            ),
+            fsl_route::CandidateOutcome::Candidates(set) => match set.candidates() {
+                [candidate] => (Disposition::Supported(candidate.clone()), None),
+                [] => (
+                    Disposition::Unsupported,
+                    Some(Diagnostic {
+                        code: NegotiationOutcome::UnsupportedRequestedCapability.code(),
+                        payload: Payload::Kind(item.kind),
+                    }),
+                ),
+                _ => (
+                    Disposition::InvalidRequest,
+                    Some(Diagnostic::new(NegotiationOutcome::AmbiguousBackend.code())),
+                ),
+            },
+        }
+    }
+}
 /// Select FSL's extraction-aware run entry for a native-run request carrying
 /// `program.extraction`. The bounded dispatch read does not open dependent
 /// observation or source files; FSL remains their sole reader.
@@ -2816,8 +3022,8 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        CheckOptions, ExecutionEngine, Invocation, OptionRefusal, OutputFormat, RunOptions, Verb,
-        parse_invocation, read_source,
+        CheckOptions, ExecutionEngine, ExportOptions, Invocation, LimitOverrides, OptionRefusal,
+        OutputFormat, RunOptions, Verb, parse_invocation, read_source,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
@@ -2852,6 +3058,115 @@ mod tests {
                 "{verb}"
             );
         }
+    }
+
+    #[test]
+    fn export_options_accept_output_and_one_request_file() {
+        let parsed = ExportOptions::parse(&[
+            OsString::from("--output"),
+            OsString::from("model.tla"),
+            OsString::from("request.json"),
+        ])
+        .expect("valid export arguments");
+        assert_eq!(parsed.output.as_deref(), Some(Path::new("model.tla")));
+        assert_eq!(parsed.request.as_deref(), Some(Path::new("request.json")));
+        assert!(parsed.limits.values().is_empty());
+        let request_only = ExportOptions::parse(&[OsString::from("request.json")])
+            .expect("the request may name its own output");
+        assert_eq!(request_only.output, None);
+        assert!(ExportOptions::parse(&[
+            OsString::from("--output"),
+            OsString::from("model.tla"),
+            OsString::from("--output"),
+            OsString::from("other.tla"),
+            OsString::from("request.json"),
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn export_options_accept_repeated_export_and_compile_limits() {
+        let parsed = ExportOptions::parse(&[
+            OsString::from("--output"),
+            OsString::from("model.tla"),
+            OsString::from("request.json"),
+            OsString::from("--limit"),
+            OsString::from("export.output_bytes=4096"),
+            OsString::from("--limit"),
+            OsString::from("export.nodes=20"),
+            OsString::from("--limit"),
+            OsString::from("s1.input_bytes=1024"),
+        ])
+        .expect("valid export limits");
+        let mut limits = SpineLimits::default();
+        parsed
+            .limits
+            .apply_to_limits(&mut limits, "export")
+            .expect("supported export and compile limits");
+        assert_eq!(limits.export.output_bytes, Some(4096));
+        assert_eq!(limits.export.nodes, Some(20));
+        assert_eq!(limits.source.source_bytes, 1024);
+        assert!(ExportOptions::parse(&[
+            OsString::from("--output"),
+            OsString::from("model.tla"),
+            OsString::from("request.json"),
+            OsString::from("--limit"),
+            OsString::from("export.output_bytes=-1"),
+        ])
+        .is_err());
+        assert!(ExportOptions::parse(&[
+            OsString::from("request.json"),
+            OsString::from("--limit"),
+            OsString::from("unknown.limit=5"),
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn export_options_route_evidence_and_reject_conflicting_inputs() {
+        let evidence = ExportOptions::parse(&[
+            OsString::from("--evidence"),
+            OsString::from("evidence.json"),
+        ])
+        .expect("evidence request");
+        assert_eq!(
+            evidence.request.as_deref(),
+            Some(Path::new("evidence.json"))
+        );
+        assert!(ExportOptions::parse(&[
+            OsString::from("--evidence"),
+            OsString::from("evidence.json"),
+            OsString::from("--output"),
+            OsString::from("model.tla"),
+        ])
+        .is_err());
+        assert!(ExportOptions::parse(&[
+            OsString::from("request.json"),
+            OsString::from("--evidence"),
+            OsString::from("evidence.json"),
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn export_without_an_export_member_is_invalid_input() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let output = directory.path().join("model.tla");
+        let result = super::export(
+            &ExportOptions {
+                output: Some(output.clone()),
+                request: Some(fixtures.join("frontend-run.json")),
+                limits: LimitOverrides::default(),
+            },
+            OutputFormat::Json,
+        );
+        assert_eq!(result.category, super::Category::Refusal);
+        assert!(result
+            .diagnostic
+            .as_deref()
+            .is_some_and(|message| message.contains("must include an `export` member")));
+        assert!(!output.exists());
     }
 
     /// Trace: FR-002-AC-1, inspect's graph format.
