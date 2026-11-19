@@ -634,9 +634,9 @@ dependencies = [
 [[package]]
 name = "filament-semantic-value"
 version = "0.1.5"
-source = "git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5#3fd65564216ad917db391caf03ead4cd90316d39"
+source = "git+https://github.com/agent-ix/filament-semantic-value?tag=v0.1.5#f808f26986efbfc08295e6ec5793f47e4e9e92a3"
 dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b25ff96fee8ab80418e7f7aaf8e9441c60745ab1)",
+ "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?tag=v0.3.0)",
  "quire-canonical",
  "thiserror",
 ]
