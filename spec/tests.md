@@ -11,7 +11,7 @@ This authored verification inventory integrates FR-001 and SP-D1 through
 SP-D9 (FR-002 through FR-010) from IR-527, FR-011 from IR-616, FR-012 for
 the downstream cache component, FR-013 for the process plugin host, and FR-014
 for the CLI package boundary, and planned FR-015 for admitted monitor program
-preparation. It covers FR-001 through FR-027 and TC-001 through TC-047.
+preparation. It covers FR-001 through FR-027 and TC-001 through TC-049.
 Discrete FR and TC artifacts remain authoritative;
 this matrix is their index, not a computed implementation-coverage report.
 
@@ -145,6 +145,10 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | TC-046 | Run TL lowering and package requests with the fsl binary | Integration | FR-002-AC-20..FR-002-AC-22 | 🚧 See the FR-002-AC-20 row. |
 | TC-047 | Decide hybrid claims with FSL's reference provider through fsl analyze | Integration | FR-022-AC-11 | 🚧 See the FR-022-AC-11 row. |
 | FR-022 | FR-022-AC-11 | TC-047 | 🚧 Planned (QSL-2234): `fsl analyze` registers FSL's reference hybrid provider beside the configured providers. The process-provider half (TC-047 step 4) also depends on FSL's `Engine::hybrid_process` (QSL-2532). |
+| FR-002 | FR-002-AC-23 | TC-048 | 🚧 Planned (QSL-2601): `fsl inspect --handoff` routes to FSL's `inspect_handoff`; malformed handoff invocations and `--format dot` refuse before reading; other `inspect` inputs stay not routed. |
+| TC-048 | Verify a checked-package handoff with fsl inspect --handoff | Integration | FR-002-AC-23 | 🚧 See the FR-002-AC-23 row. |
+| FR-002 | FR-002-AC-24..FR-002-AC-26 | TC-049 | 🚧 Planned (QSL-2602, QSL-2603): one option table read by parsers and help, per-verb `--help`, root-only `--version`, `--color` refused; `--extensions` on `parse` and `check` awaits QSL-2603. |
+| TC-049 | List every accepted option in root and per-verb help | Integration | FR-002-AC-24..FR-002-AC-26 | 🚧 See the FR-002-AC-24 row. |
 
 ## Test Case Summary
 
