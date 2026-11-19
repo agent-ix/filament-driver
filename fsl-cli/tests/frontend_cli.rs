@@ -1681,6 +1681,89 @@ fn unsupported_result_refuses_during_check() {
     assert_eq!(diagnostic["locus"]["kind"], "region", "{document}");
 }
 
+/// Emit a supported sequence result and give its element the package’s population type.
+/// This models an IR producer that can express a signature the source checker refuses.
+fn population_sequence_package(directory: &std::path::Path, models: &serde_json::Value) {
+    use fsl_semantics::check::wire_id::{resolve_operand_slots, write_operand_rows};
+    use serde_json::{json, Value};
+
+    let source = r#"language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+model M = "driver/ir608-model";
+function gives using v(): Sequence<Integer>[0, 1] pure { sequence[1] }
+function hasFleet using v(fleet: Population<M::Thing>[1]): Boolean pure { true }
+"#;
+    std::fs::write(directory.join("fleet.fsl"), source).expect("the package source");
+    let request = directory.join("compile.json");
+    let compile = json!({"format": "native-compile/1", "request": {
+        "models": models,
+        "program": {"source": {"file": "fleet.fsl", "authority": "issuer",
+            "identity": "document", "document": "Fleet", "formal_revision": 1}}
+    }});
+    std::fs::write(&request, compile.to_string()).expect("the compile request");
+    let bytes = fsl_command::command::compile(&request).expect("the supported source compiles");
+    let mut package: Value = serde_json::from_slice(&bytes).expect("a checked package");
+    resolve_operand_slots(&mut package).expect("graph references resolve");
+    let nodes = package["semantic_graph"]["nodes"]
+        .as_array_mut()
+        .expect("the node table");
+    let population = nodes
+        .iter()
+        .find(|node| node["semantic_form"] == "model_population")
+        .expect("the declared population type")["node_id"]
+        .clone();
+    let sequence = nodes
+        .iter_mut()
+        .find(|node| node["node_tag"] == "composite_type" && node["semantic_form"] == "sequence")
+        .expect("the sequence type of gives");
+    sequence["body"]["members"][0]["target"] = population.clone();
+    sequence["dependencies"] = json!([population]);
+    write_operand_rows(&mut package);
+    std::fs::write(directory.join("fleet.package.json"), package.to_string())
+        .expect("the checked package");
+}
+
+/// A selected checked package can declare a result outside the native run value grammar.
+#[trace("TC-1705", "FR-650-AC-6")]
+#[test]
+#[ignore = "QSL-2390 owns package-only native-run selection at the call stage"]
+fn unsupported_package_result_refuses_at_call() {
+    use serde_json::{json, Value};
+
+    let directory = tempfile::tempdir().expect("a request folder");
+    let models = json!([{"format": "semantic-ir/2.0.0", "source": {"file": POPULATION_MODEL,
+        "authority": "test", "identity": "population-model", "document": "M", "formal_revision": 1}}]);
+    population_sequence_package(directory.path(), &models);
+    let request = json!({"format": "native-run/1", "request": {
+        "models": models, "package": {"file": "fleet.package.json"},
+        "call": {"function": "gives", "arguments": []}
+    }});
+    let path = directory.path().join("run.json");
+    std::fs::write(&path, request.to_string()).expect("the run request");
+    let output = fsl(&[
+        "run",
+        path.to_str().expect("UTF-8 path"),
+        "--format",
+        "json",
+    ]);
+    let document: Value = serde_json::from_slice(&output.stdout).expect("one outcome document");
+    assert_eq!(output.status.code(), Some(21), "{document}");
+    assert_eq!(document["category"], "unsupported", "{document}");
+    assert_eq!(document["last_stage"], "S6a", "{document}");
+    let diagnostics = document["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(diagnostics.len(), 1, "{document}");
+    assert_eq!(
+        diagnostics[0]["code"], "unknown_required_feature",
+        "{document}"
+    );
+    assert_eq!(diagnostics[0]["cause"], "unsupported-feature", "{document}");
+    assert_eq!(
+        diagnostics[0]["details"],
+        json!({"function": "gives"}),
+        "{document}"
+    );
+}
+
 #[trace("TC-2456", "FR-865-AC-3")]
 #[trace("TC-2456", "FR-865-AC-4")]
 #[test]
