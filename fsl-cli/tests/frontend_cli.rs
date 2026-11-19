@@ -19,6 +19,9 @@ const MISSING_SOURCE: &str = concat!(
     "/tests/fixtures/missing-source.fsl"
 );
 
+#[path = "common/timed_analyze.rs"]
+mod timed_analyze;
+
 const RUN_REQUEST: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/frontend-run.json"

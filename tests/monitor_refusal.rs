@@ -51,7 +51,7 @@ function fixtureEvent using v(s: DState, delta: Integer, i: DInputs): DStep pure
 function fixtureWatermark using v(s: DState, delta: Integer, progress: DScope): DStep pure { let pair = DStep(s, emptyResults()) in pair }
 function fixtureGap using v(s: DState, delta: Integer): DStep pure { let pair = DStep(s, emptyResults()) in pair }
 function plus using v(a: Integer, b: Integer): Integer pure { a + b }
-function remainder using v(a: Integer, b: Integer): Integer pure { a mod b }
+function remainder using v(a: Integer, b: Int[1, 9]): Integer pure { a mod b }
 function narrowed using v(a: Float64[nearest-even]): Float32[toward-negative] pure { convert<Float32[toward-negative]>(a) }
 "#;
 
