@@ -46,7 +46,7 @@ fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev 
 fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "d0c9827eac2837aed32080387a81c23c6557b65b" }
 fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "d0c9827eac2837aed32080387a81c23c6557b65b" }
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "d0c9827eac2837aed32080387a81c23c6557b65b" }
-filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "ed0b05ee9cdd025fe74f3120b64725a02b529a7e" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "19934a427d650f657010f5ee27c962679c74d538" }
 filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", rev = "c9e52417889db09dcb1abe1015320448139269fb" }
 filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", tag = "v0.1.1", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
