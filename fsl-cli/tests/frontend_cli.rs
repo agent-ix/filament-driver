@@ -773,6 +773,56 @@ fn schedulability_source(task_set: &str, claims: &str) -> String {
     )
 }
 
+/// FR-247-AC-1/2: fixed-priority scheduling and response bounds are exposed
+/// through the same request/response boundary as EDF and AMC.
+#[trace("TC-1593", "FR-247-AC-1", "FR-247-AC-2")]
+#[test]
+fn analyze_fixed_priority_holds_and_refutes_through_cli() {
+    let task_set = |planner| {
+        format!(
+            "taskset Control {{\n\
+             task fusion periodic 10 ms deadline 10 ms wcet 2 ms priority 3 lo;\n\
+             task stopMonitor periodic 20 ms deadline 20 ms wcet 3 ms priority 2 lo;\n\
+             task planner periodic 50 ms deadline 50 ms wcet {planner} ms priority 1 lo;\
+             }}"
+        )
+    };
+    let claims = "schedulable ControlFp on Control under fixed_priority;\n\
+                  response StopMonitorFast on Control.stopMonitor <= 10 ms under fixed_priority;";
+    let holds = schedulability_request(
+        "fixed-priority-holds",
+        &schedulability_source(&task_set(15), claims),
+        "ControlFp",
+    );
+    let (document, exit) = holds.json();
+    assert_eq!(exit, Some(0), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(
+        item["record"]["basis"]["analysis"], "fixed-priority",
+        "{document}"
+    );
+    assert_eq!(item["record"]["certification"], "certified", "{document}");
+
+    let refuted = schedulability_request(
+        "fixed-priority-refuted",
+        &schedulability_source(
+            &task_set(25),
+            "response PlannerFast on Control.planner <= 20 ms under fixed_priority;",
+        ),
+        "PlannerFast",
+    );
+    let (document, exit) = refuted.json();
+    assert_eq!(exit, Some(10), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{document}");
+    let miss = &item["counterexample"]["counterexample"];
+    assert_eq!(miss["type"], "schedulability-miss", "{document}");
+    assert_eq!(miss["miss"]["task"], "planner", "{document}");
+    assert_eq!(miss["miss"]["response"]["numerator"], "34", "{document}");
+    assert_eq!(miss["miss"]["bound"]["numerator"], "20", "{document}");
+}
+
 /// FR-022-AC-1, FSL FR-621-AC-1: a holding item prints its `proved` record
 /// and exits 0.
 #[trace("TC-036", "FR-022-AC-1")]
