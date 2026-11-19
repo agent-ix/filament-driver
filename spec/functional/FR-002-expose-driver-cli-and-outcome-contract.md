@@ -19,6 +19,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-866
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-931
+    type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-1039
+    type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-960
+    type: depends_on
   - target: ix://agent-ix/filament-specification/FR-718
     type: depends_on
   - target: ix://agent-ix/filament-specification/FR-301
@@ -153,6 +159,33 @@ the fallback when that function returns reserved value `5`.
   `--format` and the value, before reading any file.
 - Analyze and monitor keep the text forms FR-022 and FR-025 specify. Format
   continues to write FSL's formatted source as its text output.
+- `fsl run` SHALL route every prepared run FSL's `prepare_run_with_overrides`
+  returns, and refuse none of them as not run by the driver: a function run, a
+  clause run, a TL lowering (FSL FR-931) and a package run (FSL FR-1039). Each
+  arm runs through FSL's own executor for it, so `fsl run` gives the document
+  FSL's in-process `run` gives for the same request.
+- For a TL lowering, the driver SHALL apply its `--limit` overrides to the
+  lowering's clause request through `PreparedLowering::clause_request_mut`
+  with the same clause-run application FR-003 uses for a clause run, then call
+  `execute_tl_lowering`. It renders the result as it renders a function run's
+  result (the result's outcome document when FSL returns one, else the native
+  result with its exit code) and a `RunError` through
+  `RunError::outcome_document` for the execute operation. A TL lowering
+  therefore takes the same caller limits and the same outcome contract as
+  every other prepared run (FR-003).
+- For a package run, the driver SHALL call `execute_package_run` on the
+  prepared package and render its result and `RunError` the same way.
+- When `fsl run` settles requirement items, the driver SHALL run the request
+  through `fsl_command::command::run_with_providers_and_limits_and_overrides`
+  with `Engine::hybrid_reference()` followed by the configured providers.
+  `fsl run` settles requirement items when it is given `--provider-config` or
+  `--provider-limit` (FR-006), or when the request's `call` carries
+  `requirements` (FSL FR-960).
+- When `fsl run` settles requirement items, the driver SHALL negotiate over
+  `Engines::fsl_with_reference_hybrid()` plus the configured providers, as
+  FR-022 does for `fsl analyze`. A requirement item over hybrid
+  dynamics is then decided by the same providers whichever verb carries it
+  (FSL FR-960 routes run items by analyze's rule).
 - When the CLI resolves configuration values, it SHALL use ix-cli-kit's
   `config` module.
 - When invoked with no arguments or with `--help`, `-h` or `help` as its sole
@@ -200,6 +233,9 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-17 | With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results, and states that `text` is the default output format and `--format json` selects machine output. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation. | Test |
 | FR-002-AC-18 | `fsl run nosuch.json` and `fsl compile nosuch.json` without `--format` refuse with the I/O failure's FSL code and exit 20, as under `--format json`, never `UnimplementedCapability` or exit 21, and stdout holds the text form of that refusal document; the text of a refused `check` names each diagnostic's code, cause and source position; `--format bogus` on each of the four verbs refuses `invalid-request`, exit 20, naming `--format` and `bogus`, before any file is opened. | Test (TC-040) |
 | FR-002-AC-19 | `fsl check P --format json` over a source at path `P` that does not parse writes the `check` refusal whose every diagnostic locus names `{"authority": "filament", "identity": P}`, with `P` exactly as given, and that contains neither `fsl-command` nor `check-source`; its stdout is byte-equal to the canonical encoding of the document FSL's `parse` gives for the same bytes under that identity, plus a newline, with that document's exit status, and `compile` and `run` over requests naming the same source refuse equally to their library operations. | Test (TC-043) |
+| FR-002-AC-20 | `fsl run R --format json`, `R` FSL FR-931-AC-1's request `{"clause": "Low"}` over the ConfigVersion model, writes the `tl_lowering` record with `disposition` `supported`, `correspondence` `mltl.closed-trace/v1` and `formula` `G[0,3] p0`, exit 0, and its stdout is byte-equal to the canonical encoding of the document FSL's `fsl_command::command::run` returns for `R`, plus a newline; it never writes the "not run by the driver" input refusal. `fsl run R --limit s1.nodes=1 --format json` writes FSL's typed limit outcome naming `s1.nodes` with configured value 1, category `incomplete`, no lowering record, exit 22; `--limit s1.nodes=50000` gives the unlimited run's bytes, exit 0. | Test (TC-046) |
+| FR-002-AC-21 | `fsl run P --format json`, `P` FSL FR-1039-AC-1's request selecting the `half` unit's checked package as `package` `{file}` with the `call` `half`, run with the source file removed, completes with `-4`, exit 0, byte-equal to FSL's `run` for `P` plus a newline; the same request with `integer_division` gives FSL's `invalid-request` refusal naming `integer_division`, exit 20. | Test (TC-046) |
+| FR-002-AC-22 | `fsl run Q --format json`, `Q` FSL FR-960-AC-1's request calling `sq` with `x = 3` and `call.requirements` `{}`, with no `--provider-config`, writes stdout byte-equal to the canonical encoding of the document `run_with_providers_and_limits_and_overrides` returns for `Q` with the providers `[Engine::hybrid_reference()]` and default limits, plus a newline: value `{"integer": "16"}` and three settled requirement entries, exit 0. With `--provider-config` starting a fixture provider whose admitted backend is `fsl-hybrid-reference`, the run refuses `invalid-request` naming `providers`, exit 20, because that backend is already registered. | Test (TC-046) |
 
 ## Dependencies
 
@@ -219,6 +255,10 @@ the fallback when that function returns reserved value `5`.
 - [TC-040](../test-cases/TC-040-write-text-outcomes-by-default.md), verifying AC-13 and AC-18.
 - [TC-043](../test-cases/TC-043-name-the-checked-source-by-the-supplied-path.md), verifying AC-19.
 - FSL FR-866 defines the identity `check_outcome` gives the checked source.
+- FSL FR-931 defines the `tl_lowering` request, its record and
+  `PreparedLowering::clause_request_mut`; FSL FR-1039 defines the package run.
+  [TC-046](../test-cases/TC-046-run-tl-lowering-and-package-requests.md)
+  verifies AC-20, AC-21 and AC-22; FSL FR-960 defines `call.requirements`.
 
 AC-14 adopts FSL FR-287-AC-8's quiet behavior only when a primary stdout write
 or flush actually reports `BrokenPipe`. A text-mode write of the rendered
