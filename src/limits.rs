@@ -460,7 +460,6 @@ mod tests {
                 operation: "check",
             })
         );
-        drop(groups);
         assert_eq!(limits, before);
     }
 
