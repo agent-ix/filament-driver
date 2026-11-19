@@ -224,6 +224,7 @@ mod tests {
                 supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
                 backend: Default::default(),
                 clocks: Default::default(),
+                live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             },
             object_environment: &EMPTY_OBJECT_ENVIRONMENT,
             cancel: Cancel::new(),
@@ -420,6 +421,7 @@ mod tests {
                 supplied: Default::default(),
                 backend: Default::default(),
                 clocks: Default::default(),
+                live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             },
             object_environment: environment,
             cancel: Cancel::new(),
@@ -597,7 +599,8 @@ mod tests {
         assert!(matches!(
             actual.outcome,
             CallOutcome::Undefined {
-                reason: "absent-key"
+                reason: "absent-key",
+                ..
             }
         ));
         assert_eq!(

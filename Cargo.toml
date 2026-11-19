@@ -34,36 +34,36 @@ path = "src/lib.rs"
 # may depend on its interface. It is downstream of CG because CG -> FSL
 # (`fsl-replay`) is a normal edge and Cargo refuses a package cycle.
 #
-# The FSL crates use the revision selected by contract-codegen so their public
-# types resolve to one copy. Shared first-party crates use the same release tags
-# as codegen; Cargo.lock records the selected commits.
+# Keep the shared first-party crate revisions aligned with merged contract-codegen
+# and FSL so their public types resolve to one copy. Cargo.lock records the selected
+# commits.
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
-filament-semantic-value = { git = "https://github.com/agent-ix/filament-semantic-value", tag = "v0.1.5" }
-fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38" }
-filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "ed0b05ee9cdd025fe74f3120b64725a02b529a7e" }
-filament-contract-model = { git = "https://github.com/agent-ix/filament-contract-ir", tag = "v0.1.5" }
-filament-contract-runtime = { git = "https://github.com/agent-ix/filament-contract-runtime", tag = "v0.1.1", default-features = false, features = ["exact"] }
+filament-semantic-value = { version = "0.1.5", git = "https://github.com/agent-ix/filament-semantic-value", rev = "1df71c27e6db56c8118cf017689aa7fab6156cde" }
+fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654" }
+fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654" }
+fsl-replay = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654" }
+fsl-route = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654" }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654" }
+filament-contract-codegen = { git = "https://github.com/agent-ix/filament-contract-codegen", rev = "a11a66ab9c5eeee9163f5d4d084644296b565ba9" }
+filament-contract-model = { version = "0.1.2", git = "https://github.com/agent-ix/filament-contract-ir", rev = "c7b62038ed95262e3e51477f0831978397c8c5f7" }
+filament-contract-runtime = { version = "0.1.1", git = "https://github.com/agent-ix/filament-contract-runtime", rev = "69522c23fb81375d9f88b07d833338394891bd18", default-features = false, features = ["exact"] }
 # The observation owner issues the progress view in the preparation request.
-filament-observation = { git = "https://github.com/agent-ix/filament-observation", tag = "v0.1.1" }
+filament-observation = { version = "0.1.1", git = "https://github.com/agent-ix/filament-observation", rev = "5f67eb4c3abac582753901675d36eac91e093b1d" }
 # FSpec FR-331's linked manifest snapshot is canonicalized at registry admission.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "v0.3.1" }
 # FSL's caller-owned cancellation handle is a public driver API type.
-filament-exact = { git = "https://github.com/agent-ix/filament-exact", tag = "v0.3.0" }
+filament-exact = { version = "0.3.0", git = "https://github.com/agent-ix/filament-exact", rev = "b26a8e4c592503fccdc4a0e3d2cce23dd8487616" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "=2.0.20"
 
 [dev-dependencies]
 # FR-020-AC-14: `PathGuard::new` and `RequirementRecord::with_path_condition`.
-fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "13b0b11e7b00e7412976d7a4b55cc93aed528c38", features = ["test-support"] }
+fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "8877b38b6397055fa11dc2e7882ad87d02ecb654", features = ["test-support"] }
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
-filament-checked = { git = "https://github.com/agent-ix/filament-eval", tag = "v0.1.6" }
+filament-checked = { git = "https://github.com/agent-ix/filament-eval", rev = "6689fa06123ed46793734b6b5059c8cdef85027d" }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
 
 

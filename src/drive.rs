@@ -1224,6 +1224,7 @@ mod scalar_native_tractability_tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
         };
         let environment = ObjectEnvironment::default();
         let installation = KaniInstallation::new("/nonexistent/cargo-kani");
@@ -1392,6 +1393,7 @@ mod native_receipt_integration_tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
         };
         let environment = ObjectEnvironment::default();
         let installation = KaniInstallation::discover().expect("cargo-kani is installed");
@@ -2006,6 +2008,11 @@ mod origin_projection_tests {
             BackendId::from_wire("profiled-provider").expect("identity is nonempty"),
         );
         let evidence_kinds = ["exact"];
+        let fairness = [
+            fsl_route::FairnessLabel::Text("weak"),
+            fsl_route::FairnessLabel::Text("strong"),
+        ];
+        let domains = ["integer"];
         fsl_route::descriptor_from_manifest(
             candidate,
             ProviderOrigin::Linked,
@@ -2014,6 +2021,8 @@ mod origin_projection_tests {
                 (Some("probabilistic-satisfaction"), Some("bounded")),
             ],
             fsl_route::ManifestMembers {
+                domains: Some(&domains),
+                fairness_kinds: Some(fsl_route::FairnessKindsMember::List(&fairness)),
                 evidence_kinds: Some(&evidence_kinds),
                 ..Default::default()
             },
