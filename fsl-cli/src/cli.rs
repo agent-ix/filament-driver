@@ -168,6 +168,7 @@ enum Verb {
     Check,
     Compile,
     Run,
+    Export,
     Analyze,
     Monitor,
     Prove,
@@ -178,12 +179,13 @@ enum Verb {
 }
 
 impl Verb {
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Parse,
         Self::Format,
         Self::Check,
         Self::Compile,
         Self::Run,
+        Self::Export,
         Self::Analyze,
         Self::Monitor,
         Self::Prove,
@@ -204,6 +206,7 @@ impl Verb {
             Self::Check => "check",
             Self::Compile => "compile",
             Self::Run => "run",
+            Self::Export => "export",
             Self::Analyze => "analyze",
             Self::Monitor => "monitor",
             Self::Prove => "prove",
@@ -314,6 +317,7 @@ impl ExportOptions {
             (_, Some(_)) => {
                 return Err("--evidence cannot be combined with a request file".to_owned());
             }
+            (_, None) => return Err(Self::USAGE.to_owned()),
         };
         if evidence.is_some() && output.is_some() {
             return Err("--evidence cannot be combined with --output".to_owned());
@@ -1181,6 +1185,36 @@ fn run(options: RunOptions) -> CommandResult {
                 Operation::Execute,
                 "FR-931 tl_lowering requests are not run by the driver yet",
             );
+        }
+        PreparedRun::Package(_) => {
+            let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
+                Ok(negotiation) => negotiation,
+                Err(error) => {
+                    return CommandResult::failure(
+                        Category::InternalFailure,
+                        format!("could not initialize FSL engine negotiation: {error:?}"),
+                    );
+                }
+            };
+            return match command::run_with_limits_and_overrides(
+                &options.path,
+                options.intake_limits,
+                &overrides,
+                &negotiation,
+            ) {
+                Ok(result) => {
+                    let render_sources = fsl_command::render_sources(result.sources());
+                    match result.outcome {
+                        Some(document) => {
+                            CommandResult::document(document).with_sources(render_sources)
+                        }
+                        None => native_result(result.value.as_value().clone(), result.exit_code),
+                    }
+                }
+                Err(error) => {
+                    CommandResult::document(error.outcome_document(Operation::Execute))
+                }
+            };
         }
     };
     let command::FunctionRunInput {
@@ -2658,6 +2692,12 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => option_refusal(Operation::Execute, &error),
         };
     }
+    if verb == Verb::Export {
+        return match ExportOptions::parse(raw_arguments) {
+            Ok(options) => with_format(export(&options, format), format),
+            Err(error) => option_refusal(Operation::Export, &error),
+        };
+    }
     if verb == Verb::Compile {
         return match CompileOptions::parse(raw_arguments) {
             Ok(options) => with_format(compile(options), format),
@@ -2721,6 +2761,7 @@ fn unrouted_operation(verb: Verb) -> Option<Operation> {
         | Verb::Check
         | Verb::Compile
         | Verb::Run
+        | Verb::Export
         | Verb::Analyze
         | Verb::Monitor
         | Verb::Replay => None,
@@ -2966,7 +3007,8 @@ mod outcome_tests {
             )]);
         let result = CommandResult::document(document);
         let mut stderr = Vec::new();
-        write_result_diagnostics(&result, &mut stderr).expect("write FSL diagnostic");
+        write_result_diagnostics(&result, OutputFormat::Text, &mut stderr)
+            .expect("write FSL diagnostic");
         assert_eq!(stderr, b"the selected function has no parameter named x\n");
     }
 }
@@ -2980,7 +3022,7 @@ mod outcome_tests {
 mod tests {
     use super::{
         CheckOptions, ExecutionEngine, ExportOptions, Invocation, LimitOverrides, OptionRefusal,
-        OutputFormat, RunOptions, Verb, parse_invocation, read_source,
+        OutputFormat, RunOptions, SpineLimits, Verb, parse_invocation, read_source,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
