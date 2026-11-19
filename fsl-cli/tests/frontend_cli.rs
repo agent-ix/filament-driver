@@ -1936,7 +1936,7 @@ fn diagnostic_codes(output: &Output) -> Vec<(String, String)> {
 /// law to the check; an unknown law refuses before the source is read; the
 /// option given twice refuses with usage and no stdout byte; a header law
 /// that disagrees refuses `conflicting-definition`; `run`, `compile`,
-/// `analyze` and `monitor` refuse the option as unknown. QSL-2279.
+/// `analyze`, `prove` and `monitor` refuse the option as unknown. QSL-2279.
 #[trace("TC-2189", "FR-767-AC-7")]
 #[test]
 fn check_takes_the_integer_division_law_from_its_option() {
@@ -2035,9 +2035,7 @@ fn check_takes_the_integer_division_law_from_its_option() {
         "conflicting-definition".to_owned()
     )));
 
-    // `prove` is not routed by this build: it answers every invocation with
-    // its `unsupported_operation` result (FSpec FR-522).
-    for verb in ["run", "compile", "analyze", "monitor"] {
+    for verb in ["run", "compile", "analyze", "prove", "monitor"] {
         let output = fsl(&[verb, "request.json", "--integer-division", "floor"]);
         assert_eq!(output.status.code(), Some(20), "{verb}: {output:?}");
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2053,7 +2051,6 @@ fn check_takes_the_integer_division_law_from_its_option() {
 /// `"integer_division": "floor"` calling `q(-7, 3)` exits 0 with value -3.
 #[trace("TC-2189", "FR-767-AC-7")]
 #[test]
-#[ignore = "QSL-1989: FSL's native-run/1 reader refuses `integer_division` as an unknown field (FR-767 run half not in language main)"]
 fn run_takes_the_integer_division_law_from_its_request() {
     let directory = TestDirectory(
         std::env::temp_dir().join(format!("fsl-integer-division-run-{}", std::process::id())),
