@@ -747,6 +747,101 @@ impl AnalyzeRequest {
     }
 }
 
+const STATE_GRAPH_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
+    model M = \"test/counter\";\n\
+    pre CanInc using v on M::Counter::inc { self.value < 3 }\n\
+    post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n\
+    pre CanSkip using v on M::Counter::skip { self.value <= 1 }\n\
+    post Skip using v on M::Counter::skip { self.value - pre(self.value) = 2 }\n\
+    possible ReachThree using v over (c: M::Counter) { c.value = 3 }\n\
+    possible BelowZero using v over (c: M::Counter) { c.value < 0 }\n\
+    always possible BackToZero using v over (c: M::Counter) { c.value = 0 }\n\
+    unique path OnePath using v over (c: M::Counter) from (c.value = 0) to (c.value = 3);\n";
+
+const KERNEL_STATE_GRAPH_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
+    model M = \"test/counter\";\n\
+    pre CanInc using v on M::Counter::inc { self.value < 3 }\n\
+    post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n\
+    pre CanSkip using v on M::Counter::skip { self.value <= 1 }\n\
+    post Skip using v on M::Counter::skip { self.value - pre(self.value) = 2 }\n\
+    function r using v(x: Integer): Integer pure { 1 div x }\n\
+    possible DivideAtThree using v over (c: M::Counter) { r(3 - c.value) > 0 }\n";
+
+fn state_graph_request(name: &str, items: serde_json::Value) -> AnalyzeRequest {
+    let request = AnalyzeRequest::new(name, items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "state-graph-counter.fsl",
+        STATE_GRAPH_SOURCE.as_bytes(),
+    );
+    let model_path = std::path::Path::new(ANALYZE_REQUEST)
+        .parent()
+        .expect("fixture directory")
+        .join("analyze-counter.semantic-ir.json");
+    let mut model: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(model_path).expect("the Counter model"))
+            .expect("the model is JSON");
+    let counter = model["types"]
+        .as_array_mut()
+        .expect("the model types")
+        .iter_mut()
+        .find(|entry| entry["identity"] == "ix://test/counter/Counter")
+        .expect("the Counter type");
+    let operations = counter["operations"]
+        .as_array_mut()
+        .expect("the Counter operations");
+    let mut skip = operations[0].clone();
+    skip["identity"] = serde_json::json!("ix://test/counter/Counter/skip");
+    skip["name"] = serde_json::json!("skip");
+    skip["origin"]["generated"]["generatorIdentity"] =
+        serde_json::json!("ix://test/counter/Counter/skip");
+    skip["origin"]["generated"]["inputIdentities"] =
+        serde_json::json!(["ix://test/counter/Counter/skip"]);
+    operations.push(skip);
+    request.with_file(
+        "/request/models/0/source/file",
+        "state-graph-counter.semantic-ir.json",
+        model.to_string().as_bytes(),
+    )
+}
+
+fn kernel_state_graph_request(name: &str, items: serde_json::Value) -> AnalyzeRequest {
+    state_graph_request(name, items).with_file(
+        "/request/program/source/file",
+        "kernel-state-graph-counter.fsl",
+        KERNEL_STATE_GRAPH_SOURCE.as_bytes(),
+    )
+}
+
+fn select_kernel_package(request: AnalyzeRequest) -> AnalyzeRequest {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(request.path()).expect("the analyze request"))
+            .expect("the analyze request is JSON");
+    let body = &document["request"];
+    let compile = serde_json::json!({"format": "native-compile/1", "request": {
+        "models": body["models"],
+        "program": body["program"],
+        "check_mode": "kernel",
+        "handoff": {"directory": "handoff", "package_name": "state-graph-unit",
+            "native_join": {"work_units": 1_u64 << 40, "storage": 1_u64 << 24}}
+    }});
+    let compile_path = request.directory.0.join("compile.json");
+    std::fs::write(&compile_path, compile.to_string()).expect("the compile request");
+    fsl_command::command::compile(&compile_path).expect("the Kernel package compiles");
+
+    let selected = document["request"]
+        .as_object_mut()
+        .expect("an analyze request");
+    selected.remove("program");
+    selected.insert(
+        "package".to_owned(),
+        serde_json::json!({"directory": "handoff"}),
+    );
+    std::fs::write(request.path(), document.to_string()).expect("select the checked package");
+    request
+}
+
 fn one_item(claim: &str) -> serde_json::Value {
     serde_json::json!([{ "claim": claim }])
 }
@@ -834,6 +929,139 @@ fn analyze_budget_exhausted_is_incomplete() {
     assert_eq!(
         record["cause"],
         serde_json::json!({"kind": "cancelled", "source": "deadline"}),
+        "{document}"
+    );
+}
+
+/// FR-628-AC-1: a reachable `possible` state has a witness path in the
+/// end-to-end `fsl analyze` result.
+#[trace("TC-1588", "FR-628-AC-1")]
+#[test]
+fn analyze_possible_proved() {
+    let request = state_graph_request(
+        "state-graph-possible",
+        serde_json::json!([{"claim": "ReachThree"}]),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(0), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{item}");
+    assert_eq!(item["record"]["evidence"]["arm"], "witness", "{item}");
+    assert!(
+        item["record"]["evidence"]["paths"][0]["path"]["steps"]
+            .as_array()
+            .is_some_and(|steps| !steps.is_empty()),
+        "the proof carries a witness path: {item}"
+    );
+}
+
+/// FR-628-AC-2: the end-to-end result refutes `always possible` with the
+/// path into a state that cannot reach the target again.
+#[trace("TC-1588", "FR-628-AC-2")]
+#[test]
+fn analyze_always_possible_refuted() {
+    let request = state_graph_request(
+        "state-graph-always",
+        serde_json::json!([{"claim": "BackToZero"}]),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(10), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{item}");
+    assert_eq!(item["counterexample"]["arm"], "trap", "{item}");
+    assert!(
+        item["counterexample"]["stem"]["steps"]
+            .as_array()
+            .is_some_and(|steps| !steps.is_empty()),
+        "the counterexample carries a path to the trap: {item}"
+    );
+}
+
+/// FR-628-AC-1: the end-to-end `unique path` result returns both paths that
+/// refute uniqueness.
+#[trace("TC-1588", "FR-628-AC-1")]
+#[test]
+fn analyze_unique_path_refuted() {
+    let request = state_graph_request(
+        "state-graph-unique-path",
+        serde_json::json!([{"claim": "OnePath"}]),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(10), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{item}");
+    assert_eq!(item["counterexample"]["arm"], "path-pair", "{item}");
+    for path in ["first", "second"] {
+        assert!(
+            item["counterexample"][path]
+                .as_array()
+                .is_some_and(|steps| !steps.is_empty()),
+            "the counterexample carries its {path} path: {item}"
+        );
+    }
+}
+
+/// FR-628-AC-1/4: a proved state-graph result is certified, and the
+/// Kernel-checked function selected through `request.package` preserves the
+/// reached undefined division as a refutation.
+#[trace("TC-1588", "FR-628-AC-1")]
+#[trace("TC-2291", "FR-628-AC-4")]
+#[test]
+fn analyze_state_graph_certificate_checks() {
+    let proof_request = state_graph_request(
+        "state-graph-certificate",
+        serde_json::json!([{"claim": "ReachThree"}]),
+    );
+    let (proof, proof_exit) = proof_request.json();
+    assert_eq!(proof_exit, Some(0), "{proof}");
+    let proved = &proof["items"][0];
+    assert_eq!(proved["record"]["result"], "proved", "{proved}");
+    assert_eq!(proved["record"]["certification"], "certified", "{proved}");
+
+    let package_request = select_kernel_package(kernel_state_graph_request(
+        "state-graph-kernel-package",
+        serde_json::json!([{"claim": "DivideAtThree"}]),
+    ));
+    let (document, exit) = package_request.json();
+    assert_eq!(exit, Some(10), "{document}");
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "refuted", "{item}");
+    assert_eq!(item["counterexample"]["arm"], "undefined", "{item}");
+    assert_eq!(
+        item["counterexample"]["undefined"]["where"]["predicate"],
+        "P"
+    );
+    assert!(
+        item["counterexample"]["undefined"]["where"]["locus"].is_object(),
+        "the undefined evidence carries the Kernel function-body locus: {item}"
+    );
+}
+
+/// FR-628-AC-1/5: a well-typed unreachable target is refuted, while a
+/// bounded run that cannot settle `always possible` remains incomplete.
+#[trace("TC-1588", "FR-628-AC-1")]
+#[trace("TC-2291", "FR-628-AC-5")]
+#[test]
+fn analyze_state_graph_unreachable_refuted_and_budget_incomplete() {
+    let request = state_graph_request(
+        "state-graph-negative-and-budget",
+        serde_json::json!([
+            {"claim": "BelowZero"},
+            {"claim": "BackToZero", "temporal": {"limits": {"max_states": 1}}}
+        ]),
+    );
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(22), "{document}");
+    assert_eq!(
+        document["items"][0]["record"]["result"], "refuted",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["result"], "incomplete",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["cause"]["limit"], "max_states",
         "{document}"
     );
 }
