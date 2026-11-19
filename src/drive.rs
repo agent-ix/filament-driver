@@ -1224,6 +1224,7 @@ mod scalar_native_tractability_tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
         };
         let environment = ObjectEnvironment::default();
         let installation = KaniInstallation::new("/nonexistent/cargo-kani");
@@ -1392,6 +1393,7 @@ mod native_receipt_integration_tests {
             supplied: Default::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
         };
         let environment = ObjectEnvironment::default();
         let installation = KaniInstallation::discover().expect("cargo-kani is installed");

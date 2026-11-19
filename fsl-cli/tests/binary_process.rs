@@ -508,6 +508,7 @@ fn machine_run_writes_the_canonical_fsl_outcome() {
             supplied: SuppliedLimits::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             wire_arguments: Vec::new(),
             snapshot: None,
         },

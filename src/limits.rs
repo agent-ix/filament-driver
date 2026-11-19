@@ -296,6 +296,7 @@ mod tests {
             supplied: filament_semantic_value::supplied_stop::SuppliedLimits::default(),
             backend: Default::default(),
             clocks: Default::default(),
+            live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
         }
     }
 
