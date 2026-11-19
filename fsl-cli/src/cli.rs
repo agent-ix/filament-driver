@@ -2695,7 +2695,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     if verb == Verb::Export {
         return match ExportOptions::parse(raw_arguments) {
             Ok(options) => with_format(export(&options, format), format),
-            Err(error) => option_refusal(Operation::Export, &error),
+            Err(error) => CommandResult::input_refusal(Operation::Export, error),
         };
     }
     if verb == Verb::Compile {
@@ -3007,7 +3007,7 @@ mod outcome_tests {
             )]);
         let result = CommandResult::document(document);
         let mut stderr = Vec::new();
-        write_result_diagnostics(&result, OutputFormat::Text, &mut stderr)
+        write_result_diagnostics(&result, super::OutputFormat::Text, &mut stderr)
             .expect("write FSL diagnostic");
         assert_eq!(stderr, b"the selected function has no parameter named x\n");
     }
