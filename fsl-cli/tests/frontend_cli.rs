@@ -752,9 +752,17 @@ fn one_item(claim: &str) -> serde_json::Value {
 }
 
 fn schedulability_request(name: &str, source: &str, claim: &str) -> AnalyzeRequest {
+    schedulability_request_items(name, source, one_item(claim))
+}
+
+fn schedulability_request_items(
+    name: &str,
+    source: &str,
+    items: serde_json::Value,
+) -> AnalyzeRequest {
     AnalyzeRequest::new(
         name,
-        one_item(claim),
+        items,
         serde_json::json!({"models": [], "documents": []}),
     )
     .with_file(
@@ -789,10 +797,10 @@ fn analyze_fixed_priority_holds_and_refutes_through_cli() {
     };
     let claims = "schedulable ControlFp on Control under fixed_priority;\n\
                   response StopMonitorFast on Control.stopMonitor <= 10 ms under fixed_priority;";
-    let holds = schedulability_request(
+    let holds = schedulability_request_items(
         "fixed-priority-holds",
         &schedulability_source(&task_set(15), claims),
-        "ControlFp",
+        serde_json::json!([{"claim": "ControlFp"}, {"claim": "StopMonitorFast"}]),
     );
     let (document, exit) = holds.json();
     assert_eq!(exit, Some(0), "{document}");
@@ -803,6 +811,7 @@ fn analyze_fixed_priority_holds_and_refutes_through_cli() {
         "{document}"
     );
     assert_eq!(item["record"]["certification"], "certified", "{document}");
+    assert_eq!(document["items"][1]["record"]["result"], "proved", "{document}");
 
     let refuted = schedulability_request(
         "fixed-priority-refuted",
