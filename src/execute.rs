@@ -140,7 +140,8 @@ impl ExecutionFailure {
 pub fn execute(request: ExecutionRequest<'_>) -> Result<ExecutionResult, ExecutionFailure> {
     execute_using(request, |request, object_environment| {
         if let Some(integer_division) = request.integer_division {
-            fsl_replay::spine::run_with_integer_division(
+            let catalog = fsl_semantics::library::bundle::DefinitionCatalog::default();
+            fsl_replay::spine::run_with_profile_catalog_and_integer_division(
                 request.source.clone(),
                 request.package_name.to_owned(),
                 request.path,
@@ -150,6 +151,10 @@ pub fn execute(request: ExecutionRequest<'_>) -> Result<ExecutionResult, Executi
                 request.limits,
                 &request.call,
                 object_environment,
+                fsl_replay::spine::ProfileCatalogInput {
+                    catalog: &catalog,
+                    limits: fsl_semantics::library::bundle::PackageLimits::default(),
+                },
                 integer_division,
                 &request.cancel,
             )
