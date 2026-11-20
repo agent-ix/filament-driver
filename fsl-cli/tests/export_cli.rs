@@ -172,8 +172,7 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
     let source_package = json!({"identity": "example/counter-unit", "version": "7"});
     let export_request = json!({"format": "native-run/1", "request": {
         "models": models,
-        "package": {"file": "checked-package.json", "equality": "handoff/equality.json",
-            "source_package": source_package},
+        "package": {"file": "checked-package.json", "source_package": source_package},
         "export": export}});
     std::fs::write(
         directory.path().join("selected-export.json"),
