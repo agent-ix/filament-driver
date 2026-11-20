@@ -2,8 +2,11 @@ use fsl_cli_contracts::{Captured, CliCase, ContractError};
 use serde_json::{json, Value};
 
 mod options;
+mod packages;
+mod providers;
 mod requests;
 mod semantics;
+mod value_forms;
 
 // Original two-step workflow over the authoritative same-repository Counter
 // input model. The model is referenced in place, never copied into this crate.

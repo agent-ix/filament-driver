@@ -250,3 +250,21 @@ fn explicit_empty_items_and_omitted_items_have_different_meanings() -> Result<()
     assert_eq!(all["items"][1]["request_index"], 1);
     Ok(())
 }
+
+/// Trace: FR-022-AC-5
+/// FSL FR-620: terminal certificates are outcomes, not caller-supplied item settings.
+#[test]
+fn a_caller_cannot_supply_an_accepted_certificate_instead_of_analysis() -> Result<(), ContractError>
+{
+    let (case, mut request) = setup()?;
+    request["request"]["items"][0]["certificate"] = json!({"accepted":true,"checker":"en-1-closure","identity":{"model":"test/counter","ordinal":0}});
+    write_request(&case, &request)?;
+    let value =
+        invalid_request(&case.run(&["analyze", "data/request.json", "--format", "json"])?);
+    assert_eq!(value["last_stage"], Value::Null);
+    assert!(value["diagnostics"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("certificate"));
+    Ok(())
+}
