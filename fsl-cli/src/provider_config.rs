@@ -56,11 +56,7 @@ impl ProviderArguments {
             let Some(value) = value else { continue };
             match *name {
                 options::PROVIDER_CONFIG => {
-                    if self.config.replace(PathBuf::from(value)).is_some() {
-                        return Err(OptionRefusal::Usage(format!(
-                            "{name} may be supplied only once"
-                        )));
-                    }
+                    self.config = Some(PathBuf::from(value));
                 }
                 options::PROVIDER_LIMIT => {
                     let argument = value.to_string_lossy().into_owned();

@@ -204,7 +204,7 @@ fn verb_help_writes_its_section() {
         "check options:\n",
         "  --markdown\n",
         "  --model <identity>=<file> (repeatable)\n",
-        "  --library <file> (repeatable)\n",
+        "  --library <identity>=<file> (repeatable)\n",
         "  --dependent-bytes <bytes>\n",
         "  --limit name=value (repeatable)\n",
         "  --integer-division euclidean|floor|truncating\n",

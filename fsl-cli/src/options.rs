@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 pub const MARKDOWN: &str = "--markdown";
 /// `check --model <identity>=<file>` (FSL FR-866).
 pub const MODEL: &str = "--model";
-/// `check --library <file>`.
+/// `check --library <identity>=<file>` (FSL FR-866).
 pub const LIBRARY: &str = "--library";
 /// `--dependent-bytes <bytes>`.
 pub const DEPENDENT_BYTES: &str = "--dependent-bytes";
@@ -67,6 +67,9 @@ pub struct OptionSpec {
     pub needs: &'static str,
     /// Whether the option may be given more than once.
     pub repeatable: bool,
+    /// Whether a repeat refuses with no stdout byte (FSL FR-767) rather than as a
+    /// typed `invalid-request` document.
+    pub quiet_repeat: bool,
 }
 
 impl OptionSpec {
@@ -76,6 +79,7 @@ impl OptionSpec {
             value: None,
             needs: "",
             repeatable: false,
+            quiet_repeat: false,
         }
     }
 
@@ -85,11 +89,17 @@ impl OptionSpec {
             value: Some(value),
             needs,
             repeatable: false,
+            quiet_repeat: false,
         }
     }
 
     const fn repeated(mut self) -> Self {
         self.repeatable = true;
+        self
+    }
+
+    const fn quiet_repeat(mut self) -> Self {
+        self.quiet_repeat = true;
         self
     }
 
@@ -223,10 +233,11 @@ fn build() -> Vec<VerbEntry> {
             options: vec![
                 OptionSpec::flag(MARKDOWN),
                 OptionSpec::valued(MODEL, "<identity>=<file>", "<identity>=<file>").repeated(),
-                OptionSpec::valued(LIBRARY, "<file>", PATH).repeated(),
+                OptionSpec::valued(LIBRARY, "<identity>=<file>", "<identity>=<file>").repeated(),
                 bytes(DEPENDENT_BYTES),
                 limit(),
-                OptionSpec::valued(INTEGER_DIVISION, "euclidean|floor|truncating", "a law"),
+                OptionSpec::valued(INTEGER_DIVISION, "euclidean|floor|truncating", "a law")
+                    .quiet_repeat(),
                 OptionSpec::valued(EXTENSIONS, "<file>", PATH),
                 format(),
             ],
@@ -290,7 +301,7 @@ fn build() -> Vec<VerbEntry> {
         },
         VerbEntry {
             verb: "inspect",
-            usage: vec!["inspect --handoff <directory>"],
+            usage: vec!["inspect [options] --handoff <directory>"],
             options: vec![
                 OptionSpec::valued(HANDOFF, "<directory>", "a directory operand"),
                 OptionSpec::valued(FORMAT, "text|json|dot", "text, json, or dot"),
@@ -320,6 +331,27 @@ pub struct Scanned {
     pub options: Vec<(&'static str, Option<OsString>)>,
 }
 
+/// Why a scan refused the arguments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Refusal {
+    /// A usage refusal: an unknown option, or a missing value.
+    Usage(String),
+    /// An option the table marks `quiet_repeat` given twice: FSL FR-767 writes
+    /// this refusal to stderr with no stdout byte.
+    Repeated(String),
+}
+
+impl Refusal {
+    /// The refusal text.
+    #[must_use]
+    #[cfg(test)]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Usage(message) | Self::Repeated(message) => message,
+        }
+    }
+}
+
 /// What a scan found.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Scan {
@@ -331,13 +363,15 @@ pub enum Scan {
 
 /// Scan `arguments` against `entry`, deciding refusals in FR-002's order:
 /// an option the entry does not list refuses first, a help option answers
-/// next, and a value check that failed refuses last. A value option takes
+/// next, and a value check that failed refuses last. A repeat of a
+/// non-repeatable option is such a value check (`--format` is exempt: the root
+/// parser validates it and the last one wins). A value option takes
 /// the following argument unless that argument is an option of the entry or
 /// a help option; an empty argument is no value.
-pub fn scan(entry: &VerbEntry, arguments: &[OsString]) -> Result<Scan, String> {
+pub fn scan(entry: &VerbEntry, arguments: &[OsString]) -> Result<Scan, Refusal> {
     let mut scanned = Scanned::default();
     let mut help = false;
-    let mut missing = None;
+    let mut deferred = None;
     let mut index = 0;
     while index < arguments.len() {
         let argument = &arguments[index];
@@ -351,8 +385,28 @@ pub fn scan(entry: &VerbEntry, arguments: &[OsString]) -> Result<Scan, String> {
             continue;
         }
         let Some(spec) = entry.option(text) else {
-            return Err(format!("unknown {} option `{text}`", entry.verb));
+            return Err(Refusal::Usage(format!(
+                "unknown {} option `{text}`",
+                entry.verb
+            )));
         };
+        if !spec.repeatable
+            && spec.name != FORMAT
+            && scanned.options.iter().any(|(given, _)| *given == spec.name)
+        {
+            deferred.get_or_insert_with(|| {
+                let message = format!(
+                    "{} may be supplied only once; {}",
+                    spec.name,
+                    entry.usage_refusal()
+                );
+                if spec.quiet_repeat {
+                    Refusal::Repeated(message)
+                } else {
+                    Refusal::Usage(message)
+                }
+            });
+        }
         if spec.value.is_none() {
             scanned.options.push((spec.name, None));
             continue;
@@ -366,15 +420,17 @@ pub fn scan(entry: &VerbEntry, arguments: &[OsString]) -> Result<Scan, String> {
                 index += 1;
             }
             None => {
-                missing.get_or_insert_with(|| format!("{} requires {}", spec.name, spec.needs));
+                deferred.get_or_insert_with(|| {
+                    Refusal::Usage(format!("{} requires {}", spec.name, spec.needs))
+                });
             }
         }
     }
     if help {
         return Ok(Scan::Help);
     }
-    match missing {
-        Some(message) => Err(message),
+    match deferred {
+        Some(refusal) => Err(refusal),
         None => Ok(Scan::Options(scanned)),
     }
 }
@@ -394,14 +450,11 @@ impl Scanned {
         self.options.iter().any(|(given, _)| *given == name)
     }
 
-    /// The one value given for `name`, refused when given twice.
-    pub fn once<'a>(&'a self, name: &'a str) -> Result<Option<&'a OsString>, String> {
-        let mut values = self.values(name);
-        let first = values.next();
-        if values.next().is_some() {
-            return Err(format!("{name} may be supplied only once"));
-        }
-        Ok(first)
+    /// The first value given for `name`. The scan already refused a repeat of
+    /// an option the table does not mark repeatable.
+    #[must_use]
+    pub fn value<'a>(&'a self, name: &'a str) -> Option<&'a OsString> {
+        self.values(name).next()
     }
 }
 

@@ -885,7 +885,10 @@ fn check_library_path_is_read_for_selected_import() {
         .arg("check")
         .arg(CHECK_LIBRARY_SOURCE)
         .arg("--library")
-        .arg(&missing_library)
+        .arg(format!(
+            "driver/check-library={}",
+            missing_library.display()
+        ))
         .arg("--format")
         .arg("json")
         .output()
@@ -916,7 +919,7 @@ fn check_with_library_checks_importing_unit() {
         .arg("check")
         .arg(CHECK_LIBRARY_SOURCE)
         .arg("--library")
-        .arg(&library)
+        .arg(format!("driver/check-library={}", library.display()))
         .arg("--format")
         .arg("json")
         .output()
@@ -2693,22 +2696,89 @@ fn check_accepts_the_model_operand_the_missing_import_message_names() {
         "{operand}: {}",
         String::from_utf8_lossy(&accepted.stdout)
     );
-    for bad in ["no-equals", "=file.json", "driver/ir608-model="] {
+    let absent = directory.0.join("absent.json");
+    let duplicate = [
+        format!("driver/ir608-model={}", absent.display()),
+        format!("driver/ir608-model={}", absent.display()),
+    ];
+    let mut cases: Vec<Vec<String>> = ["no-equals", "=file.json", "driver/ir608-model="]
+        .into_iter()
+        .map(|bad| vec![bad.to_owned()])
+        .collect();
+    cases.push(duplicate.to_vec());
+    for operands in cases {
+        let mut arguments = vec!["check".to_owned(), CHECK_MODEL_SOURCE.to_owned()];
+        for operand in &operands {
+            arguments.extend(["--model".to_owned(), operand.clone()]);
+        }
+        arguments.extend(["--format".to_owned(), "json".to_owned()]);
         let output = Command::new(FSL)
-            .args([
-                "check",
-                CHECK_MODEL_SOURCE,
-                "--model",
-                bad,
-                "--format",
-                "json",
-            ])
+            .args(&arguments)
             .output()
             .expect("check with a malformed operand");
-        assert_eq!(output.status.code(), Some(20), "{bad}");
+        assert_eq!(output.status.code(), Some(20), "{operands:?}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("--model"), "{operands:?}: {stdout}");
         assert!(
-            String::from_utf8_lossy(&output.stdout).contains("--model"),
-            "{bad}"
+            !stdout.contains("io-error"),
+            "no file read: {operands:?}: {stdout}"
         );
     }
+}
+
+/// QSL-2649 / FSL FR-866: a unit that selects two models checks from two
+/// `--model <identity>=<file>` operands, and an operand no `model` declaration
+/// selects is refused after the source parses.
+#[test]
+#[trace("FR-002-AC-24", "FR-002-AC-25")]
+fn check_takes_two_model_operands_for_a_unit_selecting_two_models() {
+    let directory = TemporaryDirectory::new("check-two-models");
+    let first = directory.0.join("a.json");
+    let second = directory.0.join("b.json");
+    std::fs::copy(MODEL, &first).expect("copy first model");
+    let text = std::fs::read_to_string(MODEL).expect("read model fixture");
+    std::fs::write(
+        &second,
+        text.replace("driver/ir608-model", "driver/ir608-model-b"),
+    )
+    .expect("write second model");
+    let unit = directory.0.join("two.fsl");
+    std::fs::write(
+        &unit,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"filament.model.complete/v1\";\n\
+         model M = \"driver/ir608-model\";\n\
+         model N = \"driver/ir608-model-b\";\n\
+         function valid using v(): Boolean pure { true }\n",
+    )
+    .expect("write unit");
+    let check = |operands: &[String]| {
+        let mut command = Command::new(FSL);
+        command.arg("check").arg(&unit);
+        for operand in operands {
+            command.args(["--model", operand]);
+        }
+        command.args(["--format", "json"]).output().expect("check")
+    };
+    let one = format!("driver/ir608-model={}", first.display());
+    let two = format!("driver/ir608-model-b={}", second.display());
+    let both = check(&[one.clone(), two.clone()]);
+    assert_eq!(
+        both.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&both.stdout)
+    );
+    let reversed = check(&[two.clone(), one.clone()]);
+    assert_eq!(reversed.status.code(), Some(0));
+    let only_one = check(std::slice::from_ref(&one));
+    assert_eq!(only_one.status.code(), Some(20));
+    assert!(String::from_utf8_lossy(&only_one.stdout).contains("driver/ir608-model-b"));
+    let unselected = check(&[one, two, format!("driver/unused={}", first.display())]);
+    assert_eq!(unselected.status.code(), Some(20));
+    let stdout = String::from_utf8_lossy(&unselected.stdout);
+    assert!(
+        stdout.contains("--model") && stdout.contains("driver/unused"),
+        "{stdout}"
+    );
 }

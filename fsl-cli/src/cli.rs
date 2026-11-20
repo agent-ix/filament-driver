@@ -252,8 +252,8 @@ struct ExportOptions {
 
 impl ExportOptions {
     fn from_scanned(scanned: &Scanned) -> Result<Self, String> {
-        let output = scanned.once(options::OUTPUT)?.map(PathBuf::from);
-        let evidence = scanned.once(options::EVIDENCE)?.map(PathBuf::from);
+        let output = scanned.value(options::OUTPUT).map(PathBuf::from);
+        let evidence = scanned.value(options::EVIDENCE).map(PathBuf::from);
         let limit_operands = limit_operands(scanned)?;
         let usage = entry_usage(Verb::Export);
         let request = match (scanned.positionals.as_slice(), evidence.as_ref()) {
@@ -386,7 +386,7 @@ impl InspectOptions {
     /// Apply FR-002-AC-23's operand shape: `--handoff` takes its directory
     /// and no other operand; without `--handoff` the form is not routed.
     fn from_scanned(scanned: &Scanned) -> Result<Self, String> {
-        let handoff = scanned.once(options::HANDOFF)?.map(PathBuf::from);
+        let handoff = scanned.value(options::HANDOFF).map(PathBuf::from);
         if handoff.is_some() {
             if let Some(extra) = scanned.positionals.first() {
                 return Err(format!(
@@ -476,7 +476,7 @@ struct CheckOptions {
     markdown: bool,
     /// Each `--model <identity>=<file>` (FSL FR-866), in option order.
     model: Vec<(String, PathBuf)>,
-    libraries: Vec<PathBuf>,
+    libraries: Vec<(String, PathBuf)>,
     dependent_bytes: usize,
     limits: LimitOverrides,
     /// The `--integer-division <law>` value, unread until the check runs
@@ -536,7 +536,7 @@ struct SourceOptions {
 impl SourceOptions {
     fn from_scanned(verb: Verb, scanned: &Scanned) -> Result<Self, String> {
         let limit_operands = limit_operands(scanned)?;
-        let extensions = scanned.once(options::EXTENSIONS)?.map(PathBuf::from);
+        let extensions = scanned.value(options::EXTENSIONS).map(PathBuf::from);
         let [authority, identity, path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(verb));
         };
@@ -579,8 +579,8 @@ impl SourceOptions {
 
 impl CompileOptions {
     fn from_scanned(scanned: &Scanned) -> Result<Self, String> {
-        let clocks = scanned.once(options::CLOCKS)?.map(PathBuf::from);
-        let output = scanned.once(options::OUTPUT)?.map(PathBuf::from);
+        let clocks = scanned.value(options::CLOCKS).map(PathBuf::from);
+        let output = scanned.value(options::OUTPUT).map(PathBuf::from);
         let limit_operands = limit_operands(scanned)?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(Verb::Compile));
@@ -597,30 +597,19 @@ impl CompileOptions {
 
 impl CheckOptions {
     fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
-        let usage = || OptionRefusal::Quiet(entry_usage(Verb::Check));
         let markdown = scanned.has(options::MARKDOWN);
-        if scanned.values(options::MARKDOWN).count() > 1 {
-            return Err(usage());
-        }
-        let mut integer_division = None;
-        for (name, value) in &scanned.options {
-            if *name == options::INTEGER_DIVISION {
-                let law = value
-                    .as_ref()
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| format!("{} requires a law", options::INTEGER_DIVISION))?;
-                if integer_division.replace(law.to_owned()).is_some() {
-                    return Err(usage());
-                }
-            }
-        }
+        let integer_division = scanned
+            .value(options::INTEGER_DIVISION)
+            .map(|law| {
+                law.to_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| format!("{} requires a law", options::INTEGER_DIVISION))
+            })
+            .transpose()?;
         let model = identity_operands(scanned, options::MODEL)?;
-        let extensions = scanned.once(options::EXTENSIONS)?.map(PathBuf::from);
-        let libraries = scanned
-            .values(options::LIBRARY)
-            .map(PathBuf::from)
-            .collect();
-        let dependent_bytes = match scanned.once(options::DEPENDENT_BYTES)? {
+        let extensions = scanned.value(options::EXTENSIONS).map(PathBuf::from);
+        let libraries = identity_operands(scanned, options::LIBRARY)?;
+        let dependent_bytes = match scanned.value(options::DEPENDENT_BYTES) {
             Some(value) => value
                 .to_str()
                 .and_then(|value| value.parse::<usize>().ok())
@@ -731,7 +720,7 @@ impl RunOptions {
             (options::REQUEST_BYTES, &mut intake_limits.request_bytes),
             (options::DEPENDENT_BYTES, &mut intake_limits.dependent_bytes),
         ] {
-            if let Some(value) = scanned.once(name)? {
+            if let Some(value) = scanned.value(name) {
                 *slot = value
                     .to_str()
                     .and_then(|value| value.parse::<usize>().ok())
@@ -739,7 +728,7 @@ impl RunOptions {
             }
         }
         let limit_operands = limit_operands(scanned)?;
-        let engine = match scanned.once(options::ENGINE)? {
+        let engine = match scanned.value(options::ENGINE) {
             Some(value) => {
                 let value = value.to_str().ok_or_else(|| {
                     format!("{} requires interpreter, aot, or jit", options::ENGINE)
@@ -748,7 +737,7 @@ impl RunOptions {
             }
             None => ExecutionEngine::default(),
         };
-        let clocks = scanned.once(options::CLOCKS)?.map(PathBuf::from);
+        let clocks = scanned.value(options::CLOCKS).map(PathBuf::from);
         let mut providers = crate::provider_config::ProviderArguments::default();
         providers.take_all(scanned)?;
         let local_options = scanned
@@ -1401,11 +1390,6 @@ fn check_source(options: CheckOptions) -> CommandResult {
     if options.markdown {
         return check_markdown_source(options, limits, integer_division, &extensions);
     }
-    let catalog = if extensions.is_empty() {
-        None
-    } else {
-        extension_set::catalog(&extensions).ok()
-    };
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1413,64 +1397,20 @@ fn check_source(options: CheckOptions) -> CommandResult {
             return CommandResult::catalog_failure_for(Operation::Check, Code::IoError, message);
         }
     };
-    let source = options
-        .source_identity
-        .clone()
-        .unwrap_or_else(|| SourceIdentity::new("filament", &options.path));
-    let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
-    tc018_record_check_request(&options, &source, &bytes, limits);
-    let request = ParseRequest {
-        source: &source,
-        path: &options.path,
-        bytes: &bytes,
-    };
-    let parsed = match &catalog {
-        Some(catalog) => parse_selecting_extensions(
-            &request,
-            ProfileCatalogInput {
-                catalog,
-                limits: PackageLimits::default(),
-            },
-            limits.source,
-            &cancel,
-        ),
-        None => parse(&request, limits.source, &cancel),
-    };
-    let parsed = match parsed {
-        Ok(parsed) => parsed,
-        Err(_failure) => {
-            let inputs = command::CheckInputs {
-                limits,
-                dependent_bytes: options.dependent_bytes,
-                integer_division,
-                extensions,
-                ..command::CheckInputs::default()
-            };
-            return check_result(&command::check_outcome(Path::new(&options.path), &inputs));
-        }
-    };
-
-    // The CLI accepts files while the typed check API also requires each
-    // selected identity. Read those identities from the source first so
-    // unused model and library paths are refused before their files open.
-    let selected_libraries = &parsed.value().unit().selections().imports;
-    let models = options.model;
-    let libraries = options
-        .libraries
-        .into_iter()
-        .enumerate()
-        .map(|(index, path)| {
-            let identity = selected_libraries
-                .get(index)
-                .map(|selection| selection.identity.clone())
-                .unwrap_or_else(|| format!("unused-library-{index}"));
-            (identity, path)
-        })
-        .collect();
+    {
+        let source = options
+            .source_identity
+            .clone()
+            .unwrap_or_else(|| SourceIdentity::new("filament", &options.path));
+        tc018_record_check_request(&options, &source, &bytes, limits);
+    }
+    drop(bytes);
+    // FSL reads the model, library and extension files itself and refuses an
+    // identity the unit does not select (FSL FR-866).
     let inputs = command::CheckInputs {
-        models,
-        libraries,
+        models: options.model,
+        libraries: options.libraries,
         limits,
         dependent_bytes: options.dependent_bytes,
         integer_division,
@@ -2340,7 +2280,7 @@ struct MonitorOptions {
 
 impl MonitorOptions {
     fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
-        let input = scanned.once(options::INPUT)?.map(PathBuf::from);
+        let input = scanned.value(options::INPUT).map(PathBuf::from);
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
         let [path] = scanned.positionals.as_slice() else {
@@ -2596,7 +2536,12 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
     let scanned = match options::scan(entry, raw_arguments) {
         Ok(Scan::Help) => return CommandResult::plain(entry.help()),
         Ok(Scan::Options(scanned)) => scanned,
-        Err(message) => return CommandResult::input_refusal(operation, message),
+        Err(options::Refusal::Usage(message)) => {
+            return CommandResult::input_refusal(operation, message);
+        }
+        Err(options::Refusal::Repeated(message)) => {
+            return CommandResult::failure(Code::InvalidRequest.category(), message);
+        }
     };
     match verb {
         Verb::Analyze | Verb::Replay => match RequestOptions::from_scanned(verb, &scanned) {
@@ -2929,7 +2874,9 @@ mod tests {
 
     fn scanned(verb: &str, arguments: &[OsString]) -> Result<crate::options::Scanned, String> {
         let entry = crate::options::entry(verb).expect("verb has an option table entry");
-        match crate::options::scan(entry, arguments)? {
+        match crate::options::scan(entry, arguments)
+            .map_err(|refusal| refusal.message().to_owned())?
+        {
             crate::options::Scan::Options(scanned) => Ok(scanned),
             crate::options::Scan::Help => Err("help requested".to_owned()),
         }
@@ -3155,9 +3102,9 @@ mod tests {
             OsString::from("--model"),
             OsString::from("example/two=other=model.json"),
             OsString::from("--library"),
-            OsString::from("geometry.native"),
+            OsString::from("test/geometry=geometry.native"),
             OsString::from("--library"),
-            OsString::from("units.native"),
+            OsString::from("test/units=units.native"),
             OsString::from("--dependent-bytes"),
             OsString::from("1234"),
         ];
@@ -3173,8 +3120,8 @@ mod tests {
         assert_eq!(
             options.libraries,
             [
-                PathBuf::from("geometry.native"),
-                PathBuf::from("units.native")
+                ("test/geometry".to_owned(), PathBuf::from("geometry.native")),
+                ("test/units".to_owned(), PathBuf::from("units.native")),
             ]
         );
         assert_eq!(options.dependent_bytes, 1234);
@@ -3216,6 +3163,58 @@ mod tests {
         ] {
             assert!(parse_check(&args).is_err(), "accepted {args:?}");
         }
+    }
+
+    /// Trace: FR-002-AC-24; the table refuses a repeat of an option it does not
+    /// mark repeatable, for flags and valued options, before the verb checks run.
+    #[test]
+    fn the_table_refuses_a_repeated_non_repeatable_option() {
+        for arguments in [
+            vec!["--markdown", "--markdown", "a", "b", "x.md"],
+            vec![
+                "--integer-division",
+                "floor",
+                "--integer-division",
+                "floor",
+                "u.fsl",
+            ],
+            vec!["--extensions", "s.json", "--extensions", "s.json", "u.fsl"],
+            vec!["--dependent-bytes", "1", "--dependent-bytes", "2", "u.fsl"],
+        ] {
+            let arguments: Vec<OsString> = arguments.into_iter().map(OsString::from).collect();
+            let entry = options::entry("check").expect("check entry");
+            let refusal = options::scan(entry, &arguments).expect_err("a repeated option");
+            assert_eq!(
+                matches!(refusal, options::Refusal::Repeated(_)),
+                arguments[0] == "--integer-division",
+                "{arguments:?}"
+            );
+            assert!(refusal.message().contains("may be supplied only once"));
+        }
+        let repeatable = [
+            "--model",
+            "a=1",
+            "--model",
+            "b=2",
+            "--library",
+            "c=3",
+            "--library",
+            "d=4",
+            "--limit",
+            "x=1",
+            "--limit",
+            "y=2",
+            "--format",
+            "json",
+            "--format",
+            "text",
+        ];
+        let arguments: Vec<OsString> = repeatable.into_iter().map(OsString::from).collect();
+        let entry = options::entry("check").expect("check entry");
+        assert!(matches!(
+            options::scan(entry, &arguments),
+            Ok(Scan::Options(_))
+        ));
     }
 
     /// Trace: FR-003-AC-1 / FR-004-AC-1, parse both options into the run call.
@@ -3277,12 +3276,11 @@ mod tests {
             OsString::from("--provider-config"),
             OsString::from("two.json"),
         ];
-        assert_eq!(
+        assert!(matches!(
             parse_run(&duplicate).err(),
-            Some(OptionRefusal::Usage(
-                "--provider-config may be supplied only once".to_owned()
-            ))
-        );
+            Some(OptionRefusal::Usage(message))
+                if message.starts_with("--provider-config may be supplied only once")
+        ));
     }
 
     /// Trace: FR-006-AC-29; a refused `--provider-limit` is its own refusal,
@@ -3368,7 +3366,7 @@ mod tests {
                 let copy = entry.without(option.name);
                 let refusal = options::scan(&copy, &arguments)
                     .expect_err("the parser refuses an option outside its entry");
-                assert!(refusal.contains(option.name), "{refusal}");
+                assert!(refusal.message().contains(option.name), "{refusal:?}");
                 let tables: Vec<options::VerbEntry> = options::table()
                     .iter()
                     .map(|other| {
@@ -3399,20 +3397,25 @@ mod tests {
     #[test]
     fn no_option_literal_appears_outside_the_table() {
         let literal = regex::Regex::new(r#""--?[A-Za-z]"#).expect("pattern");
-        for (file, source) in [
-            ("cli.rs", include_str!("cli.rs")),
-            ("provider_config.rs", include_str!("provider_config.rs")),
-            ("extension_set.rs", include_str!("extension_set.rs")),
-            ("main.rs", include_str!("main.rs")),
-        ] {
-            let production = source.split("\n#[cfg(test)]").next().unwrap_or(source);
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        for entry in std::fs::read_dir(&directory).expect("read src") {
+            let path = entry.expect("directory entry").path();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            if name == "options.rs" || path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("read source");
+            let production = source.split("\n#[cfg(test)]").next().unwrap_or(&source);
             for (number, line) in production.lines().enumerate() {
                 if line.trim_start().starts_with("//") {
                     continue;
                 }
                 assert!(
                     !literal.is_match(line),
-                    "{file}:{} spells an option outside the table: {line}",
+                    "{name}:{} spells an option outside the table: {line}",
                     number + 1
                 );
             }
