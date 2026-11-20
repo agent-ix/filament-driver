@@ -89,9 +89,12 @@ fn argument_refusal(output: &Captured, context: &str) -> Result<(), ContractErro
         "missing offending argument {context:?}: {message}"
     );
     if !output.0.stdout.is_empty() {
-        let doc = output.json()?;
-        assert_eq!(doc["operation"], "package", "{doc}");
-        assert_eq!(doc["category"], "refusal", "{doc}");
+        assert!(
+            output
+                .stdout_text()?
+                .starts_with("package: refusal (exit 20)"),
+            "default-format argument refusal: {message}"
+        );
     }
     Ok(())
 }
@@ -100,16 +103,62 @@ fn package(case: &CliCase, path: &str, declarations: &[&str]) -> TestResult {
     let bytes = fs::read(case.directory().join(path))?;
     let artifact: Value = serde_json::from_slice(&bytes)?;
     assert_eq!(
-        artifact["format"], "filament.checked-package/v2",
+        artifact["contract_version"], "filament.checked-package/v2",
         "{artifact}"
     );
-    let content = artifact.to_string();
+    assert_eq!(
+        artifact["semantic_graph"]["graph_version"],
+        "filament.checked-semantic-graph/v2"
+    );
+    let nodes = artifact["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("semantic nodes");
     for declaration in declarations {
         assert!(
-            content.contains(declaration),
-            "missing compiled declaration {declaration}: {artifact}"
+            nodes
+                .iter()
+                .any(|node| node["declaration"]["qualified_name"] == json!([declaration])),
+            "missing compiled declaration {declaration}"
         );
     }
+    let total = nodes
+        .iter()
+        .find(|node| node["declaration"]["qualified_name"] == json!(["Total"]))
+        .expect("Total declaration");
+    assert_eq!(total["semantic_form"], "pure_function");
+    let body = total["body"]["members"]
+        .as_array()
+        .expect("function members")
+        .iter()
+        .find(|member| member["name"] == "body")
+        .expect("function body");
+    let expression = nodes
+        .iter()
+        .find(|node| node["node_id"] == body["value"]["target"])
+        .expect("resolvable function body reference");
+    assert_eq!(expression["body"]["term"], "application");
+    assert_eq!(
+        expression["body"]["operation"]["identity"],
+        "filament.op.integer.add"
+    );
+    let arguments = expression["body"]["arguments"]
+        .as_array()
+        .expect("addition arguments");
+    assert_eq!(arguments.len(), 2);
+    assert_eq!(arguments[1]["value_kind"], "integer");
+    assert_eq!(arguments[1]["value"], "2");
+    let parameter = nodes
+        .iter()
+        .find(|node| node["node_id"] == arguments[0]["target"])
+        .expect("resolvable parameter reference");
+    assert_eq!(parameter["semantic_form"], "parameter");
+    let parameter_name = parameter["body"]["members"]
+        .as_array()
+        .expect("parameter members")
+        .iter()
+        .find(|member| member["name"] == "name")
+        .expect("parameter name");
+    assert_eq!(parameter_name["value"]["value"], "pieces");
     Ok(())
 }
 
@@ -162,7 +211,7 @@ fn request_and_cli_output_paths_emit_equal_bytes_and_ignore_document_revision() 
         "json",
     ])?)?;
     let mut input = request(source("parcel.fsl", "parcel"));
-    input["request"]["output"] = json!({"package":"member.json"});
+    input["request"]["output"] = json!({"package":"via-member.package.json"});
     input["request"]["program"]["source"]["document"] = json!("ChangedAnnotation");
     input["request"]["program"]["source"]["formal_revision"] = json!(29);
     write_request(&case, "inputs/member.json", &input)?;
@@ -170,7 +219,7 @@ fn request_and_cli_output_paths_emit_equal_bytes_and_ignore_document_revision() 
     assert_eq!(cli, member);
     assert_eq!(
         fs::read(case.directory().join("cli.json"))?,
-        fs::read(case.directory().join("inputs/member.json"))?
+        fs::read(case.directory().join("inputs/via-member.package.json"))?
     );
     package(&case, "cli.json", &["Total", "Parcel"])
 }
@@ -203,8 +252,8 @@ fn multiple_source_units_retain_both_declarations() -> TestResult {
     let case = parcel()?;
     case.write("inputs/offset.fsl", b"language \"ix:native\" edition \"1-draft\";\nprofile n = \"filament.value.complete/v1\";\nfunction Offset using n(): Integer pure { 5 }\n")?;
     let input = request(json!([
-        source("parcel.fsl", "parcel"),
-        source("offset.fsl", "offset")
+        source("parcel.fsl", "parcel")["source"],
+        source("offset.fsl", "offset")["source"]
     ]));
     write_request(&case, "inputs/multi.json", &input)?;
     success(&case.run(&[
@@ -715,3 +764,5 @@ fn clock_file_failures_are_bounded_typed_and_precede_the_request() -> TestResult
     assert!(huge.to_string().contains("clocks-file-too-large"));
     Ok(())
 }
+
+mod options;
