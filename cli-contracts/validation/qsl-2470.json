@@ -1,0 +1,56 @@
+{
+  "ticket": "QSL-2470",
+  "component": "fsl-cli-contracts",
+  "reviewed_functional_head": "fa1cabfdf1bf0a20b98d85dd4348e6f31f6ead3a",
+  "gate_head": "b94d37f0ab2d70e5eeddb66aa628c26a280644bb",
+  "command": "make cli-contracts FSL=<frozen L3 prebuilt binary>",
+  "exit": 0,
+  "passed": 79,
+  "failed": 0,
+  "ignored": 2,
+  "groups": {
+    "harness_unit": {
+      "passed": 3,
+      "ignored": 0
+    },
+    "check": {
+      "passed": 32,
+      "ignored": 1
+    },
+    "compile": {
+      "passed": 39,
+      "ignored": 1
+    },
+    "existing_contracts": {
+      "passed": 5,
+      "ignored": 0
+    },
+    "doctests": {
+      "passed": 0,
+      "ignored": 0
+    }
+  },
+  "ignored_not_coverage": [
+    "QSL-2657",
+    "QSL-2658"
+  ],
+  "cohort": {
+    "driver": "a260b3b26277bfa907ce77373c4f15dac6671083",
+    "fsl": "8877b38b6397055fa11dc2e7882ad87d02ecb654",
+    "codegen": "a11a66ab9c5eeee9163f5d4d084644296b565ba9",
+    "ir": "c7b62038ed95262e3e51477f0831978397c8c5f7"
+  },
+  "execution": {
+    "jobs": 2,
+    "incremental": false,
+    "debug_info": false,
+    "test_threads": 1
+  },
+  "remaining_compile_scope": {
+    "typed_unknown_language": "QSL-2658 strict ignored desired oracle",
+    "native_authoring": "QSL-1980 outside runnable group",
+    "source_model_export": "QSL-1979 outside runnable group",
+    "markdown_extraction_compile": "planned outside runnable group",
+    "intake_override_normative_gap": "FR-287-AC-4/FR-869 require compile intake overrides; FR-027-AC-3 and driver FR-023-AC-7 specify fixed compile ceilings."
+  }
+}
