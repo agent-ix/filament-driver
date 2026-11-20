@@ -1,0 +1,22 @@
+{
+  "ticket": "QSL-2098",
+  "review": ["SR-1513", "SR-1514"],
+  "review_verdict": "PASS",
+  "component": "fsl-cli-contracts text_streams integration target",
+  "command": "CARGO_TARGET_DIR=/home/peter/dev/.worktrees/luna-qsl-2098/target CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 FSL=/home/peter/dev/.worktrees/luna-fsl-l3-main/target/debug/fsl FSL_TEST_PROVIDER=/home/peter/dev/.worktrees/luna-fsl-l3-main/target/debug/fsl-test-provider cargo test --manifest-path cli-contracts/Cargo.toml --test text_streams -- --test-threads=1 --skip two_protocols_declaring_one_channel_name_keep_their_queues_apart --skip a_recovery_predicate_over_the_recovery_view_is_evaluated",
+  "exit_code": 0,
+  "passed": 1,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0,
+  "scenarios": 6,
+  "subprocesses": 12,
+  "notes": [
+    "Complete affected text_streams integration target, after independent review; no name filter.",
+    "Six Unix text-outcome scenarios: parse, compile and run, each success and syntax refusal. Each uses a captured text invocation followed by an invocation against a pipe closed before spawn.",
+    "Existing operand, encoding, /dev/full, machine-pipe and producer-document facets remain accepted existing coverage, not rerun or recounted.",
+    "Windows text-pipe execution remains unclaimed.",
+    "External product and provider binaries reused unchanged. No product rebuild, main refresh, unrelated gate or confidence rerun.",
+    "Review artifacts were committed unchanged before the gate; this receipt changes no tested source."
+  ]
+}
