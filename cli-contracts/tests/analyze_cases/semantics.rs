@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
 
 /// Trace: FR-022-AC-1; FR-022-AC-2; FR-022-AC-8

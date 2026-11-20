@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use fsl_cli_contracts::{Captured, CliCase, ContractError};
 use serde_json::{json, Value};
 

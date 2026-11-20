@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
 
 const BACKEND: &str = "contracts.queue-proof-provider";
@@ -226,5 +227,64 @@ fn native_replay_accepts_a_real_external_witness_and_rejects_a_false_one(
         *parameter
     );
     assert_eq!(refuted["replay"]["reproduced"], true);
+    Ok(())
+}
+
+/// Trace: FR-022-AC-8; FR-022-AC-9
+/// Two eligible process providers require an explicit backend; the driver never chooses one.
+#[test]
+fn two_process_candidates_refuse_ambiguity_and_only_dispatch_the_named_backend(
+) -> Result<(), ContractError> {
+    const ALTERNATE: &str = "contracts.queue-proof-provider-alternate";
+    let (case, mut request) = provider_case("proved", "unbounded")?;
+    let mut config: Value =
+        serde_json::from_slice(&std::fs::read(case.directory().join("providers.json")).unwrap())?;
+    let mut alternate = config["providers"][0].clone();
+    alternate["arguments"][0] = json!(ALTERNATE);
+    alternate["arguments"][3] = json!(case.directory().join("alternate-request.json"));
+    alternate["arguments"][4] = json!(case.directory().join("alternate-shutdown"));
+    config["providers"].as_array_mut().unwrap().push(alternate);
+    case.write("providers.json", &serde_json::to_vec(&config)?)?;
+    request["request"]["items"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("backend");
+    write_request(&case, &request)?;
+
+    let ambiguous = document(&analyze_provider(&case)?, 20, "refusal");
+    let item = &ambiguous["items"][0];
+    assert_eq!(item["record"]["settled_by"], "disposition");
+    assert!(item["record"].get("backend").is_none());
+    assert_eq!(item["record"]["diagnostic"]["code"], "invalid_capability");
+    assert_eq!(item["record"]["diagnostic"]["cause"], "ambiguous-backend");
+    let candidates = item["request"]["candidates"]["backends"]
+        .as_array()
+        .unwrap();
+    for backend in [BACKEND, ALTERNATE] {
+        assert!(candidates.contains(&json!(backend)), "{item}");
+        assert!(ambiguous["registry"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["backend"] == backend));
+    }
+    assert!(!case.directory().join("provider-request.json").exists());
+    assert!(!case.directory().join("alternate-request.json").exists());
+    assert!(case.directory().join("provider-shutdown").is_file());
+    assert!(case.directory().join("alternate-shutdown").is_file());
+    assert_eq!(ambiguous["items"][1]["record"]["result"], "proved");
+    assert_eq!(ambiguous["items"][1]["record"]["backend"], "en-1");
+
+    request["request"]["items"][0]["backend"] = json!(BACKEND);
+    write_request(&case, &request)?;
+    let selected = document(&analyze_provider(&case)?, 0, "success");
+    assert_eq!(selected["items"][0]["record"]["result"], "proved");
+    assert_eq!(selected["items"][0]["record"]["backend"], BACKEND);
+    assert_eq!(selected["items"][0]["record"]["certification"], "trusted");
+    assert_eq!(sent(&case)["request"]["items"][0]["backend"], BACKEND);
+    assert!(
+        !case.directory().join("alternate-request.json").exists(),
+        "the unselected provider must receive no request"
+    );
     Ok(())
 }
