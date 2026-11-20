@@ -30,6 +30,9 @@ use fsl_replay::spine::{
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 
+#[path = "common/test_provider_path.rs"]
+mod test_provider_path;
+
 #[cfg(all(unix, feature = "tc018-test-adapter"))]
 #[path = "../../tests/common/units.rs"]
 mod shared_units;
@@ -710,7 +713,6 @@ fn provider_config_naming_a_missing_plugin_is_refused() {
     assert_provider_config_refusal(&path, "`/must-not-start` does not exist");
 }
 
-const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
 const PROVIDER_BACKEND: &str = "fsl.test-process-provider";
 
 /// A native-run/1 request in `directory` calling `Even(3)` with
@@ -744,7 +746,12 @@ fn provider_run(
     let config = directory.join("providers.json");
     let entries = providers
         .iter()
-        .map(|arguments| serde_json::json!({"path": TEST_PROVIDER, "arguments": arguments}))
+        .map(|arguments| {
+            serde_json::json!({
+                "path": test_provider_path::executable(),
+                "arguments": arguments
+            })
+        })
         .collect::<Vec<_>>();
     std::fs::write(
         &config,

@@ -1,0 +1,18 @@
+[package]
+name = "fsl-test-provider"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98.1"
+publish = false
+
+[[bin]]
+name = "fsl-test-provider"
+path = "src/main.rs"
+test = false
+doc = false
+
+[dependencies]
+serde_json = "=1.0.151"
+
+[lints]
+workspace = true
