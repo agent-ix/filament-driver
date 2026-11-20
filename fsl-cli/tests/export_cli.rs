@@ -121,10 +121,15 @@ fn export_output_writes_the_target_text_fsl_assembles() {
 #[trace("TC-3019", "FR-1039-AC-4")]
 fn export_selected_package_preserves_source_reference_and_writes_target() {
     let directory = folder();
+    std::fs::write(
+        directory.path().join("counter.fsl"),
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"filament.value.complete/v1\";\n\
+         function one using v(): Integer pure { 1 }\n",
+    )
+    .expect("the value-only source");
     let compile_request = json!({"format": "native-compile/1", "request": {
-        "models": [{"format": "semantic-ir/2.0.0", "source": {
-            "file": "counter.json", "authority": "test", "identity": "example/counter",
-            "document": "ExportCounter", "formal_revision": 1}}],
+        "models": [],
         "program": {"source": {
             "file": "counter.fsl", "authority": "test", "identity": "export-counter",
             "document": "ExportCounter", "formal_revision": 1}}}});
@@ -150,11 +155,10 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
 
     let source_package = json!({"identity": "test:recorded-export-counter", "version": "17"});
     let export_request = json!({"format": "native-run/1", "request": {
-        "models": [{"format": "semantic-ir/2.0.0", "source": {
-            "file": "counter.json", "authority": "test", "identity": "example/counter",
-            "document": "ExportCounter", "formal_revision": 1}}],
+        "models": [],
         "package": {"file": "checked-package.json", "source_package": source_package},
-        "export": {"profile": "filament.output.tla2/v1", "obligations": ["Bounded"]}}});
+        "export": {"profile": "filament.output.tla2/v1", "obligations": ["not-a-claim"],
+            "minimum_fidelity": "any"}}});
     std::fs::write(
         directory.path().join("selected-export.json"),
         export_request.to_string(),
