@@ -1,6 +1,8 @@
 use fsl_cli_contracts::{Captured, CliCase, ContractError};
 use serde_json::{json, Value};
 
+mod options;
+mod requests;
 mod semantics;
 
 // Original two-step workflow over the authoritative same-repository Counter
