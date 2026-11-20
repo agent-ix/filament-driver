@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
 
 /// Trace: FR-027-AC-5, FR-002-AC-1
@@ -363,5 +364,85 @@ fn explicit_stdin_file_is_read_once_and_keeps_the_absolute_program_selection(
         json!([{"kind":"not-an-obligation","name":"Capacity"}]),
         "{value}"
     );
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1, FSL-FR-1039-AC-4
+/// Provenance: QSL-2474
+/// FSL FR-1039: source_package is checked before selected-file I/O.
+#[test]
+#[ignore = "QSL-2672: export rejects package before required source_package admission"]
+fn package_source_reference_is_closed_and_typed_before_opening_the_package(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    for (reference, cause, suffix) in [
+        (None, "missing-member", ""),
+        (Some(json!(null)), "wrong-value-kind", ""),
+        (Some(json!(7)), "wrong-value-kind", ""),
+        (Some(json!([])), "wrong-value-kind", ""),
+        (Some(json!({})), "missing-member", "/identity"),
+        (
+            Some(json!({"identity":"contracts/bin"})),
+            "missing-member",
+            "/version",
+        ),
+        (Some(json!({"version":"1"})), "missing-member", "/identity"),
+        (
+            Some(json!({"identity":7,"version":"1"})),
+            "wrong-value-kind",
+            "/identity",
+        ),
+        (
+            Some(json!({"identity":"contracts/bin","version":7})),
+            "wrong-value-kind",
+            "/version",
+        ),
+        (
+            Some(json!({"identity":"","version":"1"})),
+            "invalid-value",
+            "/identity",
+        ),
+        (
+            Some(json!({"identity":"contracts/bin","version":""})),
+            "invalid-value",
+            "/version",
+        ),
+        (
+            Some(json!({"identity":"contracts/bin","version":"1","extra":true})),
+            "unknown-member",
+            "/extra",
+        ),
+    ] {
+        let mut input = request();
+        let inner = input["request"].as_object_mut().expect("request");
+        inner.remove("program");
+        inner.insert(
+            "package".to_owned(),
+            json!({"file":"selected-package-must-not-open.json"}),
+        );
+        if let Some(reference) = reference {
+            input["request"]["package"]["source_package"] = reference;
+        }
+        input["request"]["export"]["output"] = json!({"file":"must-not-write.tla"});
+        write_json(&case, "bad-reference.json", &input)?;
+        let output = run(&case, "bad-reference.json", false, &[])?;
+        assert_eq!(output.0.status.code(), Some(20), "{input}: {output:?}");
+        let value = outcome(&output, 20, "refusal");
+        let d = diagnostic(&value, "invalid_runtime_input");
+        assert_eq!(d["cause"], cause, "{input}: {value}");
+        assert_eq!(
+            d["details"]["path"],
+            format!("/request/package/source_package{suffix}"),
+            "{input}: {value}"
+        );
+        assert_eq!(
+            value["diagnostics"].as_array().expect("diagnostics").len(),
+            1,
+            "{value}"
+        );
+        assert!(value["last_stage"].is_null(), "{value}");
+        assert!(value["result"].is_null(), "{value}");
+        assert!(!case.directory().join("must-not-write.tla").exists());
+    }
     Ok(())
 }

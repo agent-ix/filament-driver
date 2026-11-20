@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
 
 const BIN_SOURCE: &str = r#"language "ix:native" edition "1-draft";
@@ -158,7 +159,7 @@ fn target_byte_limit_prevents_partial_output_and_a_sufficient_limit_assembles(
 /// Provenance: QSL-2474
 /// FSL FR-1039: a public checked package replaces source for export.
 #[test]
-#[ignore = "QSL-1979: export model binding blocks source/package target assembly"]
+#[ignore = "QSL-2672: package export admission; QSL-1979: subsequent model export assembly"]
 fn checked_package_export_uses_its_selected_source_reference_without_source_fallback(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = bin_fixture()?;

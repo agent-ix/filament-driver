@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
 
 /// Trace: FR-002-AC-25
@@ -67,28 +68,63 @@ fn foreign_options_refuse_before_reading_the_named_request(
 fn evidence_and_export_operands_are_mutually_exclusive_and_write_nothing(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
-    for args in [
-        vec![
-            "export",
-            "--evidence",
-            "missing-evidence.json",
+    for (args, other) in [
+        (
+            vec![
+                "export",
+                "--evidence",
+                "missing-evidence.json",
+                "--output",
+                "unused.tla",
+                "--format",
+                "json",
+            ],
             "--output",
-            "unused.tla",
-            "--format",
-            "json",
-        ],
-        vec![
-            "export",
-            "missing-export.json",
-            "--evidence",
-            "missing-evidence.json",
-            "--format",
-            "json",
-        ],
+        ),
+        (
+            vec![
+                "export",
+                "missing-export.json",
+                "--evidence",
+                "missing-evidence.json",
+                "--format",
+                "json",
+            ],
+            "request file",
+        ),
     ] {
-        invalid(&case.run(&args)?, &["--evidence"]);
+        invalid(&case.run(&args)?, &["--evidence", other]);
         assert!(!case.directory().join("unused.tla").exists());
     }
+    Ok(())
+}
+
+/// Trace: FR-027-AC-2
+/// Provenance: QSL-2474
+#[test]
+fn trailing_output_without_a_path_refuses_before_request_io_and_writes_no_file(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    let before = std::fs::read_dir(case.directory())?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+    invalid(
+        &case.run(&[
+            "export",
+            "missing-request.json",
+            "--format",
+            "json",
+            "--output",
+        ])?,
+        &["--output"],
+    );
+    let after = std::fs::read_dir(case.directory())?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+    assert_eq!(
+        after, before,
+        "missing output operand must not create a default target"
+    );
     Ok(())
 }
 
