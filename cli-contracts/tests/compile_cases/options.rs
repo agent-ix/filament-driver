@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// Trace: FR-024-AC-1, FR-003-AC-1
+/// Trace: FR-024-AC-1
 /// Provenance: QSL-2470
 #[test]
 fn compile_flag_order_and_distinct_repeated_limits_preserve_the_program() -> TestResult {
@@ -185,7 +185,7 @@ fn an_invalid_clock_kind_is_refused_equally_from_file_and_member() -> TestResult
     Ok(())
 }
 
-/// Trace: FR-024-AC-2, FR-024-AC-6
+/// Trace: FR-024-AC-2
 /// Provenance: QSL-2470; FSL FR-810-AC-2
 #[test]
 fn output_directory_and_missing_parent_refuse_without_partial_files() -> TestResult {
@@ -454,7 +454,6 @@ fn a_non_utf8_request_filename_is_preserved_as_an_os_path() -> TestResult {
     package(&case, "native-path.json", &["Total", "Parcel"])
 }
 
-/// Trace: FR-024-AC-3
 /// Provenance: QSL-2470; FSL FR-810-AC-2
 #[test]
 fn malformed_output_records_refuse_before_writing_a_package() -> TestResult {
@@ -479,7 +478,6 @@ fn malformed_output_records_refuse_before_writing_a_package() -> TestResult {
     Ok(())
 }
 
-/// Trace: FR-024-AC-3
 /// Provenance: QSL-2470; FSL FR-810-AC-5
 #[test]
 fn an_output_inside_the_requested_handoff_is_refused_without_partial_artifacts() -> TestResult {
@@ -504,7 +502,6 @@ fn an_output_inside_the_requested_handoff_is_refused_without_partial_artifacts()
     Ok(())
 }
 
-/// Trace: FR-003-AC-3
 /// Provenance: QSL-2470; FSL FR-001 source admission ceiling
 #[test]
 fn default_source_size_limit_is_distinct_from_the_aggregate_dependent_budget() -> TestResult {
@@ -523,7 +520,7 @@ fn default_source_size_limit_is_distinct_from_the_aggregate_dependent_budget() -
     Ok(())
 }
 
-/// Trace: FR-003-AC-3, FR-024-AC-6
+/// Trace: FR-003-AC-3
 /// Provenance: QSL-2470; FSL FR-869-AC-2
 #[test]
 fn an_emission_byte_limit_refuses_without_publishing_partial_package_bytes() -> TestResult {

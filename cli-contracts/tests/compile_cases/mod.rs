@@ -533,7 +533,7 @@ fn empty_syntax_and_unsupported_source_fail_in_their_own_classes() -> TestResult
     Ok(())
 }
 
-/// Trace: FR-002-AC-1, FR-003-AC-3
+/// Trace: FR-002-AC-1
 /// Provenance: QSL-2470; FSL FR-027-AC-3
 #[test]
 fn oversized_request_refuses_at_intake_with_its_configured_limit() -> TestResult {
