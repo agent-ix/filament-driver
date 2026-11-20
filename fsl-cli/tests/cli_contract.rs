@@ -13,16 +13,16 @@ use std::{
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
-use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
+use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::{
-    SettingLimits, Source, SourceIdentity,
     diagnostic::{Code, Staged},
+    SettingLimits, Source, SourceIdentity,
 };
 use fsl_replay::{
-    Operation, OutcomeDiagnostic, OutcomeDocument,
     spine::{
-        DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
+        check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
     },
+    Operation, OutcomeDiagnostic, OutcomeDocument,
 };
 use ix_cli_kit::version::Agreement;
 use ix_trace_rs::trace;
@@ -1293,6 +1293,80 @@ fn check_bad_option_still_reports_on_stderr() {
     assert_eq!(output.status.code(), Some(20));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("--bogus"), "{stderr}");
+}
+
+/// Trace: TC-049, FR-002-AC-25; repeated root formats refuse before opening the request.
+#[test]
+#[trace("TC-049", "FR-002-AC-25")]
+fn repeated_format_refuses_with_run_usage_before_request_io() {
+    let missing = std::env::temp_dir().join(format!(
+        "fsl-missing-format-request-{}.json",
+        std::process::id()
+    ));
+    let output = Command::new(FSL)
+        .args(["run", "--format", "json", "--format", "text"])
+        .arg(&missing)
+        .output()
+        .expect("run fsl with repeated formats and missing request");
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        output.stderr,
+        b"--format may be supplied only once; usage: fsl run [options] <request-file>\n"
+    );
+
+    let valid = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/frontend-run.json"
+    );
+    let duplicate = Command::new(FSL)
+        .args(["run", valid, "--format", "json", "--format", "text"])
+        .output()
+        .expect("run fsl with repeated formats and valid request");
+    assert_eq!(duplicate.status.code(), Some(20));
+    assert!(duplicate.stdout.is_empty());
+    assert_eq!(duplicate.stderr, output.stderr);
+
+    let single = Command::new(FSL)
+        .args(["run", valid, "--format", "json"])
+        .output()
+        .expect("run fsl with one output format");
+    assert_eq!(single.status.code(), Some(0));
+    assert!(single.stderr.is_empty());
+    assert!(serde_json::from_slice::<serde_json::Value>(&single.stdout).is_ok());
+}
+
+/// Trace: TC-028, FR-006-AC-24; nested wrong-type provider members report their indexed path.
+#[test]
+#[trace("TC-028", "FR-006-AC-24")]
+fn nested_provider_configuration_type_refusal_names_the_member_path() {
+    let directory = tempfile::tempdir().expect("create provider config directory");
+    let path = directory.path().join("providers.json");
+    std::fs::write(
+        &path,
+        r#"{"format":"filament.provider-config/v1","providers":[{"path":"p"},{"path":"q","arguments":["ok",1]}]}"#,
+    )
+    .expect("write provider config with an indexed wrong-type member");
+
+    let output = Command::new(FSL)
+        .args([
+            "run",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/frontend-run.json"
+            ),
+            "--provider-config",
+        ])
+        .arg(&path)
+        .args(["--format", "text"])
+        .output()
+        .expect("run fsl with malformed provider configuration");
+    assert_eq!(output.status.code(), Some(20));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("providers[1].arguments"), "{stderr}");
+    assert!(stderr.contains("invalid-request"), "{stderr}");
+    assert!(stderr.contains(&path.display().to_string()), "{stderr}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; check source I/O failures use FSL's typed code and serializer.
