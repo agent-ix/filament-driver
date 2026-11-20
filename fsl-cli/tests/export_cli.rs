@@ -115,11 +115,13 @@ fn export_output_writes_the_target_text_fsl_assembles() {
 }
 
 /// A selected checked package reaches FSL with its caller-supplied source
-/// identity and version, and the CLI writes the exported target text.
+/// identity and version after the source is removed.
+///
+/// The current pinned FSL reports the model/object_type lowering gap; QSL-2647
+/// is the ticket that turns this refusal into a positive export.
 #[test]
-#[trace("TC-045", "FR-027-AC-1")]
 #[trace("TC-3019", "FR-1039-AC-4")]
-fn export_selected_package_preserves_source_reference_and_writes_target() {
+fn export_selected_package_reports_model_type_gap_on_current_pin() {
     let directory = folder();
     let model_source = json!({"file": "counter.json", "authority": "test",
         "identity": "example/counter", "document": "ExportCounter", "formal_revision": 1});
@@ -129,29 +131,9 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
     let export = json!({"profile": "filament.output.tla2/v1", "obligations": ["Bounded"],
         "initial": "counter-0.json", "minimum_fidelity": "any"});
 
-    let source_export_request = json!({"format": "native-run/1", "request": {
-        "models": models,
-        "program": {"source": program_source},
-        "export": export}});
-    std::fs::write(
-        directory.path().join("source-export.json"),
-        source_export_request.to_string(),
-    )
-    .expect("the source export request");
-    let source_export = fsl(
-        directory.path(),
-        &["export", "source-export.json", "--format", "json"],
-    );
-    assert_eq!(source_export.status.code(), Some(0), "{source_export:?}");
-    let source_value = document(&source_export);
-    let source_records = source_value["result"]["export"]["records"].clone();
-    let source_target_text = source_value["result"]["export"]["target_text"].clone();
-
     let compile_request = json!({"format": "native-compile/1", "request": {
         "models": models,
-        "program": {"source": {
-            "file": "counter.fsl", "authority": "test", "identity": "example/counter-unit",
-            "document": "ExportCounter", "formal_revision": 7}},
+        "program": {"source": program_source},
         "output": {"package": "checked-package.json"},
         "handoff": {"directory": "handoff", "package_name": "counter-unit",
             "native_join": {"work_units": 1_u64 << 40, "storage": 1_u64 << 24}}}});
@@ -190,29 +172,32 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
             "json",
         ],
     );
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.status.code(), Some(21), "{output:?}");
     let value = document(&output);
     assert_eq!(value["operation"], "export", "{value}");
-    assert_eq!(value["category"], "success", "{value}");
+    assert_eq!(value["category"], "unsupported", "{value}");
+    assert_eq!(value["last_stage"], "S4", "{value}");
     assert_eq!(
-        value["result"]["export"]["records"], source_records,
-        "selected-package export records must equal the source route"
+        value["diagnostics"][0]["code"], "unimplemented_capability",
+        "{value}"
     );
     assert_eq!(
-        value["result"]["export"]["target_text"], source_target_text,
-        "selected-package target text must equal the source route"
+        value["diagnostics"][0]["cause"], "unimplemented-meaning",
+        "{value}"
     );
     assert_eq!(
-        value["result"]["export"]["package"]["source_package"], source_package,
-        "FSL must retain the selected package's caller-supplied source reference"
+        value["diagnostics"][0]["details"]["capability"], "export:tla:model/object_type",
+        "{value}"
     );
-    let text = value["result"]["export"]["target_text"]
-        .as_str()
-        .expect("target text from selected package");
     assert_eq!(
-        std::fs::read(directory.path().join("selected.tla")).expect("the target file"),
-        text.as_bytes()
+        value["result"]["export"]["refusal"]["construct"], "model/object_type",
+        "{value}"
     );
+    assert_eq!(
+        value["result"]["export"]["output"]["bytes_written"], 0,
+        "{value}"
+    );
+    assert!(!directory.path().join("selected.tla").exists());
 }
 
 /// FR-027-AC-2: an existing path, a doubled destination and a repeated
