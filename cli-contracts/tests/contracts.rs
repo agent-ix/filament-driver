@@ -19,7 +19,7 @@ fn monitor_case() -> Result<CliCase, ContractError> {
 profile t = "filament.temporal.infinite-trace/v1";
 record Meter { amperes: Int[0, 9]; }
 temporal FuseLimit using t over (r: Meter) clock "steps" on origin {
-    always holds(r.amperes <= 6)
+    always[0,1] holds(r.amperes <= 6)
 }
 "#,
     )?;
@@ -66,6 +66,20 @@ mod file_contracts {
             case.write("../outside.fsl", b"bad"),
             Err(ContractError::FixturePath(_))
         ));
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir().expect("private fixture escape target");
+            std::os::unix::fs::symlink(outside.path(), case.directory().join("redirect"))
+                .expect("fixture symlink");
+            assert!(matches!(
+                case.write("redirect/new/input.fsl", b"bad"),
+                Err(ContractError::FixturePath(_))
+            ));
+            assert!(
+                !outside.path().join("new").exists(),
+                "reject before creating anything outside the case"
+            );
+        }
 
         let invalid = SEATS.replace("total - held", "true");
         case.write("source folder/wrong-result.fsl", invalid.as_bytes())?;
@@ -99,7 +113,10 @@ mod file_contracts {
         assert_eq!(text.0.status.code(), Some(0));
         assert!(text.stdout_text()?.starts_with("check: success (exit 0)"));
         assert_eq!(text.stderr_text()?, "");
-        assert!(matches!(text.json(), Err(ContractError::Json(_))));
+        let error = text
+            .json()
+            .expect_err("text must not be silently admitted as JSON");
+        assert_eq!(error.code().as_str(), "invalid-json");
         assert!(matches!(text.json_lines(), Err(ContractError::Json(_))));
         Ok(())
     }
@@ -130,7 +147,7 @@ mod stdin_contracts {
     #[test]
     fn finite_records_feed_monitor_and_preserve_verdicts() -> Result<(), ContractError> {
         let case = monitor_case()?;
-        for (values, exit, category) in [([4, 6], 0, "success"), ([4, 7], 10, "violation")] {
+        for (values, exit, category) in [([4, 6, 9], 0, "success"), ([4, 7, 0], 10, "violation")] {
             let records = observations(&values);
             case.write("inputs/records.jsonl", &records)?;
             let output = case.run_stdin(

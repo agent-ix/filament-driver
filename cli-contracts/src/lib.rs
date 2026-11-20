@@ -14,6 +14,69 @@ use tempfile::TempDir;
 use thiserror::Error;
 use wait_timeout::ChildExt;
 
+/// Stable distinctions for setup and capture failures, separate from FSL exit codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractCode {
+    /// No executable was selected.
+    MissingBinary,
+    /// A fixture path escapes its case.
+    FixturePath,
+    /// A filesystem or process operation failed.
+    Io,
+    /// The child exceeded its execution deadline.
+    Timeout,
+    /// A captured stream exceeded its memory bound.
+    OutputLimit,
+    /// A capture worker panicked.
+    Worker,
+    /// A streaming invocation emitted no record.
+    EmptyJsonLines,
+    /// Output was not valid JSON.
+    Json,
+    /// Output was not valid UTF-8.
+    Utf8,
+}
+
+impl ContractCode {
+    /// Stable code text, independent of an operating-system error message.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingBinary => "missing-binary",
+            Self::FixturePath => "fixture-path",
+            Self::Io => "io",
+            Self::Timeout => "timeout",
+            Self::OutputLimit => "output-limit",
+            Self::Worker => "worker",
+            Self::EmptyJsonLines => "empty-json-lines",
+            Self::Json => "invalid-json",
+            Self::Utf8 => "invalid-utf8",
+        }
+    }
+
+    /// Every declared contract code.
+    pub const fn all() -> &'static [Self] {
+        &[
+            Self::MissingBinary,
+            Self::FixturePath,
+            Self::Io,
+            Self::Timeout,
+            Self::OutputLimit,
+            Self::Worker,
+            Self::EmptyJsonLines,
+            Self::Json,
+            Self::Utf8,
+        ]
+    }
+
+    /// Look up a declared code without coercing unknown text.
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|item| item.as_str() == code)
+    }
+}
+
 /// A setup, subprocess or captured-output error, distinct from an FSL refusal.
 #[derive(Debug, Error)]
 pub enum ContractError {
@@ -58,6 +121,23 @@ pub enum ContractError {
     },
 }
 
+impl ContractError {
+    /// Classify a failure without matching its human-readable message.
+    pub const fn code(&self) -> ContractCode {
+        match self {
+            Self::MissingBinary => ContractCode::MissingBinary,
+            Self::FixturePath(_) => ContractCode::FixturePath,
+            Self::Io { .. } => ContractCode::Io,
+            Self::Timeout(_) => ContractCode::Timeout,
+            Self::OutputLimit(_) => ContractCode::OutputLimit,
+            Self::Worker(_) => ContractCode::Worker,
+            Self::EmptyJsonLines => ContractCode::EmptyJsonLines,
+            Self::Json(_) => ContractCode::Json,
+            Self::Utf8 { .. } => ContractCode::Utf8,
+        }
+    }
+}
+
 fn io_error(operation: &'static str, source: io::Error) -> ContractError {
     ContractError::Io { operation, source }
 }
@@ -94,15 +174,15 @@ impl CliCase {
             return Err(ContractError::FixturePath(relative.to_owned()));
         }
         let path = self.directory().join(relative);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_error("create fixture folder", e))?;
-            let parent =
-                fs::canonicalize(parent).map_err(|e| io_error("resolve fixture folder", e))?;
-            let root =
-                fs::canonicalize(self.directory()).map_err(|e| io_error("resolve CLI case", e))?;
-            if !parent.starts_with(root) || path.is_symlink() {
+        let mut component_path = self.directory().to_owned();
+        for component in relative.components() {
+            component_path.push(component.as_os_str());
+            if component_path.is_symlink() {
                 return Err(ContractError::FixturePath(relative.to_owned()));
             }
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| io_error("create fixture folder", e))?;
         }
         fs::write(path, bytes).map_err(|e| io_error("write fixture", e))
     }
