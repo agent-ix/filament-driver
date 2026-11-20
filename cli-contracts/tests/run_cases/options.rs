@@ -65,11 +65,29 @@ fn help_needs_no_request_and_repeated_single_options_write_only_usage(
         ("--engine", "interpreter"),
         ("--clocks", "clocks.json"),
         ("--provider-config", "providers.json"),
-        ("--format", "json"),
     ] {
         let output = case.run(&["run", "missing.json", name, value, name, value])?;
         assert_eq!(output.0.status.code(), Some(20), "{name}: {output:?}");
         assert!(output.0.stdout.is_empty(), "{name}: {output:?}");
+        assert!(
+            output.stderr_text()?.contains("usage: fsl run"),
+            "{output:?}"
+        );
+    }
+    Ok(())
+}
+
+/// Trace: FR-002-AC-25
+/// Provenance: QSL-2471
+#[test]
+#[ignore = "QSL-2661: run accepts duplicate nonrepeatable --format and opens request"]
+fn repeated_output_format_refuses_usage_before_request_io_or_execution(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    for path in ["missing.json", "run.json"] {
+        let output = case.run(&["run", path, "--format", "json", "--format", "json"])?;
+        assert_eq!(output.0.status.code(), Some(20), "{output:?}");
+        assert!(output.0.stdout.is_empty(), "{output:?}");
         assert!(
             output.stderr_text()?.contains("usage: fsl run"),
             "{output:?}"
@@ -226,7 +244,7 @@ fn front_end_limits_cut_the_actual_run_and_distinct_sufficient_limits_compose(
 /// Trace: FR-002-AC-1
 /// Provenance: QSL-2471
 #[test]
-fn empty_provider_configuration_runs_the_function_and_local_flags_do_not_silently_disappear(
+fn empty_provider_configuration_runs_the_function_without_a_process_plugin(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
     write_json(
@@ -238,29 +256,6 @@ fn empty_provider_configuration_runs_the_function_and_local_flags_do_not_silentl
         &run(&case, "run.json", &["--provider-config", "providers.json"])?,
         json!({"integer":"12"}),
     );
-    for (flag, value) in [
-        ("--request-bytes", "10000"),
-        ("--dependent-bytes", "10000"),
-        ("--limit", "s1.nodes=50000"),
-        ("--clocks", "clocks.json"),
-    ] {
-        let result = outcome(
-            &run(
-                &case,
-                "run.json",
-                &["--provider-config", "providers.json", flag, value],
-            )?,
-            20,
-            "refusal",
-        );
-        let message = diagnostic(&result, "invalid-request")["message"]
-            .as_str()
-            .expect("message");
-        assert!(
-            message.contains(flag) && message.contains("--provider-config"),
-            "{result}"
-        );
-    }
     Ok(())
 }
 

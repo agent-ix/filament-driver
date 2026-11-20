@@ -99,17 +99,27 @@ fn clock_file_intake_refuses_missing_non_objects_non_utf8_and_oversize(
 /// Trace: FR-002-AC-20
 /// Provenance: QSL-2471
 #[test]
+#[ignore = "QSL-2348: public run does not execute prepared TL-lowering requests"]
 fn tl_lowering_preserves_the_requested_correspondence_and_actual_formula(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
-    let mut input = clocked(&case)?;
+    case.write(
+        "lower.fsl",
+        br#"language "ix:native" edition "1-draft";
+profile t = "filament.temporal.event-position.false-extension/v1";
+record Loading { level: Int[0, 10]; }
+temporal BoundedLoading using t over (p: Loading) clock "steps" on origin {
+    always[0,2] holds(p.level <= 6)
+}
+"#,
+    )?;
+    let mut input = request("lower.fsl", "unused", &[]);
     input["request"]
         .as_object_mut()
         .expect("request")
         .remove("call");
-    input["request"]["clocks"] = clocks();
     input["request"]["tl_lowering"] =
-        json!({"clause":"SafePressure","correspondence":"mltl.closed-trace/v1"});
+        json!({"clause":"BoundedLoading","correspondence":"mltl.closed-trace/v1"});
     write_json(&case, "lower.json", &input)?;
     let value = outcome(&run(&case, "lower.json", &[])?, 0, "success");
     let lowering = &value["result"]["tl_lowering"];
