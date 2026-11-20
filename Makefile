@@ -13,6 +13,7 @@ help:
 	@echo "  make fmt-check        - Verify formatting (CI gate)"
 	@echo "  make lint             - Clippy with -D warnings"
 	@echo "  make test             - cargo test"
+	@echo "  make cli-contracts    - Test an explicit prebuilt FSL through real subprocesses"
 	@echo "  make build            - Release build"
 	@echo "  make clean            - cargo clean"
 	@echo "  make tools            - Install/check rustfmt, clippy, cargo-deny, and quire"
@@ -61,6 +62,11 @@ test:
 		Darwin) ;; \
 		*) echo "TC-018 process tests require macOS or Linux" >&2; exit 1 ;; \
 	esac
+
+.PHONY: cli-contracts
+cli-contracts:
+	@test -n "$(FSL)" || { echo "set FSL=/absolute/path/to/the/prebuilt/fsl" >&2; exit 1; }
+	FSL="$(FSL)" CARGO_TARGET_DIR="$(CURDIR)/target" $(CARGO) test --locked --manifest-path cli-contracts/Cargo.toml -- --test-threads=1
 
 .PHONY: build
 build:
