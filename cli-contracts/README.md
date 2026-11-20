@@ -23,3 +23,19 @@ FSL=/absolute/path/to/fsl CARGO_TARGET_DIR="$PWD/target" \
   cargo test --locked --manifest-path cli-contracts/Cargo.toml \
   --test contracts file_contracts:: -- --test-threads=1
 ```
+
+## Check contracts
+
+The `check` integration target adds original native files, source-byte boundaries, model and library selections, division laws, extension sets and Markdown fences. It asserts actual typed outcomes and semantic controls: a renamed model type must stop resolving, an ill-typed library body must fail, and a refused Markdown fence must not stop later fences. Stdin tests verify that the named source file stays authoritative.
+
+Run one new family during authoring:
+
+```sh
+FSL=/absolute/path/to/fsl CARGO_TARGET_DIR="$PWD/target" \
+  cargo test --locked --manifest-path cli-contracts/Cargo.toml \
+  --test check check_cases::dependencies:: -- --test-threads=1
+```
+
+Use the delivered CLI build that accepts identity-qualified model/library options. Model documents are original caller-owned semantic-IR inputs. The test executes the public check with them.
+
+The strict model/library-only dependent-byte boundary case is ignored under QSL-2657: the current check incorrectly charges the primary source to that ceiling. Its expected success and exact library-byte boundary remain executable required oracles, not passing coverage. The actionable invalid-format diagnostic work remains QSL-2642. Native model-package authoring remains with QSL-1980.
