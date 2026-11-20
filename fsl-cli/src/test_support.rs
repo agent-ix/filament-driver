@@ -94,7 +94,7 @@ pub fn with_provider_request<T: Send + 'static>(
         fsl_analyze::analyze::BackendTool::new("fsl-test-capture", "1").expect("a tool"),
         Box::new(capture),
     )
-    .expect("the capture engine advertises unbounded value validity");
+    .expect("the capture engine registers");
     let negotiation = filament_driver::AnalyzeNegotiation::with_providers([&descriptor])
         .expect("the engines register");
     fsl_command::command::analyze_with_providers(

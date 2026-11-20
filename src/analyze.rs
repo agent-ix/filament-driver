@@ -35,7 +35,7 @@ impl AnalyzeNegotiation {
     ///
     /// The registry's refusal of an engine's own manifest.
     pub fn fsl() -> Result<Self, RegistrationRefusal> {
-        let engines = Engines::fsl()?;
+        let engines = Engines::fsl_with_reference_hybrid()?;
         Ok(Self {
             manifest: engines.registrations().map(manifest_entry).collect(),
         })
@@ -609,7 +609,7 @@ mod tests {
     fn analyze_dispositions_equal_the_item_entrys() {
         let negotiation = AnalyzeNegotiation::fsl().expect("the engines register");
         let mut registry = Registry::new();
-        for descriptor in Engines::fsl().expect("engines").registrations() {
+        for descriptor in Engines::fsl_with_reference_hybrid().expect("engines").registrations() {
             registry
                 .register(descriptor.clone())
                 .expect("a new identity");
