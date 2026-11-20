@@ -1,0 +1,30 @@
+    Finished `test` profile [unoptimized] target(s) in 0.27s
+     Running unittests src/lib.rs (target/debug/deps/filament_plugin_host-ea2ea04d527d0a5c)
+
+running 23 tests
+test proc_scan_skips_only_disappeared_entries ... ok
+test tests::blocked_request_write_observes_deadline_within_a_bounded_interval ... ok
+test tests::body_decode_requires_protocol_identity ... ok
+test tests::cancellation_control_write_wait_is_bounded_by_grace ... ok
+test tests::cancellation_grace_expiry_terminates_the_plugin ... ok
+test tests::cancellation_grace_preserves_plugin_faults ... ok
+test tests::clean_shutdown_terminates_detached_stdio_descendant ... ok
+test tests::completed_write_notification_wins_cancellation ... ok
+test tests::escaped_fixture_guard_disarm_preserves_cleanup_without_recreating_markers ... ok
+test tests::fixture_runtime_prerequisite_names_python3 ... ok
+test tests::frame_round_trips_one_canonical_value ... ok
+test tests::reader_rejects_noncanonical_and_oversized_frames ... ok
+test tests::session_admits_hello_then_accepts_zero_or_multiple_requests ... ok
+test tests::session_preserves_truncated_hello_status_and_bounds_stderr ... ok
+test tests::session_preserves_valid_result_received_during_cancel_grace ... ok
+test tests::session_refuses_bare_executable_names ... ok
+test tests::session_rejects_extra_frame_after_result ... ok
+test tests::session_rejects_wrong_protocol_before_admission ... ok
+test tests::session_rejects_wrong_request_id ... ok
+test tests::session_reports_admission_result_fault_and_exit_failures_with_diagnostics ... ok
+test tests::session_shares_aggregate_byte_budget_across_directions ... ok
+test tests::shutdown_kills_descendant_holding_stdout_and_bounds_reader_join ... ok
+test tests::writer_and_reader_enforce_aggregate_bytes ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.41s
+

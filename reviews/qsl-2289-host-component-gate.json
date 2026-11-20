@@ -1,0 +1,46 @@
+{
+  "ticket": "QSL-2289",
+  "pull_request": 211,
+  "reviewed_source_head": "905e8381ff6f924dd18f618e99409893b86c9230",
+  "component_gate_head": "9a8290ca1d54a7aea50f0a265fa05332f0097dd2",
+  "review_artifacts": ["reviews/qsl-2289-code-review.md", "reviews/qsl-2289-gap-analysis.md"],
+  "review_verdict": "PASS; no findings",
+  "build_environment": {
+    "CARGO_TARGET_DIR": "/home/peter/dev/.worktrees/luna-qsl-2289/target",
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "CARGO_INCREMENTAL": "0"
+  },
+  "disk_before_component_gate": "212G available on /",
+  "initial_checks": [
+    {
+      "command": "cargo fmt --manifest-path filament-plugin-host/Cargo.toml --check",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo clippy -p filament-plugin-host --tests -- -D warnings",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo test --locked -p filament-plugin-host tests::cancellation_grace_expiry_terminates_the_plugin -- --exact --test-threads=1 --skip two_protocols_declaring_one_channel_name_keep_their_queues_apart --skip a_recovery_predicate_over_the_recovery_view_is_evaluated",
+      "head": "905e8381ff6f924dd18f618e99409893b86c9230",
+      "exit_code": 0,
+      "passed": 1,
+      "failed": 0,
+      "filtered_out": 22,
+      "log": "reviews/qsl-2289-focused-test.log"
+    }
+  ],
+  "final_component_gate": {
+    "command": "cargo test --locked -p filament-plugin-host --lib -- --test-threads=1 --skip two_protocols_declaring_one_channel_name_keep_their_queues_apart --skip a_recovery_predicate_over_the_recovery_view_is_evaluated",
+    "exit_code": 0,
+    "passed": 23,
+    "failed": 0,
+    "ignored": 0,
+    "filtered_out": 0,
+    "duration_seconds": 2.41,
+    "log": "reviews/qsl-2289-host-component-test.log"
+  },
+  "limitations": "One changed-case authoring run and one final host library component run. No stress/load repetitions or unrelated workspace gates. The final receipt commit changes evidence only."
+}
