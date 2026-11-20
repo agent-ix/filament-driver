@@ -1,0 +1,29 @@
+{
+  "issue": "QSL-2478",
+  "pull_request": 209,
+  "tested_head": "62493116b1820ed4d8e819ec8020f8ded122b808",
+  "gate": "make cli-contracts",
+  "execution": {
+    "external_fsl_required": true,
+    "external_fsl_test_provider_required": true,
+    "owned_target_reused": true,
+    "build_jobs": 2,
+    "debug": 0,
+    "incremental": false,
+    "test_threads": 1,
+    "exit_code": 0
+  },
+  "frozen_product": {
+    "driver": "a260b3b26277bfa907ce77373c4f15dac6671083",
+    "fsl": "8877b38b6397055fa11dc2e7882ad87d02ecb654",
+    "codegen": "a11a66ab9c5eeee9163f5d4d084644296b565ba9",
+    "ir": "c7b62038ed95262e3e51477f0831978397c8c5f7",
+    "provider": "canonical already-built fsl-test-provider from the same program target"
+  },
+  "component": { "passed": 163, "failed": 0, "ignored": 17 },
+  "help_version": { "passed": 8, "failed": 0, "ignored": 1 },
+  "help_version_pending_owners": ["QSL-2642"],
+  "ignored_cases_are_coverage": false,
+  "completion": "partial; malformed-format admission before help remains blocked",
+  "review": { "code_and_rust": "SR-1465 PASS", "gap_analysis": "SR-1466 PASS" }
+}
