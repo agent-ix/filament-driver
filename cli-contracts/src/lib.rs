@@ -193,8 +193,23 @@ impl CliCase {
         input: &[u8],
     ) -> Result<Captured, ContractError> {
         let start = Instant::now();
-        let mut child = self.spawn(arguments)?;
+        let mut child = self.spawn(arguments, Stdio::piped())?;
         capture_process(&mut child, input, start, Duration::from_secs(30), None)
+    }
+
+    /// Send stdout to an explicitly supplied file while capturing status and stderr.
+    ///
+    /// The file is inherited as-is, including its access mode. The same bounded
+    /// capture and process-group cleanup apply; returned stdout is empty because
+    /// its bytes went to the supplied file instead of a capture pipe.
+    pub fn run_stdout_to_file<S: AsRef<OsStr>>(
+        &self,
+        arguments: &[S],
+        stdout: fs::File,
+    ) -> Result<Captured, ContractError> {
+        let start = Instant::now();
+        let mut child = self.spawn(arguments, Stdio::from(stdout))?;
+        capture_process(&mut child, &[], start, Duration::from_secs(30), None)
     }
 
     /// Keep stdin open after `prefix` until the stdout predicate matches.
@@ -211,7 +226,7 @@ impl CliCase {
         continue_after: F,
     ) -> Result<StagedCaptured, ContractError> {
         let start = Instant::now();
-        let mut child = self.spawn(arguments)?;
+        let mut child = self.spawn(arguments, Stdio::piped())?;
         let input = [prefix, remainder].concat();
         let mut gate = StdinGate {
             boundary: prefix.len(),
@@ -234,13 +249,14 @@ impl CliCase {
     fn spawn<S: AsRef<OsStr>>(
         &self,
         arguments: &[S],
+        stdout: Stdio,
     ) -> Result<std::process::Child, ContractError> {
         Command::new(&self.binary)
             .args(arguments)
             .current_dir(self.directory())
             .process_group(0)
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
+            .stdout(stdout)
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| io_error("spawn FSL", e))
@@ -336,7 +352,9 @@ fn capture_process(
     let mut stdout = invocation.child.stdout.take();
     let mut stderr = invocation.child.stderr.take();
     nonblocking(stdin.as_ref().expect("piped stdin"))?;
-    nonblocking(stdout.as_ref().expect("piped stdout"))?;
+    if let Some(stdout) = stdout.as_ref() {
+        nonblocking(stdout)?;
+    }
     nonblocking(stderr.as_ref().expect("piped stderr"))?;
     let mut sent = 0;
     let mut out = StreamCapture::default();
@@ -466,6 +484,27 @@ impl Captured {
 #[cfg(test)]
 mod process_budget {
     use super::*;
+
+    /// Provenance: QSL-2476
+    #[test]
+    fn a_file_sink_keeps_actual_status_and_stderr_without_a_stdout_pipe() {
+        let case = CliCase {
+            binary: PathBuf::from("/bin/sh"),
+            directory: tempfile::tempdir().expect("private output case"),
+        };
+        let path = case.directory().join("output.txt");
+        let file = fs::File::create(&path).expect("private output sink");
+        let output = case
+            .run_stdout_to_file(
+                &["-c", "printf 'written'; printf 'diagnostic' >&2; exit 7"],
+                file,
+            )
+            .expect("bounded OS sink execution");
+        assert_eq!(output.0.status.code(), Some(7));
+        assert!(output.0.stdout.is_empty());
+        assert_eq!(output.stderr_text().expect("stderr UTF8"), "diagnostic");
+        assert_eq!(fs::read(path).expect("actual sink bytes"), b"written");
+    }
 
     // These are OS pipe-lifecycle fixtures, not substitute FSL executables.
     fn fixture(script: &str) -> std::process::Child {

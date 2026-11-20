@@ -1,0 +1,72 @@
+{
+  "ticket": "QSL-2476",
+  "review": [
+    "SR-1463",
+    "SR-1464"
+  ],
+  "review_verdict": "PASS",
+  "component": "fsl-cli-contracts",
+  "product": "Explicit prebuilt L3 FSL and canonical cohort provider",
+  "command": "FSL=<prebuilt-fsl> FSL_TEST_PROVIDER=<canonical-provider> CARGO_TARGET_DIR=<worktree>/cli-contracts/target CARGO_BUILD_JOBS=2 CARGO_PROFILE_TEST_DEBUG=0 CARGO_PROFILE_TEST_INCREMENTAL=false cargo test --locked --manifest-path cli-contracts/Cargo.toml -- --test-threads=1",
+  "exit_code": 0,
+  "passed": 154,
+  "failed": 0,
+  "ignored": 7,
+  "targets": {
+    "lib": {
+      "passed": 6,
+      "ignored": 0
+    },
+    "analyze": {
+      "passed": 37,
+      "ignored": 2
+    },
+    "check": {
+      "passed": 32,
+      "ignored": 1
+    },
+    "compile": {
+      "passed": 39,
+      "ignored": 1
+    },
+    "contracts": {
+      "passed": 5,
+      "ignored": 0
+    },
+    "exit_codes": {
+      "passed": 12,
+      "ignored": 0
+    },
+    "run": {
+      "passed": 23,
+      "ignored": 3
+    },
+    "doc_tests": {
+      "passed": 0,
+      "ignored": 0
+    }
+  },
+  "ignored_owners": [
+    "QSL-2662",
+    "QSL-2234",
+    "QSL-2657",
+    "QSL-2658",
+    "QSL-2663",
+    "QSL-2661",
+    "QSL-2348"
+  ],
+  "notes": [
+    "Ignored inherited required cases are not coverage.",
+    "Actual frozen branch targets only; later monitor, export and inspect targets are not claimed or rerun.",
+    "All twelve exit-code cases passed, including actual Linux /dev/full stdout failure returning 30; no Mac exit-30 claim.",
+    "Latest independent review artifacts committed unchanged before the single final gate.",
+    "No product build, pin refresh, confidence lint, main merge or gate repetition."
+  ],
+  "merge_resolution": {
+    "scope": "One mechanical lib.rs conflict with the already landed staged-stdin helper.",
+    "resolution": "Kept the reviewed file with its existing staged-stdin helper and additive stdout sink; one spawn and one capture implementation.",
+    "reviewed_code_changed": false,
+    "exit_tests_changed": false,
+    "additional_checks": "None. The resolved lib.rs and exit-code files are unchanged from the reviewed and gated branch; no main-move gate or confidence rerun."
+  }
+}
