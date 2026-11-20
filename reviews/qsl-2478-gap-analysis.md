@@ -16,7 +16,7 @@ Confined review of PR209 at d3d823d92414a72517beb927b3d984822c4631c5. The new te
 
 ## Verdict
 
-**CONDITIONAL** — fix the confined medium finding below before the final component gate.
+**PASS** — the original finding is fixed at 7aa30946de6782259450ccbfd2a8efb4172d963e; one final component gate remains for the original coder.
 
 ## Findings
 
@@ -45,3 +45,13 @@ The per-verb test checks only canonical.lines().next() against entry.usage[0]. F
 - FR-002-AC-17 (examined): With no arguments or with each of `--help`, `-h` and `help` as the sole argument, the built `fsl` binary writes root help to stdout containing invocation syntax, recognized lifecycle verb names, `--format text\|json\|dot` with `dot` limited to `inspect`, and `--version`/`-V`. The help distinguishes executable verbs from verbs this build does not route, which return `unsupported_operation` results, and states that `text` is the default output format and `--format json` selects machine output. Successful help exits with FSL's success result, writes no stderr, and starts no lifecycle operation.
 - FR-002-AC-24 (examined): For every verb that executes operations and every option `o` in its `fsl-cli` option table entry, `o` appears on its own line in the verb's `<verb> options:` section of root help and the built parser accepts `o` with a well-formed value (no `invalid-request` naming `o`). For every verb that executes operations and every option name `p` that is listed in another verb's entry or is one of `--version`, `-V`, `--color` and `--bogus`, but is not in this verb's entry, `fsl <verb> p` refuses `invalid-request`, exit 20, naming `p`. Removing one option from a copy of the table and running the parser an
 - FR-002-AC-25 (examined): `fsl check --help`, `fsl check -h` and `fsl check nosuch.fsl --help`, from an empty working directory, each write exactly the following to stdout, exit 0, write no stderr and read no file: `Usage: fsl check [options] <source-path>` / `       fsl check [options] <authority> <identity> <source-path>` / (blank) / `check options:` / `  --markdown` / `  --model <identity>=<file> (repeatable)` / `  --library <identity>=<file> (repeatable)` / `  --dependent-bytes <bytes>` / `  --limit name=value (repeatable)` / `  --integer-division euclidean\|floor\|truncating` / `  --extensions <file>` / `  --forma
+
+## Dispositions
+
+Round 1, confined fix diff d3d823d92414a72517beb927b3d984822c4631c5 → 7aa30946de6782259450ccbfd2a8efb4172d963e.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Expected usage includes every entry.usage form in order and the separating blank line; the entire observed raw prefix is compared as bytes. |
+
+The affected focused test passed and scoped Clippy passed, accepted from the coder. No tests, builds, probes, matrix computation or full review repeated during disposition; no new findings. Original finding and excerpt text remain unchanged.
