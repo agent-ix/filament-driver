@@ -1501,7 +1501,6 @@ mod tests {
                 document_pointer: Some("/package/nodes/0".to_owned()),
                 extension_detail: None,
                 protocol_detail: None,
-                terminal_duplicate: None,
             };
             let refusal = DriverRefusal::from(EnvelopeRefusal::ContractPackageReadRefused {
                 refusal: projection.clone(),
@@ -1645,7 +1644,6 @@ mod tests {
                 document_pointer: Some("/package/semantic_graph".to_owned()),
                 extension_detail: None,
                 protocol_detail: None,
-                terminal_duplicate: None,
             };
             let refusal = DriverRefusal::from(EnvelopeRefusal::ContractPackageReadRefused {
                 refusal: projection.clone(),
@@ -1719,7 +1717,6 @@ mod tests {
             document_pointer: Some("/package/dependencies/0".to_owned()),
             extension_detail: None,
             protocol_detail: None,
-            terminal_duplicate: None,
         };
         let refusal = DriverRefusal::from(EnvelopeRefusal::ContractPackageReadRefused {
             refusal: projection.clone(),
@@ -1758,7 +1755,6 @@ mod tests {
             document_pointer: None,
             extension_detail: None,
             protocol_detail: None,
-            terminal_duplicate: None,
         };
         let refusal = DriverRefusal::from(EnvelopeRefusal::ContractPackageReadRefused {
             refusal: projection_without_optional_payloads.clone(),
@@ -1784,7 +1780,6 @@ mod tests {
             document_pointer: Some("/package/cause".to_owned()),
             extension_detail: None,
             protocol_detail: None,
-            terminal_duplicate: None,
         };
         let refusal = DriverRefusal::from(EnvelopeRefusal::ContractPackageReadRefused {
             refusal: invalid_value_projection,
