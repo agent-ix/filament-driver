@@ -7,7 +7,7 @@
 //! through `fsl_command::command::analyze_with_providers`. FSL routes,
 //! negotiates and builds the FSpec FR-331 request for the items it settled on
 //! a provider; [`SessionProvider::settle`] only transports it: it forwards
-//! the request through [`ProcessProviderSession::invoke`] over the started
+//! the request through [`filament_driver::ProcessProviderSession::invoke`] over the started
 //! session and maps the FR-331 response back to one verdict per item. The
 //! driver holds no package or routed item of its own. FSL replays a reported
 //! counterexample before the item can settle `refuted` (FSL FR-281).

@@ -9,27 +9,27 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use filament_driver::{
-    ExecutionEngine, ExecutionFailure, ExecutionRequest, LimitOverrides, ObjectEnvironment,
-    ProcessProvider, ProcessProviderLimits, ProcessProviderRequest, ProviderResults,
-    build_linked_providers, execute,
+    build_linked_providers, execute, ExecutionEngine, ExecutionFailure, ExecutionRequest,
+    LimitOverrides, ObjectEnvironment, ProcessProvider, ProcessProviderLimits,
+    ProcessProviderRequest, ProviderResults,
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, PreparedRun, RunLimits};
-use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
+use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::wire_format::WireFormat;
 use fsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
-use fsl_replay::RunRefusal;
 use fsl_replay::spine::{
-    CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest, ParseRequest,
-    ProfileCatalogInput, SpineLimits, check_native_fences, parse, parse_selecting_extensions,
+    check_native_fences, parse, parse_selecting_extensions, CheckLimits, CompileRefusal,
+    DependencyInput, NativeFenceRequest, ParseRequest, ProfileCatalogInput, SpineLimits,
 };
+use fsl_replay::RunRefusal;
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
 use fsl_semantics::library::bundle::PackageLimits;
-use ix_cli_kit::exit::{RESERVED_COMMAND_NOT_FOUND, caller_exit_code};
+use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
 
 use crate::extension_set;
@@ -344,9 +344,20 @@ fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     }
     let verb = Verb::parse(command).ok_or_else(|| format!("unknown verb `{command}`"))?;
     let mut format = OutputFormat::Text;
+    let mut format_given = false;
     let mut index = 1;
     while index < arguments.len() {
         if arguments[index] == options::FORMAT {
+            if format_given {
+                let usage = options::entry(verb.name())
+                    .map(options::VerbEntry::usage_refusal)
+                    .unwrap_or_else(|| format!("usage: fsl {}", verb.name()));
+                return Err(format!(
+                    "{} may be supplied only once; {usage}",
+                    options::FORMAT
+                ));
+            }
+            format_given = true;
             index += 1;
             let value = arguments
                 .get(index)

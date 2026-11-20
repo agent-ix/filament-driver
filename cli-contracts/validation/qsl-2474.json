@@ -1,0 +1,27 @@
+{
+  "issue": "QSL-2474",
+  "pull_request": 203,
+  "tested_head": "32b5e84e7d16939e47f82f5a3feedb3189752987",
+  "gate": "make cli-contracts",
+  "execution": {
+    "external_fsl_required": true,
+    "owned_target_reused": true,
+    "build_jobs": 2,
+    "debug": 0,
+    "incremental": false,
+    "test_threads": 1,
+    "exit_code": 0
+  },
+  "frozen_product": {
+    "driver": "a260b3b26277bfa907ce77373c4f15dac6671083",
+    "fsl": "8877b38b6397055fa11dc2e7882ad87d02ecb654",
+    "codegen": "a11a66ab9c5eeee9163f5d4d084644296b565ba9",
+    "ir": "c7b62038ed95262e3e51477f0831978397c8c5f7"
+  },
+  "component": { "passed": 118, "failed": 0, "ignored": 14 },
+  "export": { "passed": 16, "failed": 0, "ignored": 9 },
+  "export_pending_owners": ["QSL-1979", "QSL-2667", "QSL-2669", "QSL-2670", "QSL-2672"],
+  "ignored_cases_are_coverage": false,
+  "completion": "partial; successful target assembly and genuine tool-evidence acceptance remain blocked",
+  "review": { "code_and_rust": "SR-1457 PASS", "gap_analysis": "SR-1458 PASS" }
+}

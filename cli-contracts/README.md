@@ -71,3 +71,23 @@ analyze admission returning incomplete/22 instead of refusal/20; QSL-2234 owns
 the missing default hybrid reference provider. The hybrid source preserves
 its required proof and reproduced counterexample rather than accepting the
 current unsupported outcome.
+
+## Inspect contracts
+
+The `inspect` target generates an original handoff through public compile and
+verifies it with `inspect --handoff`. It asserts JSON/text outcomes and confirms
+that inspection preserves the package, selection and selected source bytes.
+Changed package bytes and node counts must refuse through the strict reader
+and selection comparison. Missing, empty, malformed, non-UTF8 and oversized
+artifact files, escaping source labels, directories and symlinks have concrete
+refusal checks.
+
+```sh
+FSL=/absolute/path/to/fsl CARGO_TARGET_DIR="$PWD/cli-contracts/target" \
+  cargo test --locked --manifest-path cli-contracts/Cargo.toml \
+  --test inspect inspect_cases:: -- --test-threads=1
+```
+
+The directory operand remains authoritative when stdin contains other bytes.
+The supported handoff form accepts text and JSON; `dot` with `--handoff`
+refuses, and the separate bare-path form remains explicitly unsupported.
