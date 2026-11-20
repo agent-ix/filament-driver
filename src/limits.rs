@@ -3,8 +3,8 @@
 
 use fsl_foundation::{Setting, SettingLimits, SettingName, UsageRefusal};
 use fsl_replay::{
-    AccountingLimits, CallerLimits, ObservationLimits,
     spine::{Call, ClauseRunRequest, SpineLimits},
+    AccountingLimits, CallerLimits, ObservationLimits,
 };
 
 /// A recognized caller-selected setting unavailable to the selected operation.
@@ -281,8 +281,8 @@ mod tests {
     use fsl_foundation::{
         AccountingSetting, Setting, SettingLimits, SettingName, UsageCause, UsageRefusal,
     };
+    use fsl_replay::spine::{default_accounting, Call, SpineLimits};
     use fsl_replay::AccountingLimits;
-    use fsl_replay::spine::{Call, SpineLimits, default_accounting};
 
     use super::{LimitError, LimitOverrides};
 

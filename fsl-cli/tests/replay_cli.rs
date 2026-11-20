@@ -315,11 +315,17 @@ fn machine_mode_writes_the_results_document_as_one_line() {
     let output = replay(&request, "json");
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let text = String::from_utf8(output.stdout.clone()).expect("UTF-8");
-    assert!(text.ends_with('\n') && text.matches('\n').count() == 1, "{text}");
+    assert!(
+        text.ends_with('\n') && text.matches('\n').count() == 1,
+        "{text}"
+    );
     let document = document(&output);
     assert_eq!(document["operation"], "replay", "{document}");
     assert_eq!(document["result"]["kind"], "replayed", "{document}");
-    assert_eq!(document["result"]["results"][0]["arm"], "input", "{document}");
+    assert_eq!(
+        document["result"]["results"][0]["arm"], "input",
+        "{document}"
+    );
     assert_eq!(
         document["result"]["results"][0]["settlement"], "reproduced-without-witness",
         "{document}"
@@ -371,6 +377,9 @@ fn text_mode_refusals_write_no_result_line() {
         assert_eq!(output.status.code(), Some(refusal_code()), "{output:?}");
         let text = String::from_utf8(output.stdout).expect("UTF-8");
         assert!(text.starts_with("replay: refusal (exit 20)"), "{text}");
-        assert!(!text.lines().any(|line| line.starts_with("result ")), "{text}");
+        assert!(
+            !text.lines().any(|line| line.starts_with("result ")),
+            "{text}"
+        );
     }
 }

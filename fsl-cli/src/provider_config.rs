@@ -132,15 +132,16 @@ pub(crate) enum ProviderConfigError {
         #[source]
         source: std::io::Error,
     },
-    #[error("`{path}` has invalid provider configuration: {source}")]
+    #[error("`{path}` has invalid provider configuration at `{member}`: {source}")]
     Json {
         path: String,
+        member: String,
         #[source]
         source: serde_json::Error,
     },
     #[error("`{path}` has unsupported provider configuration format `{format}`")]
     UnsupportedFormat { path: String, format: String },
-    #[error("`{path}` provider entry {index} has a blank path")]
+    #[error("`{path}` provider entry {index} has a blank path at `providers[{index}].path`")]
     BlankPath { path: String, index: usize },
     #[error("`{path}` provider entry {index} path `{executable}` does not exist")]
     MissingExecutable {
@@ -157,9 +158,20 @@ pub(crate) fn load(path: &Path) -> Result<ProviderConfig, ProviderConfigError> {
         path: display_path.clone(),
         source,
     })?;
+    let mut deserializer = serde_json::Deserializer::from_str(&contents);
     let config: ProviderConfig =
-        serde_json::from_str(&contents).map_err(|source| ProviderConfigError::Json {
+        serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+            ProviderConfigError::Json {
+                path: display_path.clone(),
+                member: error.path().to_string(),
+                source: error.into_inner(),
+            }
+        })?;
+    deserializer
+        .end()
+        .map_err(|source| ProviderConfigError::Json {
             path: display_path.clone(),
+            member: "<document>".to_owned(),
             source,
         })?;
     if config.format != FORMAT {
