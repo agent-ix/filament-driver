@@ -9,6 +9,8 @@ mod analyze_provider;
 mod backend_provider;
 mod cli;
 mod clocks;
+mod extension_set;
+mod options;
 mod process_provider;
 mod provider_config;
 mod signals;

@@ -800,7 +800,7 @@ fn check_with_model_checks_importing_unit() {
         .arg("check")
         .arg(CHECK_MODEL_SOURCE)
         .arg("--model")
-        .arg(&model)
+        .arg(format!("driver/ir608-model={}", model.display()))
         .arg("--dependent-bytes")
         .arg("8192")
         .arg("--format")
@@ -842,7 +842,7 @@ fn check_model_option_misuse_refused() {
         .arg("check")
         .arg(SOURCE)
         .arg("--model")
-        .arg(MODEL)
+        .arg(format!("unused/model={MODEL}"))
         .arg("--format")
         .arg("json")
         .output()
@@ -856,12 +856,13 @@ fn check_model_option_misuse_refused() {
 /// Trace: QSL-1972 / FR-866-AC-5; dependent-byte options bound supplied model files.
 #[test]
 fn check_dependent_byte_limit_is_applied() {
+    let model_operand = format!("driver/ir608-model={MODEL}");
     let output = Command::new(FSL)
         .args([
             "check",
             CHECK_MODEL_SOURCE,
             "--model",
-            MODEL,
+            &model_operand,
             "--dependent-bytes",
             "0",
             "--format",
@@ -2152,8 +2153,11 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     assert!(monitor_line.contains("native-monitor/1"), "{monitor_line}");
     let replay_line = command_line("replay");
     assert!(replay_line.contains("native-replay/1"), "{replay_line}");
+    assert!(command_line("inspect").contains("--handoff"));
     for command in ["prove", "generate", "inspect", "render"] {
-        assert!(command_line(command).contains("unsupported_operation"));
+        if command != "inspect" {
+            assert!(command_line(command).contains("unsupported_operation"));
+        }
         let unavailable = Command::new(FSL)
             .args([command, "--format", "json"])
             .output()
@@ -2408,4 +2412,303 @@ fn accounting_work_units_item_setting_can_be_raised_to_finish_the_run() {
         completed_document["category"], "success",
         "{completed_document}"
     );
+}
+
+fn run_fsl(arguments: &[&std::ffi::OsStr]) -> std::process::Output {
+    Command::new(FSL).args(arguments).output().expect("run fsl")
+}
+
+/// The canonical JSON line `fsl --format json` writes for `document`.
+fn canonical_line(document: &OutcomeDocument) -> Vec<u8> {
+    let mut encoded =
+        ix_cli_kit::json::encode_canonical(document, false).expect("canonical outcome document");
+    encoded.push('\n');
+    encoded.into_bytes()
+}
+
+/// The FSL FR-865 text form of `document`, as `fsl` writes it by default.
+fn text_form(document: &OutcomeDocument) -> Vec<u8> {
+    fsl_inspect::render_outcome(
+        document,
+        fsl_inspect::RenderForm::Text,
+        &fsl_inspect::RenderSources::from_sources([]),
+        fsl_replay::RenderLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("text form")
+    .into_value()
+    .as_str()
+    .as_bytes()
+    .to_vec()
+}
+
+fn copy_directory(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("create copy");
+    for entry in std::fs::read_dir(from).expect("read directory") {
+        let entry = entry.expect("directory entry");
+        let target = to.join(entry.file_name());
+        if entry.file_type().expect("file type").is_dir() {
+            copy_directory(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).expect("copy file");
+        }
+    }
+}
+
+/// FR-002-AC-23 (TC-048): `fsl inspect --handoff` writes the document
+/// FSL's `inspect_handoff` returns, with its exit result, and refuses
+/// malformed invocations before it reads the directory.
+#[test]
+#[trace("TC-048", "FR-002-AC-23")]
+fn inspect_handoff_verifies_the_package_and_sidecar() {
+    use std::ffi::OsStr;
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let root = directory.path();
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/spine-compile.native"
+        ),
+        root.join("program.native"),
+    )
+    .expect("copy the spine fixture");
+    let request = serde_json::json!({"format": "native-compile/1", "request": {
+        "models": [],
+        "program": {"source": {"file": "program.native", "authority": "agent-ix",
+            "identity": "test:spine", "document": "Spine", "formal_revision": 1}},
+        "handoff": {"directory": "handoff", "package_name": "spine",
+            "native_join": {"work_units": 1_000_000, "storage": 1_000_000}}
+    }});
+    std::fs::write(root.join("compile.json"), request.to_string()).expect("write request");
+    let compiled = run_fsl(&[
+        OsStr::new("compile"),
+        root.join("compile.json").as_os_str(),
+        OsStr::new("--format"),
+        OsStr::new("json"),
+    ]);
+    assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
+    let handoff = root.join("handoff");
+
+    let inspect = |path: &Path, format: Option<&str>| {
+        let mut arguments = vec![
+            OsStr::new("inspect"),
+            OsStr::new("--handoff"),
+            path.as_os_str(),
+        ];
+        if let Some(format) = format {
+            arguments.extend([OsStr::new("--format"), OsStr::new(format)]);
+        }
+        run_fsl(&arguments)
+    };
+
+    // Steps 2 and 3: the document, byte for byte, in JSON and text.
+    let document = command::inspect_handoff(&handoff);
+    let json = inspect(&handoff, Some("json"));
+    assert_eq!(json.status.code(), Some(0), "{json:?}");
+    assert_eq!(json.stdout, canonical_line(&document));
+    let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("JSON document");
+    assert_eq!(value["operation"], "inspect");
+    assert_eq!(value["category"], "success");
+    let text = inspect(&handoff, None);
+    assert_eq!(text.status.code(), Some(0), "{text:?}");
+    assert_eq!(text.stdout, text_form(&document));
+
+    // Step 4: a selection naming one node count more, and one changed byte.
+    let raised = root.join("raised");
+    copy_directory(&handoff, &raised);
+    let mut selection: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(raised.join("selection.json")).expect("selection"))
+            .expect("selection JSON");
+    let count = &mut selection["package"]["node_counts"]["protocol/compensation"];
+    *count = serde_json::json!(count.as_u64().expect("a node count") + 1);
+    std::fs::write(raised.join("selection.json"), selection.to_string()).expect("write selection");
+    let changed = root.join("changed");
+    copy_directory(&handoff, &changed);
+    let mut package = std::fs::read(changed.join("checked-package.json")).expect("package");
+    let middle = package.len() / 2;
+    package[middle] ^= 0x01;
+    std::fs::write(changed.join("checked-package.json"), package).expect("write package");
+
+    // Step 5: paths exactly as given, a `-`-leading directory among them.
+    let empty = root.join("empty");
+    std::fs::create_dir(&empty).expect("empty directory");
+    let regular = root.join("compile.json");
+    let odd_parent = root.join("odd");
+    std::fs::create_dir(&odd_parent).expect("parent of -odd");
+    copy_directory(&handoff, &odd_parent.join("-odd"));
+    let odd = PathBuf::from("./-odd");
+    let refused = [raised, changed, root.join("nosuch"), empty, regular];
+    for path in &refused {
+        let expected = command::inspect_handoff(path);
+        let output = inspect(path, Some("json"));
+        assert_eq!(output.status.code(), Some(20), "{path:?}: {output:?}");
+        assert_eq!(output.stdout, canonical_line(&expected), "{path:?}");
+    }
+    let odd_run = Command::new(FSL)
+        .args(["inspect", "--handoff"])
+        .arg(&odd)
+        .args(["--format", "json"])
+        .current_dir(&odd_parent)
+        .output()
+        .expect("run fsl over ./-odd");
+    assert_eq!(odd_run.status.code(), Some(0), "{odd_run:?}");
+    assert_eq!(
+        odd_run.stdout,
+        canonical_line(&command::inspect_handoff(&odd_parent.join(&odd)))
+    );
+
+    // Step 6: malformed invocations refuse before any read of `handoff`.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&handoff, std::fs::Permissions::from_mode(0o000))
+            .expect("remove read permission");
+    }
+    let h = handoff.as_os_str();
+    let cases: [(&[&OsStr], &[&str]); 7] = [
+        (&[OsStr::new("--handoff")], &["directory"]),
+        (
+            &[
+                OsStr::new("--handoff"),
+                OsStr::new("--format"),
+                OsStr::new("json"),
+            ],
+            &["directory"],
+        ),
+        (
+            &[OsStr::new("--handoff"), h, OsStr::new("extra")],
+            &["extra"],
+        ),
+        (
+            &[OsStr::new("--handoff"), h, OsStr::new("--handoff"), h],
+            &["--handoff"],
+        ),
+        (
+            &[
+                OsStr::new("--handoff"),
+                h,
+                OsStr::new("--format"),
+                OsStr::new("dot"),
+            ],
+            &["--format", "dot"],
+        ),
+        (
+            &[OsStr::new("--handoff"), h, OsStr::new("--bogus")],
+            &["--bogus"],
+        ),
+        (&[h, OsStr::new("--bogus")], &["--bogus"]),
+    ];
+    for (arguments, names) in cases {
+        let mut full = vec![OsStr::new("inspect")];
+        if !arguments.contains(&OsStr::new("--format")) {
+            full.extend([OsStr::new("--format"), OsStr::new("json")]);
+        }
+        full.extend_from_slice(arguments);
+        let output = run_fsl(&full);
+        assert_eq!(output.status.code(), Some(20), "{full:?}: {output:?}");
+        if full.contains(&OsStr::new("dot")) {
+            // `dot` selects no JSON document: the refusal is the stderr line.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("--format") && stderr.contains("dot"),
+                "{stderr}"
+            );
+            assert!(output.stdout.is_empty(), "{output:?}");
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|error| panic!("{full:?}: {error}: {output:?}"));
+        assert_eq!(value["operation"], "inspect", "{full:?}");
+        assert_eq!(
+            value["diagnostics"][0]["code"], "invalid-request",
+            "{full:?}"
+        );
+        let message = value["diagnostics"][0]["message"]
+            .as_str()
+            .expect("message");
+        for name in names {
+            assert!(message.contains(name), "{full:?}: {message}");
+        }
+        assert!(!message.contains("cannot read"), "{full:?}: {message}");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&handoff, std::fs::Permissions::from_mode(0o755))
+            .expect("restore read permission");
+    }
+
+    // Step 7: without `--handoff` the form stays not routed.
+    let unrouted = run_fsl(&[
+        OsStr::new("inspect"),
+        h,
+        OsStr::new("--format"),
+        OsStr::new("json"),
+    ]);
+    assert_eq!(unrouted.status.code(), Some(21), "{unrouted:?}");
+    let value: serde_json::Value = serde_json::from_slice(&unrouted.stdout).expect("document");
+    assert_eq!(value["category"], "unsupported");
+    assert_eq!(value["diagnostics"][0]["cause"], "operation-not-routed");
+    assert_eq!(value["diagnostics"][0]["detail"]["verb"], "inspect");
+}
+
+/// QSL-2649 / FSL FR-866: the `missing_import` refusal names
+/// `--model <identity>=<file>`; the operand it names, with a file, checks.
+#[test]
+#[trace("FR-002-AC-24", "FR-002-AC-25")]
+fn check_accepts_the_model_operand_the_missing_import_message_names() {
+    let directory = TemporaryDirectory::new("check-model-message");
+    let model = directory.0.join("model.json");
+    std::fs::copy(MODEL, &model).expect("copy model fixture");
+    let refused = Command::new(FSL)
+        .args(["check", CHECK_MODEL_SOURCE, "--format", "json"])
+        .output()
+        .expect("check without its model");
+    assert_eq!(refused.status.code(), Some(20));
+    let document: serde_json::Value = serde_json::from_slice(&refused.stdout).expect("document");
+    let message = document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("message");
+    let named = message
+        .split("--model ")
+        .nth(1)
+        .and_then(|rest| rest.split("<file>").next())
+        .expect("the message names the --model operand");
+    assert!(named.ends_with('='), "{message}");
+    let operand = format!("{named}{}", model.display());
+    let accepted = Command::new(FSL)
+        .args([
+            "check",
+            CHECK_MODEL_SOURCE,
+            "--model",
+            &operand,
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check with the named operand");
+    assert_eq!(
+        accepted.status.code(),
+        Some(0),
+        "{operand}: {}",
+        String::from_utf8_lossy(&accepted.stdout)
+    );
+    for bad in ["no-equals", "=file.json", "driver/ir608-model="] {
+        let output = Command::new(FSL)
+            .args([
+                "check",
+                CHECK_MODEL_SOURCE,
+                "--model",
+                bad,
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("check with a malformed operand");
+        assert_eq!(output.status.code(), Some(20), "{bad}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("--model"),
+            "{bad}"
+        );
+    }
 }

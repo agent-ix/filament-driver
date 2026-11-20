@@ -24,13 +24,16 @@ use fsl_foundation::wire_format::WireFormat;
 use fsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
 use fsl_replay::RunRefusal;
 use fsl_replay::spine::{
-    CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest, ParseRequest, SpineLimits,
-    check_native_fences, parse,
+    CheckLimits, CompileRefusal, DependencyInput, NativeFenceRequest, ParseRequest,
+    ProfileCatalogInput, SpineLimits, check_native_fences, parse, parse_selecting_extensions,
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
+use fsl_semantics::library::bundle::PackageLimits;
 use ix_cli_kit::exit::{RESERVED_COMMAND_NOT_FOUND, caller_exit_code};
 use ix_cli_kit::streams::{self, Diagnostics};
 
+use crate::extension_set;
+use crate::options::{self, Scan, Scanned};
 use crate::provider_config::{OptionRefusal, ProviderArguments};
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
@@ -112,38 +115,11 @@ fn help_exit_code() -> ExitCode {
         return process_exit_code(Category::Success);
     }
 
-    let mut help = String::from(concat!(
-        "Usage: fsl <command> [arguments] [--format text|json|dot]\n",
-        "       fsl --help|-h|help\n",
-        "       fsl --version|-V\n\n",
-        "Commands:\n",
-    ));
-    for verb in Verb::ALL {
-        help.push_str(&format!(
-            "  {:<10} {}\n",
-            verb.name(),
-            verb.help_description()
-        ));
-    }
-    help.push_str(concat!(
-        "\nSource operands:\n",
-        "  parse <authority> <identity> <file> [--limit name=value] [--format json|text]\n",
-        "  format <authority> <identity> <file> [--format json|text]\n",
-        "  check <source-path> [--model <file>] [--library <file>]... [--limit name=value]\n",
-        "      [--dependent-bytes <bytes>] [--format json|text]\n",
-        "  compile <request-file> [--clocks <json-file>] [--output <file>] [--limit name=value]\n",
-        "      [--format json|text]\n",
-        "  run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>]\n",
-        "      [--limit name=value] [--engine interpreter|aot|jit] [--provider-config <path>]\n",
-        "      [--clocks <json-file>] [--format json|text]\n",
-        "  replay <request-file> [--provider-config <path>] [--provider-limit name=value]\n",
-        "      [--format json|text]\n",
-        "\nOptions:\n",
-        "  --format text|json|dot  Select output format (default: text).\n",
-        "                         dot is accepted only for inspect.\n",
-        "  --version, -V           Show the package version.\n",
-        "  --help, -h, help        Show this help without running an operation.\n",
-    ));
+    let commands: Vec<(&str, &str)> = Verb::ALL
+        .into_iter()
+        .map(|verb| (verb.name(), verb.help_description()))
+        .collect();
+    let help = options::root_help(options::table(), &commands);
     process_exit_code(write_primary_output(
         help.as_bytes(),
         "root help",
@@ -217,6 +193,25 @@ impl Verb {
         }
     }
 
+    /// The library operation the verb runs.
+    fn operation(self) -> Operation {
+        match self {
+            Self::Parse => Operation::Parse,
+            Self::Format => Operation::Format,
+            Self::Check => Operation::Check,
+            Self::Compile => Operation::Package,
+            Self::Run => Operation::Execute,
+            Self::Export => Operation::Export,
+            Self::Analyze => Operation::Analyze,
+            Self::Monitor => Operation::Monitor,
+            Self::Prove => Operation::Prove,
+            Self::Replay => Operation::Replay,
+            Self::Generate => Operation::Generate,
+            Self::Inspect => Operation::Inspect,
+            Self::Render => Operation::Render,
+        }
+    }
+
     fn help_description(self) -> &'static str {
         match self {
             Self::Check | Self::Parse | Self::Compile | Self::Run => {
@@ -229,7 +224,8 @@ impl Verb {
             }
             Self::Export => "Executes an export request; --output names its target file.",
             Self::Replay => "Executes a native-replay/1 request; --format json or text.",
-            Self::Prove | Self::Generate | Self::Inspect | Self::Render => {
+            Self::Inspect => "Verifies a checked-package handoff; --handoff names its directory.",
+            Self::Prove | Self::Generate | Self::Render => {
                 "Recognized; this build does not route it and returns an unsupported_operation result."
             }
         }
@@ -255,72 +251,29 @@ struct ExportOptions {
 }
 
 impl ExportOptions {
-    const USAGE: &str = "usage: fsl export <request-file> [--output <file>] [--limit name=value] [--format json|text] | fsl export --evidence <request-file> [--format json|text]";
-
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
-        let mut output = None;
-        let mut evidence = None;
-        let mut limit_operands = Vec::new();
-        let mut positionals = Vec::new();
-        let mut index = 0;
-        while index < arguments.len() {
-            if arguments[index] == "--format" {
-                index += 2;
-                continue;
-            }
-            if arguments[index] == "--output" {
-                if output.is_some() {
-                    return Err("--output may be supplied only once".to_owned());
-                }
-                let value = arguments
-                    .get(index + 1)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "--output requires a path".to_owned())?;
-                output = Some(PathBuf::from(value));
-                index += 2;
-                continue;
-            }
-            if arguments[index] == "--evidence" {
-                if evidence.is_some() {
-                    return Err("--evidence may be supplied only once".to_owned());
-                }
-                let value = arguments
-                    .get(index + 1)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "--evidence requires a request file".to_owned())?;
-                evidence = Some(PathBuf::from(value));
-                index += 2;
-                continue;
-            }
-            if arguments[index] == "--limit" {
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
-                limit_operands.push(value.to_owned());
-                index += 2;
-                continue;
-            }
-            if let Some(option) = arguments[index]
-                .to_str()
-                .filter(|value| value.starts_with('-'))
-            {
-                return Err(format!("unknown export option `{option}`"));
-            }
-            positionals.push(&arguments[index]);
-            index += 1;
-        }
-        let request = match (positionals.as_slice(), evidence.as_ref()) {
-            ([request], None) => Some(PathBuf::from(*request)),
+    fn from_scanned(scanned: &Scanned) -> Result<Self, String> {
+        let output = scanned.once(options::OUTPUT)?.map(PathBuf::from);
+        let evidence = scanned.once(options::EVIDENCE)?.map(PathBuf::from);
+        let limit_operands = limit_operands(scanned)?;
+        let usage = entry_usage(Verb::Export);
+        let request = match (scanned.positionals.as_slice(), evidence.as_ref()) {
+            ([request], None) => Some(PathBuf::from(request)),
             ([], Some(_)) => None,
-            ([], None) => return Err(Self::USAGE.to_owned()),
+            ([], None) => return Err(usage),
             (_, Some(_)) => {
-                return Err("--evidence cannot be combined with a request file".to_owned());
+                return Err(format!(
+                    "{} cannot be combined with a request file",
+                    options::EVIDENCE
+                ));
             }
-            (_, None) => return Err(Self::USAGE.to_owned()),
+            (_, None) => return Err(usage),
         };
         if evidence.is_some() && output.is_some() {
-            return Err("--evidence cannot be combined with --output".to_owned());
+            return Err(format!(
+                "{} cannot be combined with {}",
+                options::EVIDENCE,
+                options::OUTPUT
+            ));
         }
         let request = request.or_else(|| evidence.clone());
         let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
@@ -331,6 +284,50 @@ impl ExportOptions {
         })
     }
 }
+
+/// The usage refusal text of `verb`'s table entry.
+fn entry_usage(verb: Verb) -> String {
+    options::entry(verb.name()).map_or_else(String::new, options::VerbEntry::usage_refusal)
+}
+
+/// Each `<identity>=<file>` operand of `option` (FSL FR-866): split at the first
+/// `=`, refused when it has no `=`, an empty identity or path, or repeats an
+/// identity, before any file is read.
+fn identity_operands(scanned: &Scanned, option: &str) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut selections: Vec<(String, PathBuf)> = Vec::new();
+    for value in scanned.values(option) {
+        let operand = value.to_string_lossy();
+        let (identity, file) = match value.to_str().and_then(|text| text.split_once('=')) {
+            Some((identity, file)) if !identity.is_empty() && !file.is_empty() => (identity, file),
+            _ => {
+                return Err(format!(
+                    "{option} operand `{operand}` must be <identity>=<file>"
+                ));
+            }
+        };
+        if selections.iter().any(|(given, _)| given == identity) {
+            return Err(format!(
+                "{option} names the identity `{identity}` more than once"
+            ));
+        }
+        selections.push((identity.to_owned(), PathBuf::from(file)));
+    }
+    Ok(selections)
+}
+
+/// Each `--limit` operand, as UTF-8 text, in the order given.
+fn limit_operands(scanned: &Scanned) -> Result<Vec<String>, String> {
+    scanned
+        .values(options::LIMIT)
+        .map(|value| {
+            value
+                .to_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{} requires name=value", options::LIMIT))
+        })
+        .collect()
+}
+
 /// Parse the root command surface defined by FSL ADR-029.
 fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let Some(command) = arguments.first() else {
@@ -339,27 +336,32 @@ fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let command = command
         .to_str()
         .ok_or_else(|| "command must be valid UTF-8".to_owned())?;
-    if matches!(command, "--help" | "-h" | "help") {
+    if options::HELP_OPTIONS.contains(&command) || command == options::HELP_WORD {
         return Ok(Invocation::Help);
     }
-    if matches!(command, "--version" | "-V") {
+    if options::VERSION_OPTIONS.contains(&command) {
         return Ok(Invocation::Version);
     }
     let verb = Verb::parse(command).ok_or_else(|| format!("unknown verb `{command}`"))?;
     let mut format = OutputFormat::Text;
     let mut index = 1;
     while index < arguments.len() {
-        if arguments[index] == "--format" {
+        if arguments[index] == options::FORMAT {
             index += 1;
             let value = arguments
                 .get(index)
                 .and_then(|value| value.to_str())
-                .ok_or_else(|| "--format requires text, json, or dot".to_owned())?;
+                .ok_or_else(|| format!("{} requires text, json, or dot", options::FORMAT))?;
             format = match value {
                 "text" => OutputFormat::Text,
                 "json" => OutputFormat::Json,
                 "dot" => OutputFormat::Dot,
-                other => return Err(format!("unknown output format `{other}`")),
+                other => {
+                    return Err(format!(
+                        "unknown output format `{other}` ({} accepts text, json, or dot)",
+                        options::FORMAT
+                    ));
+                }
             };
         }
         // Operation-specific options pass through untouched for later handlers.
@@ -373,6 +375,51 @@ fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
         format,
         raw_arguments: arguments[1..].to_vec(),
     })
+}
+
+/// The operands of `fsl inspect` (FSpec FR-301): `--handoff <directory>`.
+struct InspectOptions {
+    handoff: Option<PathBuf>,
+}
+
+impl InspectOptions {
+    /// Apply FR-002-AC-23's operand shape: `--handoff` takes its directory
+    /// and no other operand; without `--handoff` the form is not routed.
+    fn from_scanned(scanned: &Scanned) -> Result<Self, String> {
+        let handoff = scanned.once(options::HANDOFF)?.map(PathBuf::from);
+        if handoff.is_some() {
+            if let Some(extra) = scanned.positionals.first() {
+                return Err(format!(
+                    "unexpected operand `{}` after {} <directory>",
+                    extra.to_string_lossy(),
+                    options::HANDOFF
+                ));
+            }
+        }
+        Ok(Self { handoff })
+    }
+}
+
+/// Write the document FSL's `inspect_handoff` returns for the directory
+/// exactly as the caller gave it (FSL FR-665).
+fn inspect(options: &InspectOptions, format: OutputFormat) -> CommandResult {
+    let Some(directory) = &options.handoff else {
+        return unrouted_verb(Verb::Inspect, format);
+    };
+    if format == OutputFormat::Dot {
+        return CommandResult::input_refusal(
+            Operation::Inspect,
+            format!(
+                "{} `dot` is not available with {}",
+                options::FORMAT,
+                options::HANDOFF
+            ),
+        );
+    }
+    with_format(
+        CommandResult::document(command::inspect_handoff(directory)),
+        format,
+    )
 }
 
 struct RunOptions {
@@ -427,13 +474,16 @@ struct CheckOptions {
     path: String,
     source_identity: Option<SourceIdentity>,
     markdown: bool,
-    model: Option<PathBuf>,
+    /// Each `--model <identity>=<file>` (FSL FR-866), in option order.
+    model: Vec<(String, PathBuf)>,
     libraries: Vec<PathBuf>,
     dependent_bytes: usize,
     limits: LimitOverrides,
     /// The `--integer-division <law>` value, unread until the check runs
     /// (FSL FR-767).
     integer_division: Option<String>,
+    /// `--extensions <file>` (FSpec FR-562).
+    extensions: Option<PathBuf>,
 }
 
 /// The integer-division law `value` names, admitted as FSL FR-767 states:
@@ -479,47 +529,16 @@ struct SourceOptions {
     source: SourceIdentity,
     path: PathBuf,
     limits: LimitOverrides,
+    /// `parse --extensions <file>` (FSpec FR-562).
+    extensions: Option<PathBuf>,
 }
 
 impl SourceOptions {
-    fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, String> {
-        let limit_usage = if matches!(verb, Verb::Parse | Verb::Format) {
-            " [--limit name=value]"
-        } else {
-            ""
-        };
-        let usage = || {
-            format!(
-                "usage: fsl {} <authority> <identity> <file>{limit_usage} [--format json|text]",
-                verb.name(),
-            )
-        };
-        let mut positionals = Vec::new();
-        let mut limit_operands = Vec::new();
-        let mut index = 0;
-        while index < arguments.len() {
-            let argument = &arguments[index];
-            if argument == "--format" {
-                index += 2;
-                continue;
-            }
-            if argument == "--limit" && matches!(verb, Verb::Parse | Verb::Format) {
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires a setting=value operand".to_owned())?;
-                limit_operands.push(value.to_owned());
-                index += 2;
-                continue;
-            }
-            if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown {} option `{option}`", verb.name()));
-            }
-            positionals.push(argument);
-            index += 1;
-        }
-        let [authority, identity, path] = positionals.as_slice() else {
-            return Err(usage());
+    fn from_scanned(verb: Verb, scanned: &Scanned) -> Result<Self, String> {
+        let limit_operands = limit_operands(scanned)?;
+        let extensions = scanned.once(options::EXTENSIONS)?.map(PathBuf::from);
+        let [authority, identity, path] = scanned.positionals.as_slice() else {
+            return Err(entry_usage(verb));
         };
         let authority = authority
             .to_str()
@@ -551,59 +570,24 @@ impl SourceOptions {
         }
         Ok(Self {
             source: SourceIdentity::new(authority, identity),
-            path: PathBuf::from(*path),
+            path: PathBuf::from(path),
             limits,
+            extensions,
         })
     }
 }
 
 impl CompileOptions {
-    fn parse(arguments: &[OsString]) -> Result<Self, String> {
-        let mut positionals = Vec::new();
-        let mut clocks = None;
-        let mut output: Option<PathBuf> = None;
-        let mut limit_operands = Vec::new();
-        let mut index = 0;
-        while index < arguments.len() {
-            let argument = &arguments[index];
-            if argument == "--format" {
-                index += 2;
-                continue;
-            }
-            if argument == "--limit" {
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires a setting=value operand".to_owned())?;
-                limit_operands.push(value.to_owned());
-                index += 2;
-                continue;
-            }
-            if argument == "--clocks" {
-                clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
-                index += 2;
-                continue;
-            }
-            if argument == "--output" {
-                output = Some(output_operand(arguments.get(index + 1), output.is_some())?);
-                index += 2;
-                continue;
-            }
-            if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown compile option `{option}`"));
-            }
-            positionals.push(argument);
-            index += 1;
-        }
-        let [path] = positionals.as_slice() else {
-            return Err(
-                "usage: fsl compile <request-file> [--clocks <json-file>] [--output <file>] [--limit name=value] [--format json|text]"
-                    .to_owned(),
-            );
+    fn from_scanned(scanned: &Scanned) -> Result<Self, String> {
+        let clocks = scanned.once(options::CLOCKS)?.map(PathBuf::from);
+        let output = scanned.once(options::OUTPUT)?.map(PathBuf::from);
+        let limit_operands = limit_operands(scanned)?;
+        let [path] = scanned.positionals.as_slice() else {
+            return Err(entry_usage(Verb::Compile));
         };
         let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
-            path: PathBuf::from(*path),
+            path: PathBuf::from(path),
             clocks,
             output,
             limits,
@@ -612,107 +596,62 @@ impl CompileOptions {
 }
 
 impl CheckOptions {
-    const USAGE: &str = "usage: fsl check [--markdown] <source-path> | [--markdown] <authority> <identity> <source-path> [--model <file>] [--library <file>]... [--dependent-bytes <bytes>] [--limit name=value] [--integer-division euclidean|floor|truncating] [--format json|text]";
-
-    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
-        let mut positionals = Vec::new();
-        let mut markdown = false;
-        let mut integer_division = None;
-        let mut model = None;
-        let mut libraries = Vec::new();
-        let mut limit_operands = Vec::new();
-        let mut dependent_bytes = RunLimits::default().dependent_bytes;
-        let mut dependent_bytes_supplied = false;
-        let mut index = 0;
-        while index < arguments.len() {
-            let argument = arguments[index]
-                .to_str()
-                .ok_or_else(|| "check arguments must be valid UTF-8".to_owned())?;
-            if argument == "--format" {
-                index += 2;
-                continue;
-            }
-            if argument == "--markdown" {
-                if markdown {
-                    return Err(OptionRefusal::Quiet(Self::USAGE.to_owned()));
-                }
-                markdown = true;
-                index += 1;
-                continue;
-            }
-            if argument == "--model" {
-                let path = arguments
-                    .get(index + 1)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "--model requires a path".to_owned())?;
-                if model.replace(PathBuf::from(path)).is_some() {
-                    return Err("--model may be supplied only once".to_owned().into());
-                }
-                index += 2;
-                continue;
-            }
-            if argument == "--integer-division" {
-                let law = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--integer-division requires a law".to_owned())?;
-                if integer_division.replace(law.to_owned()).is_some() {
-                    return Err(OptionRefusal::Quiet(Self::USAGE.to_owned()));
-                }
-                index += 2;
-                continue;
-            }
-            if argument == "--library" {
-                let path = arguments
-                    .get(index + 1)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| "--library requires a path".to_owned())?;
-                libraries.push(PathBuf::from(path));
-                index += 2;
-                continue;
-            }
-            if argument == "--dependent-bytes" {
-                if dependent_bytes_supplied {
-                    return Err("--dependent-bytes may be supplied only once"
-                        .to_owned()
-                        .into());
-                }
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .and_then(|value| value.parse::<usize>().ok())
-                    .ok_or_else(|| {
-                        "--dependent-bytes requires a non-negative byte count".to_owned()
-                    })?;
-                dependent_bytes = value;
-                dependent_bytes_supplied = true;
-                index += 2;
-                continue;
-            }
-            if argument == "--limit" {
-                let value = arguments
-                    .get(index + 1)
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| "--limit requires name=value".to_owned())?;
-                limit_operands.push(value.to_owned());
-                index += 2;
-                continue;
-            }
-            if argument.starts_with('-') {
-                return Err(format!("unknown check option `{argument}`").into());
-            }
-            positionals.push(argument.to_owned());
-            index += 1;
+    fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
+        let usage = || OptionRefusal::Quiet(entry_usage(Verb::Check));
+        let markdown = scanned.has(options::MARKDOWN);
+        if scanned.values(options::MARKDOWN).count() > 1 {
+            return Err(usage());
         }
+        let mut integer_division = None;
+        for (name, value) in &scanned.options {
+            if *name == options::INTEGER_DIVISION {
+                let law = value
+                    .as_ref()
+                    .and_then(|value| value.to_str())
+                    .ok_or_else(|| format!("{} requires a law", options::INTEGER_DIVISION))?;
+                if integer_division.replace(law.to_owned()).is_some() {
+                    return Err(usage());
+                }
+            }
+        }
+        let model = identity_operands(scanned, options::MODEL)?;
+        let extensions = scanned.once(options::EXTENSIONS)?.map(PathBuf::from);
+        let libraries = scanned
+            .values(options::LIBRARY)
+            .map(PathBuf::from)
+            .collect();
+        let dependent_bytes = match scanned.once(options::DEPENDENT_BYTES)? {
+            Some(value) => value
+                .to_str()
+                .and_then(|value| value.parse::<usize>().ok())
+                .ok_or_else(|| {
+                    format!(
+                        "{} requires a non-negative byte count",
+                        options::DEPENDENT_BYTES
+                    )
+                })?,
+            None => RunLimits::default().dependent_bytes,
+        };
+        let limit_operands = limit_operands(scanned)?;
+        let positionals = scanned
+            .positionals
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| "check arguments must be valid UTF-8".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let (source_identity, path) = match positionals.as_slice() {
             [path] => (None, path.clone()),
             [authority, identity, path] => {
                 (Some(SourceIdentity::new(authority, identity)), path.clone())
             }
-            _ => return Err(Self::USAGE.to_owned().into()),
+            _ => return Err(entry_usage(Verb::Check).into()),
         };
         if markdown && source_identity.is_none() {
-            return Err(Self::USAGE.to_owned().into());
+            return Err(entry_usage(Verb::Check).into());
         }
         let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
         Ok(Self {
@@ -724,6 +663,7 @@ impl CheckOptions {
             dependent_bytes,
             limits,
             integer_division,
+            extensions,
         })
     }
 }
@@ -785,103 +725,55 @@ fn apply_export_limits(overrides: &LimitOverrides, limits: &mut SpineLimits) -> 
 }
 
 impl RunOptions {
-    const USAGE: &str = "usage: fsl run <request-file> [--request-bytes <bytes>] [--dependent-bytes <bytes>] [--limit name=value] [--engine interpreter|aot|jit] [--clocks <json-file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
-
-    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
-        let mut positionals = Vec::new();
-        let mut limit_operands = Vec::new();
-        let mut engine = None;
+    fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
         let mut intake_limits = RunLimits::default();
-        let mut byte_options = BTreeSet::new();
-        let mut clocks: Option<PathBuf> = None;
-        let mut providers = crate::provider_config::ProviderArguments::default();
-        let mut local_options = Vec::new();
-        let mut index = 0;
-        while index < arguments.len() {
-            if let Some(taken) = providers.take(arguments, index)? {
-                index += taken;
-                continue;
+        for (name, slot) in [
+            (options::REQUEST_BYTES, &mut intake_limits.request_bytes),
+            (options::DEPENDENT_BYTES, &mut intake_limits.dependent_bytes),
+        ] {
+            if let Some(value) = scanned.once(name)? {
+                *slot = value
+                    .to_str()
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .ok_or_else(|| format!("{name} requires a non-negative byte count"))?;
             }
-            let arg = arguments[index].to_str();
-            if let Some(option) = [
-                "--request-bytes",
-                "--dependent-bytes",
-                "--limit",
-                "--clocks",
-            ]
-            .into_iter()
-            .find(|option| arg == Some(*option))
-            {
-                local_options.push(option);
-            }
-            match arg {
-                Some("--request-bytes" | "--dependent-bytes") => {
-                    let option = arg.unwrap_or_default();
-                    if !byte_options.insert(option) {
-                        return Err(format!("{option} may be supplied only once").into());
-                    }
-                    index += 1;
-                    let value = arguments
-                        .get(index)
-                        .and_then(|value| value.to_str())
-                        .and_then(|value| value.parse::<usize>().ok())
-                        .ok_or_else(|| format!("{option} requires a non-negative byte count"))?;
-                    if option == "--request-bytes" {
-                        intake_limits.request_bytes = value;
-                    } else {
-                        intake_limits.dependent_bytes = value;
-                    }
-                }
-                Some("--limit") => {
-                    index += 1;
-                    limit_operands.push(
-                        arguments
-                            .get(index)
-                            .and_then(|value| value.to_str())
-                            .ok_or_else(|| "--limit requires name=value".to_owned())?
-                            .to_owned(),
-                    );
-                }
-                Some("--engine") => {
-                    index += 1;
-                    let value = arguments
-                        .get(index)
-                        .and_then(|value| value.to_str())
-                        .ok_or_else(|| "--engine requires interpreter, aot, or jit".to_owned())?;
-                    if engine.is_some() {
-                        return Err("--engine may be supplied only once".to_owned().into());
-                    }
-                    engine = Some(ExecutionEngine::parse(value)?);
-                }
-                Some("--clocks") => {
-                    clocks = Some(clocks_operand(arguments.get(index + 1), clocks.is_some())?);
-                    index += 1;
-                }
-                Some("--format" | "--color") => {
-                    index += 1;
-                    if arguments
-                        .get(index)
-                        .and_then(|value| value.to_str())
-                        .is_none()
-                    {
-                        return Err(format!("{} requires a value", arg.unwrap_or_default()).into());
-                    }
-                }
-                Some(option) if option.starts_with('-') => {
-                    return Err(format!("unknown run option `{option}`").into());
-                }
-                _ => positionals.push(arguments[index].clone()),
-            }
-            index += 1;
         }
-        let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned().into());
+        let limit_operands = limit_operands(scanned)?;
+        let engine = match scanned.once(options::ENGINE)? {
+            Some(value) => {
+                let value = value.to_str().ok_or_else(|| {
+                    format!("{} requires interpreter, aot, or jit", options::ENGINE)
+                })?;
+                ExecutionEngine::parse(value)?
+            }
+            None => ExecutionEngine::default(),
+        };
+        let clocks = scanned.once(options::CLOCKS)?.map(PathBuf::from);
+        let mut providers = crate::provider_config::ProviderArguments::default();
+        providers.take_all(scanned)?;
+        let local_options = scanned
+            .options
+            .iter()
+            .map(|(name, _)| *name)
+            .find(|name| {
+                [
+                    options::REQUEST_BYTES,
+                    options::DEPENDENT_BYTES,
+                    options::LIMIT,
+                    options::CLOCKS,
+                ]
+                .contains(name)
+            })
+            .into_iter()
+            .collect();
+        let [path] = scanned.positionals.as_slice() else {
+            return Err(entry_usage(Verb::Run).into());
         };
         Ok(Self {
             path: PathBuf::from(path),
             intake_limits,
             limits: LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?,
-            engine: engine.unwrap_or_default(),
+            engine,
             clocks,
             providers,
             local_options,
@@ -926,6 +818,21 @@ impl CommandResult {
             diagnostic: Some(message.into()),
             diagnostic_on_stderr: true,
             text_output: None,
+            analyze_document: None,
+            stderr_line: None,
+            render_sources: None,
+        }
+    }
+
+    /// A successful result whose only output is `text` on stdout in every
+    /// output format, such as a verb's help.
+    fn plain(text: String) -> Self {
+        Self {
+            category: Category::Success,
+            document: None,
+            diagnostic: None,
+            diagnostic_on_stderr: false,
+            text_output: Some(text),
             analyze_document: None,
             stderr_line: None,
             render_sources: None,
@@ -999,28 +906,6 @@ fn write_result_diagnostics<W: Write>(
         }
     }
     Ok(())
-}
-
-/// The path operand of `--clocks`, refused when missing or repeated.
-fn clocks_operand(operand: Option<&OsString>, repeated: bool) -> Result<PathBuf, String> {
-    if repeated {
-        return Err("--clocks may be supplied only once".to_owned());
-    }
-    operand
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .ok_or_else(|| "--clocks requires a path".to_owned())
-}
-
-/// The path operand of `--output`, refused when missing or repeated.
-fn output_operand(operand: Option<&OsString>, repeated: bool) -> Result<PathBuf, String> {
-    if repeated {
-        return Err("--output may be supplied only once".to_owned());
-    }
-    operand
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .ok_or_else(|| "--output requires a path".to_owned())
 }
 
 /// Record a refused `--clocks` as FSL records an invalid request: no stage
@@ -1128,7 +1013,7 @@ fn run(options: RunOptions) -> CommandResult {
             crate::clocks::read(
                 path,
                 options.intake_limits.request_bytes,
-                Some("--request-bytes"),
+                Some(options::REQUEST_BYTES),
             )
         })
         .transpose()
@@ -1221,9 +1106,7 @@ fn run(options: RunOptions) -> CommandResult {
                         None => native_result(result.value.as_value().clone(), result.exit_code),
                     }
                 }
-                Err(error) => {
-                    CommandResult::document(error.outcome_document(Operation::Execute))
-                }
+                Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
             };
         }
     };
@@ -1273,7 +1156,7 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         ..command::RequestOverrides::default()
     };
     let Some(request_path) = options.request.as_deref() else {
-        return CommandResult::input_refusal(Operation::Export, ExportOptions::USAGE);
+        return CommandResult::input_refusal(Operation::Export, entry_usage(Verb::Export));
     };
     if has_export_request_member(request_path, RunLimits::default().request_bytes) == Some(false) {
         return CommandResult::input_refusal(
@@ -1496,7 +1379,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
     let integer_division = match options
         .integer_division
         .as_deref()
-        .map(|law| admit_integer_division_law(law, "--integer-division"))
+        .map(|law| admit_integer_division_law(law, options::INTEGER_DIVISION))
         .transpose()
     {
         Ok(law) => law,
@@ -1506,9 +1389,23 @@ fn check_source(options: CheckOptions) -> CommandResult {
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "check") {
         return CommandResult::input_refusal(Operation::Check, error);
     }
+    let extensions = match options
+        .extensions
+        .as_deref()
+        .map(extension_set::read)
+        .transpose()
+    {
+        Ok(entries) => entries.unwrap_or_default(),
+        Err(refusal) => return set_refusal(Operation::Check, refusal),
+    };
     if options.markdown {
-        return check_markdown_source(options, limits, integer_division);
+        return check_markdown_source(options, limits, integer_division, &extensions);
     }
+    let catalog = if extensions.is_empty() {
+        None
+    } else {
+        extension_set::catalog(&extensions).ok()
+    };
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -1523,21 +1420,31 @@ fn check_source(options: CheckOptions) -> CommandResult {
     let cancel = Cancel::new();
     #[cfg(all(feature = "tc018-test-adapter", debug_assertions))]
     tc018_record_check_request(&options, &source, &bytes, limits);
-    let parsed = match parse(
-        &ParseRequest {
-            source: &source,
-            path: &options.path,
-            bytes: &bytes,
-        },
-        limits.source,
-        &cancel,
-    ) {
+    let request = ParseRequest {
+        source: &source,
+        path: &options.path,
+        bytes: &bytes,
+    };
+    let parsed = match &catalog {
+        Some(catalog) => parse_selecting_extensions(
+            &request,
+            ProfileCatalogInput {
+                catalog,
+                limits: PackageLimits::default(),
+            },
+            limits.source,
+            &cancel,
+        ),
+        None => parse(&request, limits.source, &cancel),
+    };
+    let parsed = match parsed {
         Ok(parsed) => parsed,
         Err(_failure) => {
             let inputs = command::CheckInputs {
                 limits,
                 dependent_bytes: options.dependent_bytes,
                 integer_division,
+                extensions,
                 ..command::CheckInputs::default()
             };
             return check_result(&command::check_outcome(Path::new(&options.path), &inputs));
@@ -1547,19 +1454,8 @@ fn check_source(options: CheckOptions) -> CommandResult {
     // The CLI accepts files while the typed check API also requires each
     // selected identity. Read those identities from the source first so
     // unused model and library paths are refused before their files open.
-    let selected_models = &parsed.value().unit().selections().models;
     let selected_libraries = &parsed.value().unit().selections().imports;
-    let models = options
-        .model
-        .map(|path| {
-            let identity = selected_models
-                .first()
-                .map(|selection| selection.identity.clone())
-                .unwrap_or_else(|| "unused-model".to_owned());
-            (identity, path)
-        })
-        .into_iter()
-        .collect();
+    let models = options.model;
     let libraries = options
         .libraries
         .into_iter()
@@ -1578,7 +1474,7 @@ fn check_source(options: CheckOptions) -> CommandResult {
         limits,
         dependent_bytes: options.dependent_bytes,
         integer_division,
-        ..command::CheckInputs::default()
+        extensions,
     };
     check_result(&command::check_outcome(Path::new(&options.path), &inputs))
 }
@@ -1588,11 +1484,17 @@ fn check_markdown_source(
     options: CheckOptions,
     limits: SpineLimits,
     integer_division: Option<fsl_replay::AdmittedIntegerDivision>,
+    extensions: &[command::CheckExtensionInput],
 ) -> CommandResult {
-    if options.model.is_some() || !options.libraries.is_empty() {
+    if !options.model.is_empty() || !options.libraries.is_empty() {
         return CommandResult::input_refusal(
             Operation::Check,
-            "--model and --library are not supported with --markdown".to_owned(),
+            format!(
+                "{} and {} are not supported with {}",
+                options::MODEL,
+                options::LIBRARY,
+                options::MARKDOWN
+            ),
         );
     }
     let bytes = match read_source(&options.path, limits.source.source_bytes) {
@@ -1624,11 +1526,22 @@ fn check_markdown_source(
     let packages = fsl_semantics::model::intake::PackageInput::new();
     let dependencies = DependencyInput::default();
     let cancel = Cancel::new();
+    let catalog = if extensions.is_empty() {
+        None
+    } else {
+        match extension_set::catalog(extensions) {
+            Ok(catalog) => Some(catalog),
+            Err(refusal) => return set_refusal(Operation::Check, refusal),
+        }
+    };
     let request = NativeFenceRequest {
         original: &original,
         packages: &packages,
         dependencies: &dependencies,
-        extensions: None,
+        extensions: catalog.as_ref().map(|catalog| ProfileCatalogInput {
+            catalog,
+            limits: PackageLimits::default(),
+        }),
         integer_division: integer_division.as_ref(),
     };
     match check_native_fences(
@@ -1739,12 +1652,26 @@ fn source_preflight(
     ))
 }
 
+/// The refusal of an `--extensions` set document or a definition it names.
+fn set_refusal(operation: Operation, refusal: extension_set::SetRefusal) -> CommandResult {
+    CommandResult::catalog_failure_for(operation, refusal.code, refusal.message)
+}
+
 /// Parse one source through FSL and serialize its typed parse outcome.
 fn parse_source(options: SourceOptions) -> CommandResult {
     let mut limits = SpineLimits::default();
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits.source, "parse") {
         return CommandResult::input_refusal(Operation::Parse, error);
     }
+    let catalog = match options
+        .extensions
+        .as_deref()
+        .map(|path| extension_set::read(path).and_then(|entries| extension_set::catalog(&entries)))
+        .transpose()
+    {
+        Ok(catalog) => catalog,
+        Err(refusal) => return set_refusal(Operation::Parse, refusal),
+    };
     if let Some(refusal) = source_preflight(&options, Operation::Parse, limits.source.source_bytes)
     {
         return refusal;
@@ -1758,15 +1685,24 @@ fn parse_source(options: SourceOptions) -> CommandResult {
     };
     let source = options.source;
     let display_path = options.path.to_string_lossy();
-    let result = parse(
-        &ParseRequest {
-            source: &source,
-            path: &display_path,
-            bytes: &bytes,
-        },
-        limits.source,
-        &Cancel::new(),
-    );
+    let request = ParseRequest {
+        source: &source,
+        path: &display_path,
+        bytes: &bytes,
+    };
+    let cancel = Cancel::new();
+    let result = match &catalog {
+        Some(catalog) => parse_selecting_extensions(
+            &request,
+            ProfileCatalogInput {
+                catalog,
+                limits: PackageLimits::default(),
+            },
+            limits.source,
+            &cancel,
+        ),
+        None => parse(&request, limits.source, &cancel),
+    };
     CommandResult::document(OutcomeDocument::from_parse(&result))
 }
 
@@ -1822,36 +1758,14 @@ struct RequestOptions {
 }
 
 impl RequestOptions {
-    fn parse(verb: Verb, arguments: &[OsString]) -> Result<Self, OptionRefusal> {
-        let name = verb.name();
-        let mut positionals = Vec::new();
+    fn from_scanned(verb: Verb, scanned: &Scanned) -> Result<Self, OptionRefusal> {
         let mut providers = ProviderArguments::default();
-        let mut index = 0;
-        while index < arguments.len() {
-            if let Some(taken) = providers.take(arguments, index)? {
-                index += taken;
-                continue;
-            }
-            let argument = &arguments[index];
-            if argument == "--format" {
-                index += 2;
-                continue;
-            }
-            if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown {name} option `{option}`").into());
-            }
-            positionals.push(argument);
-            index += 1;
-        }
-        let [path] = positionals.as_slice() else {
-            return Err(format!(
-                "usage: fsl {name} <request-file> [--provider-config <path>] \
-                 [--provider-limit name=value] [--format json|text]"
-            )
-            .into());
+        providers.take_all(scanned)?;
+        let [path] = scanned.positionals.as_slice() else {
+            return Err(entry_usage(verb).into());
         };
         Ok(Self {
-            path: PathBuf::from(*path),
+            path: PathBuf::from(path),
             providers,
         })
     }
@@ -2147,13 +2061,13 @@ fn with_started_providers<T: Send + 'static>(
     limits: fsl_analyze::provider::ProviderLimits,
     reporting: bool,
     entry: impl FnOnce(
-        &filament_driver::AnalyzeNegotiation,
-        Vec<fsl_analyze::analyze::Engine>,
-        &fsl_analyze::provider::ProviderOptions,
-        &Cancel,
-    ) -> T
-    + Send
-    + 'static,
+            &filament_driver::AnalyzeNegotiation,
+            Vec<fsl_analyze::analyze::Engine>,
+            &fsl_analyze::provider::ProviderOptions,
+            &Cancel,
+        ) -> T
+        + Send
+        + 'static,
 ) -> io::Result<Result<T, String>> {
     crate::signals::run(move |signals| {
         let cancel = Cancel::new();
@@ -2425,46 +2339,15 @@ struct MonitorOptions {
 }
 
 impl MonitorOptions {
-    const USAGE: &str = "usage: fsl monitor <request-file> [--input <file>] [--provider-config <path>] [--provider-limit name=value] [--format json|text]";
-
-    fn parse(arguments: &[OsString]) -> Result<Self, OptionRefusal> {
-        let mut positionals = Vec::new();
-        let mut input = None;
+    fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
+        let input = scanned.once(options::INPUT)?.map(PathBuf::from);
         let mut providers = ProviderArguments::default();
-        let mut index = 0;
-        while index < arguments.len() {
-            if let Some(taken) = providers.take(arguments, index)? {
-                index += taken;
-                continue;
-            }
-            let argument = &arguments[index];
-            if argument == "--format" {
-                index += 2;
-                continue;
-            }
-            if argument == "--input" {
-                if input.is_some() {
-                    return Err("--input may be supplied only once".to_owned().into());
-                }
-                let value = arguments
-                    .get(index + 1)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| OptionRefusal::from("--input requires a path".to_owned()))?;
-                input = Some(PathBuf::from(value));
-                index += 2;
-                continue;
-            }
-            if let Some(option) = argument.to_str().filter(|value| value.starts_with('-')) {
-                return Err(format!("unknown monitor option `{option}`").into());
-            }
-            positionals.push(argument);
-            index += 1;
-        }
-        let [path] = positionals.as_slice() else {
-            return Err(Self::USAGE.to_owned().into());
+        providers.take_all(scanned)?;
+        let [path] = scanned.positionals.as_slice() else {
+            return Err(entry_usage(Verb::Monitor).into());
         };
         Ok(Self {
-            path: PathBuf::from(*path),
+            path: PathBuf::from(path),
             input,
             providers,
         })
@@ -2700,85 +2583,64 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
 }
 
 /// Dispatch the root verb while preserving its FSL-owned result category.
+///
+/// FR-002 decides a verb's invocation in order: the root `--format` checks
+/// ran in [`parse_invocation`]; then an option the verb's table entry does
+/// not list refuses, a help option answers, the verb's operand and value
+/// checks refuse, and only then does the operation run.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
-    if verb == Verb::Analyze {
-        return match RequestOptions::parse(verb, raw_arguments) {
-            Ok(options) => analyze(&options, format),
-            Err(error) => option_refusal(Operation::Analyze, &error),
-        };
-    }
-    if verb == Verb::Replay {
-        return match RequestOptions::parse(verb, raw_arguments) {
+    let Some(entry) = options::entry(verb.name()) else {
+        return unrouted_verb(verb, format);
+    };
+    let operation = verb.operation();
+    let scanned = match options::scan(entry, raw_arguments) {
+        Ok(Scan::Help) => return CommandResult::plain(entry.help()),
+        Ok(Scan::Options(scanned)) => scanned,
+        Err(message) => return CommandResult::input_refusal(operation, message),
+    };
+    match verb {
+        Verb::Analyze | Verb::Replay => match RequestOptions::from_scanned(verb, &scanned) {
+            Ok(options) if verb == Verb::Analyze => analyze(&options, format),
             Ok(options) => replay(&options, format),
-            Err(error) => option_refusal(Operation::Replay, &error),
-        };
-    }
-    if verb == Verb::Monitor {
-        return match MonitorOptions::parse(raw_arguments) {
+            Err(error) => option_refusal(operation, &error),
+        },
+        Verb::Monitor => match MonitorOptions::from_scanned(&scanned) {
             Ok(options) => monitor(&options, format),
-            Err(error) => option_refusal(Operation::Monitor, &error),
-        };
-    }
-    if verb == Verb::Run {
-        return match RunOptions::parse(raw_arguments) {
+            Err(error) => option_refusal(operation, &error),
+        },
+        Verb::Run => match RunOptions::from_scanned(&scanned) {
             Ok(options) => with_format(run(options), format),
-            Err(error) => option_refusal(Operation::Execute, &error),
-        };
-    }
-    if verb == Verb::Export {
-        return match ExportOptions::parse(raw_arguments) {
+            Err(error) => option_refusal(operation, &error),
+        },
+        Verb::Export => match ExportOptions::from_scanned(&scanned) {
             Ok(options) => with_format(export(&options, format), format),
-            Err(error) => CommandResult::input_refusal(Operation::Export, error),
-        };
-    }
-    if verb == Verb::Compile {
-        return match CompileOptions::parse(raw_arguments) {
+            Err(error) => CommandResult::input_refusal(operation, error),
+        },
+        Verb::Compile => match CompileOptions::from_scanned(&scanned) {
             Ok(options) => with_format(compile(options), format),
-            Err(error) => CommandResult::input_refusal(Operation::Package, error),
-        };
-    }
-    if verb == Verb::Check {
-        return match CheckOptions::parse(raw_arguments) {
+            Err(error) => CommandResult::input_refusal(operation, error),
+        },
+        Verb::Check => match CheckOptions::from_scanned(&scanned) {
             Ok(options) => with_format(check_source(options), format),
-            Err(error) => option_refusal(Operation::Check, &error),
-        };
-    }
-    if verb == Verb::Parse {
-        return match SourceOptions::parse(verb, raw_arguments) {
+            Err(error) => option_refusal(operation, &error),
+        },
+        Verb::Parse => match SourceOptions::from_scanned(verb, &scanned) {
             Ok(options) => with_format(parse_source(options), format),
-            Err(error) => CommandResult::input_refusal(Operation::Parse, error),
-        };
+            Err(error) => CommandResult::input_refusal(operation, error),
+        },
+        Verb::Format => match SourceOptions::from_scanned(verb, &scanned) {
+            Ok(options) => {
+                source_preflight(&options, operation, fsl_cst::Limits::default().source_bytes)
+                    .unwrap_or_else(|| format_source(options))
+            }
+            Err(error) => CommandResult::input_refusal(operation, error),
+        },
+        Verb::Inspect => match InspectOptions::from_scanned(&scanned) {
+            Ok(options) => inspect(&options, format),
+            Err(error) => CommandResult::input_refusal(operation, error),
+        },
+        Verb::Prove | Verb::Generate | Verb::Render => unrouted_verb(verb, format),
     }
-    if verb == Verb::Format {
-        return match SourceOptions::parse(verb, raw_arguments) {
-            Ok(options) => source_preflight(
-                &options,
-                Operation::Format,
-                fsl_cst::Limits::default().source_bytes,
-            )
-            .unwrap_or_else(|| format_source(options)),
-            Err(error) => CommandResult::input_refusal(Operation::Format, error),
-        };
-    }
-    if raw_arguments.iter().any(|argument| {
-        matches!(
-            argument.to_str(),
-            Some("--engine" | "--limit" | "--provider-config")
-        )
-    }) {
-        let option = raw_arguments
-            .iter()
-            .find_map(|argument| match argument.to_str() {
-                Some(option @ ("--engine" | "--limit" | "--provider-config")) => Some(option),
-                _ => None,
-            })
-            .unwrap_or("--engine or --limit");
-        return CommandResult::failure(
-            Category::Refusal,
-            format!("option `{option}` is only accepted by `run`"),
-        );
-    }
-    unrouted_verb(verb, format)
 }
 
 /// The library operation an accepted but unrouted verb names, `None` for a
@@ -2900,7 +2762,10 @@ fn unrouted_wire(document: &OutcomeDocument, verb: &str) -> Option<serde_json::V
 
 /// Emit one result document with the kit's canonical JSON and stream APIs.
 fn emit_result(result: &CommandResult, format: OutputFormat) -> Category {
-    let primary = if format == OutputFormat::Json {
+    let plain = result.document.is_none() && result.analyze_document.is_none();
+    let primary = if plain {
+        result.text_output.clone()
+    } else if format == OutputFormat::Json {
         let encoded = match &result.analyze_document {
             Some(document) => ix_cli_kit::json::encode_canonical(document, false).map(Some),
             None => result
@@ -2995,7 +2860,7 @@ mod outcome_tests {
     use filament_semantic_value::catalog::Category;
     use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 
-    use super::{CommandResult, process_exit_code, write_diagnostic, write_result_diagnostics};
+    use super::{process_exit_code, write_diagnostic, write_result_diagnostics, CommandResult};
 
     /// Trace: FR-002-AC-2, FR-002-AC-4; one FSL exit result reaches process exit unchanged through the kit.
     #[test]
@@ -3054,12 +2919,35 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        CheckOptions, ExecutionEngine, ExportOptions, Invocation, LimitOverrides, OptionRefusal,
-        OutputFormat, RunOptions, SpineLimits, Verb, parse_invocation, read_source,
+        options, parse_invocation, read_source, CheckOptions, ExecutionEngine, ExportOptions,
+        Invocation, LimitOverrides, OptionRefusal, OutputFormat, RunOptions, Scan, SpineLimits,
+        Verb,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
+
+    fn scanned(verb: &str, arguments: &[OsString]) -> Result<crate::options::Scanned, String> {
+        let entry = crate::options::entry(verb).expect("verb has an option table entry");
+        match crate::options::scan(entry, arguments)? {
+            crate::options::Scan::Options(scanned) => Ok(scanned),
+            crate::options::Scan::Help => Err("help requested".to_owned()),
+        }
+    }
+
+    fn parse_export(arguments: &[OsString]) -> Result<ExportOptions, String> {
+        ExportOptions::from_scanned(&scanned("export", arguments)?)
+    }
+
+    fn parse_check(arguments: &[OsString]) -> Result<CheckOptions, OptionRefusal> {
+        let scanned = scanned("check", arguments)?;
+        CheckOptions::from_scanned(&scanned)
+    }
+
+    fn parse_run(arguments: &[OsString]) -> Result<RunOptions, OptionRefusal> {
+        let scanned = scanned("run", arguments)?;
+        RunOptions::from_scanned(&scanned)
+    }
 
     #[test]
     fn unavailable_limit_error_is_generic_and_cli_message_names_operation() {
@@ -3094,7 +2982,7 @@ mod tests {
 
     #[test]
     fn export_options_accept_output_and_one_request_file() {
-        let parsed = ExportOptions::parse(&[
+        let parsed = parse_export(&[
             OsString::from("--output"),
             OsString::from("model.tla"),
             OsString::from("request.json"),
@@ -3103,10 +2991,10 @@ mod tests {
         assert_eq!(parsed.output.as_deref(), Some(Path::new("model.tla")));
         assert_eq!(parsed.request.as_deref(), Some(Path::new("request.json")));
         assert!(parsed.limits.values().is_empty());
-        let request_only = ExportOptions::parse(&[OsString::from("request.json")])
+        let request_only = parse_export(&[OsString::from("request.json")])
             .expect("the request may name its own output");
         assert_eq!(request_only.output, None);
-        assert!(ExportOptions::parse(&[
+        assert!(parse_export(&[
             OsString::from("--output"),
             OsString::from("model.tla"),
             OsString::from("--output"),
@@ -3118,7 +3006,7 @@ mod tests {
 
     #[test]
     fn export_options_accept_repeated_export_and_compile_limits() {
-        let parsed = ExportOptions::parse(&[
+        let parsed = parse_export(&[
             OsString::from("--output"),
             OsString::from("model.tla"),
             OsString::from("request.json"),
@@ -3138,7 +3026,7 @@ mod tests {
         assert_eq!(limits.export.output_bytes, Some(4096));
         assert_eq!(limits.export.nodes, Some(20));
         assert_eq!(limits.source.source_bytes, 1024);
-        assert!(ExportOptions::parse(&[
+        assert!(parse_export(&[
             OsString::from("--output"),
             OsString::from("model.tla"),
             OsString::from("request.json"),
@@ -3146,7 +3034,7 @@ mod tests {
             OsString::from("export.output_bytes=-1"),
         ])
         .is_err());
-        assert!(ExportOptions::parse(&[
+        assert!(parse_export(&[
             OsString::from("request.json"),
             OsString::from("--limit"),
             OsString::from("unknown.limit=5"),
@@ -3156,7 +3044,7 @@ mod tests {
 
     #[test]
     fn export_options_route_evidence_and_reject_conflicting_inputs() {
-        let evidence = ExportOptions::parse(&[
+        let evidence = parse_export(&[
             OsString::from("--evidence"),
             OsString::from("evidence.json"),
         ])
@@ -3165,14 +3053,14 @@ mod tests {
             evidence.request.as_deref(),
             Some(Path::new("evidence.json"))
         );
-        assert!(ExportOptions::parse(&[
+        assert!(parse_export(&[
             OsString::from("--evidence"),
             OsString::from("evidence.json"),
             OsString::from("--output"),
             OsString::from("model.tla"),
         ])
         .is_err());
-        assert!(ExportOptions::parse(&[
+        assert!(parse_export(&[
             OsString::from("request.json"),
             OsString::from("--evidence"),
             OsString::from("evidence.json"),
@@ -3263,7 +3151,9 @@ mod tests {
         let args = vec![
             OsString::from("unit.fsl"),
             OsString::from("--model"),
-            OsString::from("model.json"),
+            OsString::from("example/one=model.json"),
+            OsString::from("--model"),
+            OsString::from("example/two=other=model.json"),
             OsString::from("--library"),
             OsString::from("geometry.native"),
             OsString::from("--library"),
@@ -3271,9 +3161,15 @@ mod tests {
             OsString::from("--dependent-bytes"),
             OsString::from("1234"),
         ];
-        let options = CheckOptions::parse(&args).expect("valid check inputs");
+        let options = parse_check(&args).expect("valid check inputs");
         assert_eq!(options.path, "unit.fsl");
-        assert_eq!(options.model.as_deref(), Some(Path::new("model.json")));
+        assert_eq!(
+            options.model,
+            [
+                ("example/one".to_owned(), PathBuf::from("model.json")),
+                ("example/two".to_owned(), PathBuf::from("other=model.json")),
+            ]
+        );
         assert_eq!(
             options.libraries,
             [
@@ -3298,12 +3194,27 @@ mod tests {
             vec![
                 OsString::from("unit.fsl"),
                 OsString::from("--model"),
-                OsString::from("one.json"),
+                OsString::from("example/one=one.json"),
                 OsString::from("--model"),
-                OsString::from("two.json"),
+                OsString::from("example/one=two.json"),
+            ],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--model"),
+                OsString::from("one.json"),
+            ],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--model"),
+                OsString::from("=one.json"),
+            ],
+            vec![
+                OsString::from("unit.fsl"),
+                OsString::from("--model"),
+                OsString::from("example/one="),
             ],
         ] {
-            assert!(CheckOptions::parse(&args).is_err(), "accepted {args:?}");
+            assert!(parse_check(&args).is_err(), "accepted {args:?}");
         }
     }
 
@@ -3317,7 +3228,7 @@ mod tests {
             OsString::from("--limit"),
             OsString::from("s1.input_bytes=1024"),
         ];
-        let options = RunOptions::parse(&args).expect("valid run options");
+        let options = parse_run(&args).expect("valid run options");
         assert_eq!(options.path, std::path::Path::new("unit.fsl"));
         assert_eq!(options.engine, ExecutionEngine::Interpreter);
         assert_eq!(
@@ -3338,7 +3249,7 @@ mod tests {
             OsString::from("--provider-config"),
             OsString::from("providers.json"),
         ];
-        let options = RunOptions::parse(&args).expect("valid provider config path");
+        let options = parse_run(&args).expect("valid provider config path");
         assert_eq!(
             options.providers.config.as_deref(),
             Some(std::path::Path::new("providers.json"))
@@ -3353,7 +3264,7 @@ mod tests {
             OsString::from("--provider-config"),
         ];
         assert_eq!(
-            RunOptions::parse(&missing).err(),
+            parse_run(&missing).err(),
             Some(OptionRefusal::Usage(
                 "--provider-config requires a path".to_owned()
             ))
@@ -3367,7 +3278,7 @@ mod tests {
             OsString::from("two.json"),
         ];
         assert_eq!(
-            RunOptions::parse(&duplicate).err(),
+            parse_run(&duplicate).err(),
             Some(OptionRefusal::Usage(
                 "--provider-config may be supplied only once".to_owned()
             ))
@@ -3384,7 +3295,7 @@ mod tests {
             OsString::from("deadline_ms=010"),
         ];
         assert!(matches!(
-            RunOptions::parse(&args).err(),
+            parse_run(&args).err(),
             Some(OptionRefusal::Quiet(message))
                 if message.contains("--provider-limit `deadline_ms=010`")
         ));
@@ -3398,7 +3309,7 @@ mod tests {
             OsString::from("--engine"),
             OsString::from("gpu"),
         ];
-        assert!(RunOptions::parse(&args).is_err());
+        assert!(parse_run(&args).is_err());
     }
 
     /// Trace: FR-003-AC-3, the bounded read includes input exactly at its limit.
@@ -3429,5 +3340,82 @@ mod tests {
             "read is bounded to the limit plus one sentinel byte"
         );
         assert_eq!(actual, expected[..=limit]);
+    }
+
+    fn commands() -> Vec<(&'static str, &'static str)> {
+        Verb::ALL
+            .into_iter()
+            .map(|verb| (verb.name(), verb.help_description()))
+            .collect()
+    }
+
+    /// Trace: FR-002-AC-24; a table copy without an option makes the parser
+    /// refuse it and the generated help omit it.
+    #[test]
+    fn removing_a_table_option_removes_it_from_parser_and_help() {
+        for entry in options::table() {
+            for option in &entry.options {
+                let mut arguments = vec![OsString::from(option.name)];
+                if option.value.is_some() {
+                    arguments.push(OsString::from("value"));
+                }
+                assert!(
+                    matches!(options::scan(entry, &arguments), Ok(Scan::Options(_))),
+                    "{} rejects its own {}",
+                    entry.verb,
+                    option.name
+                );
+                let copy = entry.without(option.name);
+                let refusal = options::scan(&copy, &arguments)
+                    .expect_err("the parser refuses an option outside its entry");
+                assert!(refusal.contains(option.name), "{refusal}");
+                let tables: Vec<options::VerbEntry> = options::table()
+                    .iter()
+                    .map(|other| {
+                        if other.verb == entry.verb {
+                            copy.clone()
+                        } else {
+                            other.clone()
+                        }
+                    })
+                    .collect();
+                let help = options::root_help(&tables, &commands());
+                let heading = format!("{} options:", entry.verb);
+                let section = help
+                    .split("\n\n")
+                    .find(|section| section.starts_with(&heading))
+                    .expect("the verb section");
+                assert!(
+                    section.lines().all(|line| line != option.help_line()),
+                    "{} help still lists {}",
+                    entry.verb,
+                    option.name
+                );
+            }
+        }
+    }
+
+    /// Trace: FR-002-AC-24; no option name is spelled outside the table.
+    #[test]
+    fn no_option_literal_appears_outside_the_table() {
+        let literal = regex::Regex::new(r#""--?[A-Za-z]"#).expect("pattern");
+        for (file, source) in [
+            ("cli.rs", include_str!("cli.rs")),
+            ("provider_config.rs", include_str!("provider_config.rs")),
+            ("extension_set.rs", include_str!("extension_set.rs")),
+            ("main.rs", include_str!("main.rs")),
+        ] {
+            let production = source.split("\n#[cfg(test)]").next().unwrap_or(source);
+            for (number, line) in production.lines().enumerate() {
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                assert!(
+                    !literal.is_match(line),
+                    "{file}:{} spells an option outside the table: {line}",
+                    number + 1
+                );
+            }
+        }
     }
 }
