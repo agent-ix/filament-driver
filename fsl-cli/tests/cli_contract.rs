@@ -13,16 +13,16 @@ use std::{
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
-use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
+use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::{
-    SettingLimits, Source, SourceIdentity,
     diagnostic::{Code, Staged},
+    SettingLimits, Source, SourceIdentity,
 };
 use fsl_replay::{
-    Operation, OutcomeDiagnostic, OutcomeDocument,
     spine::{
-        DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
+        check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
     },
+    Operation, OutcomeDiagnostic, OutcomeDocument,
 };
 use ix_cli_kit::version::Agreement;
 use ix_trace_rs::trace;
@@ -2089,6 +2089,7 @@ fn format_json_result_carries_text() {
         .output()
         .expect("format source as text");
     assert_eq!(text.status.code(), Some(0));
+    assert!(!text.stdout.is_empty(), "formatter text must not be empty");
     assert!(text.stderr.is_empty());
 
     let json = Command::new(FSL)
