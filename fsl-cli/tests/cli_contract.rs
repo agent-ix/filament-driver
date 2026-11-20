@@ -1428,9 +1428,9 @@ fn compile_refusal_emits_fsl_package_outcome_document() {
     assert_fsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
 }
 
-/// Trace: QSL-2192; an empty compile program is an invalid request.
+/// Trace: QSL-2192; an empty compile program is an invalid package value.
 #[test]
-fn compile_empty_program_is_invalid_request() {
+fn compile_empty_program_is_invalid_package() {
     let directory = tempfile::tempdir().expect("create compile request directory");
     let request = directory.path().join("empty-program.json");
     std::fs::write(
@@ -1449,8 +1449,8 @@ fn compile_empty_program_is_invalid_request() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("CLI emits a refusal document");
     assert_eq!(document["category"], "refusal");
-    assert!(document["last_stage"].is_null(), "{document}");
-    assert_eq!(document["diagnostics"][0]["code"], "invalid-request");
+    assert_eq!(document["diagnostics"][0]["code"], "invalid_package");
+    assert_eq!(document["diagnostics"][0]["cause"], "invalid-value");
 }
 
 /// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
