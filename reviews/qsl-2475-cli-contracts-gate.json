@@ -1,0 +1,72 @@
+{
+  "format": "fsl-cli-contract-gate/v1",
+  "ticket": "QSL-2475",
+  "reviewed_code_head": "664d1d84ff6c58d5f555e9a0a45b665a915735bb",
+  "gate_head": "1344635ef68c6877a2e002f17008f476f0878a20",
+  "scope": "Complete cli-contracts component on the frozen PR branch",
+  "command": "cargo test --locked --manifest-path cli-contracts/Cargo.toml -- --test-threads=1",
+  "environment": {
+    "FSL": "explicit frozen L3 executable",
+    "FSL_TEST_PROVIDER": "explicit same-cohort authoritative fsl-test-provider",
+    "CARGO_TARGET_DIR": "owned existing cli-contracts/target",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "2"
+  },
+  "cohort": {
+    "driver": "a260b3b26277bfa907ce77373c4f15dac6671083",
+    "fsl": "8877b38b6397055fa11dc2e7882ad87d02ecb654",
+    "codegen": "a11a66ab9c5eeee9163f5d4d084644296b565ba9",
+    "ir": "c7b62038ed95262e3e51477f0831978397c8c5f7"
+  },
+  "exit_code": 0,
+  "passed": 164,
+  "failed": 0,
+  "ignored": 7,
+  "groups": {
+    "library": {
+      "passed": 3,
+      "ignored": 0
+    },
+    "analyze": {
+      "passed": 37,
+      "ignored": 2
+    },
+    "check": {
+      "passed": 32,
+      "ignored": 1
+    },
+    "compile": {
+      "passed": 39,
+      "ignored": 1
+    },
+    "contracts": {
+      "passed": 5,
+      "ignored": 0
+    },
+    "inspect": {
+      "passed": 25,
+      "ignored": 0
+    },
+    "run": {
+      "passed": 23,
+      "ignored": 3
+    }
+  },
+  "pending": [
+    "QSL-2662",
+    "QSL-2234",
+    "QSL-2657",
+    "QSL-2658",
+    "QSL-2663",
+    "QSL-2661",
+    "QSL-2348"
+  ],
+  "notes": [
+    "All 25 new inspect contracts passed; no inspect case is ignored.",
+    "Ignored required oracles in inherited targets are not passing coverage.",
+    "Counts include only targets present on this frozen branch, without a main-move or missing-target rerun.",
+    "Review artifacts and this receipt contain no source behavior changes."
+  ]
+}
