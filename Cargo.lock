@@ -864,21 +864,6 @@ dependencies = [
 [[package]]
 name = "fsl-foundation"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-spec-language?rev=13b0b11e7b00e7412976d7a4b55cc93aed528c38#58d3bddbb3fbf34b00f8c5a904dee08a26ff12ac"
-dependencies = [
- "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b26a8e4c592503fccdc4a0e3d2cce23dd8487616)",
- "filament-semantic-value",
- "hashbrown 0.17.1",
- "ix-trace-rs",
- "quire-canonical",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "fsl-foundation"
-version = "0.1.0"
 source = "git+https://github.com/agent-ix/filament-spec-language?rev=58d3bddbb3fbf34b00f8c5a904dee08a26ff12ac#58d3bddbb3fbf34b00f8c5a904dee08a26ff12ac"
 dependencies = [
  "filament-exact 0.3.0 (git+https://github.com/agent-ix/filament-exact?rev=b26a8e4c592503fccdc4a0e3d2cce23dd8487616)",
