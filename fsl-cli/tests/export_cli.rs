@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use ix_trace_rs::trace;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const UNIT: &str = include_str!("fixtures/export-counter.fsl");
@@ -112,6 +112,79 @@ fn export_output_writes_the_target_text_fsl_assembles() {
     );
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(std::fs::read(member.path().join("m.tla")).unwrap(), written);
+}
+
+/// A selected checked package reaches FSL with its caller-supplied source
+/// identity and version, and the CLI writes the exported target text.
+#[test]
+#[trace("TC-045", "FR-027-AC-1")]
+#[trace("TC-3019", "FR-1039-AC-4")]
+fn export_selected_package_preserves_source_reference_and_writes_target() {
+    let directory = folder();
+    let compile_request = json!({"format": "native-compile/1", "request": {
+        "models": [{"format": "semantic-ir/2.0.0", "source": {
+            "file": "counter.json", "authority": "test", "identity": "example/counter",
+            "document": "ExportCounter", "formal_revision": 1}}],
+        "program": {"source": {
+            "file": "counter.fsl", "authority": "test", "identity": "export-counter",
+            "document": "ExportCounter", "formal_revision": 1}}}});
+    std::fs::write(
+        directory.path().join("compile.json"),
+        compile_request.to_string(),
+    )
+    .expect("the compile request");
+    let compiled = fsl(
+        directory.path(),
+        &[
+            "compile",
+            "compile.json",
+            "--output",
+            "checked-package.json",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
+    assert!(directory.path().join("checked-package.json").is_file());
+    std::fs::remove_file(directory.path().join("counter.fsl")).expect("remove source file");
+    std::fs::remove_file(directory.path().join("counter.json")).expect("remove model file");
+
+    let source_package = json!({"identity": "test:recorded-export-counter", "version": "17"});
+    let export_request = json!({"format": "native-run/1", "request": {
+        "models": [],
+        "package": {"file": "checked-package.json", "source_package": source_package},
+        "export": {"profile": "filament.output.tla2/v1", "obligations": ["Bounded"]}}});
+    std::fs::write(
+        directory.path().join("selected-export.json"),
+        export_request.to_string(),
+    )
+    .expect("the selected-package export request");
+    let output = fsl(
+        directory.path(),
+        &[
+            "export",
+            "selected-export.json",
+            "--output",
+            "selected.tla",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let value = document(&output);
+    assert_eq!(value["operation"], "export", "{value}");
+    assert_eq!(value["category"], "success", "{value}");
+    assert_eq!(
+        value["result"]["export"]["package"]["source_package"], source_package,
+        "FSL must retain the selected package's caller-supplied source reference"
+    );
+    let text = value["result"]["export"]["target_text"]
+        .as_str()
+        .expect("target text from selected package");
+    assert_eq!(
+        std::fs::read(directory.path().join("selected.tla")).expect("the target file"),
+        text.as_bytes()
+    );
 }
 
 /// FR-027-AC-2: an existing path, a doubled destination and a repeated
