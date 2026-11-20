@@ -1,0 +1,44 @@
+   Compiling typenum v1.20.1
+   Compiling cfg-if v1.0.5
+   Compiling num-traits v0.2.19
+   Compiling serde_core v1.0.228
+   Compiling generic-array v0.14.7
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling thiserror v2.0.20
+   Compiling digest v0.10.7
+   Compiling num-integer v0.1.47
+   Compiling libc v0.2.190
+   Compiling zmij v1.0.23
+   Compiling cpufeatures v0.2.17
+   Compiling bitflags v2.13.2
+   Compiling hashbrown v0.17.1
+   Compiling memchr v2.8.3
+   Compiling equivalent v1.0.3
+   Compiling tinyvec v1.13.3
+   Compiling itoa v1.0.19
+   Compiling serde_json v1.0.151
+   Compiling unicode-normalization v0.1.25
+   Compiling indexmap v2.14.2
+   Compiling nix v0.31.3
+   Compiling sha2 v0.10.9
+   Compiling serde v1.0.228
+   Compiling num-bigint v0.4.8
+   Compiling spin v0.9.9
+   Compiling triomphe v0.1.17
+   Compiling once_cell v1.21.4
+   Compiling allocator-api2 v0.2.21
+   Compiling arrayvec v0.7.8
+   Compiling ryu-js v1.0.3
+   Compiling filament-exact v0.3.0 (https://github.com/agent-ix/filament-exact?rev=b26a8e4c592503fccdc4a0e3d2cce23dd8487616#b26a8e4c)
+   Compiling quire-canonical v0.3.1 (https://github.com/agent-ix/quire-canonical?tag=v0.3.1#2204c5c3)
+   Compiling process-wrap v10.0.1
+   Compiling filament-plugin-host v0.1.0 (/home/peter/dev/.worktrees/luna-qsl-2289/filament-plugin-host)
+    Finished `test` profile [unoptimized] target(s) in 8.58s
+     Running unittests src/lib.rs (target/debug/deps/filament_plugin_host-ea2ea04d527d0a5c)
+
+running 1 test
+test tests::cancellation_grace_expiry_terminates_the_plugin ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.36s
+

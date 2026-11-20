@@ -1599,7 +1599,7 @@ mod tests {
     fn cancel_after_fixture_ready(
         path: std::path::PathBuf,
         cancel: Cancel,
-    ) -> thread::JoinHandle<()> {
+    ) -> thread::JoinHandle<Instant> {
         thread::spawn(move || {
             let deadline = Instant::now() + Duration::from_secs(3);
             while !path.exists() && Instant::now() < deadline {
@@ -1609,7 +1609,9 @@ mod tests {
                 path.exists(),
                 "fixture reaches the synchronized cancellation point"
             );
+            let cancelled_at = Instant::now();
             cancel.cancel(CancelCause::Requested);
+            cancelled_at
         })
     }
 
@@ -1833,7 +1835,6 @@ mod tests {
         let cancel = Cancel::new();
         let notifier = cancel.clone();
         let ready = ready_fixture_path();
-        let cancellation = cancel_after_fixture_ready(ready.clone(), notifier);
         let executable = failure_fixture();
         let arguments = [
             OsString::from("ignore-cancel"),
@@ -1849,24 +1850,46 @@ mod tests {
             |_manifest| Ok::<(), String>(()),
         )
         .expect("hello is admitted");
+        assert_eq!(
+            session.manifest().expect("admitted manifest").identity,
+            "agent-ix/provider/test"
+        );
+        let cancellation = cancel_after_fixture_ready(ready.clone(), notifier);
+        let grace = session.limits.cancellation_grace;
+        #[cfg(target_os = "linux")]
+        let group_id = session.child.as_ref().expect("admitted plugin child").id();
         let request = test_request();
-        let started = Instant::now();
         let error = session
             .request(&request, &cancel, |_manifest, _result: &TestResult| {
                 Ok::<(), String>(())
             })
             .expect_err("missing settlement expires cancellation grace");
+        let finished_at = Instant::now();
+        let cancelled_at = cancellation.join().expect("cancellation sender exits");
         assert!(matches!(error.primary_cause(), PluginError::Cancelled));
-        assert!(started.elapsed() < Duration::from_secs(1));
+        let elapsed = finished_at.duration_since(cancelled_at);
+        assert!(elapsed >= grace, "cancellation must wait for grace expiry");
+        assert!(
+            elapsed < grace + Duration::from_secs(1),
+            "cleanup finishes within one second after grace expiry"
+        );
         assert!(matches!(
             &error,
             PluginError::WithDiagnostics {
+                process_tree_cleanup_failed: false,
                 reader_join_failed: false,
                 writer_join_failed: false,
                 ..
             }
         ));
-        cancellation.join().expect("cancellation sender exits");
+        #[cfg(target_os = "linux")]
+        assert!(
+            super::linux_process_group_samples(group_id)
+                .expect("read plugin process group")
+                .iter()
+                .all(|member| matches!(member.state, 'Z' | 'X')),
+            "the plugin and descendants have stopped running"
+        );
         let _ = std::fs::remove_file(ready);
     }
 
