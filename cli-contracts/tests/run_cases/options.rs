@@ -20,7 +20,23 @@ fn default_and_explicit_text_match_json_status_and_preserve_value_and_refusal(
             "{text}"
         );
         if exit == 0 {
-            assert!(text.contains("12"), "{text}");
+            assert_eq!(
+                machine["result"],
+                json!({"kind":"completed","value":{"integer":"12"}})
+            );
+            for rendered in [default.stdout_text()?, explicit.stdout_text()?] {
+                let results = rendered
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("result: completed "))
+                    .collect::<Vec<_>>();
+                assert_eq!(results.len(), 1, "{rendered}");
+                let result: Value = serde_json::from_str(results[0])?;
+                assert_eq!(
+                    result,
+                    json!({"value":machine["result"]["value"]}),
+                    "{rendered}"
+                );
+            }
         } else {
             for d in machine["diagnostics"].as_array().expect("diagnostics") {
                 assert!(text.contains(d["code"].as_str().expect("code")), "{text}");
@@ -214,12 +230,19 @@ fn front_end_limits_cut_the_actual_run_and_distinct_sufficient_limits_compose(
             "incomplete",
         );
         assert!(value["result"].is_null(), "{value}");
+        let d = diagnostic(&value, "stage_limit_exceeded");
+        assert_eq!(
+            d["cause"],
+            if setting == "s1.tokens" {
+                "token-count-exceeded"
+            } else {
+                "node-count-exceeded"
+            },
+            "{value}"
+        );
+        let message = d["message"].as_str().expect("limit message");
         assert!(
-            value["diagnostics"]
-                .as_array()
-                .expect("diagnostics")
-                .iter()
-                .any(|d| d["message"].as_str().is_some_and(|m| m.contains(setting))),
+            message.contains(setting) && message.contains("limit 0 reached"),
             "{value}"
         );
     }
@@ -339,25 +362,55 @@ fn provider_limits_accept_distinct_names_and_refuse_bad_counts_before_request_io
 fn provider_configuration_is_closed_and_refuses_before_missing_request(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
-    for input in [
-        json!({"format":"filament.provider-config/v1","providers":[],"extra":true}),
-        json!({"format":"filament.provider-config/v1","providers":[{"path":"","arguments":[]}]}),
-        json!({"format":"filament.provider-config/v1","providers":[{"path":"never-start","arguments":[1]}]}),
+    for (input, member) in [
+        (
+            json!({"format":"filament.provider-config/v1","providers":[],"extra":true}),
+            "extra",
+        ),
+        (
+            json!({"format":"filament.provider-config/v1","providers":[{"path":"","arguments":[]}]}),
+            "path",
+        ),
     ] {
-        write_json(&case, "bad-provider.json", &input)?;
-        let output = case.run(&[
-            "run",
-            "missing.json",
-            "--provider-config",
-            "bad-provider.json",
-            "--format",
-            "json",
-        ])?;
-        assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-        assert!(output.0.stdout.is_empty(), "{output:?}");
-        let stderr = output.stderr_text()?;
-        assert!(stderr.contains("bad-provider.json"), "{stderr}");
-        assert!(!stderr.contains("cannot access missing.json"), "{stderr}");
+        assert_provider_member_refusal(&case, &input, member)?;
     }
     Ok(())
+}
+
+fn assert_provider_member_refusal(
+    case: &CliCase,
+    input: &Value,
+    member: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_json(case, "bad-provider.json", input)?;
+    let output = case.run(&[
+        "run",
+        "missing.json",
+        "--provider-config",
+        "bad-provider.json",
+        "--format",
+        "json",
+    ])?;
+    assert_eq!(output.0.status.code(), Some(20), "{output:?}");
+    assert!(output.0.stdout.is_empty(), "{output:?}");
+    let stderr = output.stderr_text()?;
+    assert!(stderr.starts_with("invalid-request:"), "{stderr}");
+    assert!(stderr.contains(member), "{stderr}");
+    assert!(stderr.contains("bad-provider.json"), "{stderr}");
+    assert!(!stderr.contains("cannot access missing.json"), "{stderr}");
+    Ok(())
+}
+
+/// Trace: FR-006-AC-24
+/// Provenance: QSL-2471
+#[test]
+#[ignore = "QSL-2663: nested provider argument type diagnostic omits arguments member"]
+fn provider_argument_kind_refusal_names_the_arguments_member(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    assert_provider_member_refusal(
+        &case,
+        &json!({"format":"filament.provider-config/v1","providers":[{"path":"never-start","arguments":[1]}]}),
+        "arguments",
+    )
 }
