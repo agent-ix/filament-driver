@@ -1082,7 +1082,27 @@ fn run(options: RunOptions) -> CommandResult {
             }
         };
     let input = match prepared {
-        PreparedRun::Function(prepared) => prepared.into_input(),
+        PreparedRun::Function(prepared) => {
+            if prepared.requirements().is_some() {
+                let mut spine_limits = SpineLimits::default();
+                if let Err(error) = options.limits.apply_to_limits(&mut spine_limits, "run") {
+                    return CommandResult::input_refusal(
+                        Operation::Execute,
+                        error.message_for("run"),
+                    );
+                }
+                return run_with_requirement_items(
+                    &options.path,
+                    provider_config,
+                    options.providers.limits,
+                    options.intake_limits,
+                    spine_limits,
+                    clocks,
+                    observation_limits,
+                );
+            }
+            prepared.into_input()
+        }
         PreparedRun::Clause(request) => {
             return run_clause_request(*request.into_request(), &options.limits);
         }
@@ -2099,6 +2119,60 @@ fn run_with_providers(
         false,
         move |negotiation, engines, options, cancel| {
             command::run_with_providers(&path, negotiation, engines, options, cancel)
+        },
+    );
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Execute, message),
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            );
+        }
+    };
+    match written {
+        Ok(result) => match result.outcome {
+            Some(document) => CommandResult::document(document),
+            None => native_result(result.value.as_value().clone(), result.exit_code),
+        },
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
+    }
+}
+
+/// `fsl run` with a call-level `requirements` member: use FSL FR-961's
+/// provider entry even when the caller supplied no process providers, and
+/// carry the same run limits and request overrides as the ordinary run path.
+fn run_with_requirement_items(
+    path: &Path,
+    config: crate::provider_config::ProviderConfig,
+    provider_limits: fsl_analyze::provider::ProviderLimits,
+    intake_limits: RunLimits,
+    spine_limits: SpineLimits,
+    clocks: Option<Box<serde_json::value::RawValue>>,
+    observation_limits: Option<fsl_semantics::model::observation::ObservationLimits>,
+) -> CommandResult {
+    let path = path.to_path_buf();
+    let ran = with_started_providers(
+        config,
+        provider_limits,
+        false,
+        move |negotiation, engines, options, cancel| {
+            let overrides = command::RequestOverrides {
+                clocks: clocks.as_deref(),
+                limits: Some(&spine_limits),
+                observation: observation_limits.as_ref(),
+                ..command::RequestOverrides::default()
+            };
+            command::run_with_providers_and_limits_and_overrides(
+                &path,
+                intake_limits,
+                &overrides,
+                negotiation,
+                engines,
+                options,
+                cancel,
+            )
         },
     );
     let written = match ran {
