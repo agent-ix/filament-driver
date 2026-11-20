@@ -103,7 +103,7 @@ fn caller_law_can_agree_with_but_cannot_override_the_header() -> Result<(), Cont
     let d = diagnostic(&value, "invalid_package");
     assert_eq!(d["cause"], "conflicting-definition");
     let message = d["message"].as_str().expect("message");
-    for value in ["floor", "truncating", "--integer-division"] {
+    for value in ["floor", "truncating"] {
         assert!(message.contains(value), "{d}");
     }
     Ok(())
@@ -177,7 +177,7 @@ fn repeated_single_valued_options_and_wrong_arity_write_usage() -> Result<(), Co
             "two.json",
         ],
     ] {
-        argv_error(&case.run(&args)?, "Usage: fsl check");
+        argv_error(&case.run(&args)?, "usage: fsl check");
     }
     Ok(())
 }

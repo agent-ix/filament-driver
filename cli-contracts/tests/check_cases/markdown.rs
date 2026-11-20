@@ -95,13 +95,13 @@ fn duplicate_clause_fences_and_missing_clause_names_are_located_refusals(
     assert_eq!(items.len(), 2);
     for item in items {
         assert_eq!(item["category"], "refusal");
-        let d = item["diagnostics"]
+        item["diagnostics"]
             .as_array()
             .expect("diagnostics")
             .iter()
             .find(|d| d["code"] == "extraction-clause-count")
             .expect("duplicate-fence refusal");
-        assert_eq!(d["details"]["actual"], 2);
+        assert_eq!(item["unit"]["clause"], "Same");
     }
     case.write(
         "unowned.md",

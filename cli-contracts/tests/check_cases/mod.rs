@@ -2,9 +2,9 @@ use fsl_cli_contracts::{Captured, CliCase, ContractError};
 use serde_json::{json, Value};
 
 mod dependencies;
+mod entrypoints;
 mod markdown;
 mod options;
-mod pending;
 mod sources;
 
 const UNIT: &str = r#"language "ix:native" edition "1-draft";
