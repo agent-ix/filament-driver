@@ -469,7 +469,7 @@ dependencies = [
 [[package]]
 name = "filament-contract-codegen"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/filament-contract-codegen?rev=5f83586524c886c89dd4b538c06580de260859df#5f83586524c886c89dd4b538c06580de260859df"
+source = "git+https://github.com/agent-ix/filament-contract-codegen?rev=556f47c385dc3bcc1486f1e6f51777ca6d1dc85a#556f47c385dc3bcc1486f1e6f51777ca6d1dc85a"
 dependencies = [
  "filament-contract-ir",
  "filament-contract-model",
