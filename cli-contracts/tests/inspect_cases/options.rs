@@ -188,3 +188,19 @@ fn inspect_help_is_available_without_opening_the_handoff() -> Result<(), Contrac
     }
     Ok(())
 }
+
+/// Trace: FR-002-AC-25
+#[test]
+fn invalid_options_are_not_hidden_by_help() -> Result<(), ContractError> {
+    let case = CliCase::from_environment()?;
+    for (args, named) in [
+        (vec!["inspect", "--format", "xml", "--help"], "xml"),
+        (
+            vec!["inspect", "--bogus", "--help", "--format", "json"],
+            "--bogus",
+        ),
+    ] {
+        argv_refusal(&case.run(&args)?, named);
+    }
+    Ok(())
+}

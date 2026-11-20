@@ -45,7 +45,7 @@ fn changing_a_selection_node_count_is_not_a_successful_inspection() -> Result<()
         value["diagnostics"][0]["message"]
             .as_str()
             .unwrap()
-            .contains("PackageNodes"),
+            .contains("package.nodes"),
         "{value}"
     );
     Ok(())
@@ -140,5 +140,86 @@ fn an_oversized_selected_source_is_not_truncated_and_admitted() -> Result<(), Co
             .contains("not truncated"),
         "{value}"
     );
+    Ok(())
+}
+
+fn exceed_file_budget(case: &CliCase, file: &str) -> Result<(), ContractError> {
+    let ceiling = selection(case)["package"]["read_limits"]["bytes"]
+        .as_u64()
+        .unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(case.directory().join("handoff").join(file))
+        .unwrap()
+        .set_len(ceiling.checked_add(1).unwrap())
+        .unwrap();
+    let value = refusal(&inspect(case, "handoff")?, "handoff-read");
+    let message = value["diagnostics"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains(file)
+            && message.contains("not truncated")
+            && message.contains(&ceiling.to_string()),
+        "{value}"
+    );
+    Ok(())
+}
+
+/// Trace: FR-002-AC-23
+#[test]
+fn oversized_package_bytes_are_refused_before_decoding() -> Result<(), ContractError> {
+    let case = handoff("handoff")?;
+    exceed_file_budget(&case, "checked-package.json")
+}
+
+/// Trace: FR-002-AC-23
+#[test]
+fn oversized_selection_bytes_are_refused_before_decoding() -> Result<(), ContractError> {
+    let case = handoff("handoff")?;
+    exceed_file_budget(&case, "selection.json")
+}
+
+/// Trace: FR-002-AC-23
+/// FSL FR-665 verification reads only the artifact's contained regular input files.
+#[test]
+fn forged_parent_relative_and_absolute_source_labels_cannot_escape_the_handoff(
+) -> Result<(), ContractError> {
+    let case = handoff("handoff")?;
+    let original = selection(&case);
+    for label in [
+        "../reserve.fsl".to_owned(),
+        case.directory()
+            .join("reserve.fsl")
+            .to_str()
+            .unwrap()
+            .to_owned(),
+    ] {
+        let mut sidecar = original.clone();
+        sidecar["package"]["unit"] = json!(label);
+        case.write("handoff/selection.json", &serde_json::to_vec(&sidecar)?)?;
+        refusal(&inspect(&case, "handoff")?, "handoff-label");
+    }
+    Ok(())
+}
+
+/// Trace: FR-002-AC-23
+#[test]
+fn a_sidecar_with_unknown_members_is_not_admitted() -> Result<(), ContractError> {
+    let case = handoff("handoff")?;
+    let mut sidecar = selection(&case);
+    sidecar["forged_admission"] = json!(true);
+    case.write("handoff/selection.json", &serde_json::to_vec(&sidecar)?)?;
+    refusal(&inspect(&case, "handoff")?, "handoff-sidecar");
+    Ok(())
+}
+
+/// Trace: FR-002-AC-23
+#[test]
+fn invalid_selected_source_does_not_reuse_the_otherwise_valid_package() -> Result<(), ContractError>
+{
+    let case = handoff("handoff")?;
+    let sidecar = selection(&case);
+    let unit = sidecar["package"]["unit"].as_str().unwrap();
+    case.write(format!("handoff/{unit}"), b"\xff")?;
+    refusal(&inspect(&case, "handoff")?, "handoff-compile");
     Ok(())
 }

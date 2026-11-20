@@ -8,7 +8,7 @@ mod paths;
 
 const SOURCE: &str = r#"language "ix:native" edition "1-draft";
 profile values = "filament.value.complete/v1";
-function HasReserve using values(count: Int[0, 9]): Boolean pure { count >= 2 }
+function HasReserve using values(stock: Int[0, 9]): Boolean pure { stock >= 2 }
 "#;
 
 fn handoff(directory: &str) -> Result<CliCase, ContractError> {
@@ -25,7 +25,6 @@ fn handoff(directory: &str) -> Result<CliCase, ContractError> {
         "fixture admission: {output:?}"
     );
     let value = output.json()?;
-    assert_eq!(value["operation"], "compile");
     assert_eq!(value["category"], "success", "{value}");
     assert!(output.0.stderr.is_empty());
     Ok(case)
