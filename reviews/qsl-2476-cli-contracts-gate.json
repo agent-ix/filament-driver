@@ -61,5 +61,12 @@
     "All twelve exit-code cases passed, including actual Linux /dev/full stdout failure returning 30; no Mac exit-30 claim.",
     "Latest independent review artifacts committed unchanged before the single final gate.",
     "No product build, pin refresh, confidence lint, main merge or gate repetition."
-  ]
+  ],
+  "merge_resolution": {
+    "scope": "One mechanical lib.rs conflict with the already landed staged-stdin helper.",
+    "resolution": "Kept the reviewed file with its existing staged-stdin helper and additive stdout sink; one spawn and one capture implementation.",
+    "reviewed_code_changed": false,
+    "exit_tests_changed": false,
+    "additional_checks": "None. The resolved lib.rs and exit-code files are unchanged from the reviewed and gated branch; no main-move gate or confidence rerun."
+  }
 }
