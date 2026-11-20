@@ -51,6 +51,28 @@ fn a_bare_inspect_path_is_the_documented_unrouted_form() -> Result<(), ContractE
     Ok(())
 }
 
+/// Trace: FR-002-AC-23
+/// FSL FR-624: non-machine unrouted forms print the named diagnostic, not a graph.
+#[test]
+fn a_bare_inspect_path_reports_unsupported_in_default_text_explicit_text_and_dot(
+) -> Result<(), ContractError> {
+    let case = CliCase::from_environment()?;
+    for args in [
+        vec!["inspect", "missing"],
+        vec!["inspect", "missing", "--format", "text"],
+        vec!["inspect", "missing", "--format", "dot"],
+    ] {
+        let output = case.run(&args)?;
+        assert_eq!(output.0.status.code(), Some(21), "{output:?}");
+        assert!(
+            output.0.stdout.is_empty(),
+            "unrouted DOT must not fabricate a graph"
+        );
+        assert_eq!(output.stderr_text()?, "fsl inspect: this build does not route the inspect operation (unsupported_operation)\n");
+    }
+    Ok(())
+}
+
 fn argv_refusal(output: &Captured, named: &str) {
     assert_eq!(output.0.status.code(), Some(20), "{output:?}");
     let printed = format!(
@@ -117,14 +139,6 @@ fn wrong_format_dot_handoff_and_foreign_options_are_refused() -> Result<(), Cont
     let case = CliCase::from_environment()?;
     for (args, named) in [
         (
-            vec!["inspect", "--handoff", "missing", "--format", "dot"],
-            "dot",
-        ),
-        (
-            vec!["inspect", "--handoff", "missing", "--format", "xml"],
-            "xml",
-        ),
-        (
             vec![
                 "inspect",
                 "--handoff",
@@ -168,10 +182,40 @@ fn wrong_format_dot_handoff_and_foreign_options_are_refused() -> Result<(), Cont
     Ok(())
 }
 
+/// Trace: FR-002-AC-23
+#[test]
+fn refused_handoff_formats_name_both_the_format_option_and_its_value() -> Result<(), ContractError>
+{
+    let case = CliCase::from_environment()?;
+    for format in ["dot", "xml"] {
+        let output = case.run(&["inspect", "--handoff", "missing", "--format", format])?;
+        argv_refusal(&output, format);
+        let diagnostic = format!("{}{}", output.stdout_text()?, output.stderr_text()?);
+        assert!(diagnostic.contains("--format"), "{diagnostic}");
+    }
+    Ok(())
+}
+
+fn inspect_options_section(help: &str) -> &str {
+    let start = help
+        .find("inspect options:\n")
+        .expect("inspect options section");
+    let remaining = &help[start..];
+    match remaining.find("\n\n") {
+        Some(end) => &remaining[..=end],
+        None => remaining,
+    }
+}
+
 /// Trace: FR-002-AC-25
 #[test]
 fn inspect_help_is_available_without_opening_the_handoff() -> Result<(), ContractError> {
     let case = CliCase::from_environment()?;
+    let root = case.run(&["--help"])?;
+    assert_eq!(root.0.status.code(), Some(0));
+    assert!(root.0.stderr.is_empty());
+    let root_text = root.stdout_text()?;
+    let root_options = inspect_options_section(root_text);
     for args in [
         vec!["inspect", "--help"],
         vec!["inspect", "-h"],
@@ -185,6 +229,10 @@ fn inspect_help_is_available_without_opening_the_handoff() -> Result<(), Contrac
         assert!(printed.contains("inspect options:"));
         assert!(printed.contains("--handoff <directory>"));
         assert!(printed.contains("--format"));
+        assert_eq!(
+            inspect_options_section(printed).as_bytes(),
+            root_options.as_bytes()
+        );
     }
     Ok(())
 }
