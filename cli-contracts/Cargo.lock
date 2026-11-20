@@ -34,10 +34,10 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 name = "fsl-cli-contracts"
 version = "0.1.0"
 dependencies = [
+ "rustix",
  "serde_json",
  "tempfile",
  "thiserror",
- "wait-timeout",
 ]
 
 [[package]]
@@ -209,15 +209,6 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
-
-[[package]]
-name = "wait-timeout"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "windows-link"

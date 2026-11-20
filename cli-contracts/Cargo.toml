@@ -14,7 +14,7 @@ resolver = "2"
 serde_json = "=1.0.151"
 tempfile = "=3.27.0"
 thiserror = "=2.0.20"
-wait-timeout = "0.2"
+rustix = { version = "1.1.6", features = ["fs", "event", "process"] }
 
 [lints.rust]
 unsafe_code = "forbid"

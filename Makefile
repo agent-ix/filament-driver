@@ -66,7 +66,7 @@ test:
 .PHONY: cli-contracts
 cli-contracts:
 	@test -n "$(FSL)" || { echo "set FSL=/absolute/path/to/the/prebuilt/fsl" >&2; exit 1; }
-	FSL="$(FSL)" CARGO_TARGET_DIR="$(CURDIR)/target" $(CARGO) test --locked --manifest-path cli-contracts/Cargo.toml --test contracts -- --test-threads=1
+	FSL="$(FSL)" CARGO_TARGET_DIR="$(CURDIR)/target" $(CARGO) test --locked --manifest-path cli-contracts/Cargo.toml -- --test-threads=1
 
 .PHONY: build
 build:

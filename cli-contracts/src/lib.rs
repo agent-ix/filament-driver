@@ -4,15 +4,14 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tempfile::TempDir;
 use thiserror::Error;
-use wait_timeout::ChildExt;
 
 /// Stable distinctions for setup and capture failures, separate from FSL exit codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,8 +26,6 @@ pub enum ContractCode {
     Timeout,
     /// A captured stream exceeded its memory bound.
     OutputLimit,
-    /// A capture worker panicked.
-    Worker,
     /// A streaming invocation emitted no record.
     EmptyJsonLines,
     /// Output was not valid JSON.
@@ -46,7 +43,6 @@ impl ContractCode {
             Self::Io => "io",
             Self::Timeout => "timeout",
             Self::OutputLimit => "output-limit",
-            Self::Worker => "worker",
             Self::EmptyJsonLines => "empty-json-lines",
             Self::Json => "invalid-json",
             Self::Utf8 => "invalid-utf8",
@@ -61,7 +57,6 @@ impl ContractCode {
             Self::Io,
             Self::Timeout,
             Self::OutputLimit,
-            Self::Worker,
             Self::EmptyJsonLines,
             Self::Json,
             Self::Utf8,
@@ -101,9 +96,6 @@ pub enum ContractError {
     /// Capturing one stream exceeded the bounded in-memory capture size.
     #[error("{0} exceeded the 1 MiB contract capture limit")]
     OutputLimit(&'static str),
-    /// A subprocess I/O worker panicked.
-    #[error("{0} worker panicked")]
-    Worker(&'static str),
     /// A streaming invocation produced no JSON record.
     #[error("stdout contains no JSON Lines records")]
     EmptyJsonLines,
@@ -130,7 +122,6 @@ impl ContractError {
             Self::Io { .. } => ContractCode::Io,
             Self::Timeout(_) => ContractCode::Timeout,
             Self::OutputLimit(_) => ContractCode::OutputLimit,
-            Self::Worker(_) => ContractCode::Worker,
             Self::EmptyJsonLines => ContractCode::EmptyJsonLines,
             Self::Json(_) => ContractCode::Json,
             Self::Utf8 { .. } => ContractCode::Utf8,
@@ -201,67 +192,169 @@ impl CliCase {
         arguments: &[S],
         input: &[u8],
     ) -> Result<Captured, ContractError> {
+        let start = Instant::now();
         let mut child = Command::new(&self.binary)
             .args(arguments)
             .current_dir(self.directory())
+            .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| io_error("spawn FSL", e))?;
-        let mut stdin = child.stdin.take().expect("piped stdin");
-        let stdout = child.stdout.take().expect("piped stdout");
-        let stderr = child.stderr.take().expect("piped stderr");
-        let deadline = Duration::from_secs(30);
-        thread::scope(|scope| {
-            let writer = scope.spawn(move || stdin.write_all(input));
-            let stdout = scope.spawn(move || capture(stdout, "stdout"));
-            let stderr = scope.spawn(move || capture(stderr, "stderr"));
-            let status = match child.wait_timeout(deadline) {
-                Ok(Some(status)) => Ok(status),
-                Ok(None) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    Err(ContractError::Timeout(deadline))
-                }
-                Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    Err(io_error("wait for FSL", error))
-                }
-            };
-            let input = writer.join().map_err(|_| ContractError::Worker("stdin"))?;
-            let stdout = stdout.join().map_err(|_| ContractError::Worker("stdout"))?;
-            let stderr = stderr.join().map_err(|_| ContractError::Worker("stderr"))?;
-            let status = status?;
-            if let Err(error) = input {
-                if error.kind() != io::ErrorKind::BrokenPipe {
-                    return Err(io_error("write FSL stdin", error));
-                }
-            }
-            Ok(Captured(Output {
-                status,
-                stdout: stdout?,
-                stderr: stderr?,
-            }))
-        })
+        capture_process(&mut child, input, start, Duration::from_secs(30))
     }
 }
 
-fn capture(mut stream: impl Read, name: &'static str) -> Result<Vec<u8>, ContractError> {
-    const LIMIT: u64 = 1_048_576;
-    let mut bytes = Vec::new();
-    (&mut stream)
-        .take(LIMIT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| io_error("read FSL output", e))?;
-    if bytes.len() as u64 > LIMIT {
-        // Keep draining so a noisy child cannot deadlock on a full pipe before
-        // its deadline. Its bytes are never retained beyond the capture bound.
-        io::copy(&mut stream, &mut io::sink()).map_err(|e| io_error("drain FSL output", e))?;
-        return Err(ContractError::OutputLimit(name));
+// The caller creates a fresh process group before spawn. A timeout therefore
+// terminates only this invocation and descendants that inherited its pipes.
+struct Invocation<'a> {
+    child: &'a mut std::process::Child,
+    group: rustix::process::Pid,
+    complete: bool,
+}
+
+impl Drop for Invocation<'_> {
+    fn drop(&mut self) {
+        if !self.complete {
+            let _ = rustix::process::kill_process_group(self.group, rustix::process::Signal::KILL);
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
     }
-    Ok(bytes)
+}
+
+fn nonblocking(fd: &impl std::os::fd::AsFd) -> Result<(), ContractError> {
+    let flags = rustix::fs::fcntl_getfl(fd).map_err(|e| io_error("read pipe flags", e.into()))?;
+    rustix::fs::fcntl_setfl(fd, flags | rustix::fs::OFlags::NONBLOCK)
+        .map_err(|e| io_error("set nonblocking pipe", e.into()))
+}
+
+#[derive(Default)]
+struct StreamCapture {
+    bytes: Vec<u8>,
+    exceeded: bool,
+}
+
+impl StreamCapture {
+    fn read(&mut self, stream: &mut Option<impl Read>) -> Result<(), ContractError> {
+        let Some(reader) = stream.as_mut() else {
+            return Ok(());
+        };
+        let mut bytes = [0; 16_384];
+        match reader.read(&mut bytes) {
+            Ok(0) => {
+                *stream = None;
+            }
+            Ok(count) => {
+                let remaining = 1_048_576 - self.bytes.len();
+                self.bytes.extend_from_slice(&bytes[..count.min(remaining)]);
+                self.exceeded |= count > remaining;
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) => {}
+            Err(error) => return Err(io_error("read FSL output", error)),
+        }
+        Ok(())
+    }
+}
+
+fn capture_process(
+    child: &mut std::process::Child,
+    input: &[u8],
+    start: Instant,
+    budget: Duration,
+) -> Result<Captured, ContractError> {
+    let group = rustix::process::Pid::from_child(child);
+    let invocation = Invocation {
+        child,
+        group,
+        complete: false,
+    };
+    let mut invocation = invocation;
+    let mut stdin = invocation.child.stdin.take();
+    let mut stdout = invocation.child.stdout.take();
+    let mut stderr = invocation.child.stderr.take();
+    nonblocking(stdin.as_ref().expect("piped stdin"))?;
+    nonblocking(stdout.as_ref().expect("piped stdout"))?;
+    nonblocking(stderr.as_ref().expect("piped stderr"))?;
+    let mut sent = 0;
+    let mut out = StreamCapture::default();
+    let mut err = StreamCapture::default();
+    let mut status = None;
+    loop {
+        if start.elapsed() >= budget {
+            return Err(ContractError::Timeout(budget));
+        }
+        if sent == input.len() {
+            stdin = None;
+        }
+        if let Some(writer) = stdin.as_mut() {
+            let end = input.len().min(sent.saturating_add(16_384));
+            match writer.write(&input[sent..end]) {
+                Ok(0) => return Err(io_error("write FSL stdin", io::ErrorKind::WriteZero.into())),
+                Ok(count) => sent += count,
+                Err(error) if error.kind() == io::ErrorKind::BrokenPipe => stdin = None,
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(error) => return Err(io_error("write FSL stdin", error)),
+            }
+        }
+        out.read(&mut stdout)?;
+        err.read(&mut stderr)?;
+        if status.is_none() {
+            status = invocation
+                .child
+                .try_wait()
+                .map_err(|e| io_error("wait for FSL", e))?;
+        }
+        if let Some(status) = status {
+            if stdin.is_none() && stdout.is_none() && stderr.is_none() {
+                invocation.complete = true;
+                if out.exceeded {
+                    return Err(ContractError::OutputLimit("stdout"));
+                }
+                if err.exceeded {
+                    return Err(ContractError::OutputLimit("stderr"));
+                }
+                return Ok(Captured(Output {
+                    status,
+                    stdout: out.bytes,
+                    stderr: err.bytes,
+                }));
+            }
+        }
+        let remaining = budget
+            .saturating_sub(start.elapsed())
+            .min(Duration::from_millis(10));
+        let timeout = rustix::event::Timespec {
+            tv_sec: 0,
+            tv_nsec: i64::from(remaining.subsec_nanos()),
+        };
+        let mut descriptors = Vec::new();
+        if let Some(fd) = stdin.as_ref() {
+            descriptors.push(rustix::event::PollFd::new(
+                fd,
+                rustix::event::PollFlags::OUT,
+            ));
+        }
+        if let Some(fd) = stdout.as_ref() {
+            descriptors.push(rustix::event::PollFd::new(fd, rustix::event::PollFlags::IN));
+        }
+        if let Some(fd) = stderr.as_ref() {
+            descriptors.push(rustix::event::PollFd::new(fd, rustix::event::PollFlags::IN));
+        }
+        match rustix::event::poll(&mut descriptors, Some(&timeout)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            Err(error) => return Err(io_error("poll FSL pipes", error.into())),
+        }
+    }
 }
 
 /// The unmodified status, stdout and stderr of a completed real FSL invocation.
@@ -299,5 +392,86 @@ impl Captured {
             stream: "stderr",
             source,
         })
+    }
+}
+
+#[cfg(test)]
+mod process_budget {
+    use super::*;
+
+    // These are OS pipe-lifecycle fixtures, not substitute FSL executables.
+    fn fixture(script: &str) -> std::process::Child {
+        Command::new("/bin/sh")
+            .args(["-c", script])
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("private process-budget fixture")
+    }
+
+    /// Provenance: QSL-2468
+    #[test]
+    fn completed_io_retains_status_and_both_streams() -> Result<(), ContractError> {
+        let mut child =
+            fixture("IFS= read -r line; printf '%s' \"$line\"; printf 'diagnostic' >&2");
+        let output = capture_process(
+            &mut child,
+            b"payload\n",
+            Instant::now(),
+            Duration::from_secs(2),
+        )?;
+        assert_eq!(output.0.status.code(), Some(0));
+        assert_eq!(output.0.stdout, b"payload");
+        assert_eq!(output.0.stderr, b"diagnostic");
+        assert!(child.try_wait().expect("reaped child").is_some());
+        Ok(())
+    }
+
+    /// Provenance: QSL-2468
+    #[test]
+    fn blocked_stdin_is_cancelled_and_the_child_is_reaped() {
+        let mut child = fixture("exec sleep 5");
+        let start = Instant::now();
+        let result = capture_process(
+            &mut child,
+            &vec![b'x'; 131_072],
+            start,
+            Duration::from_millis(150),
+        );
+        assert!(
+            matches!(result, Err(ContractError::Timeout(_))),
+            "{result:?}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "the complete I/O budget, not only child wait, must be bounded"
+        );
+        assert!(child.try_wait().expect("reaped child").is_some());
+    }
+
+    /// Provenance: QSL-2468
+    #[test]
+    fn pipes_retained_after_direct_child_exit_still_obey_the_deadline() {
+        let mut child = fixture("sleep 5 & exit 0");
+        let start = Instant::now();
+        let result = capture_process(&mut child, b"", start, Duration::from_millis(150));
+        assert!(
+            matches!(result, Err(ContractError::Timeout(_))),
+            "{result:?}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "inherited stdout/stderr must not create an unbounded join"
+        );
+        assert!(
+            child
+                .try_wait()
+                .expect("reaped parent")
+                .expect("parent exited")
+                .success(),
+            "the direct child exited before its descendant released the pipes"
+        );
     }
 }

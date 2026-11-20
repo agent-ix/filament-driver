@@ -14,7 +14,7 @@ Each `CliCase` owns a temporary working directory. Write original inputs with `w
 
 The examples cover a valid source and a result-type refusal, text versus machine output, raw argument-error diagnostics, and holding/violating observation streams over both files and stdin. A larger stream also exercises an early request refusal without losing its output to a closed stdin pipe.
 
-Each process has a 30-second execution deadline and a 1 MiB capture bound per stream. Stdin and both output streams are handled concurrently, and the temporary working directory is removed when the case drops.
+On Linux and macOS, the 30-second execution budget covers the child and all pipe I/O, with a 1 MiB capture bound per stream. Nonblocking pipes are polled in one thread, so no blocked capture worker can outlive the budget. On timeout the harness closes its pipes, kills only its invocation process group, and reaps the direct child. The temporary working directory is removed when the case drops.
 
 Run only the relevant group while authoring:
 

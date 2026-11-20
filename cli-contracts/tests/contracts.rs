@@ -45,7 +45,7 @@ fn observations(values: &[u8]) -> Vec<u8> {
 mod file_contracts {
     use super::*;
 
-    /// Trace: FR-002-AC-1, FR-002-AC-19
+    /// Trace: FR-002-AC-1
     /// Provenance: QSL-2468
     #[test]
     fn source_files_resolve_from_private_cwd_and_keep_json_streams_separate(
