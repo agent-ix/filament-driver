@@ -200,6 +200,79 @@ fn export_selected_package_reports_model_type_gap_on_current_pin() {
     assert!(!directory.path().join("selected.tla").exists());
 }
 
+/// A selected value-only package preserves the caller's source reference and
+/// writes its target text through the CLI.
+#[test]
+#[trace("TC-045", "FR-027-AC-1")]
+#[trace("TC-3019", "FR-1039-AC-4")]
+fn export_selected_package_value_path_preserves_source_reference_and_writes_target() {
+    let directory = folder();
+    std::fs::write(
+        directory.path().join("counter.fsl"),
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"filament.value.complete/v1\";\n\
+         function one using v(): Integer pure { 1 }\n",
+    )
+    .expect("the value-only source");
+
+    let compile_request = json!({"format": "native-compile/1", "request": {
+        "models": [],
+        "program": {"source": {
+            "file": "counter.fsl", "authority": "test", "identity": "test:value-only-unit",
+            "document": "ExportCounter", "formal_revision": 7}},
+        "output": {"package": "checked-package.json"}}});
+    std::fs::write(
+        directory.path().join("compile.json"),
+        compile_request.to_string(),
+    )
+    .expect("the compile request");
+    let compiled = fsl(
+        directory.path(),
+        &["compile", "compile.json", "--format", "json"],
+    );
+    assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
+    assert!(directory.path().join("checked-package.json").is_file());
+    std::fs::remove_file(directory.path().join("counter.fsl")).expect("remove source file");
+
+    let source_package = json!({"identity": "test:value-only-unit", "version": "7"});
+    let export_request = json!({"format": "native-run/1", "request": {
+        "models": [],
+        "package": {"file": "checked-package.json", "source_package": source_package},
+        "export": {"profile": "filament.output.tla2/v1", "obligations": ["not-a-claim"],
+            "minimum_fidelity": "any"}}});
+    std::fs::write(
+        directory.path().join("selected-export.json"),
+        export_request.to_string(),
+    )
+    .expect("the selected-package export request");
+    let output = fsl(
+        directory.path(),
+        &[
+            "export",
+            "selected-export.json",
+            "--output",
+            "selected.tla",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let value = document(&output);
+    assert_eq!(value["operation"], "export", "{value}");
+    assert_eq!(value["category"], "success", "{value}");
+    assert_eq!(
+        value["result"]["export"]["package"]["source_package"], source_package,
+        "FSL must retain the selected package's caller-supplied source reference"
+    );
+    let text = value["result"]["export"]["target_text"]
+        .as_str()
+        .expect("target text from selected package");
+    assert_eq!(
+        std::fs::read(directory.path().join("selected.tla")).expect("the target file"),
+        text.as_bytes()
+    );
+}
+
 /// FR-027-AC-2: an existing path, a doubled destination and a repeated
 /// `--output` are each refused, exit 20, with no file written or changed.
 #[test]

@@ -40,3 +40,22 @@ Reviewed PR #216 at `4c181664603cdb61c064d0b6afc615e1d99b4afa`, the test-only se
 - FR-027-AC-1 (context_only): `fsl export <request> --output m.tla --format json` over the specified counter request exits 0, writes `m.tla` byte-equal to `result.export.target_text`, and returns an export success outcome; the request-member output route writes the same bytes.
 - FR-1039-AC-4 (examined): `FR-1015-AC-4`'s counter compiled to a package with its equality handoff and explicit `source_package`, exported with the source removed, writes the exact source reference and otherwise the source export's `records` and `target_text`.
 - FSpec FR-817-AC-9 (context_only): An unknown obligation name produces a refused `not-an-obligation` record; the default fidelity floor refuses, while `minimum_fidelity: any` permits assembly.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The replacement no longer verifies exact `source_package` retention on a successful selected-package export. | fsl-cli/tests/export_cli.rs:154-200 |
+
+The new test now exercises the real counter package and observes its current-pin unsupported-capability refusal, but it does not produce a successful package export or inspect the result's `package.source_package`. The request's `source_package` is only input data. This drops the earlier passing assertion for exact identity/version retention, which is part of QSL-2672 and FSL FR-1039-AC-4. Keep a separate successful selected-package assertion for the current pin's supported value-only path, or otherwise cover the valid-reference result through this CLI route.
+
+## Dispositions
+
+Round 1, fix commit `a08046afa4b4ef4be672b51d324944e633bbd720`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The replacement uses the real counter checked package and equality handoff, removes the source file, and asserts the precise current-pin `model/object_type` lowering refusal, exit 21 at S4, zero output bytes and no target file. With the package as the only program input, this establishes the selected-package route reaches the package's export semantics; QSL-2647 is named as the ticket that flips this expected refusal to positive parity. |
+| FND-002 | still-open | The selected-package request now ends at the expected lowering refusal and no longer asserts a successful result retaining the exact caller-supplied `source_package` identity/version. Preserve a separate successful CLI case or add another direct assertion for this supported current-pin behavior. |
+
+The current pin remains `374fe2a8`; this PR intentionally records its refusal. The successful AC-4 parity test reported in the latest FSL worktree does not change the driver's pinned behavior and is not evidence that this PR produces a successful export.
