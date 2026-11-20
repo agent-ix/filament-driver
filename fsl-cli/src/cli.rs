@@ -2686,6 +2686,16 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
 /// not list refuses, a help option answers, the verb's operand and value
 /// checks refuse, and only then does the operation run.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
+    if verb == Verb::Prove
+        && raw_arguments
+            .iter()
+            .any(|argument| argument.to_str() == Some("--integer-division"))
+    {
+        return CommandResult::failure(
+            Category::Refusal,
+            "unknown prove option `--integer-division`",
+        );
+    }
     let Some(entry) = options::entry(verb.name()) else {
         return unrouted_verb(verb, format);
     };
