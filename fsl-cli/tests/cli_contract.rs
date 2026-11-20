@@ -2081,7 +2081,7 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
     assert_fsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
 }
 
-/// Trace: QSL-2192; the library owns formatted text and the CLI passes it through unchanged.
+/// Trace: FR-002-AC-3; the library owns formatted text and the CLI passes it through unchanged.
 #[test]
 fn format_json_result_carries_text() {
     let text = Command::new(FSL)
