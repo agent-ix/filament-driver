@@ -121,3 +121,69 @@ fn tl_lowering_preserves_the_requested_correspondence_and_actual_formula(
     assert_eq!(lowering["formula"], "G[0,2] p0", "{value}");
     Ok(())
 }
+
+/// Trace: FR-002-AC-1
+/// Provenance: QSL-2471
+#[test]
+fn clause_runs_report_truth_and_bind_the_violation_to_the_supplied_trace(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    for (values, exit, category, label) in [
+        ([3, 6, 1], 0, "success", "tested"),
+        ([3, 8, 1], 10, "violation", "refuted"),
+    ] {
+        let mut input = clocked(&case)?;
+        input["request"]
+            .as_object_mut()
+            .expect("request")
+            .remove("call");
+        let binding = clocks();
+        input["request"]["clocks"] = binding.clone();
+        let observations=values.iter().enumerate().map(|(stamp,value)|json!({"position":{"sample":{"level":{"integer":value.to_string()}}},"stamp":stamp})).collect::<Vec<_>>();
+        input["request"]["clause"] = json!({"selection":{"temporal":{"name":"SafePressure","trace":{"timestamped":{
+            "observations":observations,"progress":{"watermark":2,"completeness":{"complete":{"through":2}},"scope":"closed","execution":"closed"},
+            "lower_boundary":"authoritative-origin","binding":{"profile":"filament.temporal.timestamped-event.finite-window/v1","clock":"pump-ms","parameters":binding["pump-ms"]}
+        }}}},"observations":{}});
+        write_json(&case, "clause.json", &input)?;
+        let output = run(&case, "clause.json", &[])?;
+        assert_eq!(output.0.status.code(), Some(exit), "{output:?}");
+        let value = output.json()?;
+        assert_eq!(value["operation"], "monitor", "{value}");
+        assert_eq!(value["category"], category, "{value}");
+        assert_eq!(value["last_stage"], "S6a", "{value}");
+        let items = value["items"].as_array().expect("items");
+        assert_eq!(items.len(), 1, "{value}");
+        let item = &items[0];
+        assert_eq!(item["clause"], "SafePressure", "{value}");
+        assert_eq!(item["result"], label, "{value}");
+        assert_eq!(item["axes"]["activation"], "active", "{value}");
+        assert_eq!(
+            item["axes"]["truth"],
+            if exit == 10 { "false" } else { "true" },
+            "{value}"
+        );
+        if exit == 10 {
+            // The formula is evaluated at the origin; its bounded interval
+            // includes the violating second observation.
+            assert_eq!(item["counterexample"]["trace_position"], 0, "{value}");
+            assert_eq!(
+                item["counterexample"]["interval"],
+                json!({"lower":"0","upper":"2"}),
+                "{value}"
+            );
+            let prefix = item["counterexample"]["prefix"]
+                .as_array()
+                .expect("counterexample prefix");
+            assert_eq!(
+                prefix,
+                &vec![
+                    json!({"sample":"0"}),
+                    json!({"sample":"1"}),
+                    json!({"sample":"2"})
+                ],
+                "{value}"
+            );
+        }
+    }
+    Ok(())
+}

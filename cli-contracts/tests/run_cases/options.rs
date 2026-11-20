@@ -68,8 +68,8 @@ fn help_needs_no_request_and_repeated_single_options_write_only_usage(
         ("--format", "json"),
     ] {
         let output = case.run(&["run", "missing.json", name, value, name, value])?;
-        assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-        assert!(output.0.stdout.is_empty(), "{output:?}");
+        assert_eq!(output.0.status.code(), Some(20), "{name}: {output:?}");
+        assert!(output.0.stdout.is_empty(), "{name}: {output:?}");
         assert!(
             output.stderr_text()?.contains("usage: fsl run"),
             "{output:?}"
@@ -118,6 +118,7 @@ fn foreign_options_and_invalid_option_values_refuse_before_request_io(
         ("--engine", vec!["native", "Interpreter", ""]),
     ] {
         for operand in values {
+            let field = if flag == "--engine" { "engine" } else { flag };
             let value = outcome(
                 &run(&case, "missing.json", &[flag, operand])?,
                 20,
@@ -127,7 +128,7 @@ fn foreign_options_and_invalid_option_values_refuse_before_request_io(
                 diagnostic(&value, "invalid-request")["message"]
                     .as_str()
                     .expect("message")
-                    .contains(flag),
+                    .contains(field),
                 "{value}"
             );
         }
@@ -259,6 +260,109 @@ fn empty_provider_configuration_runs_the_function_and_local_flags_do_not_silentl
             message.contains(flag) && message.contains("--provider-config"),
             "{result}"
         );
+    }
+    Ok(())
+}
+
+/// Trace: FR-006-AC-28, FR-006-AC-29
+/// Provenance: QSL-2471
+#[test]
+fn provider_limits_accept_distinct_names_and_refuse_bad_counts_before_request_io(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    completed(
+        &run(
+            &case,
+            "run.json",
+            &[
+                "--provider-limit",
+                "deadline_ms=1000",
+                "--provider-limit",
+                "grace_ms=100",
+                "--provider-limit",
+                "max_frame_bytes=1048576",
+                "--provider-limit",
+                "max_total_bytes=4194304",
+                "--provider-limit",
+                "max_stderr_bytes=1024",
+                "--provider-limit",
+                "max_memory_bytes=1048576",
+                "--provider-limit",
+                "max_cpu_ms=1000",
+            ],
+        )?,
+        json!({"integer":"12"}),
+    );
+    for operand in [
+        "deadline_ms",
+        "unknown=1",
+        "deadline_ms=",
+        "deadline_ms=0",
+        "deadline_ms=-1",
+        "deadline_ms=+1",
+        "deadline_ms=01",
+        "deadline_ms=2ms",
+        "deadline_ms=9007199254740992",
+    ] {
+        let output = case.run(&[
+            "run",
+            "missing.json",
+            "--provider-limit",
+            operand,
+            "--format",
+            "json",
+        ])?;
+        assert_eq!(output.0.status.code(), Some(20), "{operand}: {output:?}");
+        assert!(output.0.stdout.is_empty(), "{operand}: {output:?}");
+        let stderr = output.stderr_text()?;
+        assert!(
+            stderr.contains("invalid-request")
+                && stderr.contains("--provider-limit")
+                && stderr.contains(operand),
+            "{stderr}"
+        );
+    }
+    let output = case.run(&[
+        "run",
+        "missing.json",
+        "--provider-limit",
+        "deadline_ms=1",
+        "--provider-limit",
+        "deadline_ms=2",
+        "--format",
+        "json",
+    ])?;
+    assert_eq!(output.0.status.code(), Some(20));
+    assert!(output.0.stdout.is_empty());
+    assert!(output.stderr_text()?.contains("deadline_ms"));
+    Ok(())
+}
+
+/// Trace: FR-006-AC-24
+/// Provenance: QSL-2471
+#[test]
+fn provider_configuration_is_closed_and_refuses_before_missing_request(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    for input in [
+        json!({"format":"filament.provider-config/v1","providers":[],"extra":true}),
+        json!({"format":"filament.provider-config/v1","providers":[{"path":"","arguments":[]}]}),
+        json!({"format":"filament.provider-config/v1","providers":[{"path":"never-start","arguments":[1]}]}),
+    ] {
+        write_json(&case, "bad-provider.json", &input)?;
+        let output = case.run(&[
+            "run",
+            "missing.json",
+            "--provider-config",
+            "bad-provider.json",
+            "--format",
+            "json",
+        ])?;
+        assert_eq!(output.0.status.code(), Some(20), "{output:?}");
+        assert!(output.0.stdout.is_empty(), "{output:?}");
+        let stderr = output.stderr_text()?;
+        assert!(stderr.contains("bad-provider.json"), "{stderr}");
+        assert!(!stderr.contains("cannot access missing.json"), "{stderr}");
     }
     Ok(())
 }

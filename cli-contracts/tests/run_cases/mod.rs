@@ -8,8 +8,8 @@ mod temporal;
 
 const SOURCE: &str = r#"language "ix:native" edition "1-draft";
 profile v = "filament.value.complete/v1";
-function Remaining using v(capacity: Integer, reserved: Integer): Integer pure {
-    capacity - reserved
+function Remaining using v(total: Integer, held: Integer): Integer pure {
+    total - held
 }
 function IsPacked using v(n: Int[0, 10]): Boolean pure { n >= 6 }
 "#;
@@ -33,8 +33,8 @@ fn fixture() -> Result<CliCase, ContractError> {
             "packing.fsl",
             "Remaining",
             &[
-                ("capacity", json!({"kind":"integer","value":"17"})),
-                ("reserved", json!({"kind":"integer","value":"5"})),
+                ("total", json!({"integer":"17"})),
+                ("held", json!({"integer":"5"})),
             ],
         ),
     )?;
@@ -52,11 +52,11 @@ fn outcome(output: &Captured, exit: i32, category: &str) -> Value {
     assert_eq!(value["format"], "filament-outcome/1", "{value}");
     assert_eq!(value["operation"], "execute", "{value}");
     assert_eq!(value["category"], category, "{value}");
-    assert!(output.0.stderr.is_empty(), "{output:?}");
     value
 }
 
 fn completed(output: &Captured, expected: Value) -> Value {
+    assert!(output.0.stderr.is_empty(), "{output:?}");
     let value = outcome(output, 0, "success");
     assert_eq!(
         value["result"],

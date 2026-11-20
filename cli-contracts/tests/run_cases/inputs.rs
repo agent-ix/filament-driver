@@ -22,8 +22,8 @@ fn request_relative_absolute_and_parent_paths_keep_the_request_base(
                 &path,
                 "Remaining",
                 &[
-                    ("capacity", json!({"kind":"integer","value":"20"})),
-                    ("reserved", json!({"kind":"integer","value":"7"})),
+                    ("total", json!({"integer":"20"})),
+                    ("held", json!({"integer":"7"})),
                 ],
             ),
         )?;

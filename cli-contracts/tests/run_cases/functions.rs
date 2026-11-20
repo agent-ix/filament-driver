@@ -14,14 +14,8 @@ fn integer_arguments_compute_results_and_each_invocation_has_fresh_inputs(
                 "packing.fsl",
                 "Remaining",
                 &[
-                    (
-                        "capacity",
-                        json!({"kind":"integer","value":capacity.to_string()}),
-                    ),
-                    (
-                        "reserved",
-                        json!({"kind":"integer","value":reserved.to_string()}),
-                    ),
+                    ("total", json!({"integer":capacity.to_string()})),
+                    ("held", json!({"integer":reserved.to_string()})),
                 ],
             ),
         )?;
@@ -46,7 +40,7 @@ fn boolean_false_is_a_completed_value_and_does_not_become_a_violation(
             &request(
                 "packing.fsl",
                 "IsPacked",
-                &[("n", json!({"kind":"integer","value":n.to_string()}))],
+                &[("n", json!({"integer":n.to_string()}))],
             ),
         )?;
         completed(&run(&case, "run.json", &[])?, json!({"boolean":expected}));
@@ -66,8 +60,8 @@ fn argument_names_resolve_independently_of_array_order() -> Result<(), Box<dyn s
             "packing.fsl",
             "Remaining",
             &[
-                ("reserved", json!({"kind":"integer","value":"8"})),
-                ("capacity", json!({"kind":"integer","value":"21"})),
+                ("held", json!({"integer":"8"})),
+                ("total", json!({"integer":"21"})),
             ],
         ),
     )?;
@@ -81,11 +75,7 @@ fn argument_names_resolve_independently_of_array_order() -> Result<(), Box<dyn s
 fn unknown_function_missing_extra_duplicate_and_wrong_typed_arguments_refuse(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
-    let base = request(
-        "packing.fsl",
-        "IsPacked",
-        &[("n", json!({"kind":"integer","value":"4"}))],
-    );
+    let base = request("packing.fsl", "IsPacked", &[("n", json!({"integer":"4"}))]);
     let mut unknown = base.clone();
     unknown["request"]["call"]["function"] = json!("Absent");
     let mut missing = base.clone();
@@ -94,21 +84,28 @@ fn unknown_function_missing_extra_duplicate_and_wrong_typed_arguments_refuse(
     extra["request"]["call"]["arguments"]
         .as_array_mut()
         .expect("args")
-        .push(json!({"parameter":"other","value":{"kind":"integer","value":"2"}}));
+        .push(json!({"parameter":"other","value":{"integer":"2"}}));
     let mut duplicate = base.clone();
     duplicate["request"]["call"]["arguments"]
         .as_array_mut()
         .expect("args")
-        .push(json!({"parameter":"n","value":{"kind":"integer","value":"5"}}));
+        .push(json!({"parameter":"n","value":{"integer":"5"}}));
     let mut wrong = base.clone();
-    wrong["request"]["call"]["arguments"][0]["value"] = json!({"kind":"boolean","value":true});
+    wrong["request"]["call"]["arguments"][0]["value"] = json!({"boolean":true});
     let mut out_of_domain = base;
-    out_of_domain["request"]["call"]["arguments"][0]["value"] =
-        json!({"kind":"integer","value":"11"});
+    out_of_domain["request"]["call"]["arguments"][0]["value"] = json!({"integer":"11"});
     for input in [unknown, missing, extra, duplicate, wrong, out_of_domain] {
         write_json(&case, "bad.json", &input)?;
         let value = outcome(&run(&case, "bad.json", &[])?, 20, "refusal");
         assert!(value["result"].is_null(), "{value}");
+        assert!(
+            value["diagnostics"]
+                .as_array()
+                .expect("diagnostics")
+                .iter()
+                .all(|d| d["code"] != "invalid_syntax"),
+            "argument validation must follow successful source parsing: {value}"
+        );
         assert!(
             !value["diagnostics"]
                 .as_array()
@@ -130,8 +127,8 @@ fn checked_package_runs_after_its_source_is_removed_and_rejects_restated_source(
         "packing.fsl",
         "Remaining",
         &[
-            ("capacity", json!({"kind":"integer","value":"17"})),
-            ("reserved", json!({"kind":"integer","value":"5"})),
+            ("total", json!({"integer":"17"})),
+            ("held", json!({"integer":"5"})),
         ],
     );
     write_json(
@@ -161,5 +158,47 @@ fn checked_package_runs_after_its_source_is_removed_and_rejects_restated_source(
             .contains("program"),
         "{value}"
     );
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1
+/// Provenance: QSL-2471
+#[test]
+fn non_finite_conversion_is_undefined_ten_with_its_actual_reason(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    case.write(
+        "fraction.fsl",
+        br#"language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+type Fraction = Rational[-4, 4; 1, 4];
+function FractionOf using v(x: Float64[nearest-even]): Fraction pure { convert<Fraction>(x) }
+"#,
+    )?;
+    for (bits, exit) in [("3ff0000000000000", 0), ("7ff8000000000000", 10)] {
+        write_json(
+            &case,
+            "fraction.json",
+            &request(
+                "fraction.fsl",
+                "FractionOf",
+                &[("x", json!({"kind":"float64","bits":bits}))],
+            ),
+        )?;
+        let output = run(&case, "fraction.json", &[])?;
+        if exit == 0 {
+            completed(
+                &output,
+                json!({"kind":"rational","numerator":"1","denominator":"1"}),
+            );
+        } else {
+            let value = outcome(&output, 10, "undefined");
+            assert_eq!(
+                value["result"],
+                json!({"kind":"undefined","reason":"ieee-not-finite"}),
+                "{value}"
+            );
+        }
+    }
     Ok(())
 }
