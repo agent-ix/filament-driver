@@ -71,8 +71,13 @@ cache, and process-provider adapter using `filament-plugin-host`.
   providers; when a limit is not given, FSL FR-287's default applies. The
   command SHALL NOT search a default location or read either input from
   ambient environment state or another file.
-- CLI contract and binary process-boundary tests and their fixtures SHALL
-  reside in the `fsl-cli` package.
+- CLI contract and binary process-boundary test sources and their
+  non-executable fixtures SHALL reside in the `fsl-cli` package. A test-only
+  executable they launch MAY reside in a separate unpublished workspace
+  package.
+- `cargo install --path fsl-cli --locked` SHALL install exactly one
+  executable, `fsl`; test-only executables such as `fsl-test-provider` live
+  in a separate `publish = false` workspace package that provider tests build.
 
 ## Acceptance Criteria
 
@@ -81,9 +86,10 @@ cache, and process-provider adapter using `filament-plugin-host`.
 | FR-014-AC-1 | Exactly one workspace package, `fsl-cli`, provides the `fsl` binary target. | Test (TC-028) |
 | FR-014-AC-2 | `fsl-cli` has direct normal dependency edges to `filament-driver`, `filament-cache`, `filament-plugin-host` and `ix-cli-kit`; the `filament-driver` closure has no normal or build edge to `filament-plugin-host` or `ix-cli-kit`. | Test (TC-005, TC-028) |
 | FR-014-AC-3 | The workspace root lists `fsl-cli` in `default-members`. | Test (TC-005) |
-| FR-014-AC-4 | CLI contract and binary process-boundary tests and their fixtures reside in the `fsl-cli` package. | Test (TC-009, TC-018, TC-028) |
+| FR-014-AC-4 | CLI contract and binary process-boundary test sources and their non-executable fixtures reside in the `fsl-cli` package; a test-only executable they launch may live in a separate `publish = false` workspace package. | Test (TC-009, TC-018, TC-028) |
 | FR-014-AC-5 | The CLI parser definition resides in `fsl-cli/src/cli.rs`, and the binary entry point is in `fsl-cli/src/main.rs`; the `filament-driver` package's `src/lib.rs` does not export a `cli` module. | Test (TC-028) |
 | FR-014-AC-6 | The `fsl run` command accepts `--provider-config <path>` as its sole process-plugin source, a plugins-only document whose entries carry no deadline or limit, and `--provider-limit <name>=<value>` as the sole source of the run's limits, including `deadline_ms`; omitting `--provider-config` registers no process providers, omitting a limit applies FSL FR-287's default (`deadline_ms` 600000), and no default, ambient or file configuration is read. | Test (TC-028, TC-041) |
+| FR-014-AC-7 | Installing into an empty root gives only `bin/fsl`; the installed `fsl --version` and a model-free check succeed; the TC-044 provider tests still start the fixture. | Test (TC-028) |
 
 ## Dependencies
 

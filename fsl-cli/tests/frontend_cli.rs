@@ -19,6 +19,8 @@ const MISSING_SOURCE: &str = concat!(
     "/tests/fixtures/missing-source.fsl"
 );
 
+#[path = "common/test_provider_path.rs"]
+mod test_provider_path;
 #[path = "common/timed_analyze.rs"]
 mod timed_analyze;
 
@@ -1133,7 +1135,6 @@ fn analyze_malformed_request_is_typed_refusal() {
     }
 }
 
-const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
 const PROVIDER_BACKEND: &str = "fsl.test-process-provider";
 
 /// The Counter program with the value-validity function `Even` added.
@@ -1152,7 +1153,7 @@ fn even_program() -> Vec<u8> {
 fn provider_config(request: &AnalyzeRequest, arguments: &[&str]) -> std::path::PathBuf {
     let path = request.directory.0.join("providers.json");
     let config = serde_json::json!({"format": "filament.provider-config/v1",
-        "providers": [{"path": TEST_PROVIDER, "arguments": arguments}]});
+        "providers": [{"path": test_provider_path::executable(), "arguments": arguments}]});
     std::fs::write(&path, config.to_string()).expect("the provider configuration");
     path
 }

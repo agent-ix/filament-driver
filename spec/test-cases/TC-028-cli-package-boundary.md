@@ -34,7 +34,7 @@ Scope: FR-002-AC-3, FR-002-AC-7, FR-006-AC-1, FR-006-AC-3..FR-006-AC-4,
 FR-006-AC-8, FR-006-AC-28,
 FR-006-AC-24..FR-006-AC-27, FR-013-AC-11,
 FR-013-AC-14..FR-013-AC-15,
-FR-014-AC-1, FR-014-AC-2, FR-014-AC-4..FR-014-AC-6.
+FR-014-AC-1, FR-014-AC-2, FR-014-AC-4..FR-014-AC-7.
 FR-013-AC-14 is listed to record deferral to IR-674; TC-028 does not verify
 kill-on-close in this PR.
 
@@ -49,7 +49,9 @@ kill-on-close in this PR.
 3. Confirm exactly one workspace package provides the `fsl` binary target
    and that package is `fsl-cli`.
 4. Inspect the package test layout. Confirm CLI contract and binary
-   process-boundary tests and their fixtures are under the `fsl-cli` package.
+   process-boundary test sources and non-executable fixtures are under the
+   `fsl-cli` package. Confirm the test-only provider executable is a separate
+   `publish = false` workspace package.
 5. Inspect the parser definition and entry point. Confirm the CLI parsing
    definitions are implemented in `fsl-cli/src/cli.rs`, the binary entry
    point is `fsl-cli/src/main.rs`, and the `filament-driver` package's
@@ -143,6 +145,20 @@ kill-on-close in this PR.
     errors before provider dispatch and child cleanup. Runtime fault-injection
     coverage remains planned until an injectable or distinguishable failure
     seam exists; use native Windows evidence when available.
+16. In a fresh install root, run `cargo install --path fsl-cli --locked
+    --root <empty-root>`. Confirm `<empty-root>/bin` contains exactly `fsl`.
+    Run the installed `fsl --version` and confirm it exits successfully.
+17. Write a model-free source with one total function, then run the installed
+    `fsl check <source> --format json`; confirm a successful result. Run the
+    documented `yes()` native-run sample through the installed binary and
+    confirm it succeeds with value `true`.
+18. Before running focused provider process tests from a fresh target, run
+    `cargo build --locked -p fsl-test-provider`. Then run these commands in
+    sequence, using the same target directory:
+    `cargo test --locked -p fsl-cli --test binary_process configured_process_normal_exit_shuts_down_active_session`,
+    `cargo test --locked -p fsl-cli --test frontend_cli analyze_provider_config_settles_an_item_on_the_process_provider`,
+    and `cargo test --locked -p fsl-cli --test monitor_cli provider_config_routes_the_request_items_to_the_started_plugin`.
+    Confirm each test starts the built test-provider executable and passes.
 
 The signal guarantee covers Linux/macOS handled SIGINT/SIGTERM only; it does
 not cover Windows console control events, an uncatchable host kill on Unix, or
@@ -170,7 +186,13 @@ Linux/macOS runners provide the signal evidence in step 13.
   CLI-to-host edge. The IR-607 code slice inverts the existing negative kit
   assertion and verifies that the driver closure has no normal or build
   dependency on the host or ix-cli-kit.
-- The CLI tests and their fixtures have the specified `fsl-cli` ownership.
+- The CLI test sources and non-executable fixtures have the specified
+  `fsl-cli` ownership; the process-provider fixture executable is owned by its
+  separate unpublished workspace package.
+- `cargo install --path fsl-cli --locked` installs only `bin/fsl`; the
+  installed version, model-free check and sample execution succeed. The
+  focused provider test lane builds `fsl-test-provider` before starting it from
+  the `fsl-cli` tests.
 - The parser definitions and binary entry point have the specified
   `fsl-cli` locations, and the `filament-driver` package's `src/lib.rs` does
   not export a `cli` module.

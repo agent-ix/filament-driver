@@ -13,6 +13,9 @@ use fsl_command::command::{monitor, RunLimits};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
 
+#[path = "common/test_provider_path.rs"]
+mod test_provider_path;
+
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const INFINITE: &str = "filament.temporal.infinite-trace/v1";
 
@@ -212,7 +215,6 @@ fn a_bad_request_is_refused_before_any_record_with_exit_20() {
     assert!(String::from_utf8_lossy(&missing.stderr).contains("usage: fsl monitor"));
 }
 
-const TEST_PROVIDER: &str = env!("CARGO_BIN_EXE_fsl-test-provider");
 const PROVIDER_BACKEND: &str = "fsl.test-recording-provider";
 
 /// FR-025-AC-4 (TC-044, FSL FR-644-AC-8 and AC-11): `fsl monitor` accepts
@@ -247,7 +249,8 @@ fn provider_config_routes_the_request_items_to_the_started_plugin() {
     let config = folder.path("providers.json");
     std::fs::write(
         &config,
-        json!({"format": "filament.provider-config/v1", "providers": [{"path": TEST_PROVIDER,
+        json!({"format": "filament.provider-config/v1", "providers": [{
+            "path": test_provider_path::executable(),
             "arguments": [PROVIDER_BACKEND, "unbounded", "proved", log.to_str().unwrap()]}]})
         .to_string(),
     )

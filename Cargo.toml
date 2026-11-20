@@ -10,8 +10,19 @@ repository = "https://github.com/agent-ix/filament-driver"
 publish = false
 
 [workspace]
-members = ["filament-cache", "fsl-cli", "filament-plugin-host"]
-default-members = [".", "filament-cache", "fsl-cli", "filament-plugin-host"]
+members = [
+    "filament-cache",
+    "fsl-test-provider",
+    "fsl-cli",
+    "filament-plugin-host",
+]
+default-members = [
+    ".",
+    "filament-cache",
+    "fsl-test-provider",
+    "fsl-cli",
+    "filament-plugin-host",
+]
 # make examples-check fetches filament-examples, with its own runner crate, under target/.
 exclude = ["target"]
 resolver = "2"

@@ -12,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use ix_trace_rs::trace;
 use regex::Regex;
 use serde_json::Value;
 
@@ -124,9 +125,10 @@ fn cargo_target_and_dependencies_belong_to_fsl_cli() {
     assert!(dependencies.contains("filament-semantic-value"));
 }
 
-/// Trace: FR-014-AC-4, FR-014-AC-5, the parser, binary entry point, CLI tests and
-/// fixtures are owned by fsl-cli, and the library exports no CLI module.
+/// Trace: FR-014-AC-4, FR-014-AC-5; test sources and non-executable fixtures
+/// are owned by fsl-cli, and the library exports no CLI module.
 #[test]
+#[trace("TC-028", "FR-014-AC-4", "FR-014-AC-5")]
 fn parser_and_cli_tests_live_in_the_cli_package() {
     let root = workspace_root();
     let cli_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -162,6 +164,62 @@ fn parser_and_cli_tests_live_in_the_cli_package() {
     assert!(
         !root.join(fixture).exists(),
         "CLI fixture remains in filament-driver"
+    );
+}
+
+/// Trace: FR-014-AC-7; the installable CLI target excludes its test provider.
+#[test]
+#[trace("TC-028", "FR-014-AC-7")]
+fn source_install_package_has_only_fsl_and_separate_test_provider() {
+    let metadata = metadata();
+    let packages = metadata["packages"].as_array().expect("workspace packages");
+    let cli_packages: Vec<&Value> = packages
+        .iter()
+        .filter(|package| package["name"] == "fsl-cli")
+        .collect();
+    let provider_packages: Vec<&Value> = packages
+        .iter()
+        .filter(|package| package["name"] == "fsl-test-provider")
+        .collect();
+    assert_eq!(cli_packages.len(), 1, "one fsl-cli package");
+    assert_eq!(provider_packages.len(), 1, "one provider fixture package");
+
+    let binary_names = |package: &Value| {
+        package["targets"]
+            .as_array()
+            .expect("package targets")
+            .iter()
+            .filter(|target| {
+                target["kind"]
+                    .as_array()
+                    .is_some_and(|kinds| kinds.iter().any(|kind| kind == "bin"))
+            })
+            .map(|target| {
+                target["name"]
+                    .as_str()
+                    .expect("binary target name")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let cli = cli_packages[0];
+    assert_eq!(
+        binary_names(cli),
+        ["fsl".to_owned()],
+        "fsl-cli installs only fsl"
+    );
+    let provider = provider_packages[0];
+    assert_eq!(provider["publish"], serde_json::json!([]));
+    assert_eq!(binary_names(provider), ["fsl-test-provider".to_owned()]);
+    assert_ne!(cli["id"], provider["id"], "the fixture has its own package");
+    assert!(
+        metadata["workspace_members"]
+            .as_array()
+            .expect("workspace member ids")
+            .iter()
+            .any(|member| member == &provider["id"]),
+        "the provider fixture is a workspace member"
     );
 }
 
