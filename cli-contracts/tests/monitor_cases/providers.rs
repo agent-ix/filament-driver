@@ -68,6 +68,21 @@ fn selected_items_use_provider_transport_while_temporal_clauses_keep_their_real_
     assert_eq!(item["record"]["backend"], BACKEND);
     assert_eq!(item["record"]["certification"], "trusted");
     assert!(item.get("certificate").is_none());
+    assert!(summary["registry"]
+        .as_array()
+        .expect("registry")
+        .iter()
+        .any(|entry| entry["backend"] == BACKEND));
+    write_request(&case, &request())?;
+    let native = case.run_stdin(
+        &["monitor", "inputs/monitor.json", "--format", "json"],
+        &records(&[2, 9], true),
+    )?;
+    let (native_events, _) = stream(&native, 10)?;
+    assert_eq!(
+        events, native_events,
+        "provider items must not alter temporal events"
+    );
     let sent: Value =
         serde_json::from_slice(&fs::read(case.directory().join("transport-request.json"))?)?;
     assert_eq!(sent["request"]["deadline_ms"], 4096);
@@ -130,6 +145,11 @@ fn interruption_while_stdin_is_open_finishes_with_a_structured_incomplete_outcom
         assert_eq!(outcome["format"], "filament-outcome/1");
         assert_eq!(outcome["operation"], "monitor");
         assert_eq!(outcome["category"], "incomplete");
+        assert_eq!(
+            output.captured.json_lines()?.last(),
+            Some(outcome),
+            "the incomplete outcome must remain the last output record"
+        );
         assert!(!outcome["diagnostics"]
             .as_array()
             .expect("diagnostics")
