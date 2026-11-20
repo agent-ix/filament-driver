@@ -147,11 +147,12 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
     assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
     assert!(directory.path().join("checked-package.json").is_file());
     std::fs::remove_file(directory.path().join("counter.fsl")).expect("remove source file");
-    std::fs::remove_file(directory.path().join("counter.json")).expect("remove model file");
 
     let source_package = json!({"identity": "test:recorded-export-counter", "version": "17"});
     let export_request = json!({"format": "native-run/1", "request": {
-        "models": [],
+        "models": [{"format": "semantic-ir/2.0.0", "source": {
+            "file": "counter.json", "authority": "test", "identity": "example/counter",
+            "document": "ExportCounter", "formal_revision": 1}}],
         "package": {"file": "checked-package.json", "source_package": source_package},
         "export": {"profile": "filament.output.tla2/v1", "obligations": ["Bounded"]}}});
     std::fs::write(
