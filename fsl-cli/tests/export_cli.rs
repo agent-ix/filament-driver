@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use ix_trace_rs::trace;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const UNIT: &str = include_str!("fixtures/export-counter.fsl");
