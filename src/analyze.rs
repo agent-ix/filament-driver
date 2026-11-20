@@ -609,7 +609,10 @@ mod tests {
     fn analyze_dispositions_equal_the_item_entrys() {
         let negotiation = AnalyzeNegotiation::fsl().expect("the engines register");
         let mut registry = Registry::new();
-        for descriptor in Engines::fsl_with_reference_hybrid().expect("engines").registrations() {
+        for descriptor in Engines::fsl_with_reference_hybrid()
+            .expect("engines")
+            .registrations()
+        {
             registry
                 .register(descriptor.clone())
                 .expect("a new identity");
