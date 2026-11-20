@@ -1162,14 +1162,6 @@ fn run(options: RunOptions) -> CommandResult {
         integer_division,
         mut call,
     } = input;
-    // The execution request carries no division law, so a law in the request is refused
-    // rather than dropped.
-    if integer_division.is_some() {
-        return CommandResult::input_refusal(
-            Operation::Execute,
-            "the request carries an integer_division law, which this run path does not apply",
-        );
-    }
     let mut limits = SpineLimits::default();
     if let Err(error) = options.limits.apply_to(&mut limits, &mut call) {
         return CommandResult::input_refusal(Operation::Execute, error.to_string());
