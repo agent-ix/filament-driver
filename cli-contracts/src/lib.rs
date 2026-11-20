@@ -193,7 +193,49 @@ impl CliCase {
         input: &[u8],
     ) -> Result<Captured, ContractError> {
         let start = Instant::now();
-        let mut child = Command::new(&self.binary)
+        let mut child = self.spawn(arguments)?;
+        capture_process(&mut child, input, start, Duration::from_secs(30), None)
+    }
+
+    /// Keep stdin open after `prefix` until the stdout predicate matches.
+    ///
+    /// Save the actual stdout observed at that point, then send `remainder`
+    /// and close stdin. The existing total deadline, stream bounds and process
+    /// cleanup apply to both phases. Predicates should inspect complete records
+    /// and return promptly. Early child termination preserves its actual result.
+    pub fn run_staged<S: AsRef<OsStr>, F: Fn(&[u8]) -> bool>(
+        &self,
+        arguments: &[S],
+        prefix: &[u8],
+        remainder: &[u8],
+        continue_after: F,
+    ) -> Result<StagedCaptured, ContractError> {
+        let start = Instant::now();
+        let mut child = self.spawn(arguments)?;
+        let input = [prefix, remainder].concat();
+        let mut gate = StdinGate {
+            boundary: prefix.len(),
+            predicate: &continue_after,
+            observed: None,
+        };
+        let captured = capture_process(
+            &mut child,
+            &input,
+            start,
+            Duration::from_secs(30),
+            Some(&mut gate),
+        )?;
+        Ok(StagedCaptured {
+            before_continuation: gate.observed,
+            captured,
+        })
+    }
+
+    fn spawn<S: AsRef<OsStr>>(
+        &self,
+        arguments: &[S],
+    ) -> Result<std::process::Child, ContractError> {
+        Command::new(&self.binary)
             .args(arguments)
             .current_dir(self.directory())
             .process_group(0)
@@ -201,9 +243,23 @@ impl CliCase {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| io_error("spawn FSL", e))?;
-        capture_process(&mut child, input, start, Duration::from_secs(30))
+            .map_err(|e| io_error("spawn FSL", e))
     }
+}
+
+/// A real process result and the stdout visible before continuing its stdin.
+#[derive(Debug)]
+pub struct StagedCaptured {
+    /// Present only if the predicate matched while stdin was still held open.
+    pub before_continuation: Option<Vec<u8>>,
+    /// The complete, unmodified process result after both input phases.
+    pub captured: Captured,
+}
+
+struct StdinGate<'a> {
+    boundary: usize,
+    predicate: &'a dyn Fn(&[u8]) -> bool,
+    observed: Option<Vec<u8>>,
 }
 
 // The caller creates a fresh process group before spawn. A timeout therefore
@@ -267,6 +323,7 @@ fn capture_process(
     input: &[u8],
     start: Instant,
     budget: Duration,
+    mut gate: Option<&mut StdinGate<'_>>,
 ) -> Result<Captured, ContractError> {
     let group = rustix::process::Pid::from_child(child);
     let invocation = Invocation {
@@ -289,11 +346,15 @@ fn capture_process(
         if start.elapsed() >= budget {
             return Err(ContractError::Timeout(budget));
         }
-        if sent == input.len() {
+        let write_limit = gate
+            .as_ref()
+            .filter(|g| g.observed.is_none())
+            .map_or(input.len(), |g| g.boundary);
+        if sent == input.len() && gate.as_ref().is_none_or(|g| g.observed.is_some()) {
             stdin = None;
         }
-        if let Some(writer) = stdin.as_mut() {
-            let end = input.len().min(sent.saturating_add(16_384));
+        if let Some(writer) = stdin.as_mut().filter(|_| sent < write_limit) {
+            let end = write_limit.min(sent.saturating_add(16_384));
             match writer.write(&input[sent..end]) {
                 Ok(0) => return Err(io_error("write FSL stdin", io::ErrorKind::WriteZero.into())),
                 Ok(count) => sent += count,
@@ -308,6 +369,12 @@ fn capture_process(
         }
         out.read(&mut stdout)?;
         err.read(&mut stderr)?;
+        if let Some(gate) = gate
+            .as_mut()
+            .filter(|g| sent >= g.boundary && g.observed.is_none() && (g.predicate)(&out.bytes))
+        {
+            gate.observed = Some(out.bytes.clone());
+        }
         if status.is_none() {
             status = invocation
                 .child
@@ -315,6 +382,7 @@ fn capture_process(
                 .map_err(|e| io_error("wait for FSL", e))?;
         }
         if let Some(status) = status {
+            stdin = None;
             if stdin.is_none() && stdout.is_none() && stderr.is_none() {
                 invocation.complete = true;
                 if out.exceeded {
@@ -338,7 +406,7 @@ fn capture_process(
             tv_nsec: i64::from(remaining.subsec_nanos()),
         };
         let mut descriptors = Vec::new();
-        if let Some(fd) = stdin.as_ref() {
+        if let Some(fd) = stdin.as_ref().filter(|_| sent < write_limit) {
             descriptors.push(rustix::event::PollFd::new(
                 fd,
                 rustix::event::PollFlags::OUT,
@@ -421,6 +489,7 @@ mod process_budget {
             b"payload\n",
             Instant::now(),
             Duration::from_secs(2),
+            None,
         )?;
         assert_eq!(output.0.status.code(), Some(0));
         assert_eq!(output.0.stdout, b"payload");
@@ -439,6 +508,7 @@ mod process_budget {
             &vec![b'x'; 131_072],
             start,
             Duration::from_millis(150),
+            None,
         );
         assert!(
             matches!(result, Err(ContractError::Timeout(_))),
@@ -456,7 +526,7 @@ mod process_budget {
     fn pipes_retained_after_direct_child_exit_still_obey_the_deadline() {
         let mut child = fixture("sleep 5 & exit 0");
         let start = Instant::now();
-        let result = capture_process(&mut child, b"", start, Duration::from_millis(150));
+        let result = capture_process(&mut child, b"", start, Duration::from_millis(150), None);
         assert!(
             matches!(result, Err(ContractError::Timeout(_))),
             "{result:?}"
@@ -473,5 +543,53 @@ mod process_budget {
                 .success(),
             "the direct child exited before its descendant released the pipes"
         );
+    }
+    /// Provenance: QSL-2473
+    #[test]
+    fn staged_stdin_observes_stdout_before_releasing_the_next_input() -> Result<(), ContractError> {
+        let mut child = fixture("IFS= read -r first; printf 'ready:%s\\n' \"$first\"; IFS= read -r second; printf 'later:%s\\n' \"$second\"");
+        let condition = |bytes: &[u8]| bytes.ends_with(b"ready:first\n");
+        let mut gate = StdinGate {
+            boundary: 6,
+            predicate: &condition,
+            observed: None,
+        };
+        let result = capture_process(
+            &mut child,
+            b"first\nsecond\n",
+            Instant::now(),
+            Duration::from_secs(2),
+            Some(&mut gate),
+        )?;
+        assert_eq!(gate.observed.as_deref(), Some(b"ready:first\n".as_slice()));
+        assert_eq!(result.0.stdout, b"ready:first\nlater:second\n");
+        assert_eq!(result.0.status.code(), Some(0));
+        assert!(child.try_wait().expect("reaped staged child").is_some());
+        Ok(())
+    }
+
+    /// Provenance: QSL-2473
+    #[test]
+    fn staged_stdin_keeps_the_same_deadline_and_reaps_a_blocked_child() {
+        let mut child = fixture("IFS= read -r first; printf 'not-ready'; IFS= read -r next");
+        let condition = |bytes: &[u8]| bytes.ends_with(b"ready\n");
+        let mut gate = StdinGate {
+            boundary: 6,
+            predicate: &condition,
+            observed: None,
+        };
+        let result = capture_process(
+            &mut child,
+            b"first\nsecond\n",
+            Instant::now(),
+            Duration::from_millis(150),
+            Some(&mut gate),
+        );
+        assert!(
+            matches!(result, Err(ContractError::Timeout(_))),
+            "{result:?}"
+        );
+        assert!(gate.observed.is_none());
+        assert!(child.try_wait().expect("reaped held-input child").is_some());
     }
 }
