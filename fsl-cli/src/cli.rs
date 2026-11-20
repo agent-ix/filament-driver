@@ -1242,19 +1242,6 @@ fn compile(options: CompileOptions) -> CommandResult {
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
         Ok(outcome) => CommandResult::document(outcome.document().clone())
             .with_sources(fsl_command::render_sources(outcome.sources())),
-        Err(error) if matches!(error.cause, command::RunCause::EmptyCompileProgram) => {
-            let code = Code::InvalidPackage;
-            CommandResult::document(
-                OutcomeDocument::new(Operation::Package, None, code.category()).with_diagnostics(
-                    vec![OutcomeDiagnostic::new(
-                        Some("invalid-value"),
-                        code.as_str(),
-                        None,
-                        error.to_string(),
-                    )],
-                ),
-            )
-        }
         Err(error) => CommandResult::document(error.outcome_document(Operation::Package)),
     }
 }
