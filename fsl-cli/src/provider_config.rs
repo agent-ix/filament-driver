@@ -2,12 +2,13 @@
 //! Strict caller-selected provider configuration from FSpec FR-561.
 
 use std::collections::BTreeSet;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use fsl_analyze::provider::ProviderLimits;
 use serde::Deserialize;
+
+use crate::options::{self, Scanned};
 
 pub(crate) const FORMAT: &str = "filament.provider-config/v1";
 
@@ -48,42 +49,27 @@ impl ProviderArguments {
         self.config.is_some() || !self.named.is_empty()
     }
 
-    /// Read the provider option at `arguments[index]`: the number of
-    /// arguments it takes, or `None` when the argument is neither option.
-    pub(crate) fn take(
-        &mut self,
-        arguments: &[OsString],
-        index: usize,
-    ) -> Result<Option<usize>, OptionRefusal> {
-        match arguments.get(index).and_then(|argument| argument.to_str()) {
-            Some("--provider-config") => {
-                let path = arguments
-                    .get(index + 1)
-                    .filter(|path| !path.is_empty())
-                    .ok_or_else(|| {
-                        OptionRefusal::Usage("--provider-config requires a path".to_owned())
-                    })?;
-                if self.config.replace(PathBuf::from(path)).is_some() {
-                    return Err(OptionRefusal::Usage(
-                        "--provider-config may be supplied only once".to_owned(),
-                    ));
+    /// Read every provider option the scan found: `--provider-config` once
+    /// and each `--provider-limit` (FSL FR-287, FR-964; FR-006).
+    pub(crate) fn take_all(&mut self, scanned: &Scanned) -> Result<(), OptionRefusal> {
+        for (name, value) in &scanned.options {
+            let Some(value) = value else { continue };
+            match *name {
+                options::PROVIDER_CONFIG => {
+                    self.config = Some(PathBuf::from(value));
                 }
-                Ok(Some(2))
+                options::PROVIDER_LIMIT => {
+                    let argument = value.to_string_lossy().into_owned();
+                    self.set_limit(&argument).map_err(|reason| {
+                        OptionRefusal::Quiet(format!(
+                            "invalid-request: {name} `{argument}` {reason}"
+                        ))
+                    })?;
+                }
+                _ => {}
             }
-            Some("--provider-limit") => {
-                let argument = arguments
-                    .get(index + 1)
-                    .map(|argument| argument.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                self.set_limit(&argument).map_err(|reason| {
-                    OptionRefusal::Quiet(format!(
-                        "invalid-request: --provider-limit `{argument}` {reason}"
-                    ))
-                })?;
-                Ok(Some(2))
-            }
-            _ => Ok(None),
         }
+        Ok(())
     }
 
     /// Set one FR-287 limit from `name=value`.
@@ -216,6 +202,7 @@ pub(crate) fn load(path: &Path) -> Result<ProviderConfig, ProviderConfigError> {
 )]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
 
     const VALID: &str = r#"{
         "format":"filament.provider-config/v1",
@@ -283,14 +270,18 @@ mod tests {
         let mut arguments = ProviderArguments::default();
         let argv = values
             .iter()
-            .flat_map(|value| [OsString::from("--provider-limit"), OsString::from(value)])
+            .flat_map(|value| {
+                [
+                    OsString::from(options::PROVIDER_LIMIT),
+                    OsString::from(value),
+                ]
+            })
             .collect::<Vec<_>>();
-        let mut index = 0;
-        while index < argv.len() {
-            index += arguments
-                .take(&argv, index)?
-                .expect("each argument pair is a provider option");
-        }
+        let entry = options::entry("analyze").expect("analyze has an option table entry");
+        let Ok(options::Scan::Options(scanned)) = options::scan(entry, &argv) else {
+            panic!("provider limits scan");
+        };
+        arguments.take_all(&scanned)?;
         Ok(arguments)
     }
 

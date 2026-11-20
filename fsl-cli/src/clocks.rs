@@ -44,7 +44,11 @@ pub(crate) fn read(
         .map_err(|error| ClocksRefusal {
             code: Code::IoError,
             cause: "clocks-file-unreadable",
-            message: format!("--clocks: could not read {}: {error}", path.display()),
+            message: format!(
+                "{}: could not read {}: {error}",
+                crate::options::CLOCKS,
+                path.display()
+            ),
         })?;
     if bytes.len() > limit {
         let raise = option.map_or_else(String::new, |option| format!("; raise {option}"));
@@ -52,7 +56,8 @@ pub(crate) fn read(
             code: Code::ResourceExhausted,
             cause: "clocks-file-too-large",
             message: format!(
-                "--clocks: {} exceeds the {limit} byte limit{raise}",
+                "{}: {} exceeds the {limit} byte limit{raise}",
+                crate::options::CLOCKS,
                 path.display()
             ),
         });
@@ -61,7 +66,8 @@ pub(crate) fn read(
         ClocksRefusal::invalid(
             "clocks-file-not-an-object",
             format!(
-                "--clocks: {} is not one JSON object of clock configurations",
+                "{}: {} is not one JSON object of clock configurations",
+                crate::options::CLOCKS,
                 path.display()
             ),
         )
