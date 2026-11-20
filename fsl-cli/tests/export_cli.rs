@@ -121,18 +121,40 @@ fn export_output_writes_the_target_text_fsl_assembles() {
 #[trace("TC-3019", "FR-1039-AC-4")]
 fn export_selected_package_preserves_source_reference_and_writes_target() {
     let directory = folder();
+    let model_source = json!({"file": "counter.json", "authority": "test",
+        "identity": "example/counter", "document": "ExportCounter", "formal_revision": 1});
+    let program_source = json!({"file": "counter.fsl", "authority": "test",
+        "identity": "example/counter-unit", "document": "ExportCounter", "formal_revision": 7});
+    let models = json!([{"format": "semantic-ir/2.0.0", "source": model_source}]);
+    let export = json!({"profile": "filament.output.tla2/v1", "obligations": ["Bounded"],
+        "initial": "counter-0.json", "minimum_fidelity": "any"});
+
+    let source_export_request = json!({"format": "native-run/1", "request": {
+        "models": models,
+        "program": {"source": program_source},
+        "export": export}});
     std::fs::write(
-        directory.path().join("counter.fsl"),
-        "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"filament.value.complete/v1\";\n\
-         function one using v(): Integer pure { 1 }\n",
+        directory.path().join("source-export.json"),
+        source_export_request.to_string(),
     )
-    .expect("the value-only source");
+    .expect("the source export request");
+    let source_export = fsl(
+        directory.path(),
+        &["export", "source-export.json", "--format", "json"],
+    );
+    assert_eq!(source_export.status.code(), Some(0), "{source_export:?}");
+    let source_value = document(&source_export);
+    let source_records = source_value["result"]["export"]["records"].clone();
+    let source_target_text = source_value["result"]["export"]["target_text"].clone();
+
     let compile_request = json!({"format": "native-compile/1", "request": {
-        "models": [],
+        "models": models,
         "program": {"source": {
-            "file": "counter.fsl", "authority": "test", "identity": "export-counter",
-            "document": "ExportCounter", "formal_revision": 1}}}});
+            "file": "counter.fsl", "authority": "test", "identity": "example/counter-unit",
+            "document": "ExportCounter", "formal_revision": 7}},
+        "output": {"package": "checked-package.json"},
+        "handoff": {"directory": "handoff", "package_name": "counter-unit",
+            "native_join": {"work_units": 1_u64 << 40, "storage": 1_u64 << 24}}}});
     std::fs::write(
         directory.path().join("compile.json"),
         compile_request.to_string(),
@@ -140,25 +162,19 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
     .expect("the compile request");
     let compiled = fsl(
         directory.path(),
-        &[
-            "compile",
-            "compile.json",
-            "--output",
-            "checked-package.json",
-            "--format",
-            "json",
-        ],
+        &["compile", "compile.json", "--format", "json"],
     );
     assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
     assert!(directory.path().join("checked-package.json").is_file());
+    assert!(directory.path().join("handoff/equality.json").is_file());
     std::fs::remove_file(directory.path().join("counter.fsl")).expect("remove source file");
 
-    let source_package = json!({"identity": "test:recorded-export-counter", "version": "17"});
+    let source_package = json!({"identity": "example/counter-unit", "version": "7"});
     let export_request = json!({"format": "native-run/1", "request": {
-        "models": [],
-        "package": {"file": "checked-package.json", "source_package": source_package},
-        "export": {"profile": "filament.output.tla2/v1", "obligations": ["not-a-claim"],
-            "minimum_fidelity": "any"}}});
+        "models": models,
+        "package": {"file": "checked-package.json", "equality": "handoff/equality.json",
+            "source_package": source_package},
+        "export": export}});
     std::fs::write(
         directory.path().join("selected-export.json"),
         export_request.to_string(),
@@ -179,6 +195,14 @@ fn export_selected_package_preserves_source_reference_and_writes_target() {
     let value = document(&output);
     assert_eq!(value["operation"], "export", "{value}");
     assert_eq!(value["category"], "success", "{value}");
+    assert_eq!(
+        value["result"]["export"]["records"], source_records,
+        "selected-package export records must equal the source route"
+    );
+    assert_eq!(
+        value["result"]["export"]["target_text"], source_target_text,
+        "selected-package target text must equal the source route"
+    );
     assert_eq!(
         value["result"]["export"]["package"]["source_package"], source_package,
         "FSL must retain the selected package's caller-supplied source reference"
