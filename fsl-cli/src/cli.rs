@@ -2045,7 +2045,13 @@ fn with_started_providers<T: Send + 'static>(
                     return Err(format!("{error:?}"));
                 }
             };
-        let engines = std::mem::take(&mut providers.engines);
+        let engines = match filament_driver::run_engines(std::mem::take(&mut providers.engines)) {
+            Ok(engines) => engines,
+            Err(error) => {
+                providers.close();
+                return Err(format!("{error:?}"));
+            }
+        };
         let options = fsl_analyze::provider::ProviderOptions {
             provider_limits: limits,
         };

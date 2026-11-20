@@ -43,8 +43,8 @@ impl AnalyzeNegotiation {
 
     /// The negotiation over the manifest of FSL's engines and the caller's
     /// configured process providers, `descriptors` their admitted `Process`
-    /// descriptors (FSL FR-635): the same registry FSL builds when they are
-    /// handed to `analyze_with_providers`.
+    /// descriptors (FSL FR-635): the same registry FSL builds when the
+    /// engines of [`run_engines`] are handed to `analyze_with_providers`.
     ///
     /// # Errors
     ///
@@ -63,6 +63,22 @@ impl AnalyzeNegotiation {
     pub fn manifest(&self) -> &[cg::BackendDescriptor] {
         &self.manifest
     }
+}
+
+/// The engines a run hands to FSL beside its own: the reference hybrid
+/// engine, then `providers`. FSL registers them after the engines it links,
+/// so its registry equals the manifest of [`AnalyzeNegotiation::fsl`] and
+/// [`AnalyzeNegotiation::with_providers`].
+///
+/// # Errors
+///
+/// The registry's refusal of the hybrid engine's own manifest.
+pub fn run_engines(
+    providers: Vec<fsl_analyze::analyze::Engine>,
+) -> Result<Vec<fsl_analyze::analyze::Engine>, RegistrationRefusal> {
+    let mut engines = vec![fsl_analyze::analyze::Engine::hybrid_reference()?];
+    engines.extend(providers);
+    Ok(engines)
 }
 
 impl Negotiate for AnalyzeNegotiation {
@@ -608,11 +624,22 @@ mod tests {
     #[test]
     fn analyze_dispositions_equal_the_item_entrys() {
         let negotiation = AnalyzeNegotiation::fsl().expect("the engines register");
+        let mut run = Engines::fsl().expect("engines");
+        for engine in run_engines(Vec::new()).expect("the hybrid engine registers") {
+            run.with(engine).expect("a new backend");
+        }
+        let run_ids: Vec<&str> = run.registrations().map(|d| d.id().as_str()).collect();
+        let manifest_ids: Vec<&str> = negotiation
+            .manifest()
+            .iter()
+            .map(|entry| entry.identity.as_str())
+            .collect();
+        assert_eq!(
+            run_ids, manifest_ids,
+            "the manifest names the backends of the registry a run builds"
+        );
         let mut registry = Registry::new();
-        for descriptor in Engines::fsl_with_reference_hybrid()
-            .expect("engines")
-            .registrations()
-        {
+        for descriptor in run.registrations() {
             registry
                 .register(descriptor.clone())
                 .expect("a new identity");
