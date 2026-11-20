@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use super::*;
 
+fn option_section<'a>(text: &'a str, verb: &str) -> &'a str {
+    let heading = format!("{verb} options:\n");
+    let start = text.find(&heading).expect("actual option section heading");
+    let tail = &text[start..];
+    let length = tail.find("\n\n").map_or(tail.len(), |end| end + 1);
+    &tail[..length]
+}
+
 /// Trace: FR-002-AC-17
 /// Provenance: QSL-2478
 #[test]
@@ -131,6 +139,14 @@ fn every_executable_help_alias_has_exactly_its_production_option_metadata(
             "{}",
             entry.verb
         );
+        let actual_options = option_section(&canonical, entry.verb);
+        let root_options = option_section(&root, entry.verb);
+        assert_eq!(
+            actual_options.as_bytes(),
+            root_options.as_bytes(),
+            "{} options must retain root help's exact order and bytes",
+            entry.verb
+        );
         for spec in &entry.options {
             let line = observed
                 .get(spec.name)
@@ -155,8 +171,26 @@ fn every_executable_help_alias_has_exactly_its_production_option_metadata(
             assert_eq!(observed_spec.value.as_deref(), spec.value);
             assert_eq!(observed_spec.repeatable, spec.repeatable);
         }
-        let expected_first = format!("Usage: fsl {}", entry.usage[0]);
-        assert_eq!(canonical.lines().next(), Some(expected_first.as_str()));
+        let mut expected_usage = String::new();
+        for (index, form) in entry.usage.iter().enumerate() {
+            expected_usage.push_str(if index == 0 {
+                "Usage: fsl "
+            } else {
+                "       fsl "
+            });
+            expected_usage.push_str(form);
+            expected_usage.push('\n');
+        }
+        expected_usage.push('\n');
+        let actual_usage = canonical
+            .strip_suffix(actual_options)
+            .expect("standalone help ends with its complete options section");
+        assert_eq!(
+            actual_usage.as_bytes(),
+            expected_usage.as_bytes(),
+            "{} usage forms and separating blank line",
+            entry.verb
+        );
     }
     for verb in root_sections.keys() {
         assert!(
