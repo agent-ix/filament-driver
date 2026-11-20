@@ -59,3 +59,27 @@ Round 1, fix commit `a08046afa4b4ef4be672b51d324944e633bbd720`.
 | FND-002 | still-open | The selected-package request now ends at the expected lowering refusal and no longer asserts a successful result retaining the exact caller-supplied `source_package` identity/version. Preserve a separate successful CLI case or add another direct assertion for this supported current-pin behavior. |
 
 The current pin remains `374fe2a8`; this PR intentionally records its refusal. The successful AC-4 parity test reported in the latest FSL worktree does not change the driver's pinned behavior and is not evidence that this PR produces a successful export.
+
+Round 2, fix commit `7ccecd6b8c1f16fb76ca9012619e7ddfd8540d7a`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | A separate successful value-only selected-package CLI case now removes the source file, asserts exact `source_package` identity/version retention, and compares the written target file bytes with the returned `target_text`. The counter/equality refusal case remains separate and unchanged. |
+
+FND-002 after excerpt:
+
+```rust
+    assert_eq!(
+        value["result"]["export"]["package"]["source_package"], source_package,
+        "FSL must retain the selected package's caller-supplied source reference"
+    );
+    let text = value["result"]["export"]["target_text"]
+        .as_str()
+        .expect("target text from selected package");
+    assert_eq!(
+        std::fs::read(directory.path().join("selected.tla")).expect("the target file"),
+        text.as_bytes()
+    );
+```
+
+No new findings. The focused tests were not rerun by this reviewer; the coder reports both selected-package tests passed.
