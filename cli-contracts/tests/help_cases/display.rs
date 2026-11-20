@@ -7,7 +7,7 @@ use super::*;
 fn root_help_aliases_list_executable_and_unrouted_commands_with_output_policy(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = CliCase::from_environment()?;
-    let canonical = successful_text(&case.run(&[])?)?;
+    let canonical = successful_text(&case.run::<&str>(&[])?)?;
     for args in [vec!["--help"], vec!["-h"], vec!["help"]] {
         assert_eq!(successful_text(&case.run(&args)?)?, canonical);
     }
