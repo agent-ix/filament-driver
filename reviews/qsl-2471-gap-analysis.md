@@ -197,3 +197,13 @@ This is the explicitly assigned bounded semantic/trace review, not a repository 
   }
 ]
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The actual catalog code is stage_limit_exceeded, with token-count-exceeded/node-count-exceeded cause and configured limit 0. The original finding incorrectly named resource_exhausted; the assertion gap is fixed using the correct existing typed code. |
+
+## Disposition round 1 verdict
+
+PASS — all original test-oracle findings are fixed at 5cfdcb4c006a9e01218977b0c513aff18e28bc14. No additional findings in the fix diff. Current count is 26 tests: 23 active and 3 strict ignored cases (QSL-2348, QSL-2661, QSL-2663), which provide no active coverage. Accepted peer evidence: the three affected focused filters and scoped Clippy passed. No tests, lint, builds, probes or matrix reruns were performed during this disposition. The lead owns the final gate.

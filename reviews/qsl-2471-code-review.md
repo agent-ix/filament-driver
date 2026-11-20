@@ -194,3 +194,14 @@ Frozen candidate f144c347afccec52268b7b3cdb441f3d9cf44955; only run.rs and run_c
   }
 ]
 ```
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Both text modes parse exactly one completed result and compare its complete value with the independently asserted JSON result 12. |
+| FND-002 | fixed | Active extra/path cases assert code and actual member. The arguments case retains the strict member oracle under tracked QSL-2663 and is not counted as coverage. |
+
+## Disposition round 1 verdict
+
+PASS — all original test-oracle findings are fixed at 5cfdcb4c006a9e01218977b0c513aff18e28bc14. No additional findings in the fix diff. Current count is 26 tests: 23 active and 3 strict ignored cases (QSL-2348, QSL-2661, QSL-2663), which provide no active coverage. Accepted peer evidence: the three affected focused filters and scoped Clippy passed. No tests, lint, builds, probes or matrix reruns were performed during this disposition. The lead owns the final gate.
