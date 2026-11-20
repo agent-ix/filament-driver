@@ -16,7 +16,7 @@ with its exit code, for each outcome a user meets: proved, refuted with a
 replayable counterexample, incomplete under a limit or a deadline,
 unsupported or refused per item, and a refused request.
 
-Scope: FR-022-AC-1 through FR-022-AC-8.
+Scope: FR-022-AC-1 through FR-022-AC-10, and FR-022-AC-12.
 
 ## Test Procedure
 
@@ -43,6 +43,11 @@ Scope: FR-022-AC-1 through FR-022-AC-8.
 8. Run the AC-2 request and an unknown-backend item in text mode and assert
    their lines and exit codes (AC-7).
 9. Unit-test the negotiation over each candidate-outcome shape (AC-8).
+10. Run a `native-analyze/1` request over the timed Counter subject with one
+    unbounded timed-liveness item `always (holds(c.value = 0) implies
+    eventually holds(c.value = 0))` on `model-time`; assert the `fsl` binary
+    writes one `proved` item settled by EN-6, includes FR-632's `non_zeno`
+    record member, and exits 0 (AC-12).
 
 ## Expected Results
 

@@ -96,6 +96,54 @@ fn timer_request(name: &str, delay: u32, zeno: bool) -> AnalyzeRequest {
         )
 }
 
+fn timed_liveness_request() -> AnalyzeRequest {
+    let source = "\
+        language \"ix:native\" edition \"1-draft\";\n\
+        profile v = \"filament.model.complete/v1\";\n\
+        profile t = \"filament.temporal.complete/v1\";\n\
+        profile tt = \"filament.temporal.timed/v1\";\n\
+        model M = \"test/counter\";\n\
+        pre CanInc using v on M::Counter::inc { self.value < 3 }\n\
+        post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n\
+        dimension Time;\n\
+        unit s : Time = rational(1, 1);\n\
+        unit ms : Time = rational(1, 1000) * s;\n\
+        time M dense unit ms;\n\
+        temporal TimedLiveness using tt over (c: M::Counter) clock \"model-time\" on origin {\n\
+            always (holds(c.value = 0) implies eventually holds(c.value = 0))\n\
+        }\n";
+    AnalyzeRequest::new(
+        "timed-liveness",
+        json!([{"claim": "TimedLiveness"}]),
+        json!({}),
+    )
+    .with_file(
+        "/request/program/source/file",
+        "timed-liveness.fsl",
+        source.as_bytes(),
+    )
+}
+
+/// An unbounded liveness item over a dense-time subject is decided by EN-6
+/// through the real `fsl analyze` process and records the non-Zeno premise.
+#[trace("TC-036", "FR-022-AC-12")]
+#[test]
+fn analyze_timed_liveness_reports_non_zeno() {
+    let (document, exit) = timed_liveness_request().json();
+    assert_eq!(exit, Some(0), "{document}");
+    assert_eq!(document["operation"], "analyze");
+    assert_eq!(document["category"], "success");
+    assert_eq!(document["items"].as_array().map(Vec::len), Some(1));
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{item}");
+    assert_eq!(item["record"]["backend"], "en-6", "{item}");
+    assert!(
+        ["not-required", "assumed", "checked", "refuted"]
+            .contains(&item["record"]["non_zeno"].as_str().unwrap_or("")),
+        "a timed-liveness record carries its `non_zeno` premise: {item}"
+    );
+}
+
 /// A two-clock timer is proved to finish within its three-millisecond bound.
 #[trace("TC-036", "FR-022-AC-1", "TC-1592", "FR-632-AC-1")]
 #[test]
