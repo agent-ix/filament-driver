@@ -18,7 +18,7 @@ Reviewed the new helper examples against the supplied ticket acceptance and the 
 
 ## Verdict
 
-**CONDITIONAL** — correct the `FR-002-AC-19` binding. This is a diff-scoped acceptance and trace review; it does not certify the whole repository or every branch of the broad tagged criteria. Final focused testing remains pending the lead's post-review gate.
+**PASS** — disposition round 1 removes the unrelated `FR-002-AC-19` binding and retains `FR-002-AC-1`. This remains a diff-scoped acceptance review; the lead's final eight-test component gate is pending.
 
 ## Findings
 
@@ -33,3 +33,9 @@ Examined all five new test functions and their declared trace bindings. `FR-002-
 The deadline lifecycle defect is recorded once in SR-1443. Accepted in-lane test and Clippy results were not re-run. Whole-repository matrix/audit work was excluded by the user's instructions and dispatch scope; the binding analysis above is manual and limited to the changed tests and exact cited requirement rows.
 
 Plan completion: not assessed
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1: The test now declares only FR-002-AC-1. No malformed-source identity/canonicalization coverage is claimed, and the existing valid-source/type-refusal assertions are unchanged. |
