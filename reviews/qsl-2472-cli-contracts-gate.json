@@ -1,0 +1,55 @@
+{
+  "format": "fsl-cli-contract-gate/v1",
+  "ticket": "QSL-2472",
+  "reviewed_code_head": "cddaced2b0855f56225b03d2c561aead329399b0",
+  "gate_head": "62d05a4875aafa35c7a25d867ea0a67cd7a2fc64",
+  "scope": "Complete cli-contracts component present on the frozen PR branch",
+  "command": "cargo test --locked --manifest-path cli-contracts/Cargo.toml -- --test-threads=1",
+  "environment": {
+    "FSL": "explicit frozen L3 executable",
+    "FSL_TEST_PROVIDER": "explicit same-cohort authoritative fsl-test-provider",
+    "CARGO_TARGET_DIR": "owned existing cli-contracts/target",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_BUILD_JOBS": "2"
+  },
+  "cohort": {
+    "driver": "a260b3b26277bfa907ce77373c4f15dac6671083",
+    "fsl": "8877b38b6397055fa11dc2e7882ad87d02ecb654",
+    "codegen": "a11a66ab9c5eeee9163f5d4d084644296b565ba9",
+    "ir": "c7b62038ed95262e3e51477f0831978397c8c5f7"
+  },
+  "exit_code": 0,
+  "passed": 77,
+  "failed": 0,
+  "ignored": 3,
+  "groups": {
+    "library": {
+      "passed": 3,
+      "ignored": 0
+    },
+    "analyze": {
+      "passed": 37,
+      "ignored": 2
+    },
+    "check": {
+      "passed": 32,
+      "ignored": 1
+    },
+    "contracts": {
+      "passed": 5,
+      "ignored": 0
+    }
+  },
+  "pending": [
+    "QSL-2662",
+    "QSL-2234",
+    "QSL-2657"
+  ],
+  "notes": [
+    "Ignored required oracles are not passing coverage.",
+    "Later compile/run tests are absent from this frozen checkout; their independently accepted gates are not counted in this receipt.",
+    "Review artifacts and this receipt contain no source behavior changes. No main-move or confidence gate was run."
+  ]
+}

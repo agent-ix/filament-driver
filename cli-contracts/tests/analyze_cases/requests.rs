@@ -1,0 +1,271 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+use super::*;
+
+fn invalid_request(output: &Captured) -> Value {
+    let value = document(output, 20, "refusal");
+    assert!(value["items"].as_array().unwrap().is_empty());
+    assert_eq!(value["diagnostics"].as_array().unwrap().len(), 1);
+    assert_eq!(value["diagnostics"][0]["code"], "invalid-request");
+    value
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-620 Reading: closed request/item shapes, no caller-forged identity.
+#[test]
+fn request_schema_rejects_forged_and_unknown_members() -> Result<(), ContractError> {
+    let (case, request) = setup()?;
+    let mut variants = Vec::new();
+    for (field, value) in [
+        ("request_index", json!(8)),
+        ("extent", json!({})),
+        ("candidates", json!([])),
+        ("unknown_member", json!(true)),
+        ("claim", json!({"node":"forged"})),
+        ("required", json!("yes")),
+    ] {
+        let mut variant = request.clone();
+        variant["request"]["items"][0][field] = value;
+        variants.push((field, variant));
+    }
+    let mut unknown = request.clone();
+    unknown["request"]["unknown_member"] = json!(1);
+    variants.push(("unknown_member", unknown));
+    let mut fairness = request.clone();
+    fairness["request"]["items"][0]["temporal"] = json!({"fairness":[]});
+    variants.push(("fairness", fairness));
+    for (_member, variant) in variants {
+        write_request(&case, &variant)?;
+        let value =
+            invalid_request(&case.run(&["analyze", "data/request.json", "--format", "json"])?);
+        assert_eq!(value["last_stage"], Value::Null);
+        assert!(
+            value["diagnostics"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("request"),
+            "{value}"
+        );
+    }
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+#[test]
+fn malformed_wrong_format_and_duplicate_json_are_whole_request_refusals(
+) -> Result<(), ContractError> {
+    let case = CliCase::from_environment()?;
+    for bytes in [
+        b"{".as_slice(),
+        b"[]",
+        b"{\"format\":\"native-run/1\",\"request\":{}}",
+        b"{\"format\":\"native-analyze/1\",\"format\":\"native-analyze/1\",\"request\":{}}",
+    ] {
+        case.write("broken.json", bytes)?;
+        invalid_request(&case.run(&["analyze", "broken.json", "--format", "json"])?);
+    }
+    let text = case.run(&["analyze", "broken.json", "--format", "text"])?;
+    assert_eq!(text.0.status.code(), Some(20));
+    assert!(text.0.stdout.is_empty());
+    assert!(text
+        .stderr_text()?
+        .starts_with("fsl analyze: invalid-request:"));
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+#[test]
+fn request_files_cover_missing_empty_non_utf8_and_directory_inputs() -> Result<(), ContractError> {
+    let case = CliCase::from_environment()?;
+    case.write("empty.json", b"")?;
+    case.write("non-utf8.json", b"\xff")?;
+    case.write("folder/anchor", b"")?;
+    for (path, code) in [
+        ("missing.json", "io-error"),
+        ("empty.json", "invalid-request"),
+        ("non-utf8.json", "invalid-request"),
+        ("folder", "io-error"),
+    ] {
+        let value = document(
+            &case.run(&["analyze", path, "--format", "json"])?,
+            20,
+            "refusal",
+        );
+        assert_eq!(value["diagnostics"][0]["code"], code, "{path}: {value}");
+        assert_eq!(value["last_stage"], Value::Null);
+        assert!(!value["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap()
+            .is_empty());
+    }
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-026-AC-4; FR-624: default request bytes are bounded before decode.
+#[test]
+fn request_byte_boundary_is_admitted() -> Result<(), ContractError> {
+    let (case, mut request) = setup()?;
+    request["request"]["items"] = json!([{"claim":"WithinCapacity"}]);
+    let mut bytes = serde_json::to_vec(&request)?;
+    bytes.resize(1_048_576, b' ');
+    case.write("data/request.json", &bytes)?;
+    let accepted = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        0,
+        "success",
+    );
+    assert_eq!(accepted["items"][0]["record"]["result"], "proved");
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-624 Analyze refusals: admission byte limits refuse with exit 20.
+#[test]
+#[ignore = "QSL-2662: analyze intake misclassifies request bytes as incomplete exit 22"]
+fn oversized_analyze_request_is_an_admission_refusal() -> Result<(), ContractError> {
+    let (case, mut request) = setup()?;
+    request["request"]["items"] = json!([{"claim":"WithinCapacity"}]);
+    let mut bytes = serde_json::to_vec(&request)?;
+    bytes.resize(1_048_576, b' ');
+    bytes.push(b' ');
+    case.write("data/request.json", &bytes)?;
+    let refused = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        20,
+        "refusal",
+    );
+    assert!(refused["items"].as_array().unwrap().is_empty());
+    assert!(
+        refused["diagnostics"][0]
+            .to_string()
+            .contains("request_bytes"),
+        "{refused}"
+    );
+    Ok(())
+}
+
+/// Trace: FR-022-AC-1; FR-022-AC-5
+/// FSL FR-026-AC-5: request-relative files; stdin does not replace a path operand.
+#[test]
+fn file_operand_remains_authoritative_with_stdin_and_literal_dash() -> Result<(), ContractError> {
+    let (case, mut request) = setup()?;
+    request["request"]["items"] = json!([{"claim":"WithinCapacity"}]);
+    write_request(&case, &request)?;
+    document(
+        &case.run_stdin(
+            &["analyze", "data/request.json", "--format", "json"],
+            b"invalid stdin\xff",
+        )?,
+        0,
+        "success",
+    );
+    case.write("data/-", &serde_json::to_vec(&request)?)?;
+    document(
+        &case.run_stdin(
+            &["analyze", "data/-", "--format", "json"],
+            b"not request JSON",
+        )?,
+        0,
+        "success",
+    );
+    let absolute = case.directory().join("data/request.json");
+    document(
+        &case.run(&["analyze", absolute.to_str().unwrap(), "--format", "json"])?,
+        0,
+        "success",
+    );
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+#[test]
+fn a_bare_dash_is_not_a_stdin_request_option() -> Result<(), ContractError> {
+    let case = CliCase::from_environment()?;
+    let output = case.run_stdin(&["analyze", "-", "--format", "json"], b"{}")?;
+    assert_eq!(output.0.status.code(), Some(20));
+    let value = output.json()?;
+    assert_eq!(value["operation"], "analyze");
+    assert_eq!(value["diagnostics"][0]["code"], "invalid-request");
+    assert!(output.stderr_text()?.contains("unknown analyze option `-`"));
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+#[test]
+fn checker_and_snapshot_binding_failures_keep_the_stage() -> Result<(), ContractError> {
+    let (case, request) = setup()?;
+    case.write(
+        "data/workflow.fsl",
+        SOURCE
+            .replace("q.value <= 2", "missing_value <= 2")
+            .as_bytes(),
+    )?;
+    let checked = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        20,
+        "refusal",
+    );
+    assert_eq!(checked["last_stage"], "S3");
+    assert!(checked["items"].as_array().unwrap().is_empty());
+    assert_eq!(checked["diagnostics"][0]["code"], "missing_declaration");
+    case.write("data/workflow.fsl", SOURCE.as_bytes())?;
+    let mut snapshot: Value =
+        serde_json::from_slice(&std::fs::read(case.directory().join("data/start.json")).unwrap())?;
+    snapshot["populations"][0]["population"] = json!("ix://test/counter/undeclared");
+    case.write("data/start.json", &serde_json::to_vec(&snapshot)?)?;
+    write_request(&case, &request)?;
+    let bound = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        20,
+        "refusal",
+    );
+    assert_eq!(bound["last_stage"], "S4");
+    assert!(bound["items"].as_array().unwrap().is_empty());
+    assert!(!bound["diagnostics"].as_array().unwrap().is_empty());
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-620 default and empty item semantics.
+#[test]
+fn explicit_empty_items_and_omitted_items_have_different_meanings() -> Result<(), ContractError> {
+    let (case, mut request) = setup()?;
+    request["request"]["items"] = json!([]);
+    write_request(&case, &request)?;
+    let empty = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        0,
+        "success",
+    );
+    assert!(empty["items"].as_array().unwrap().is_empty());
+    request["request"].as_object_mut().unwrap().remove("items");
+    write_request(&case, &request)?;
+    let all = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        10,
+        "violation",
+    );
+    assert_eq!(all["items"][0]["claim_name"], "WithinCapacity");
+    assert_eq!(all["items"][1]["claim_name"], "NeverFull");
+    assert_eq!(all["items"][0]["request_index"], 0);
+    assert_eq!(all["items"][1]["request_index"], 1);
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-620: terminal certificates are outcomes, not caller-supplied item settings.
+#[test]
+fn a_caller_cannot_supply_an_accepted_certificate_instead_of_analysis() -> Result<(), ContractError>
+{
+    let (case, mut request) = setup()?;
+    request["request"]["items"][0]["certificate"] = json!({"accepted":true,"checker":"en-1-closure","identity":{"model":"test/counter","ordinal":0}});
+    write_request(&case, &request)?;
+    let value =
+        invalid_request(&case.run(&["analyze", "data/request.json", "--format", "json"])?);
+    assert_eq!(value["last_stage"], Value::Null);
+    assert!(value["diagnostics"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("certificate"));
+    Ok(())
+}
