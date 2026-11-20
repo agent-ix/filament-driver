@@ -31,3 +31,7 @@ Ticket: QSL-2561. A diff-scoped gap audit of the one production behaviour change
 - FSpec FR-711-AC-5 test `analyze_dispositions_equal_the_item_entrys`: examined. Its trace tag is unchanged and the oracle compares the driver against CG over the same manifest. The registry change is covered under SR-202612 FND-001.
 - The quoin matrix was not rerun. The scope is a pin wave with one default change.
 - Plan completion: not assessed
+
+## Dispositions
+
+No findings to dispose; the placeholder row has no outcome. Re-checked at 3f8b20f: FR-022 Behavior bullet 1 is now met for `fsl analyze` and for `fsl run` with providers. It is not met for `fsl run` without provider flags, which is recorded as SR-202612 FND-002.

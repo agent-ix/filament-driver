@@ -1044,11 +1044,22 @@ fn run(options: RunOptions) -> CommandResult {
                 );
             }
         };
-        return match command::run_with_limits_and_overrides(
+        return match command::run_with_providers_and_limits_and_overrides(
             &options.path,
             options.intake_limits,
             &overrides,
             &negotiation,
+            match filament_driver::run_engines(Vec::new()) {
+                Ok(engines) => engines,
+                Err(error) => {
+                    return CommandResult::failure(
+                        Category::InternalFailure,
+                        format!("could not initialize FSL engines: {error:?}"),
+                    );
+                }
+            },
+            &fsl_analyze::provider::ProviderOptions::default(),
+            &Cancel::new(),
         ) {
             Ok(result) => {
                 let render_sources = fsl_command::render_sources(result.sources());
@@ -1091,11 +1102,22 @@ fn run(options: RunOptions) -> CommandResult {
                     );
                 }
             };
-            return match command::run_with_limits_and_overrides(
+            return match command::run_with_providers_and_limits_and_overrides(
                 &options.path,
                 options.intake_limits,
                 &overrides,
                 &negotiation,
+                match filament_driver::run_engines(Vec::new()) {
+                    Ok(engines) => engines,
+                    Err(error) => {
+                        return CommandResult::failure(
+                            Category::InternalFailure,
+                            format!("could not initialize FSL engines: {error:?}"),
+                        );
+                    }
+                },
+                &fsl_analyze::provider::ProviderOptions::default(),
+                &Cancel::new(),
             ) {
                 Ok(result) => {
                     let render_sources = fsl_command::render_sources(result.sources());

@@ -43,3 +43,20 @@ Measured: I rebuilt `fsl` at 141e46c and ran that ignored test with `--include-i
 - Tests run by the reviewer: `cargo test -p fsl-cli --bin fsl -- provider signals`, 25 passed. These are the in-crate `with_provider_request` and `Engine::external` users. Also cli-contracts analyze value_forms with `--include-ignored`: 4 passed, and the 1 ignored QSL-2234 case fails as described above.
 - Known reds (2 lib tests on qualification kernel_version) are excluded. I confirmed the cause cheaply: codegen 556f47c3 docs/qualification/ir1530-general-route-scalar-table.json carries kernel_version 1.
 - Rust lane: no new unsafe, panics, API or unwraps. The only `expect` is in test support.
+
+## New findings (disposition pass 1)
+
+Re-checked at 3f8b20fbc9dcb82866738635b34528cfefd8af33 (fix commit 3f8b20f).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | `fsl run` with no `--provider-config` or `--provider-limit` still skews. The package and extracted-clause paths negotiate with `AnalyzeNegotiation::fsl()`, whose manifest includes fsl-hybrid-reference, but call FSL's `run_with_limits_and_overrides`, which builds `Engines::fsl()` with `providers: Vec::new()`. FR-022 says `fsl run` registers the reference provider whenever it settles requirement items. Fix: call `run_with_providers_and_limits_and_overrides` with `run_engines(Vec::new())`. | fsl-cli/src/cli.rs:1038-1052, fsl-cli/src/cli.rs:1085-1099 |
+| FND-003 | low | The test helper `with_provider_request` negotiates over `AnalyzeNegotiation::with_providers([&descriptor])`, which includes the hybrid manifest, but hands FSL only `vec![engine]`. That is the same skew in test support, so provider tests run a registry the CLI no longer builds. Fix: hand FSL `run_engines(vec![engine])`. | fsl-cli/src/test_support.rs:98-104 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 3f8b20f adds `run_engines` (src/analyze.rs:68-82), which returns `Engine::hybrid_reference()` followed by the providers. `with_started_providers` (fsl-cli/src/cli.rs:2048-2054) routes the started engines through it, so analyze, `run_with_providers` and the other `with_started_providers` users (cli.rs:1971, 2074, 2129, 2467) now hand FSL the same registry the manifest names. The FR-711-AC-5 test now builds `Engines::fsl()` plus `run_engines` the way FSL's `engines_with` does, and asserts that the backend ids equal the manifest ids before comparing dispositions, so the test now catches this skew. The `with_providers` doc is corrected. The `fsl run` paths without provider flags were outside FND-001's named entries and are recorded as FND-002. |
+
+Verification in this pass: I ran `cargo test --locked -p fsl-cli --test cli_contract` at 3f8b20f before the disk hold removed the target. Result: 57 passed, 0 failed, 1 ignored, the same as before the fix. The cli-contracts `analyze_cases` rerun did not happen: no build is allowed under the disk hold, and the code lead will run it before merge. I did not rerun the driver lib tests; the coder's fix1.log reports 124 passed and the 2 known reds.

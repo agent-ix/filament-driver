@@ -100,7 +100,7 @@ pub fn with_provider_request<T: Send + 'static>(
     fsl_command::command::analyze_with_providers(
         &request_path,
         &negotiation,
-        vec![engine],
+        filament_driver::run_engines(vec![engine]).expect("the hybrid engine registers"),
         &fsl_analyze::provider::ProviderOptions::default(),
         &filament_exact::Cancel::new(),
     )
