@@ -13,7 +13,7 @@ Compared the new export contracts with the driver's export behavior and the lock
 
 ## Verdict
 
-CONDITIONAL — close the confined admission gaps below without rerunning accepted groups or blocked source-model exports.
+PASS — the three findings are addressed at 214968cf32a18301143a158eee510eaeabb1c036. Package admission remains a strict pending product oracle under QSL-2672, not runnable coverage; the original coder owns the single final component gate.
 
 ## Findings
 
@@ -39,3 +39,13 @@ Plan completion: not assessed
 This is the user-authorized diff-scoped gap analysis, including reverse ownership, stubs, test intent and coverage inflation checks for the five changed files. Existing matrix measurements are accepted; matrix recomputation and repository-wide inventory are explicitly out of scope. No tests, builds or product probes ran. Known pending cases are not counted as coverage, and real target/evidence success is not claimed. The final component gate remains with the original coder.
 
 The authoritative FSL export rules were read from the locked dependency at /home/peter/.cargo/git/checkouts/filament-spec-language-1ba4ce0e71f23cf3/8877b38/spec/functional, because the separate local language clone lacks the later export requirements. No old-cohort result was used to claim a new product bug.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 adds a real missing-request invocation with trailing --output, requires the option-naming refusal before I/O, and compares the owned directory entries before and after. Coder reports the focused new test passed; its result was accepted without rerun. |
+| FND-002 | fixed | Each conflict now asserts --evidence and the other argument role: --output or request file. The criterion does not require the literal positional pathname. The strengthened assertions passed according to the coder's accepted focused receipt. |
+| FND-003 | fixed | A complete malformed source_package table asserts missing references/members, scalar/null/array types, nonstring identity/version, empty strings and unknown members before opening a missing selected package. Exact invalid_runtime_input causes, member paths, no result and no target remain strict. The actual early package-decoding defect has one owner QSL-2672 with blocks2474; the table is ignored under that owner and is not counted as coverage. The package assembly test names both admission QSL-2672 and subsequent QSL-1979. No known failure was rerun. |
+
+Round 1 disposition inspected only the original-to-fix changed lines and accepted the focused and scoped-Clippy reports. No new findings, product probes, test runs or builds were introduced. Current totals are 16 active and nine strict pending cases.

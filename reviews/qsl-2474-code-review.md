@@ -13,7 +13,7 @@ Reviewed all five changed Rust files, their real public CLI invocations, parsed 
 
 ## Verdict
 
-CONDITIONAL — add the four source headers. The original coder owns the single final component gate after disposition.
+PASS — FND-001 is fixed at 214968cf32a18301143a158eee510eaeabb1c036. The original coder owns the single final component gate.
 
 ## Findings
 
@@ -28,3 +28,9 @@ All files in scope were examined. Original source, model and snapshot data exerc
 The source-model assembly, target limit, exact successful text, selected checked-package success and output-write-failure cases remain strict ignored under QSL-1979. Evidence dispatch, duplicate-envelope and stdin cases remain strict ignored under QSL-2667, QSL-2669 and QSL-2670. Those tests are not runnable coverage. Active semantic negatives require ordered not-an-obligation records and absence of a target; they do not accept an unrelated mapper refusal as generation success.
 
 Existing native harness deliveries and the coder's focused and Clippy results are accepted without rerunning them. No build, product probe, test execution, matrix recomputation or repository inventory was performed. A filename search that included historical reviews was stopped; no historical review was inspected from that search. This is a diff review, not a repository-wide assurance claim.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1 at 214968cf32a18301143a158eee510eaeabb1c036 adds the matching AGPL SPDX header to all four child modules. Only the fix diff was examined; no tests or builds were repeated. |
