@@ -158,3 +158,120 @@ fn interruption_while_stdin_is_open_finishes_with_a_structured_incomplete_outcom
     }
     Ok(())
 }
+
+/// Provenance: QSL-2473; FSL FR-644-AC-10 unknown-backend item refusal preserves the trace stream
+#[test]
+fn mixed_unknown_backend_is_an_item_refusal_without_stopping_observations() -> TestResult {
+    let case = configured("proved", true)?;
+    let mut input = request();
+    input["request"]["items"] =
+        json!([{"claim":"Nonnegative","kind":"value-validity","backend":"monitor.unregistered"}]);
+    write_request(&case, &input)?;
+    let observations = records(&[2, 4, 9, 3], true);
+    let output = case.run_stdin(&arguments(), &observations)?;
+    let (events, summary) = stream(&output, 20)?;
+    assert_eq!(summary["records"], 5);
+    assert_eq!(
+        summary["refused"], 0,
+        "an item refusal is not a malformed record"
+    );
+    let item = &summary["items"][0];
+    assert_eq!(item["category"], "refusal", "{item}");
+    assert_eq!(
+        item["record"]["diagnostic"]["code"], "invalid_capability",
+        "{item}"
+    );
+    assert_eq!(
+        item["record"]["diagnostic"]["cause"], "unknown-backend",
+        "{item}"
+    );
+    assert_eq!(
+        item["record"]["diagnostic"]["detail"]["backend"], "monitor.unregistered",
+        "{item}"
+    );
+    assert!(!case.directory().join("transport-request.json").exists());
+    write_request(&case, &request())?;
+    let independent = case.run_stdin(
+        &["monitor", "inputs/monitor.json", "--format", "json"],
+        &observations,
+    )?;
+    let (native_events, _) = stream(&independent, 10)?;
+    assert_eq!(events, native_events);
+    Ok(())
+}
+
+/// Provenance: QSL-2473; FSL FR-644-AC-10 clause violations outrank provider inconclusive results
+#[test]
+fn mixed_provider_unknown_preserves_violation_precedence_but_cannot_prove_success() -> TestResult {
+    for all_successful in [false, true] {
+        let case = configured("unknown", true)?;
+        if all_successful {
+            let mut input = request();
+            input["request"]["clauses"] = json!([{"name":"DesiredSeen"}]);
+            input["request"]["items"] =
+                json!([{"claim":"Nonnegative","kind":"value-validity","backend":BACKEND}]);
+            write_request(&case, &input)?;
+        }
+        let output = case.run_stdin(&arguments(), &records(&[2, 9], true))?;
+        let (_, summary) = stream(&output, if all_successful { 22 } else { 10 })?;
+        let item = &summary["items"][0];
+        assert_eq!(item["record"]["result"], "inconclusive", "{item}");
+        assert_eq!(
+            item["record"]["cause"],
+            json!({"kind":"solver-inconclusive"}),
+            "{item}"
+        );
+        assert!(item.get("certificate").is_none());
+        assert_eq!(
+            summary_clause(&summary, "DesiredSeen")["category"],
+            "success"
+        );
+        assert_eq!(summary_clause(&summary, "DesiredSeen")["settled"], true);
+        if all_successful {
+            assert_eq!(summary["clauses"].as_array().expect("clauses").len(), 1);
+        } else {
+            assert_eq!(
+                summary_clause(&summary, "StaysLow")["category"],
+                "violation"
+            );
+            assert_eq!(summary_clause(&summary, "StaysLow")["settled"], true);
+        }
+        assert!(case.directory().join("transport-request.json").is_file());
+    }
+    Ok(())
+}
+
+/// Provenance: QSL-2473; FSL FR-644-AC-10 duplicate backend identities refuse before records
+#[test]
+fn mixed_duplicate_provider_identity_refuses_before_any_event_or_settle_request() -> TestResult {
+    let case = configured("proved", true)?;
+    let mut transport: Value =
+        serde_json::from_slice(&fs::read(case.directory().join("transport.json"))?)?;
+    let duplicate = transport["providers"][0].clone();
+    transport["providers"]
+        .as_array_mut()
+        .expect("providers")
+        .push(duplicate);
+    case.write("transport.json", &serde_json::to_vec(&transport)?)?;
+    let output = case.run_stdin(&arguments(), &records(&[9], true))?;
+    assert_eq!(output.0.status.code(), Some(20), "{output:?}");
+    let outcome = output.json()?;
+    assert_eq!(outcome["format"], "filament-outcome/1");
+    assert_eq!(outcome["operation"], "monitor");
+    assert_eq!(outcome["category"], "refusal");
+    assert!(
+        outcome["diagnostics"]
+            .as_array()
+            .expect("diagnostics")
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["code"] == "invalid-request"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("providers"))
+            }),
+        "{outcome}"
+    );
+    assert!(!case.directory().join("transport-request.json").exists());
+    Ok(())
+}

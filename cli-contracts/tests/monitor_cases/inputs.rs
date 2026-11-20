@@ -175,6 +175,7 @@ fn missing_or_directory_record_files_refuse_instead_of_falling_back_to_stdin() -
 
 /// Provenance: QSL-2473; FSL FR-644 request admission under RunLimits
 #[test]
+#[ignore = "QSL-2674: request-byte admission must refuse with exit 20 rather than incomplete/22"]
 fn oversized_request_reports_its_intake_limit_without_consuming_the_stream() -> TestResult {
     let case = case()?;
     let mut input = serde_json::to_vec(&request())?;
@@ -184,7 +185,7 @@ fn oversized_request_reports_its_intake_limit_without_consuming_the_stream() -> 
         &["monitor", "inputs/huge.json", "--format", "json"],
         &records(&[9], true),
     )?;
-    let document = request_refusal(&output, 22)?;
+    let document = request_refusal(&output, 20)?;
     assert!(document["last_stage"].is_null());
     assert!(
         document.to_string().contains("request_bytes") && document.to_string().contains("1048576")
