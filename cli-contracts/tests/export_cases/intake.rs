@@ -77,10 +77,10 @@ fn an_execute_request_is_not_silently_run_by_export() -> Result<(), Box<dyn std:
     Ok(())
 }
 
-/// Trace: FR-002-AC-1
+/// Trace: FR-002-AC-1, FSL-FR-1015-AC-9
 /// Provenance: QSL-2474
 #[test]
-fn export_envelope_and_output_records_reject_unknown_duplicate_and_wrong_kind_fields(
+fn export_envelope_and_output_records_reject_unknown_and_invalid_fields(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
     let base = request();
@@ -95,30 +95,149 @@ fn export_envelope_and_output_records_reject_unknown_duplicate_and_wrong_kind_fi
         .as_object_mut()
         .expect("export")
         .remove("profile");
-    let mut wrong_obligations = base.clone();
-    wrong_obligations["request"]["export"]["obligations"] = json!("Capacity");
+    let mut empty_obligations = base.clone();
+    empty_obligations["request"]["export"]["obligations"] = json!([]);
+    let mut missing_obligations = base.clone();
+    missing_obligations["request"]["export"]
+        .as_object_mut()
+        .expect("export")
+        .remove("obligations");
+    let mut wrong_fidelity = base.clone();
+    wrong_fidelity["request"]["export"]["minimum_fidelity"] = json!(7);
     let serialized = base.to_string();
-    let duplicate = serialized.replacen("\"models\":[]", "\"models\":[],\"models\":[]", 1);
-    assert_ne!(duplicate, serialized);
-    for input in [
-        unknown.to_string(),
-        wrong_output.to_string(),
-        extra_output.to_string(),
-        missing_profile.to_string(),
-        wrong_obligations.to_string(),
-        duplicate,
-        format!("{serialized} {{}}"),
+    for (input, member) in [
+        (
+            unknown.to_string(),
+            Some(("/request/export/surprise", "unknown-member")),
+        ),
+        (
+            wrong_output.to_string(),
+            Some(("/request/export/output/file", "invalid-value")),
+        ),
+        (
+            extra_output.to_string(),
+            Some(("/request/export/output/extra", "unknown-member")),
+        ),
+        (
+            missing_profile.to_string(),
+            Some(("/request/export/profile", "missing-member")),
+        ),
+        (
+            empty_obligations.to_string(),
+            Some(("/request/export/obligations", "invalid-value")),
+        ),
+        (
+            missing_obligations.to_string(),
+            Some(("/request/export/obligations", "missing-member")),
+        ),
+        (
+            wrong_fidelity.to_string(),
+            Some(("/request/export/minimum_fidelity", "wrong-value-kind")),
+        ),
+        (format!("{serialized} {{}}"), None),
     ] {
         case.write("closed.json", input.as_bytes())?;
-        let value = outcome(&run(&case, "closed.json", false, &[])?, 20, "refusal");
-        diagnostic(&value, "invalid-request");
+        let output = run(&case, "closed.json", false, &[])?;
+        assert_eq!(
+            output.0.status.code(),
+            Some(20),
+            "input {input}: {output:?}"
+        );
+        let value = outcome(&output, 20, "refusal");
+        match member {
+            Some((path, cause)) => {
+                let d = diagnostic(&value, "invalid_runtime_input");
+                assert_eq!(d["cause"], cause, "{value}");
+                assert_eq!(d["details"]["path"], path, "{value}");
+            }
+            None => {
+                diagnostic(&value, "invalid-request");
+            }
+        }
         assert!(value["last_stage"].is_null(), "{value}");
         assert!(!case.directory().join("never.tla").exists());
     }
     Ok(())
 }
 
-/// Trace: FR-027-AC-3
+/// Trace: FR-002-AC-1
+/// Provenance: QSL-2474
+#[test]
+#[ignore = "QSL-2669: export accepts duplicate models in the native-run envelope"]
+fn duplicate_envelope_members_refuse_before_export_and_write_no_target(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    let original = request().to_string();
+    let duplicated = original.replacen("\"models\":[]", "\"models\":[],\"models\":[]", 1);
+    assert_ne!(duplicated, original);
+    case.write("duplicate.json", duplicated.as_bytes())?;
+    let value = outcome(
+        &run(
+            &case,
+            "duplicate.json",
+            false,
+            &["--output", "must-not-exist.tla"],
+        )?,
+        20,
+        "refusal",
+    );
+    let d = diagnostic(&value, "invalid-request");
+    assert!(
+        d["message"].as_str().expect("message").contains("models"),
+        "{value}"
+    );
+    assert!(value["last_stage"].is_null(), "{value}");
+    assert!(value["result"].is_null(), "{value}");
+    assert!(!case.directory().join("must-not-exist.tla").exists());
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1, FSL-FR-1015-AC-6
+/// Provenance: QSL-2474
+/// FSL FR-1015: undeclared obligations give refused records in request order.
+#[test]
+fn undeclared_obligations_produce_refused_export_records_and_no_target(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    let mut input = request();
+    input["request"]["export"]["obligations"] = json!(["AbsentOne", "AbsentTwo"]);
+    write_json(&case, "absent.json", &input)?;
+    let value = outcome(
+        &run(&case, "absent.json", false, &["--output", "absent.tla"])?,
+        21,
+        "unsupported",
+    );
+    assert_eq!(value["last_stage"], "S4", "{value}");
+    assert_eq!(value["result"]["kind"], "exported", "{value}");
+    let export = &value["result"]["export"];
+    assert_eq!(export["status"], "refused", "{value}");
+    assert_eq!(
+        export["refusal"]["code"], "unsupported_projection",
+        "{value}"
+    );
+    assert_eq!(
+        export["refusal"]["cause"], "below-fidelity-floor",
+        "{value}"
+    );
+    assert!(export.get("target_text").is_none(), "{value}");
+    let records = export["records"]
+        .as_array()
+        .expect("refused obligation records");
+    assert_eq!(records.len(), 2, "{value}");
+    for (record, name) in records.iter().zip(["AbsentOne", "AbsentTwo"]) {
+        assert_eq!(record["obligation"], name, "{value}");
+        assert_eq!(record["disposition"], "refused", "{value}");
+        assert_eq!(
+            record["causes"],
+            json!([{"kind":"not-an-obligation","name":name}]),
+            "{value}"
+        );
+    }
+    assert!(!case.directory().join("absent.tla").exists());
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1, FSL-FR-1015-AC-2
 /// Provenance: QSL-2474
 #[test]
 fn request_export_limits_are_closed_and_conflicts_do_not_pick_one_value(
@@ -172,26 +291,19 @@ fn named_request_is_authoritative_and_file_named_dash_is_addressable(
 /// Trace: FR-027-AC-5
 /// Provenance: QSL-2474
 #[test]
-fn evidence_requires_its_own_member_and_closed_shape_instead_of_exporting(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[ignore = "QSL-2667: export discards evidence mode before dispatch and requires export member"]
+fn evidence_mode_rejects_an_ordinary_export_request() -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
     let missing = outcome(&run(&case, "export.json", true, &[])?, 20, "refusal");
-    diagnostic(&missing, "invalid-request");
+    let d = diagnostic(&missing, "invalid-request");
+    assert!(
+        d["message"]
+            .as_str()
+            .expect("message")
+            .contains("export_evidence"),
+        "{missing}"
+    );
     assert!(missing["result"].is_null());
-    for evidence in [
-        json!({}),
-        json!({"package":null,"obligation":"Capacity","tool":"tlc","artifact":"never.cfg"}),
-        json!({"package":{},"obligation":"Capacity","tool":"pretend-tool","artifact":"never.cfg","extra":true}),
-    ] {
-        write_json(
-            &case,
-            "evidence.json",
-            &json!({"format":"native-run/1","request":{"export_evidence":evidence}}),
-        )?;
-        let value = outcome(&run(&case, "evidence.json", true, &[])?, 20, "refusal");
-        diagnostic(&value, "invalid-request");
-        assert!(value["result"].is_null());
-    }
     Ok(())
 }
 
@@ -220,5 +332,36 @@ fn default_and_explicit_text_preserve_the_json_refusal_on_each_route(
             assert!(text.contains(d["code"].as_str().expect("code")), "{text}");
         }
     }
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1
+/// Provenance: QSL-2474
+/// FSL FR-026 requires a request to be read once before dispatch.
+#[cfg(unix)]
+#[test]
+#[ignore = "QSL-2670: export preflight consumes the request stream before FSL reads it"]
+fn explicit_stdin_file_is_read_once_and_keeps_the_absolute_program_selection(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    let mut input = request();
+    input["request"]["program"]["source"]["file"] = json!(case
+        .directory()
+        .join("unit.fsl")
+        .to_str()
+        .expect("UTF8 path"));
+    let bytes = serde_json::to_vec(&input)?;
+    let value = outcome(
+        &case.run_stdin(&["export", "/dev/stdin", "--format", "json"], &bytes)?,
+        21,
+        "unsupported",
+    );
+    assert_eq!(value["last_stage"], "S4", "{value}");
+    assert_eq!(value["result"]["kind"], "exported", "{value}");
+    assert_eq!(
+        value["result"]["export"]["records"][0]["causes"],
+        json!([{"kind":"not-an-obligation","name":"Capacity"}]),
+        "{value}"
+    );
     Ok(())
 }

@@ -38,6 +38,8 @@ fn bin_fixture() -> Result<CliCase, ContractError> {
     let case = fixture()?;
     case.write("bin.fsl", BIN_SOURCE.as_bytes())?;
     write_json(&case, "bins.json", &bin_model())?;
+    let mut model_source = source("bins.json");
+    model_source["identity"] = json!("contracts/bins");
     write_json(
         &case,
         "start.json",
@@ -47,7 +49,7 @@ fn bin_fixture() -> Result<CliCase, ContractError> {
         &case,
         "export.json",
         &json!({"format":"native-run/1","request":{
-        "models":[{"format":"semantic-ir/2.0.0","source":source("bins.json")}],"program":{"source":source("bin.fsl")},
+        "models":[{"format":"semantic-ir/2.0.0","source":model_source}],"program":{"source":source("bin.fsl")},
         "export":{"profile":"filament.output.tla2/v1","obligations":["Capacity"],"initial":"start.json"}}}),
     )?;
     Ok(case)
@@ -131,7 +133,12 @@ fn target_byte_limit_prevents_partial_output_and_a_sufficient_limit_assembles(
     assert!(!case.directory().join("tiny.tla").exists());
     assert_eq!(value["result"]["kind"], "exported", "{value}");
     assert_eq!(value["result"]["export"]["status"], "incomplete", "{value}");
-    assert!(value.to_string().contains("export.output_bytes"), "{value}");
+    assert_eq!(
+        value["result"]["export"]["cause"],
+        json!({"type":"limit-reached","limit":"output_bytes","value":1,"setting":"export.output_bytes"}),
+        "{value}"
+    );
+    assert_eq!(value["result"]["export"]["records"], json!([]), "{value}");
     assembled(&run(
         &case,
         "export.json",
@@ -144,5 +151,77 @@ fn target_byte_limit_prevents_partial_output_and_a_sufficient_limit_assembles(
         ],
     )?);
     assert!(!std::fs::read(case.directory().join("fitting.tla"))?.is_empty());
+    Ok(())
+}
+
+/// Trace: FR-027-AC-1
+/// Provenance: QSL-2474
+/// FSL FR-1039: a public checked package replaces source for export.
+#[test]
+#[ignore = "QSL-1979: export model binding blocks source/package target assembly"]
+fn checked_package_export_uses_its_selected_source_reference_without_source_fallback(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = bin_fixture()?;
+    let input: Value =
+        serde_json::from_slice(&std::fs::read(case.directory().join("export.json"))?)?;
+    write_json(
+        &case,
+        "compile.json",
+        &json!({"format":"native-compile/1","request":{
+        "models":input["request"]["models"],"program":input["request"]["program"],"output":{"package":"bin.package.json"}}}),
+    )?;
+    let compiled = case.run(&["compile", "compile.json", "--format", "json"])?;
+    assert_eq!(compiled.0.status.code(), Some(0), "{compiled:?}");
+    let mut packaged = input;
+    packaged["request"]
+        .as_object_mut()
+        .expect("request")
+        .remove("program");
+    packaged["request"]["package"] = json!({"file":"bin.package.json","source_package":{"identity":"contracts:bin-capacity","version":"1"}});
+    write_json(&case, "package-export.json", &packaged)?;
+    std::fs::remove_file(case.directory().join("bin.fsl"))?;
+    let value = assembled(&run(
+        &case,
+        "package-export.json",
+        false,
+        &["--output", "package.tla"],
+    )?);
+    let target = value["result"]["export"]["target_text"]
+        .as_str()
+        .expect("target text");
+    assert_eq!(
+        std::fs::read(case.directory().join("package.tla"))?,
+        target.as_bytes()
+    );
+    assert_eq!(
+        value["result"]["export"]["package"]["source_package"],
+        json!({"identity":"contracts:bin-capacity","version":"1"}),
+        "{value}"
+    );
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1, FSL-FR-286-AC-23
+/// Provenance: QSL-2474
+#[test]
+#[ignore = "QSL-1979: model binding blocks assembly before destination-write failure"]
+fn unavailable_output_parent_returns_internal_failure_without_partial_target(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = bin_fixture()?;
+    let value = outcome(
+        &run(
+            &case,
+            "export.json",
+            false,
+            &["--output", "missing-parent/model.tla"],
+        )?,
+        30,
+        "internal-failure",
+    );
+    assert_eq!(value["last_stage"], "S4", "{value}");
+    let d = diagnostic(&value, "output-failure");
+    assert_eq!(d["cause"], "output-failure", "{value}");
+    assert!(value["result"].is_null());
+    assert!(!case.directory().join("missing-parent/model.tla").exists());
     Ok(())
 }
