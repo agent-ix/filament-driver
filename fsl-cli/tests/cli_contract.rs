@@ -13,16 +13,16 @@ use std::{
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
 use fsl_command::command::{self, CheckInputs};
-use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
+use fsl_cst::format::{FormatLimits, FormatRefusal, format_with_limits};
 use fsl_foundation::{
-    diagnostic::{Code, Staged},
     SettingLimits, Source, SourceIdentity,
+    diagnostic::{Code, Staged},
 };
 use fsl_replay::{
-    spine::{
-        check, package, parse, select, DependencyInput, PackageLimits, ParseRequest, SpineLimits,
-    },
     Operation, OutcomeDiagnostic, OutcomeDocument,
+    spine::{
+        DependencyInput, PackageLimits, ParseRequest, SpineLimits, check, package, parse, select,
+    },
 };
 use ix_cli_kit::version::Agreement;
 use ix_trace_rs::trace;
@@ -1428,9 +1428,9 @@ fn compile_refusal_emits_fsl_package_outcome_document() {
     assert_fsl_document(&output.stdout, &package_outcome_bytes(INVALID_SOURCE));
 }
 
-/// Trace: QSL-2192; an empty compile program is an invalid package value.
+/// Trace: QSL-2192; an empty compile program is an invalid request.
 #[test]
-fn compile_empty_program_is_invalid_package() {
+fn compile_empty_program_is_invalid_request() {
     let directory = tempfile::tempdir().expect("create compile request directory");
     let request = directory.path().join("empty-program.json");
     std::fs::write(
@@ -1449,8 +1449,8 @@ fn compile_empty_program_is_invalid_package() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("CLI emits a refusal document");
     assert_eq!(document["category"], "refusal");
-    assert_eq!(document["diagnostics"][0]["code"], "invalid_package");
-    assert_eq!(document["diagnostics"][0]["cause"], "invalid-value");
+    assert!(document["last_stage"].is_null(), "{document}");
+    assert_eq!(document["diagnostics"][0]["code"], "invalid-request");
 }
 
 /// Trace: QSL-1994; `fsl run` preserves the FSL state-rule witness in JSON.
@@ -2083,7 +2083,6 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
 
 /// Trace: QSL-2192; the library owns formatted text and the CLI passes it through unchanged.
 #[test]
-#[ignore = "QSL-2192: language FR-286-AC-16 OutcomeDocument::from_format result not implemented"]
 fn format_json_result_carries_text() {
     let text = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE])
