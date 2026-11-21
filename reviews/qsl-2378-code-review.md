@@ -138,3 +138,22 @@ Ticket: QSL-2378. Linear has-review was already present. All posted comments pas
 - review: c73c250e-b3c0-40b7-987d-ecb3a0cb6ffb
 - dispositions round 1: 87abca96-b0d8-447f-9e47-d404e13f41e5
 - dispositions round 2: e189cf64-ce53-407e-bc73-72a9f16cb125
+
+
+## Integration custody — 7eac980
+
+Narrow integration disposition at driver `7eac980458ba93e0566b6dcf24793d3da3b3e2f0`, rebased from reviewed `e94b181e148a7edb8b1f08f6aab1b37d46af023f` onto the normal driver cohort `6b8f2a7`. This appends custody to the existing review cycle; it is not a fresh review, matrix run or baseline measurement.
+
+The range-diff preserves the original launcher, typed process failures, dependency, shared Rust fixtures, partial-frame exit handling and request-write/remaining-grace fixes. The platform-policy commit changes only the placement of the unchanged memory-enforcement accessor into the existing implementation alongside hybrid exchange. Both methods remain present. The sole added integration commit adds `UnsupportedPlatform` to the hybrid transport error match. Explicit unsupported memory requests are still refused by `PluginSession::start` before process launch, so that defensive match arm does not turn an admitted platform refusal into an active exchange outcome. The normal manifest and lockfile agree on FSL `f5977125981288ea1bd36fb67f71780182055aac`; the adapter retains the observed Crash/NonzeroExit `ProcessFailed` mapping without inventing a resource measurement.
+
+The author reports a passing focused locked CLI/frontend compilation at this head. This reviewer ran no Cargo or runtime tests. The earlier five Linux and four macOS host results remain evidence for their earlier source heads only. Current-head qualification remains conditional on the queued three CLI and two unit tests; no current-head runtime pass is claimed. No Linear operations were performed.
+
+Static integration disposition: CLEAR, no new finding. Original FND-001 through FND-008 remain fixed: shared real Rust workloads, observed process-status precedence, external watchdog, bare imported trace attributes, sibling-first launcher discovery, explicit platform enum oracle, remaining grace and write-side status recovery are retained. `git diff --check 6b8f2a7..7eac980` exited 0.
+
+Structural validation of these four retained artifacts with the explicit driver repository scope exited 0 with no diagnostics.
+
+## Integration runtime disposition — 7eac980
+
+Parent-reported frozen-head qualification at `7eac980458ba93e0566b6dcf24793d3da3b3e2f0`: corrected same-lease prerequisite build exited 0; frontend selected 3 passed, 0 failed, 0 ignored; the two retained same-head unit selections each passed 1, 0 failed, 0 ignored. All five targeted CLI tests therefore pass, clearing the current-head runtime condition above.
+
+The bounded integration disposition is CLEAR and ready for the parent to copy and merge. Historical Linux five and macOS four host results remain bound to the earlier reviewed source, not this integration head. The historical whole-repository gap FAIL is unchanged. The remaining macOS watchdog work keeps QSL-2378 In Progress and is not claimed complete by this merge. This reviewer ran no Cargo, measurements or Linear operations.
