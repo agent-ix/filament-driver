@@ -285,6 +285,8 @@ where
                         max_total_bytes: limits.max_total_bytes,
                     },
                     max_stderr_bytes: limits.max_stderr_bytes,
+                    max_memory_bytes: limits.max_memory_bytes,
+                    max_cpu_ms: limits.max_cpu_ms,
                     cancellation_grace: limits.cancellation_grace,
                 },
                 cancel,
@@ -572,6 +574,8 @@ mod tests {
             max_frame_bytes: 4096,
             max_total_bytes: 16_384,
             max_stderr_bytes: 1024,
+            max_memory_bytes: 4_294_967_296,
+            max_cpu_ms: 600_000,
             cancellation_grace: Duration::from_millis(500),
         }
     }

@@ -8,6 +8,9 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/agent-ix/filament-driver"
 publish = false
 
+[features]
+test-support = []
+
 [dependencies]
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "v0.3.1", features = ["serde_json"] }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -18,6 +21,16 @@ process-wrap = { version = "=10.0.1", default-features = false, features = ["std
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.31.3", features = ["feature"] }
+rlimit = "=0.11.0"
+
+[[bin]]
+name = "fsl-plugin-launch"
+path = "src/launch.rs"
+
+[[bin]]
+name = "fsl-resource-test-provider"
+path = "tests/fixtures/resource_provider.rs"
+required-features = ["test-support"]
 
 [lints]
 workspace = true

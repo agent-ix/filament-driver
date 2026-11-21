@@ -1958,9 +1958,7 @@ fn manifest_tool(
 }
 
 /// Start one configured process provider under the run's transport limits
-/// and admit its `hello`. The process memory and CPU-time limits are not
-/// applied: the plugin host offers neither (FSpec FR-462 sets them "where
-/// the platform provides one").
+/// and Unix process resource limits and admit its `hello`.
 fn start_configured_provider(
     configured: &crate::provider_config::ProviderEntry,
     limits: &fsl_analyze::provider::ProviderLimits,
@@ -1988,6 +1986,8 @@ fn start_configured_provider(
         max_frame_bytes: limits.max_frame_bytes,
         max_total_bytes: limits.max_total_bytes,
         max_stderr_bytes: limits.max_stderr_bytes,
+        max_memory_bytes: limits.max_memory_bytes,
+        max_cpu_ms: limits.max_cpu_ms,
         cancellation_grace: std::time::Duration::from_millis(limits.grace_ms),
     };
     provider.start(&configured.path, &arguments, limits, cancel)

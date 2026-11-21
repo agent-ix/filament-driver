@@ -35,6 +35,33 @@ fn wrap_plugin_command(command: Command) -> CommandWrap {
     command
 }
 
+fn provider_command(executable: &Path, limits: RunLimits) -> io::Result<Command> {
+    #[cfg(unix)]
+    {
+        let host = std::env::current_exe()?;
+        let directory = host.parent().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "host executable has no directory")
+        })?;
+        // Cargo's test executables live one level below its installed binaries.
+        let directory = if directory.file_name() == Some(std::ffi::OsStr::new("deps")) {
+            directory.parent().unwrap_or(directory)
+        } else {
+            directory
+        };
+        let mut command = Command::new(directory.join("fsl-plugin-launch"));
+        command
+            .arg(limits.max_memory_bytes.to_string())
+            .arg(limits.max_cpu_ms.to_string())
+            .arg(executable);
+        Ok(command)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = limits;
+        Ok(Command::new(executable))
+    }
+}
+
 /// Caller-controlled per-frame and per-run byte ceilings from ADR-029 PL-3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrameLimits {
@@ -312,6 +339,10 @@ pub struct RunLimits {
     pub frames: FrameLimits,
     /// Maximum standard-error bytes retained for display.
     pub max_stderr_bytes: u64,
+    /// Maximum provider address space and data segment, in bytes, on Unix.
+    pub max_memory_bytes: u64,
+    /// Maximum provider CPU time, rounded up to whole seconds on Unix.
+    pub max_cpu_ms: u64,
     /// Grace period for a plugin to settle open items after cancellation.
     pub cancellation_grace: Duration,
 }
@@ -383,7 +414,8 @@ where
         if let Some(cause) = start.cancel.cause() {
             return Err(cancel_error(cause));
         }
-        let mut command = Command::new(start.executable);
+        let mut command = provider_command(start.executable, start.limits)
+            .map_err(|error| PluginError::from_spawn(start.executable, error))?;
         command
             .args(start.arguments)
             .stdin(Stdio::piped())
@@ -1713,6 +1745,8 @@ mod tests {
         RunLimits {
             frames: LIMITS,
             max_stderr_bytes: 128,
+            max_memory_bytes: 4_294_967_296,
+            max_cpu_ms: 600_000,
             cancellation_grace: Duration::from_millis(250),
         }
     }

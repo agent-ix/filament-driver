@@ -18,14 +18,14 @@ generators.
 
 ## Getting started
 
-Download a prebuilt `fsl` binary from the [latest release](https://github.com/agent-ix/filament-driver/releases/latest)
+Download the prebuilt `fsl` and `fsl-plugin-launch` binaries from the [latest release](https://github.com/agent-ix/filament-driver/releases/latest)
 (Linux x86_64 and aarch64, macOS arm64 and x86_64). Each release carries a
 `SHA256SUMS.txt`. Or build from source: `rust-toolchain.toml` pins Rust 1.98.1,
 which `rustup` installs on first use. Install the `fsl` binary using the
 repository's locked dependencies:
 
 ```
-cargo install --git https://github.com/agent-ix/filament-driver --locked fsl-cli
+cargo install --git https://github.com/agent-ix/filament-driver --locked fsl-cli filament-plugin-host
 ```
 
 To install from a local checkout instead:
@@ -34,9 +34,14 @@ To install from a local checkout instead:
 git clone https://github.com/agent-ix/filament-driver
 cd filament-driver
 cargo install --path fsl-cli --locked
+cargo install --path filament-plugin-host --locked
 ```
 
 Check the install with `fsl --version`.
+
+Keep both binaries in the same directory. On Unix, `fsl-plugin-launch` applies
+the provider's memory and CPU limits before executing it. CPU milliseconds round
+up to whole seconds, the unit supported by the operating system.
 
 ## Commands
 
