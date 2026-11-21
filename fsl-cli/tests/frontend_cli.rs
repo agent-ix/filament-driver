@@ -23,7 +23,6 @@ const MISSING_SOURCE: &str = concat!(
 mod test_provider_path;
 #[path = "common/timed_analyze.rs"]
 mod timed_analyze;
-
 const RUN_REQUEST: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/frontend-run.json"
@@ -485,6 +484,7 @@ fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
                 dependencies: &input.dependencies,
                 limits: fsl_replay::spine::SpineLimits::default(),
                 call: input.call,
+                integer_division: input.integer_division,
                 object_environment: &ObjectEnvironment::default(),
                 cancel: filament_exact::Cancel::new(),
                 engine: ExecutionEngine::Interpreter,
@@ -909,9 +909,11 @@ fn timed_event_profile_cause_removed() {
             probability >= 0.9 [ eventually holds(c.value <= 3) ]\n\
           }\n",
     );
-    let frontend_error = fsl_command::command::analyze(
+    let frontend_error = fsl_command::command::analyze_with_providers(
         &request.path(),
         &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
+        filament_driver::run_engines(Vec::new()).expect("the hybrid engine registers"),
+        &fsl_analyze::provider::ProviderOptions::default(),
         &filament_exact::Cancel::new(),
     )
     .expect_err("the frontend refuses model time over an untimed model");
@@ -1391,9 +1393,11 @@ fn analyze_provider_limit_sets_the_request_deadline() {
 #[test]
 fn analyze_document_equals_the_library_document() {
     let request = AnalyzeRequest::new("parity", one_item("BelowThree"), serde_json::json!({}));
-    let library = fsl_command::command::analyze(
+    let library = fsl_command::command::analyze_with_providers(
         &request.path(),
         &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
+        filament_driver::run_engines(Vec::new()).expect("the hybrid engine registers"),
+        &fsl_analyze::provider::ProviderOptions::default(),
         &filament_exact::Cancel::new(),
     )
     .unwrap_or_else(|_| panic!("the request is accepted"));
@@ -1936,7 +1940,7 @@ fn diagnostic_codes(output: &Output) -> Vec<(String, String)> {
 /// law to the check; an unknown law refuses before the source is read; the
 /// option given twice refuses with usage and no stdout byte; a header law
 /// that disagrees refuses `conflicting-definition`; `run`, `compile`,
-/// `analyze` and `monitor` refuse the option as unknown. QSL-2279.
+/// `analyze`, `prove` and `monitor` refuse the option as unknown. QSL-2279.
 #[trace("TC-2189", "FR-767-AC-7")]
 #[test]
 fn check_takes_the_integer_division_law_from_its_option() {
@@ -1983,16 +1987,20 @@ fn check_takes_the_integer_division_law_from_its_option() {
             "unsupported-selection".to_owned()
         )]
     );
-    // In `--format json` mode the message is in the stdout document.
-    let document = String::from_utf8_lossy(&unknown.stdout);
+    let unknown_document: serde_json::Value =
+        serde_json::from_slice(&unknown.stdout).expect("unknown-law check document");
+    let message = unknown_document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("unknown-law diagnostic message");
     assert!(
-        document.contains(
+        message.contains(
             "integer-division law `ceiling` supplied by `--integer-division` is not one of \
              `euclidean`, `floor`, `truncating`"
         ),
-        "{document}"
+        "{message}"
     );
-    assert!(!document.contains("could not read"), "{document}");
+    assert!(!message.contains("could not read"), "{message}");
+    assert!(unknown.stderr.is_empty(), "{unknown:?}");
     let near_miss = fsl(&["check", absent, "--integer-division", "Floor"]);
     assert_eq!(near_miss.status.code(), Some(20));
 
@@ -2035,9 +2043,7 @@ fn check_takes_the_integer_division_law_from_its_option() {
         "conflicting-definition".to_owned()
     )));
 
-    // `prove` is not routed by this build: it answers every invocation with
-    // its `unsupported_operation` result (FSpec FR-522).
-    for verb in ["run", "compile", "analyze", "monitor"] {
+    for verb in ["run", "compile", "analyze", "prove", "monitor"] {
         let output = fsl(&[verb, "request.json", "--integer-division", "floor"]);
         assert_eq!(output.status.code(), Some(20), "{verb}: {output:?}");
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2047,13 +2053,32 @@ fn check_takes_the_integer_division_law_from_its_option() {
         );
         assert!(!stderr.contains("could not read"), "{verb}: {stderr}");
     }
+
+    for flag in ["--integer-division", "--bogus"] {
+        let output = fsl(&["prove", "request.json", flag, "floor", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(20), "{flag}: {output:?}");
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("an outcome document");
+        assert_eq!(document["operation"], "prove", "{document}");
+        assert_eq!(document["category"], "refusal", "{document}");
+        assert!(
+            document["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|diagnostic| diagnostic["code"] == "invalid-request"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains(flag))),
+            "{flag}: {document}"
+        );
+    }
 }
 
 /// FSL FR-767-AC-7, run half: `fsl run` over a request with
 /// `"integer_division": "floor"` calling `q(-7, 3)` exits 0 with value -3.
 #[trace("TC-2189", "FR-767-AC-7")]
 #[test]
-#[ignore = "QSL-1989: FSL's native-run/1 reader refuses `integer_division` as an unknown field (FR-767 run half not in language main)"]
 fn run_takes_the_integer_division_law_from_its_request() {
     let directory = TestDirectory(
         std::env::temp_dir().join(format!("fsl-integer-division-run-{}", std::process::id())),

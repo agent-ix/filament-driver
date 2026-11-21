@@ -1162,14 +1162,6 @@ fn run(options: RunOptions) -> CommandResult {
         integer_division,
         mut call,
     } = input;
-    // The execution request carries no division law, so a law in the request is refused
-    // rather than dropped.
-    if integer_division.is_some() {
-        return CommandResult::input_refusal(
-            Operation::Execute,
-            "the request carries an integer_division law, which this run path does not apply",
-        );
-    }
     let mut limits = SpineLimits::default();
     if let Err(error) = options.limits.apply_to(&mut limits, &mut call) {
         return CommandResult::input_refusal(Operation::Execute, error.to_string());
@@ -1185,6 +1177,7 @@ fn run(options: RunOptions) -> CommandResult {
         dependencies: &dependencies,
         limits,
         call,
+        integer_division,
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),
         engine: options.engine,
@@ -2686,7 +2679,8 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
 /// checks refuse, and only then does the operation run.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
     let Some(entry) = options::entry(verb.name()) else {
-        return unrouted_verb(verb, format);
+        return unrouted_option_refusal(verb, raw_arguments)
+            .unwrap_or_else(|| unrouted_verb(verb, format));
     };
     let operation = verb.operation();
     let scanned = match options::scan(entry, raw_arguments) {
@@ -2741,6 +2735,27 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => CommandResult::input_refusal(operation, error),
         },
         Verb::Prove | Verb::Generate | Verb::Render => unrouted_verb(verb, format),
+    }
+}
+
+/// An unknown option on an unrouted verb refuses as it does on a routed one.
+/// Help and version spellings are left for the unsupported answer (FR-002-AC-25).
+fn unrouted_option_refusal(verb: Verb, raw_arguments: &[OsString]) -> Option<CommandResult> {
+    let entry = options::unrouted_entry(verb.name())?;
+    let arguments: Vec<OsString> = raw_arguments
+        .iter()
+        .filter(|argument| {
+            argument.to_str().is_none_or(|text| {
+                !options::HELP_OPTIONS.contains(&text) && !options::VERSION_OPTIONS.contains(&text)
+            })
+        })
+        .cloned()
+        .collect();
+    match options::scan(entry, &arguments) {
+        Err(options::Refusal::Usage(message)) => {
+            Some(CommandResult::input_refusal(verb.operation(), message))
+        }
+        Ok(_) | Err(options::Refusal::Repeated(_)) => None,
     }
 }
 

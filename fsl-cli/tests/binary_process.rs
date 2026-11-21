@@ -515,6 +515,7 @@ fn machine_run_writes_the_canonical_fsl_outcome() {
             wire_arguments: Vec::new(),
             snapshot: None,
         },
+        integer_division: None,
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),
         engine: ExecutionEngine::Interpreter,

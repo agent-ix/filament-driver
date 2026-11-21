@@ -16,7 +16,7 @@ under mutation of the table; that the root-help layout keeps the sections
 the docs generator reads; that `fsl <verb> --help` writes the verb's usage
 lines and options section with the specified precedence; that `--version`
 is a root option only; and that `--color` is refused everywhere.
-Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26.
+Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28.
 
 ## Test Procedure
 

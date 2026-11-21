@@ -111,6 +111,30 @@ fn recognized_unrouted_verbs_use_twenty_one_and_name_the_actual_verb() -> Result
     Ok(())
 }
 
+/// Trace: FR-002-AC-28
+/// Provenance: FSL FR-767-AC-7; an unknown option on an unrouted verb refuses
+/// exit 20 as an invalid-request outcome before the verb answers unsupported.
+#[test]
+fn unrouted_prove_refuses_an_unknown_option_before_answering_unsupported(
+) -> Result<(), ContractError> {
+    let case = fixture()?;
+    for flag in ["--integer-division", "--bogus"] {
+        let output = case.run(&["prove", "program.fsl", flag, "floor", "--format", "json"])?;
+        assert_eq!(output.0.status.code(), Some(20), "{output:?}");
+        let value = output.json()?;
+        assert_eq!(value["format"], "filament-outcome/1", "{value}");
+        assert_eq!(value["operation"], "prove", "{value}");
+        assert_eq!(value["category"], "refusal", "{value}");
+        let diagnostics = value["diagnostics"].as_array().expect("diagnostics");
+        assert!(
+            diagnostics.iter().any(|d| d["code"] == "invalid-request"
+                && d["message"].as_str().is_some_and(|m| m.contains(flag))),
+            "{value}"
+        );
+    }
+    Ok(())
+}
+
 /// Trace: FR-002-AC-2, FR-002-AC-4, FR-002-AC-23
 /// Provenance: QSL-2476; FSL FR-285 success row.
 #[test]

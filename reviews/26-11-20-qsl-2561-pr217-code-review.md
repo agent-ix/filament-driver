@@ -60,3 +60,18 @@ Re-checked at 3f8b20fbc9dcb82866738635b34528cfefd8af33 (fix commit 3f8b20f).
 | FND-001 | fixed | 3f8b20f adds `run_engines` (src/analyze.rs:68-82), which returns `Engine::hybrid_reference()` followed by the providers. `with_started_providers` (fsl-cli/src/cli.rs:2048-2054) routes the started engines through it, so analyze, `run_with_providers` and the other `with_started_providers` users (cli.rs:1971, 2074, 2129, 2467) now hand FSL the same registry the manifest names. The FR-711-AC-5 test now builds `Engines::fsl()` plus `run_engines` the way FSL's `engines_with` does, and asserts that the backend ids equal the manifest ids before comparing dispositions, so the test now catches this skew. The `with_providers` doc is corrected. The `fsl run` paths without provider flags were outside FND-001's named entries and are recorded as FND-002. |
 
 Verification in this pass: I ran `cargo test --locked -p fsl-cli --test cli_contract` at 3f8b20f before the disk hold removed the target. Result: 57 passed, 0 failed, 1 ignored, the same as before the fix. The cli-contracts `analyze_cases` rerun did not happen: no build is allowed under the disk hold, and the code lead will run it before merge. I did not rerun the driver lib tests; the coder's fix1.log reports 124 passed and the 2 known reds.
+
+## New findings (disposition pass 2)
+
+Re-checked at 11b747fd14d2562150564c26e21ceca944b76ffd by reading the code only. The PR was merged as e858b6e8 while this pass ran, and no build or test ran in this pass.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The fsl-cli parity tests build their library-side reference over a different registry from the one the CLI now runs. The references call `command::analyze` or `command::monitor` with `AnalyzeNegotiation::fsl()` and no providers, so FSL builds `Engines::fsl()`. The CLI they are compared against now runs `run_engines(..)`, which includes fsl-hybrid-reference. Either the parity assertions now fail, or they compare runs over different registries without noticing. These tests are frontend_cli and monitor_cli, which the coder's checks did not include; this pass did not run them either. Fix: hand the library side `run_engines(Vec::new())` through `analyze_with_providers` and `MonitorProviders.providers`. | fsl-cli/tests/frontend_cli.rs:912-916, fsl-cli/tests/frontend_cli.rs:1394-1398, fsl-cli/tests/monitor_cli.rs:113-117 |
+
+## Dispositions (round 2)
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | Both `fsl run` sites without provider flags (fsl-cli/src/cli.rs:1047-1062 and 1105-1120) now call `run_with_providers_and_limits_and_overrides` with `run_engines(Vec::new())`. In FSL 8f71444d, `run_with_limits_and_overrides` is that same entry with no providers, `ProviderOptions::default()` and a fresh `Cancel`, so the only change is the added hybrid engine. A `run_engines` error returns an InternalFailure result instead of panicking. |
+| FND-003 | fixed | `with_provider_request` (fsl-cli/src/test_support.rs:103) hands FSL `run_engines(vec![engine])`, which matches its `with_providers([&descriptor])` negotiation. |

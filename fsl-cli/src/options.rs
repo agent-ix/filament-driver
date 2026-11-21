@@ -310,6 +310,24 @@ fn build() -> Vec<VerbEntry> {
     ]
 }
 
+/// The entry of a recognized verb this build does not route. Its options
+/// refuse as unknown like a routed verb's, so an unknown option exits 20
+/// before the verb answers unsupported; it has no help section.
+#[must_use]
+pub fn unrouted_entry(verb: &str) -> Option<&'static VerbEntry> {
+    static ENTRIES: OnceLock<Vec<VerbEntry>> = OnceLock::new();
+    ENTRIES
+        .get_or_init(|| {
+            vec![VerbEntry {
+                verb: "prove",
+                usage: vec!["prove [options] <request-file>"],
+                options: vec![format()],
+            }]
+        })
+        .iter()
+        .find(|entry| entry.verb == verb)
+}
+
 /// Every verb that executes operations, in `Commands:` order.
 pub fn table() -> &'static [VerbEntry] {
     static TABLE: OnceLock<Vec<VerbEntry>> = OnceLock::new();

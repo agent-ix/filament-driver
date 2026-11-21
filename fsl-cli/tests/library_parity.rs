@@ -30,6 +30,10 @@ const VALUE_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     function p using v(x: Digit): Boolean pure { x < 10 }\n\
     function q using v(x: Digit): Boolean pure { x < 5 }\n";
 
+const DIVISION_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
+    profile v = \"filament.value.complete/v1\";\n\
+    function q using v(a: Int[-7, 7], b: Int[1, 3]): Int[-7, 7] pure { a div b }\n";
+
 const MALFORMED_SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"filament.value.complete/v1\";\n\
     function f using v(: Boolean pure { true }\n";
@@ -139,6 +143,16 @@ fn library_execute(
     function: &str,
     arguments: Vec<CallArgument>,
 ) -> OutcomeDocument {
+    library_execute_with_law(path, bytes, function, arguments, None)
+}
+
+fn library_execute_with_law(
+    path: &str,
+    bytes: &[u8],
+    function: &str,
+    arguments: Vec<CallArgument>,
+    integer_division: Option<fsl_replay::AdmittedIntegerDivision>,
+) -> OutcomeDocument {
     let packages = BTreeMap::new();
     let dependencies = DependencyInput::default();
     let request = ExecutionRequest {
@@ -160,6 +174,7 @@ fn library_execute(
             wire_arguments: Vec::new(),
             snapshot: None,
         },
+        integer_division,
         object_environment: &ObjectEnvironment::default(),
         cancel: Cancel::new(),
         engine: ExecutionEngine::Interpreter,
@@ -304,4 +319,62 @@ fn a_malformed_check_source_is_named_by_the_supplied_path() {
         &library_check(&path, MALFORMED_SOURCE.as_bytes()),
         "check",
     );
+}
+
+/// Trace: FR-767-AC-7; `fsl run` with a request's `integer_division` law prints
+/// the library outcome `execute` gives for the same admitted law, byte for
+/// byte, and the two laws give different values for `q(-7, 3)`.
+#[test]
+fn binary_run_equals_the_library_run_under_each_integer_division_law() {
+    use fsl_replay::DefinitionRole;
+    let (_directory, path) = source_file("division", DIVISION_SOURCE);
+    let source_path = std::fs::canonicalize(&path).expect("existing source");
+    let arguments = vec![
+        CallArgument {
+            parameter: "a".to_owned(),
+            value: Value::Integer(Integer::from(-7_i64)),
+        },
+        CallArgument {
+            parameter: "b".to_owned(),
+            value: Value::Integer(Integer::from(3_i64)),
+        },
+    ];
+    for (law, role, expected_value) in [
+        ("floor", DefinitionRole::IntegerDivisionFloor, "-3"),
+        (
+            "truncating",
+            DefinitionRole::IntegerDivisionTruncating,
+            "-2",
+        ),
+    ] {
+        let request = source_file(
+            law,
+            &serde_json::json!({"format": "native-run/1", "request": {"models": [],
+                "integer_division": law,
+                "program": {"source": {"authority": "filament", "identity": path,
+                    "file": source_path, "document": "Division", "formal_revision": 1}},
+                "call": {"function": "q", "arguments": [
+                    {"parameter": "a", "value": -7}, {"parameter": "b", "value": 3}]}}})
+            .to_string(),
+        );
+        let admitted = fsl_replay::admit_integer_division(&[role.reference()], None)
+            .expect("the law is admitted");
+        let library = library_execute_with_law(
+            &path,
+            DIVISION_SOURCE.as_bytes(),
+            "q",
+            arguments.clone(),
+            Some(admitted),
+        );
+        let output = fsl(&["run", &request.1]);
+        assert_parity(&output, &library, law);
+        assert_eq!(output.status.code(), Some(0), "{law}: {output:?}");
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("run prints one JSON document");
+        assert_eq!(
+            document["result"],
+            serde_json::json!({"kind": "completed", "value": {"integer": expected_value}}),
+            "{law}: {document}"
+        );
+    }
 }
