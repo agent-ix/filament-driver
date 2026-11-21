@@ -425,6 +425,8 @@ fn manifest_descriptor(manifest: &ProviderManifest) -> Result<Value, RequestStag
 
 #[cfg(test)]
 mod tests {
+    use ix_trace_rs::trace;
+
     use super::*;
 
     fn hello(kind: Value, mode: Value) -> ManifestStage {
@@ -441,7 +443,7 @@ mod tests {
         }
     }
 
-    #[ix_trace_rs::trace("TC-047", "FR-022-AC-11")]
+    #[trace("TC-047", "FR-022-AC-11")]
     #[test]
     fn hybrid_hello_retains_dynamics_and_solver_bounds_through_fsl_admission() {
         let wire = serde_json::json!({"backend": "hybrid-process",
@@ -472,7 +474,7 @@ mod tests {
         assert_eq!(retained, wire);
     }
 
-    #[ix_trace_rs::trace("TC-047", "FR-022-AC-11")]
+    #[trace("TC-047", "FR-022-AC-11")]
     #[test]
     fn hybrid_hello_refuses_malformed_or_unrecognized_dynamics() {
         for dynamics in [
