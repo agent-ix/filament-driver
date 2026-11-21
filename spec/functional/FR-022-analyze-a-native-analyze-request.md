@@ -102,6 +102,20 @@ and the driver writes that document and exits 22. Unlike a configured `fsl
 run` (FR-006-AC-4), the signal is consumed once the run ends rather than
 re-raised, because FSL FR-624 gives the cancellation an outcome.
 
+### Current system behavior: mixed-capability providers (QSL-2234 slice)
+
+The current QSL-2234 consuming slice temporarily refuses registration of a
+process provider whose `hello` advertises both (`value-validity`, `unbounded`)
+and (`temporal-satisfaction`, `unbounded`) with `dynamics` `["hybrid"]`.
+This is a typed registration refusal before any item runs: its diagnostic
+names the provider and both capability groups, every started provider session
+is shut down, and neither capability group is silently dropped. This records
+incomplete implementation of the full contract below, which still admits
+such mixed manifests; it does not narrow their eligibility. A combined engine
+carrying the value provider and hybrid exchange under one backend identity
+needs an FSL-owned API first. That combined-provider admission remains open
+under QSL-2234.
+
 ## Inputs
 
 - One request-file operand, resolved as `fsl run` resolves its operand; files
