@@ -4,8 +4,10 @@
 
 use std::collections::BTreeMap;
 
-use filament_contract_model::{CheckedRational, SelectedMonitorTypeClosure};
-use filament_exact::{Cancel, Integer, NodeKey, Rational};
+use filament_contract_model::{
+    CheckedNodeId, CheckedPackageV2, CheckedRational, SelectedMonitorTypeClosure,
+};
+use filament_exact::{Cancel, Integer, NodeKey, Rational, ValueType};
 use filament_semantic_value::{
     declaration::{
         CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
@@ -19,6 +21,42 @@ use super::{
     closure::ClosureFacts, lowering::node_key, MonitorPreparationError as Error,
     MonitorPreparationLimits,
 };
+
+#[cfg(test)]
+mod tests;
+
+fn unsupported_source_type(package: &CheckedPackageV2, node: &CheckedNodeId) -> Error {
+    let Some(kind) = package.node_kind(node) else {
+        return Error::InvalidAdmittedScalar {
+            node: Box::new(node.clone()),
+        };
+    };
+    match crate::monitor_refusal::unsupported_at(package, node, &[], kind, None) {
+        Ok(payload) => Error::Unsupported(Box::new(payload)),
+        Err(error) => Error::Internal(error),
+    }
+}
+
+fn source_record_fields(
+    package: &CheckedPackageV2,
+    record: &filament_contract_model::SelectedSourceRecordRow,
+) -> Result<Vec<FieldDeclaration>, Error> {
+    record
+        .members
+        .iter()
+        .map(|member| {
+            let value_type = member
+                .value_type
+                .clone()
+                .ok_or_else(|| unsupported_source_type(package, &record.structural_node))?;
+            Ok(FieldDeclaration::new(
+                member.admitted_name.as_ref(),
+                value_type,
+                member.presence,
+            ))
+        })
+        .collect()
+}
 
 pub(super) fn rational(value: &CheckedRational) -> Result<Rational, Error> {
     let part = |text: &str| text.parse::<Integer>().map_err(|_| Error::Rational);
@@ -90,7 +128,10 @@ fn units(
 
 /// Build the retained type environment: source records, tuples and unions from
 /// the admitted producer rows, and the closure's unit table.
+/// `package` is the closure's original admitted owner, used for typed source
+/// diagnostics when a clock-bearing declaration has no runtime value form.
 pub fn build_type_environment(
+    package: &CheckedPackageV2,
     closure: &SelectedMonitorTypeClosure<'_>,
     facts: &ClosureFacts<'_>,
     limits: MonitorPreparationLimits,
@@ -99,17 +140,7 @@ pub fn build_type_environment(
     let name = |segments: &[Box<str>]| segments.join(".");
     let mut composites = Vec::new();
     for record in facts.source_records {
-        let fields = record
-            .members
-            .iter()
-            .map(|member| {
-                FieldDeclaration::new(
-                    member.admitted_name.as_ref(),
-                    member.value_type.clone(),
-                    member.presence,
-                )
-            })
-            .collect();
+        let fields = source_record_fields(package, record)?;
         composites.push(CompositeDeclaration::new(
             record.record_key.clone(),
             name(&record.qualified_declaration),
@@ -124,12 +155,23 @@ pub fn build_type_environment(
                 tuple
                     .positions
                     .iter()
-                    .map(|p| p.value_type.clone())
-                    .collect(),
+                    .map(|p| {
+                        p.value_type
+                            .clone()
+                            .ok_or_else(|| unsupported_source_type(package, &tuple.structural_node))
+                    })
+                    .collect::<Result<Vec<ValueType>, Error>>()?,
             ),
         ));
     }
     for union in facts.source_unions {
+        if union
+            .members
+            .iter()
+            .any(|member| !member.clock_payload.is_empty())
+        {
+            return Err(unsupported_source_type(package, &union.structural_node));
+        }
         let members = union
             .members
             .iter()

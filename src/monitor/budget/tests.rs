@@ -19,6 +19,68 @@ fn key() -> CheckedNodeId {
     }
 }
 
+#[ix_trace_rs::trace("FR-019")]
+#[test]
+fn temporal_binding_declaring_source_is_charged_before_inspection_completes() {
+    use filament_contract_model::{CheckedSourceRef, ClockConfiguration, TemporalBinding};
+
+    let cancel = Cancel::new();
+    let limits = MonitorPreparationLimits {
+        work: u64::MAX,
+        storage: 1_000,
+    };
+    let mut binding = TemporalBinding {
+        declaration: key(),
+        occurrence: 0,
+        clock_name: "events".into(),
+        clock: ClockConfiguration::EventPosition {
+            sequence_authority: "events".into(),
+        },
+        source_unit: None,
+        trace: None,
+    };
+    let mut absent = Budget::new(limits, &cancel);
+    absent.inspect(&binding).unwrap();
+    binding.source_unit = Some(CheckedSourceRef {
+        authority: "agent-ix".into(),
+        identity: "declaring".into(),
+    });
+    let mut present = Budget::new(limits, &cancel);
+    present.inspect(&binding).unwrap();
+    assert_eq!(
+        present.work() - absent.work(),
+        20,
+        "source record, two strings and all 17 UTF-8 bytes"
+    );
+    let total = present.work();
+    let mut exact = Budget::new(
+        MonitorPreparationLimits {
+            work: total,
+            ..limits
+        },
+        &cancel,
+    );
+    exact.inspect(&binding).unwrap();
+    assert_eq!(exact.work(), total);
+    assert_eq!(exact.storage(), 0);
+    let mut short = Budget::new(
+        MonitorPreparationLimits {
+            work: total - 1,
+            ..limits
+        },
+        &cancel,
+    );
+    assert!(
+        matches!(short.inspect(&binding), Err(MonitorPreparationError::Work { consumed, next: 9, .. }) if consumed == total - 9)
+    );
+    assert_eq!(
+        short.work(),
+        total - 9,
+        "earlier charges survive the denied identity bytes"
+    );
+    assert_eq!(short.storage(), 0);
+}
+
 fn retain_arena(budget: &mut Budget<'_>, bytes: usize) -> Vec<u8> {
     budget.reserve_storage(bytes).unwrap();
     let mut arena = Vec::new();

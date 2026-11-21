@@ -245,7 +245,6 @@ fn missing_model_selection_names_the_identity_and_both_supply_routes() -> Result
 /// Trace: FR-002-AC-1
 /// Provenance: QSL-2469
 #[test]
-#[ignore = "QSL-2657: check charges primary source to model/library dependent ceiling"]
 fn dependent_bytes_counts_dependencies_but_not_the_primary_source() -> Result<(), ContractError> {
     let case = case()?;
     success(&case.run(&[
