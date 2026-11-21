@@ -1,0 +1,191 @@
+---
+id: SR-202611210022442313144108504
+title: "QSL-2279 PR219 code-review"
+type: SpecReview
+analysis: code-review
+scope: "agent-ix/filament-driver; QSL-2279 PR219; Cargo.toml, Cargo.lock, fsl-cli/Cargo.toml, filament-cache/Cargo.toml, src/monitor/lowering/program.rs, src/monitor/projection.rs, src/monitor_refusal.rs, tests/monitor_refusal.rs"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/filament-driver
+    type: references
+---
+
+## Summary
+
+Rust lane ran within code-review; duplication, dependency identity, retained-owner boundaries, test integrity and API adaptation inspected. One high-severity compile blocker found.
+
+## Verdict
+
+FAIL — not mergeable. Adapt the new native FiniteHyper item explicitly and faithfully before rerunning the exact-head production CLI build and focused checks. No test PASS or waiver is inferred.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | The FSL pin introduces ItemForm::FiniteHyper but request_item does not handle it, so the exact candidate fails to compile with E0004 before any focused test or fresh CLI can run. | src/analyze.rs:211 |
+
+## Coverage
+
+Frozen PR: https://github.com/agent-ix/filament-driver/pull/219. Ticket: QSL-2279. Head `45fad94f9a66a78733f6c6124833709b16416e26`; base `a34862bf3cc3c6a04e6468d87f1155bd3fe86f8f`. All eight changed files inspected. No applicable AssuranceProfile found under spec/. No CI workflow, architecture, spec, fixture source, assertion, reader ceiling or oracle change.
+
+Every shared owner in the existing locked/offline metadata resolves to one authorized revision: FSL 529282e9, IR/model 20a4dfbf, CG f327415b, RT 75688ead, SV 6e809434, eval/checked 89573102, observation 1e356f99, Exact b26a8e4c. Manifest and lock source identities agree. Registry package records are byte-equivalent as parsed TOML values. No FSpec package resolves in this graph; FSpec247 is not claimed as a direct driver dependency. No ahead-of-window owner SHA is introduced.
+
+The four Binding patterns remain borrowed name/value inspections. Native IR's binder field belongs to control.let bindings, whereas these three production sites inspect function parameters/body or monitor named members. The added `..` neither drops nor reconstructs the retained admitted package. Existing source-record admission still maps immutable producer structural/source/declaration/opaque-key/member identities into the native join and retains its strict-reader package. The complete-row assertion compares every original producer row/member without filtering.
+
+The monitor test bytes equal the base exactly after removing the single QSL-2279 ignore and accepting the new Binding field. Its real fixture still executes check -> emit_checked -> emit_monitor_plan_over -> strict read with domain evidence; no JSON/package repair supplies success. Nested record/tuple expressions and budgets are unchanged. The target-premise test checks all eight named values, final child zero, original buffer owner, actual generated occurrence/None behavior and unchanged graph/source map. Native FSL emit.rs fixes body-location origin.function during final rekeying; IR body_locations.rs follows record/tuple value references. Their producer/reader implementations remain upstream.
+
+Validation observed here: cargo fmt --check exit 0; git diff --check exit 0; existing locked metadata parsed and checked; deterministic fixture-diff and registry-record comparisons passed; quire matrix exit 0, quire 0.52.0 / engine 0.62.2. All examined criteria are tagged; FR-016-AC-3 now binds the enabled test at tests/monitor_refusal.rs:248. Tag status is not runtime qualification. No Cargo build, test, Clippy, feature sweep, or upstream retest was run by this reviewer under the assigned execution policy. The code lead reports Draco's exact-head production CLI build failed E0004 at src/analyze.rs:211 for missing Some(ItemForm::FiniteHyper(_)); all remaining 11 commands, including the monitor test, were NOT RUN. The remote raw log is draco:/private/tmp/qsl-2279-driver45fa-0.log. This reviewer independently verified the selected native enum and the non-exhaustive consumer match statically; no local build or runtime PASS is asserted.
+
+QSL-2423's unrelated library_parity.rs:297 ignore is retained; it cannot count as a passed parity test. No QSL-2739 composition-text, issue #3287, complete monitor preparation, cumulative budget, clock admission or whole-repository assurance claim is made.
+
+
+## Compile blocker evidence
+
+Selected FSL fsl-analyze/src/analyze/request.rs declares FiniteHyper(Box<FiniteHyperItem>). The driver's request_item match covers Temporal, Hybrid, Probabilistic and None only. Updating the selected FSL revision makes the ordinary driver/CLI compilation fail for every invocation, before any input is processed. Add the explicit producer-to-CG projection required by the native finite-hyper contract and a real regression, preserving typed bounds/requirements; no wildcard, panic, todo or fabricated unsupported result. This is a consuming adapter fix, not permission to change architecture or pins.
+
+## Examined scope
+
+```yaml
+- id: FR-001-AC-1
+  path: spec/functional/FR-001-orchestrate-the-driver-steps.md
+  role: examined
+  excerpt: "The driver's normal and build dependency set matches FSL ADR-011 \xA7\
+    6.1 and the specified driver-layer exceptions: it contains exactly `fsl-analyze`,\
+    \ `fsl-foundation`, `fsl-package`, `fsl-replay`, `fsl-route`, `fsl-semantics`,\
+    \ `filament-exact`, `filament-contract-codegen`, `filament-contract-model`, `filament-contract-runtime`,\
+    \ `quire-canonical`, `filament-observation`, `filament-semantic-value`, `serde`,\
+    \ `serde_json` and `thiserror`; `serde_json` is required for production projection\
+    \ of FR-331's retained optional `bounds` member and RT supplies FR-015/FR-017's\
+    \ native retained program/arena type"
+- id: FR-016-AC-1
+  path: spec/functional/FR-016-retain-monitor-refusal-loci.md
+  role: examined
+  excerpt: For an actual strictly admitted node, the locus retains the supplied selector
+    and exactly its package-resolved structural key as distinct values, plus the original
+    path and optional occurrence; its owned fields remain readable after package/input
+    destruction.
+- id: FR-016-AC-3
+  path: spec/functional/FR-016-retain-monitor-refusal-loci.md
+  role: examined
+  excerpt: On a genuinely admitted monitor root, Every TargetPremise resolves the
+    value of its own actual named binding, including the final Binding.value child
+    zero, without comparing or changing that value. Uncertainty resolves its actual
+    uncertainty value path; BufferCapacity resolves the chosen capacity value path,
+    including its final child zero and original row owner.
+- id: FR-016-AC-6
+  path: spec/functional/FR-016-retain-monitor-refusal-loci.md
+  role: examined
+  excerpt: An actual admitted role/ordinal is retained exactly; a nonmember occurrence
+    returns OccurrenceMismatch. A genuine generated root succeeds with caller-supplied
+    None even when it retains a Generated occurrence, without selecting a source-map
+    row or inventing a selected occurrence.
+- id: FR-016-AC-7
+  path: spec/functional/FR-016-retain-monitor-refusal-loci.md
+  role: examined
+  excerpt: Construction retains typed error distinctions and returns no partial diagnostic
+    on failure. Neither constructor changes the admitted package, target values, operation
+    records or source correspondence.
+- id: FR-018-AC-1
+  path: spec/functional/FR-018-admit-source-record-witnesses.md
+  role: examined
+  excerpt: Genuine ordinary source records emitted by public FSL and strictly admitted
+    by IR retain all complete joined native rows and opaque record keys through driver
+    admission/projection, including required, optional and Option fields and recursive/shared
+    types where the owners admit them.
+- id: FR-018-AC-3
+  path: spec/functional/FR-018-admit-source-record-witnesses.md
+  role: examined
+  excerpt: The public API accepts genuine immutable Emission authority and binds its
+    rows to its own strict reader output; caller-created row structs cannot enter
+    production admission. Native reader refusal/incompleteness remain distinct.
+- id: FR-018-AC-4
+  path: spec/functional/FR-018-admit-source-record-witnesses.md
+  role: examined
+  excerpt: Projection uses the retained package and native identities with its independent
+    limit, retaining original native type and complete source_record_view without
+    schema reconstruction or invented member identities.
+- id: Cargo.lock
+  path: Cargo.lock
+  role: examined
+  excerpt: "source = \"git+https://github.com/agent-ix/filament-core-data?rev=424ba49ebca649906dd9d0f5f3cd2f8e7f3e0194#424ba49ebca649906dd9d0f5f3cd2f8e7f3e0194\"\
+    \n \"agent-ix-semantic-ir\",\nsource = \"git+https://github.com/agent-ix/filament-core-data?rev=424ba49ebca649906dd9d0f5f3cd2f8e7f3e0194#424ba49ebca649906dd9d0f5f3cd2f8e7f3e0194\"\
+    \nsource = \"git+https://github.com/agent-ix/filament-eval?rev=89573102cc309941786e3693b2f71e254dddc91c#89573102cc309941786e3693b2f71e254dddc91c\"\
+    \nsource = \"git+https://github.com/agent-ix/filament-contract-codegen?rev=f327415b488d3c91c4b7384eff1e81a53fed8bfd#f327415b488d3c91c4b7384"
+- id: Cargo.toml
+  path: Cargo.toml
+  role: examined
+  excerpt: 'filament-semantic-value = { version = "0.1.5", git = "https://github.com/agent-ix/filament-semantic-value",
+    rev = "6e809434d5fd7bde4c5b88ec40cd809efcca595d" }
+
+    fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev
+    = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }
+
+    fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language",
+    rev = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }
+
+    fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev
+    = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }
+
+    fsl-replay = { git = "https://github.com/agent-ix/filamen'
+- id: filament-cache/Cargo.toml
+  path: filament-cache/Cargo.toml
+  role: examined
+  excerpt: 'fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language",
+    rev = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }
+
+    fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language",
+    rev = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }'
+- id: fsl-cli/Cargo.toml
+  path: fsl-cli/Cargo.toml
+  role: examined
+  excerpt: 'filament-semantic-value = { version = "0.1.5", git = "https://github.com/agent-ix/filament-semantic-value",
+    rev = "6e809434d5fd7bde4c5b88ec40cd809efcca595d" }
+
+    fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev
+    = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }
+
+    fsl-command = { git = "https://github.com/agent-ix/filament-spec-language", rev
+    = "529282e9dc28cc6be8b382ae634636e3b4fe4a14", features = ["quire-extraction"]
+    }
+
+    fsl-inspect = { git = "https://github.com/agent-ix/filament-spec-language", rev
+    = "529282e9dc28cc6be8b382ae634636e3b4fe4a14" }
+
+    fsl-foundation = { git = "h'
+- id: src/monitor/lowering/program.rs
+  path: src/monitor/lowering/program.rs
+  role: examined
+  excerpt: '        CheckedTerm::Binding { name, value, .. } => Some((name.kind(),
+    value)),'
+- id: src/monitor/projection.rs
+  path: src/monitor/projection.rs
+  role: examined
+  excerpt: '        if let CheckedTerm::Binding { name, value, .. } = member {'
+- id: src/monitor_refusal.rs
+  path: src/monitor_refusal.rs
+  role: examined
+  excerpt: '                ..'
+- id: tests/monitor_refusal.rs
+  path: tests/monitor_refusal.rs
+  role: examined
+  excerpt: '            ..'
+- id: FR-001
+  path: spec/functional/FR-001-orchestrate-the-driver-steps.md
+  role: context_only
+  excerpt: 'Between steps 2 and 3, the E5 hand-off: IR''s checked-package reader
+
+    (`read_checked_package`) reads the emitted v2 bytes, and the driver accepts
+
+    the admitted package that E4 emitted.'
+- id: FR-022-AC-1
+  path: spec/functional/FR-022-analyze-a-native-analyze-request.md
+  role: examined
+  excerpt: '`fsl analyze` over the Counter request with the item `{"claim": "Bounded"}`
+    and `--format json` writes one document with `operation` `analyze`, category `success`,
+    one item whose record is `proved`, and `aggregate.status` `complete`, and exits
+    0.'
+- id: src/analyze.rs::request_item
+  path: src/analyze.rs
+  role: examined
+  excerpt: match &item.form {
+```

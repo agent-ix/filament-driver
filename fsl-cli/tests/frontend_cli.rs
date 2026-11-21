@@ -839,6 +839,111 @@ fn analyze_holds_prints_result_and_exit_zero() {
     assert!(item.get("counterexample").is_none(), "{item}");
 }
 
+/// The checked finite-hyper clause reaches EN-1 with its original population
+/// context and bound; negotiation does not replace them with proof bounds.
+#[trace("TC-036", "FR-022-AC-8", "FSL-FR-898-AC-3", "FSL-FR-898-AC-4")]
+#[test]
+fn analyze_finite_hyper_preserves_population_results_and_declared_bound() {
+    use serde_json::json;
+
+    let source = include_str!("fixtures/analyze-counter.fsl").replace(
+        "model M = \"test/counter\";",
+        "profile ep = \"filament.temporal.event-position.false-extension/v1\";\n\
+         model M = \"test/counter\";",
+    ) + "\nrecord Obs { inp: Int[0, 3]; res: Int[0, 3]; }\n\
+         hyper Det using ep over t in Obs bounded 3 \
+         forall trace a forall trace b { (a.inp = b.inp) implies (a.res = b.res) }\n";
+    let trace =
+        |identity, result| json!({"identity": identity, "states": [{"inp": 0, "res": result}]});
+    let fixtures = std::path::Path::new(ANALYZE_REQUEST)
+        .parent()
+        .expect("fixture directory");
+    for (name, closure, traces, result, expected_exit) in [
+        (
+            "closed",
+            "closed",
+            json!([trace("a", 0), trace("b", 0)]),
+            "proved",
+            Some(0),
+        ),
+        (
+            "refuted",
+            "closed",
+            json!([trace("a", 0), trace("b", 1)]),
+            "refuted",
+            Some(10),
+        ),
+        (
+            "open",
+            "open",
+            json!([trace("a", 0), trace("b", 0)]),
+            "inconclusive",
+            Some(11),
+        ),
+        (
+            "bound",
+            "closed",
+            json!([trace("a", 0), trace("b", 0), trace("c", 0), trace("d", 0)]),
+            "requires-bound",
+            None,
+        ),
+    ] {
+        let population = json!({
+            "format": "filament.trace-population/1",
+            "record_type": "Obs", "closure": closure, "traces": traces,
+        });
+        let request = AnalyzeRequest::new(
+            &format!("finite-hyper-{name}"),
+            json!([{
+                "claim": "Det", "kind": "temporal-satisfaction", "backend": "en-1",
+                "traces": {"authority": "test", "identity": "population"},
+            }]),
+            json!({
+                "clocks": {"t": {"kind": "event_position", "sequence_authority": "obs"}},
+                "documents": [
+                    {"file": fixtures.join("analyze-counter-start.json")},
+                    {"file": "population.json", "identity": {"authority": "test", "identity": "population"}},
+                ],
+            }),
+        )
+        .with_file("/request/program/source/file", "finite-hyper.fsl", source.as_bytes())
+        .with_file("/request/documents/1/file", "population.json", population.to_string().as_bytes());
+        let (document, exit) = request.json();
+        let items = document["items"].as_array().expect("one resolved item");
+        assert_eq!(items.len(), 1, "{name}: {document}");
+        let item = &items[0];
+        assert_eq!(item["claim_name"], "Det", "{name}: {document}");
+        if result == "requires-bound" {
+            assert_ne!(exit, Some(0), "{document}");
+            assert_eq!(item["record"]["settled_by"], "disposition", "{document}");
+            let diagnostic = &item["record"]["diagnostic"];
+            assert_eq!(diagnostic["code"], "requires_bound", "{document}");
+            assert_eq!(diagnostic["cause"], "requires-bound", "{document}");
+            assert_eq!(diagnostic["detail"]["bound"], 3, "{document}");
+            assert_eq!(diagnostic["detail"]["found"], 4, "{document}");
+        } else {
+            assert_eq!(item["record"]["backend"], "en-1", "{name}: {document}");
+            assert_eq!(item["record"]["result"], result, "{name}: {document}");
+            assert_eq!(exit, Some(expected_exit), "{name}: {document}");
+            if result == "refuted" {
+                assert_eq!(item["replay"]["reproduced"], true, "{document}");
+                assert_eq!(
+                    item["replay"]["target"]["hyperproperty"], "Det",
+                    "{document}"
+                );
+                assert!(
+                    item["counterexample"]["false_tuples"]
+                        .as_array()
+                        .is_some_and(|tuples| tuples.iter().any(|tuple| {
+                            tuple["traces"] == json!(["a", "b"]) && tuple["position"] == 0
+                        })),
+                    "{document}"
+                );
+            }
+        }
+    }
+}
+
 /// FR-022-AC-2, FSL FR-621-AC-2 and AC-8: a refuted item carries a
 /// counterexample and the replay target that reproduced it, and exits 10.
 #[trace("TC-036", "FR-022-AC-2")]

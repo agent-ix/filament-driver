@@ -227,6 +227,12 @@ fn request_item(item: &ClaimItem, candidates: &CandidateOutcome) -> cg::RequestI
             bounds.clone_from(&hybrid.proof_bounds);
             requirements.hybrid_dynamics = true;
         }
+        Some(ItemForm::FiniteHyper(_)) => {
+            // The checked clause's bound limits its trace population, which
+            // FSL evaluates with ItemOptions::traces. It is not a substituted
+            // proof-domain bound or an additional CG manifest requirement.
+            // Kind, extent and candidates still use the common projection.
+        }
         Some(ItemForm::Probabilistic(probabilistic)) => {
             requirements.evidence = Some(cg::RequestedEvidence::Known(cg_evidence(
                 probabilistic.evidence,
