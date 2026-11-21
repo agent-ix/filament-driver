@@ -78,8 +78,14 @@ fn main() -> io::Result<()> {
     if hybrid {
         descriptor["fairness_kinds"] = json!([]);
         descriptor["bounds"] = json!({"max_solver_steps": 1000, "max_solver_time": 1});
-        descriptor["advertises"] = json!([{"kind": "temporal-satisfaction",
-            "mode": if mode == "hybrid-bounded" { "bounded" } else { "unbounded" }}]);
+        descriptor["advertises"] = match mode.as_str() {
+            "hybrid-bounded" => json!([{"kind": "temporal-satisfaction", "mode": "bounded"}]),
+            "hybrid-unbounded" => json!([{"kind": "temporal-satisfaction", "mode": "unbounded"}]),
+            _ => json!([
+                {"kind": "temporal-satisfaction", "mode": "bounded"},
+                {"kind": "temporal-satisfaction", "mode": "unbounded"},
+            ]),
+        };
         if let Some(members) = descriptor.as_object_mut() {
             members.remove("domains");
         }

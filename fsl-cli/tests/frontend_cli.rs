@@ -3119,3 +3119,46 @@ fn hybrid_mixed_capability_refusal_names_both_groups_and_closes_every_session() 
         );
     }
 }
+
+#[trace("TC-047")]
+#[test]
+fn hybrid_unbounded_only_provider_does_not_authorize_a_bounded_claim() {
+    let request = hybrid_braking_request(
+        "hybrid-unbounded-only",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+        ]),
+    );
+    let log = request.directory.0.join("should-not-dispatch");
+    let shutdown = request.directory.0.join("shutdown");
+    let config = provider_config(
+        &request,
+        &[
+            PROVIDER_BACKEND,
+            "hybrid-unbounded",
+            "unsat",
+            log.to_str().expect("log path"),
+            shutdown.to_str().expect("shutdown path"),
+        ],
+    );
+    let document = provider_document(&analyze_with_config(&request, &config), 21);
+    assert!(
+        document["items"][0]
+            .to_string()
+            .contains("unsupported-requested-capability"),
+        "{document}"
+    );
+    assert!(
+        document["registry"]
+            .as_array()
+            .expect("registry")
+            .iter()
+            .any(|entry| entry["backend"] == PROVIDER_BACKEND),
+        "{document}"
+    );
+    assert!(!log.exists(), "the driver must preserve advertised modes");
+    assert_eq!(
+        std::fs::read(shutdown).expect("admitted session shutdown"),
+        b"shutdown"
+    );
+}
