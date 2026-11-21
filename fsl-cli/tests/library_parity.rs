@@ -332,17 +332,20 @@ fn binary_run_equals_the_library_run_under_each_integer_division_law() {
     let arguments = vec![
         CallArgument {
             parameter: "a".to_owned(),
-            value: Value::Integer(Integer::from(-7)),
+            value: Value::Integer(Integer::from(-7_i64)),
         },
         CallArgument {
             parameter: "b".to_owned(),
             value: Value::Integer(Integer::from(3)),
         },
     ];
-    let mut values = Vec::new();
-    for (law, role) in [
-        ("floor", DefinitionRole::IntegerDivisionFloor),
-        ("truncating", DefinitionRole::IntegerDivisionTruncating),
+    for (law, role, expected_value) in [
+        ("floor", DefinitionRole::IntegerDivisionFloor, "-3"),
+        (
+            "truncating",
+            DefinitionRole::IntegerDivisionTruncating,
+            "-2",
+        ),
     ] {
         let request = source_file(
             law,
@@ -365,9 +368,13 @@ fn binary_run_equals_the_library_run_under_each_integer_division_law() {
         );
         let output = fsl(&["run", &request.1]);
         assert_parity(&output, &library, law);
+        assert_eq!(output.status.code(), Some(0), "{law}: {output:?}");
         let document: serde_json::Value =
             serde_json::from_slice(&output.stdout).expect("run prints one JSON document");
-        values.push(document["result"]["value"].clone());
+        assert_eq!(
+            document["result"],
+            serde_json::json!({"kind": "completed", "value": {"integer": expected_value}}),
+            "{law}: {document}"
+        );
     }
-    assert_ne!(values[0], values[1], "the law must change the result");
 }
