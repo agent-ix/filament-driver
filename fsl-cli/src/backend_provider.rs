@@ -15,8 +15,8 @@ use fsl_foundation::backend::EmptyBackendIdentity;
 use fsl_foundation::diagnostic::category_of;
 use fsl_foundation::BackendId;
 use fsl_route::{
-    descriptor_from_manifest, BackendDescriptor, Candidate, FairnessKindsMember, FairnessLabel,
-    ProviderOrigin,
+    descriptor_from_manifest_with_dynamics, BackendDescriptor, Candidate, DynamicsMember,
+    FairnessKindsMember, FairnessLabel, ProviderOrigin, SolverBounds,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -32,6 +32,8 @@ struct ProviderDescriptorShape {
     advertises: Vec<AdvertisedPair>,
     #[serde(default, deserialize_with = "deserialize_present")]
     domains: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    dynamics: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_present")]
     options: Option<BTreeMap<String, String>>,
     #[serde(default, deserialize_with = "deserialize_present")]
@@ -293,7 +295,19 @@ impl ManifestStage {
             .evidence_kinds
             .as_deref()
             .map(|kinds| kinds.iter().map(String::as_str).collect::<Vec<_>>());
-        let descriptor = descriptor_from_manifest(
+        let dynamics = shape
+            .dynamics
+            .as_deref()
+            .map(|labels| labels.iter().map(String::as_str).collect::<Vec<_>>());
+        let solver_bounds = shape.bounds.as_ref().and_then(|bounds| {
+            let max_solver_steps = bounds.get("max_solver_steps").copied();
+            let max_solver_time = bounds.get("max_solver_time").copied();
+            (max_solver_steps.is_some() || max_solver_time.is_some()).then_some(SolverBounds {
+                max_solver_steps,
+                max_solver_time,
+            })
+        });
+        let descriptor = descriptor_from_manifest_with_dynamics(
             Candidate::new(BackendId::from_wire(&shape.backend)?),
             ProviderOrigin::Process,
             shape
@@ -306,6 +320,8 @@ impl ManifestStage {
                 evidence_kinds: evidence_labels.as_deref(),
                 ..fsl_route::ManifestMembers::default()
             },
+            dynamics.as_deref().map(DynamicsMember::List),
+            solver_bounds,
         )?;
         Ok(AdmittedManifest {
             descriptor,
@@ -422,6 +438,58 @@ mod tests {
                 "bounds": { "max_states": 8 }
             })
             .into()],
+        }
+    }
+
+    #[ix_trace_rs::trace("TC-047", "FR-022-AC-11")]
+    #[test]
+    fn hybrid_hello_retains_dynamics_and_solver_bounds_through_fsl_admission() {
+        let wire = serde_json::json!({"backend": "hybrid-process",
+            "advertises": [{"kind": "temporal-satisfaction", "mode": "unbounded"}],
+            "dynamics": ["hybrid"], "bounds": {"max_solver_steps": 123, "max_solver_time": 2},
+            "tool": {"name": "fixture", "version": "1"}});
+        let stage = ManifestStage {
+            contract_version: CONTRACT_VERSION.to_owned(),
+            capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
+            manifest: vec![Arc::new(wire.clone())],
+        };
+        let admitted = stage.admit_process(65_536).expect("hybrid hello admitted");
+        assert!(admitted
+            .descriptor()
+            .dynamics()
+            .expect("dynamics")
+            .contains(&fsl_route::DynamicsKind::Hybrid));
+        let bounds = admitted
+            .descriptor()
+            .solver_bounds()
+            .expect("solver bounds");
+        assert_eq!(bounds.max_solver_steps, Some(123));
+        assert_eq!(bounds.max_solver_time, Some(2));
+        assert_eq!(admitted.descriptor().origin(), ProviderOrigin::Process);
+        let retained: Value =
+            serde_json::from_slice(admitted.manifest().wire.as_deref().expect("retained wire"))
+                .expect("wire descriptor");
+        assert_eq!(retained, wire);
+    }
+
+    #[ix_trace_rs::trace("TC-047", "FR-022-AC-11")]
+    #[test]
+    fn hybrid_hello_refuses_malformed_or_unrecognized_dynamics() {
+        for dynamics in [
+            serde_json::json!(null),
+            serde_json::json!("hybrid"),
+            serde_json::json!([]),
+            serde_json::json!(["unknown"]),
+            serde_json::json!(["hybrid", "hybrid"]),
+        ] {
+            let stage = ManifestStage {
+                contract_version: CONTRACT_VERSION.to_owned(),
+                capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
+                manifest: vec![Arc::new(serde_json::json!({"backend": "hybrid-process",
+                    "advertises": [{"kind": "temporal-satisfaction", "mode": "unbounded"}],
+                    "dynamics": dynamics}))],
+            };
+            assert!(stage.admit_process(65_536).is_err(), "{dynamics}");
         }
     }
 
