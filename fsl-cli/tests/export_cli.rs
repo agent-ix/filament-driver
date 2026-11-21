@@ -115,13 +115,11 @@ fn export_output_writes_the_target_text_fsl_assembles() {
 }
 
 /// A selected checked package reaches FSL with its caller-supplied source
-/// identity and version after the source is removed.
-///
-/// The current pinned FSL reports the model/object_type lowering gap; QSL-2647
-/// is the ticket that turns this refusal into a positive export.
+/// identity and version after the source is removed, preserving the source
+/// export's counter semantics, obligation records and target bytes.
 #[test]
 #[trace("TC-3019", "FR-1039-AC-4")]
-fn export_selected_package_reports_model_type_gap_on_current_pin() {
+fn export_selected_package_preserves_counter_semantics_and_writes_target() {
     let directory = folder();
     let model_source = json!({"file": "counter.json", "authority": "test",
         "identity": "example/counter", "document": "ExportCounter", "formal_revision": 1});
@@ -155,6 +153,20 @@ fn export_selected_package_reports_model_type_gap_on_current_pin() {
         std::fs::read(directory.path().join("handoff/checked-package.json")).unwrap(),
         "the selected package and equality rows must share the same producer emission"
     );
+    let package_bytes = std::fs::read(directory.path().join("checked-package.json")).unwrap();
+    let source_request = json!({"format": "native-run/1", "request": {
+        "models": models, "program": {"source": program_source}, "export": export}});
+    std::fs::write(
+        directory.path().join("source-export.json"),
+        source_request.to_string(),
+    )
+    .unwrap();
+    let source_output = fsl(
+        directory.path(),
+        &["export", "source-export.json", "--format", "json"],
+    );
+    assert_eq!(source_output.status.code(), Some(0), "{source_output:?}");
+    let source_document = document(&source_output);
     std::fs::remove_file(directory.path().join("counter.fsl")).expect("remove source file");
 
     let source_package = json!({"identity": "example/counter-unit", "version": "7"});
@@ -179,33 +191,82 @@ fn export_selected_package_reports_model_type_gap_on_current_pin() {
             "json",
         ],
     );
-    assert_eq!(output.status.code(), Some(21), "{output:?}");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
     let value = document(&output);
     assert_eq!(value["operation"], "export", "{value}");
-    assert_eq!(value["category"], "unsupported", "{value}");
+    assert_eq!(value["category"], "success", "{value}");
     assert_eq!(value["last_stage"], "S4", "{value}");
+    assert_eq!(value["diagnostics"], json!([]), "{value}");
+    assert_eq!(value["result"]["kind"], "exported", "{value}");
+    let exported = &value["result"]["export"];
+    assert_eq!(exported["status"], "assembled", "{value}");
+    assert_eq!(exported["target_family"], "tla", "{value}");
     assert_eq!(
-        value["diagnostics"][0]["code"], "unimplemented_capability",
+        exported["mapping_profile_id"], "filament.output.tla2/v1",
         "{value}"
     );
     assert_eq!(
-        value["diagnostics"][0]["cause"], "unimplemented-meaning",
+        exported["package"]["source_package"], source_package,
         "{value}"
     );
     assert_eq!(
-        value["diagnostics"][0]["details"]["capability"], "export:tla:model/object_type",
+        exported["module"], "M_example_u2F_counter_u2D_unit",
         "{value}"
     );
+    let source_export = &source_document["result"]["export"];
     assert_eq!(
-        value["result"]["export"]["refusal"]["construct"], "model/object_type",
+        exported["target_text"], source_export["target_text"],
         "{value}"
     );
+    assert_eq!(exported["records"], source_export["records"], "{value}");
+    assert_eq!(exported["name_map"], source_export["name_map"], "{value}");
+    let records = exported["records"].as_array().expect("obligation records");
+    assert_eq!(records.len(), 1, "{value}");
+    assert_eq!(records[0]["obligation"], "Bounded", "{value}");
+    assert_eq!(records[0]["disposition"], "preserved", "{value}");
+    assert_eq!(records[0]["conditions"], json!([]), "{value}");
+    assert_eq!(records[0]["causes"], json!([]), "{value}");
+    let text = exported["target_text"]
+        .as_str()
+        .expect("assembled target text");
+    for semantic in [
+        "---- MODULE M_example_u2F_counter_u2D_unit ----",
+        "VARIABLES",
+        "TypeOK ==",
+        "Init ==",
+        "op_Counter_inc",
+        "Next ==",
+        "Spec ==",
+        "c_Bounded",
+        "fld_value",
+    ] {
+        assert!(text.contains(semantic), "missing {semantic}: {text}");
+    }
+    let names = exported["name_map"].as_array().expect("native name map");
+    assert!(!names.is_empty(), "{value}");
+    for entry in names {
+        let name = entry["name"].as_str().expect("target identifier");
+        assert!(text.contains(name), "{entry}: {text}");
+        assert!(
+            !entry["node"].as_str().expect("native node").is_empty(),
+            "{entry}"
+        );
+    }
+    let written = std::fs::read(directory.path().join("selected.tla")).unwrap();
+    assert_eq!(written, text.as_bytes());
     assert_eq!(
-        value["result"]["export"]["output"]["bytes_written"], 0,
+        exported["output"]["bytes_written"],
+        json!(written.len()),
         "{value}"
     );
-    assert!(!directory.path().join("selected.tla").exists());
+    assert_eq!(exported["output"]["path"], "selected.tla", "{value}");
     assert_eq!(std::fs::read(equality_path).unwrap(), equality_bytes);
+    assert_eq!(
+        std::fs::read(directory.path().join("checked-package.json")).unwrap(),
+        package_bytes
+    );
+    assert!(!directory.path().join("counter.fsl").exists());
 }
 
 /// A selected value-only package preserves the caller's source reference and
