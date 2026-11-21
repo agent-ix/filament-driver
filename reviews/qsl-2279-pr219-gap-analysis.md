@@ -189,3 +189,51 @@ Selected FSL fsl-analyze/src/analyze/request.rs declares FiniteHyper(Box<FiniteH
   role: examined
   excerpt: match &item.form {
 ```
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | high | The new CLI test wraps expected_exit twice: json() returns Option<i32> and the loop already supplies Option<i32>, so comparing exit to Some(expected_exit) fails to compile. Compare exit directly to expected_exit. | fsl-cli/tests/frontend_cli.rs:927 |
+| FND-003 | low | The new foreign FSL-FR-898 trace strings normalize to unmatched local FR-898-AC-3 and FR-898-AC-4 in Quire coverage. Keep the local FR-022-AC-8 binding and express upstream partial coverage as provenance or use a supported declared foreign binding. | fsl-cli/tests/frontend_cli.rs:844 |
+| FND-004 | high | The selected FSL PreparedRun enum includes RefinementTransfer, but the frozen driver CLI match omits it, causing E0004 at fsl-cli/src/cli.rs:1085 and preventing a fresh CLI build before the remaining checks can run. | fsl-cli/src/cli.rs:1085 |
+
+## Dispositions
+
+### Round 1
+
+Reviewed frozen `dda27605300a7298ce42c9a6cf2638b790669a9d` against original `45fad94f9a66a78733f6c6124833709b16416e26`. Original finding text remains unchanged. Explicit native FiniteHyper matching fixes FND-001's production source defect. Native FiniteHyperItem contains the checked clause, not CG proof bounds; FSL owns population intake, bound checks and evaluation. CG ItemRequirements has no separate finite-hyper carrier. The common projection still carries kind/extent/finite_bound_available/candidates, with no wildcard, invented unsupported result or proof-bound substitution.
+
+The added CLI test uses the real process and source/population documents. Closed proof/refutation, open inconclusive, replay false tuples and exact bound/found assertions match the native owner behavior statically. Runtime qualification remains pending. The doubled Option at line 927 prevents compiling this test; fresh Quire coverage also identifies two new unmatched trace IDs. The test is partial upstream evidence, not full FR-898 AC-3/AC-4 qualification (three-trace/position-one and quantifier-order controls are upstream).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Explicit FiniteHyper arm covers the selected native enum variant and preserves the existing common CG request projection. |
+| FND-002 | still-open | Round 1 introduced a noncompiling Option<Option<i32>> assertion in the new frontend test; compare its existing Option<i32> values directly. |
+| FND-003 | still-open | Fresh quire coverage reports both new foreign-looking IDs as unmatched local IDs; use the valid local binding and upstream provenance. |
+| FND-004 | still-open | Frozen dda276 CLI match omits PreparedRun::RefinementTransfer; delegate explicitly to the native FSL executor preserving owner results and limits. |
+
+No local Cargo build, tests or Clippy were run. Static git diff --check and quire coverage exited 0. Earlier exact-45fad CLI build failed and its remaining 11 checks were NOT RUN. Draco's exact-dda276 production CLI build now failed E0004 for missing PreparedRun::RefinementTransfer at fsl-cli/src/cli.rs:1085; the production driver library compiled past the earlier FiniteHyper error. All remaining commands were NOT RUN; no fresh CLI or monitor result exists. Raw log reported by the code lead: draco:/private/tmp/qsl-2279-driverdda-0.log. The selected native FSL execute_prepared delegates this variant to transfer::execute; the driver must preserve that owner executor rather than fabricate unsupported output. No runtime PASS is asserted. No pin, monitor fixture, budgets or original assertions changed. The unrelated QSL-2423 ignore remains excluded from parity success claims. No full repository gap/semantic audit was run. Plan completion: not assessed.
+
+Round 1 verdict: FAIL, NOT MERGEABLE while FND-002/FND-003/FND-004 remain open; production compilation and all delegated focused checks must be verified on the corrected head.
+
+```yaml
+dispositions:
+- fnd: FND-001
+  outcome: fixed
+  after_excerpt: "Some(ItemForm::FiniteHyper(_)) => {\n            // The checked\
+    \ clause's bound limits its trace population, which\n            // FSL evaluates\
+    \ with ItemOptions::traces. It is not a substituted\n            // proof-domain\
+    \ bound or an additional CG manifest requirement.\n            // Kind, extent\
+    \ and candidates still use the common projection.\n        }"
+- fnd: FND-002
+  outcome: still-open
+  reason: New test assertion nests Option; compare exit directly to expected_exit.
+- fnd: FND-003
+  outcome: still-open
+  reason: The new foreign-looking tags are unmatched local IDs in fresh Quire coverage.
+- fnd: FND-004
+  outcome: still-open
+  reason: Frozen dda276 CLI match omits PreparedRun::RefinementTransfer; delegate
+    explicitly to the native FSL executor preserving owner results and limits.
+```

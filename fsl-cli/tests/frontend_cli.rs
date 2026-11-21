@@ -509,6 +509,89 @@ predicate Square using v(x: Integer): Boolean { x * x >= 0 }
     );
 }
 
+/// A prepared transfer delegates execution and its typed selection refusal to
+/// FSL, preserving the same outcome document and process category.
+/// Provenance: FSL FR-1031's selection order resolves selected models first.
+#[trace("FR-002-AC-1", "FR-002-AC-2")]
+#[test]
+fn refinement_transfer_run_preserves_the_owner_selection_refusal() {
+    use fsl_command::command::{self, PreparedRun, RequestOverrides, RunCause, RunLimits};
+    use fsl_replay::Operation;
+
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-transfer-selection-{}", std::process::id())),
+    );
+    std::fs::create_dir_all(&directory.0).expect("request directory");
+    let request = serde_json::json!({"format": "native-run/1", "request": {
+        "models": [],
+        "program": {"source": {
+            "file": SOURCE, "authority": "test", "identity": "transfer-selection",
+            "document": "TransferSelection", "formal_revision": 1,
+        }},
+        "refinement_transfer": {
+            "refinement": "MissingRefinement",
+            "abstract": {"model": "Spec", "initial": ["start"]},
+            "concrete": {"model": "Impl", "initial": ["start"]},
+            "clauses": ["MissingClause"],
+            "observations": {"start": std::path::Path::new(ANALYZE_REQUEST)
+                .parent().expect("fixture directory").join("analyze-counter-start.json")},
+        },
+    }});
+    let path = directory.0.join("run.json");
+    std::fs::write(&path, request.to_string()).expect("transfer request");
+    let limits = RunLimits::default();
+    let overrides = RequestOverrides::default();
+    assert!(matches!(
+        command::prepare_run_with_overrides(&path, limits, &overrides)
+            .expect("the real source prepares a transfer"),
+        PreparedRun::RefinementTransfer(_)
+    ));
+    let negotiation = filament_driver::AnalyzeNegotiation::fsl().expect("engine negotiation");
+    let error = command::run_with_providers_and_limits_and_overrides(
+        &path,
+        limits,
+        &overrides,
+        &negotiation,
+        filament_driver::run_engines(Vec::new()).expect("reference engine registration"),
+        &fsl_analyze::provider::ProviderOptions::default(),
+        &filament_exact::Cancel::new(),
+    )
+    .expect_err("the checked source declares no selected abstract model");
+    match &error.cause {
+        RunCause::TransferSelection {
+            stage,
+            member,
+            cause,
+            code,
+            ..
+        } => {
+            assert_eq!(*stage, "select");
+            assert_eq!(member, "/refinement_transfer/abstract/model");
+            assert_eq!(*cause, "missing-name");
+            assert_eq!(*code, fsl_foundation::Code::MissingDeclaration);
+        }
+        other => panic!("the native transfer selection must run: {other:?}"),
+    }
+    let expected = error.outcome_document(Operation::Execute);
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&path)
+        .args(["--format", "json"])
+        .output()
+        .expect("driver transfer run");
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one native transfer refusal document");
+    assert_eq!(output.status.code(), Some(20), "{actual}");
+    assert_eq!(
+        output.status.code(),
+        Some(i32::from(expected.category().exit_code()))
+    );
+    assert_eq!(
+        actual,
+        serde_json::to_value(expected).expect("owner document")
+    );
+}
+
 #[trace("TC-1262", "FR-287-AC-9")]
 #[test]
 fn request_paths_are_independent_and_documents_equal_the_actual_producers() {
@@ -841,7 +924,8 @@ fn analyze_holds_prints_result_and_exit_zero() {
 
 /// The checked finite-hyper clause reaches EN-1 with its original population
 /// context and bound; negotiation does not replace them with proof bounds.
-#[trace("TC-036", "FR-022-AC-8", "FSL-FR-898-AC-3", "FSL-FR-898-AC-4")]
+/// Provenance: FSL FR-898-AC-3 and AC-4 supply the finite-population cases.
+#[trace("TC-036", "FR-022-AC-8")]
 #[test]
 fn analyze_finite_hyper_preserves_population_results_and_declared_bound() {
     use serde_json::json;
@@ -924,7 +1008,7 @@ fn analyze_finite_hyper_preserves_population_results_and_declared_bound() {
         } else {
             assert_eq!(item["record"]["backend"], "en-1", "{name}: {document}");
             assert_eq!(item["record"]["result"], result, "{name}: {document}");
-            assert_eq!(exit, Some(expected_exit), "{name}: {document}");
+            assert_eq!(exit, expected_exit, "{name}: {document}");
             if result == "refuted" {
                 assert_eq!(item["replay"]["reproduced"], true, "{document}");
                 assert_eq!(
