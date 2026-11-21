@@ -3200,10 +3200,9 @@ profile audit = "filament.model.complete/v1";
 import "driver/counter-invariants" as Invariants;
 model M = "test/counter";
 compose CounterBoundaryAudit rule interface {
-  component Proven from Invariants using M;
-  component Violated from Invariants using M;
-  guarantee Proven::Bounded;
-  guarantee Violated::BelowThree;
+  component Counter from Invariants using M;
+  guarantee Counter::Bounded;
+  guarantee Counter::BelowThree;
 }
 "#;
     let request = AnalyzeRequest::new(
