@@ -42,13 +42,7 @@ fn provider_command(executable: &Path, limits: RunLimits) -> io::Result<Command>
         let directory = host.parent().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, "host executable has no directory")
         })?;
-        // Cargo's test executables live one level below its installed binaries.
-        let directory = if directory.file_name() == Some(std::ffi::OsStr::new("deps")) {
-            directory.parent().unwrap_or(directory)
-        } else {
-            directory
-        };
-        let mut command = Command::new(directory.join("fsl-plugin-launch"));
+        let mut command = Command::new(launcher_path(directory));
         command
             .arg(limits.max_memory_bytes.to_string())
             .arg(limits.max_cpu_ms.to_string())
@@ -59,6 +53,21 @@ fn provider_command(executable: &Path, limits: RunLimits) -> io::Result<Command>
     {
         let _ = limits;
         Ok(Command::new(executable))
+    }
+}
+
+#[cfg(unix)]
+fn launcher_path(directory: &Path) -> PathBuf {
+    let sibling = directory.join("fsl-plugin-launch");
+    // Installed siblings take precedence, including in a directory named deps.
+    // Cargo's integration tests instead share the profile directory's binary.
+    if sibling.exists() || directory.file_name() != Some(std::ffi::OsStr::new("deps")) {
+        sibling
+    } else {
+        directory
+            .parent()
+            .unwrap_or(directory)
+            .join("fsl-plugin-launch")
     }
 }
 
@@ -877,7 +886,7 @@ fn next_frame<A, V, F>(
                 return Ok(frame);
             }
             Ok(Ok(None)) => return Err(eof_error(child, eof_grace)?),
-            Ok(Err(error)) => return Err(PluginError::Frame(error)),
+            Ok(Err(error)) => return Err(frame_or_exit_error(child, error, eof_grace)?),
             Err(RecvTimeoutError::Disconnected) => return Err(eof_error(child, eof_grace)?),
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(PluginError::Wait)? {
@@ -908,7 +917,7 @@ fn next_frame_with_grace<A, V, F>(
             Ok(Ok(None)) | Err(RecvTimeoutError::Disconnected) => {
                 return Err(PluginError::MissingFrame);
             }
-            Ok(Err(error)) => return Err(PluginError::Frame(error)),
+            Ok(Err(error)) => return Err(frame_or_exit_error(child, error, grace)?),
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(PluginError::Wait)? {
                     return Err(PluginError::Exited(status));
@@ -1118,6 +1127,24 @@ fn eof_error<A, V, F>(
             None => return Ok(PluginError::MissingFrame),
         }
     }
+}
+
+fn frame_or_exit_error<A, V, F>(
+    child: &mut dyn ChildWrapper,
+    error: FrameError,
+    grace: Duration,
+) -> Result<PluginError<A, V, F>, PluginError<A, V, F>> {
+    if matches!(
+        error,
+        FrameError::TruncatedLength | FrameError::TruncatedFrame
+    ) {
+        if let PluginError::Exited(status) = eof_error(child, grace)? {
+            if !status.success() {
+                return Ok(PluginError::Exited(status));
+            }
+        }
+    }
+    Ok(PluginError::Frame(error))
 }
 
 struct ProcessTree {

@@ -34,7 +34,7 @@ fn start(mode: &str, memory: u64, cpu: u64) -> PluginSession<Value, Value, Infal
     .expect("provider hello within resource limits")
 }
 
-/// Trace: FR-287-AC-12, FR-006-AC-19.
+#[ix_trace_rs::trace("FR-013-AC-4")]
 #[test]
 fn resource_limits_memory_breach_is_a_typed_process_failure() {
     let mut session = start("memory", 64 * 1024 * 1024, 60_000);
@@ -47,7 +47,7 @@ fn resource_limits_memory_breach_is_a_typed_process_failure() {
     );
 }
 
-/// Trace: FR-287-AC-12, FR-006-AC-19.
+#[ix_trace_rs::trace("FR-013-AC-4")]
 #[test]
 fn resource_limits_cpu_breach_is_a_typed_process_failure() {
     use std::os::unix::process::ExitStatusExt;
@@ -72,7 +72,7 @@ fn resource_limits_cpu_breach_is_a_typed_process_failure() {
     );
 }
 
-/// Trace: FR-287-AC-12.
+#[ix_trace_rs::trace("FR-013-AC-3")]
 #[test]
 fn resource_limits_provider_below_limits_completes_with_rounded_cpu_ceiling() {
     let mut session = start("ordinary", 64 * 1024 * 1024, 1_001);
@@ -86,4 +86,17 @@ fn resource_limits_provider_below_limits_completes_with_rounded_cpu_ceiling() {
         })
     );
     session.shutdown().expect("orderly shutdown");
+}
+
+#[ix_trace_rs::trace("FR-013-AC-4", "FR-013-AC-10")]
+#[test]
+fn resource_limits_partial_response_preserves_the_memory_failure() {
+    let mut session = start("memory-partial", 64 * 1024 * 1024, 60_000);
+    let error = session
+        .request::<_, Value, Infallible>(&(), &Cancel::new(), |_, _| Ok(()))
+        .expect_err("partial response cannot hide the process failure");
+    assert!(
+        matches!(error.primary_cause(), PluginError::Exited(status) if status.code() == Some(71)),
+        "{error:?}"
+    );
 }

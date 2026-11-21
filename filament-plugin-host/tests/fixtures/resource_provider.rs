@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Rust-only provider fixture for process resource-limit tests.
 
-use std::io;
+use std::io::{self, Write};
 
 use filament_plugin_host::{Envelope, FrameLimits, FrameReader, FrameWriter, Kind, PROTOCOL};
 
@@ -25,20 +25,18 @@ fn main() -> io::Result<()> {
         .read::<Envelope>()
         .map_err(io::Error::other)?
         .ok_or_else(|| io::Error::other("request missing"))?;
+    if mode.ends_with("-partial") {
+        let mut output = io::stdout().lock();
+        output.write_all(&64_u64.to_be_bytes())?;
+        output.write_all(b"{\"")?;
+        output.flush()?;
+    }
     match mode.as_str() {
-        "memory" => {
-            // Fail deterministically on RLIMIT_AS/DATA without asking the
-            // allocator to abort or relying on the host's available RAM.
-            let mut allocation = Vec::<u8>::new();
-            if allocation.try_reserve_exact(256 * 1024 * 1024).is_err() {
-                std::process::exit(71);
-            }
+        "memory" | "memory-partial" => {
+            fsl_test_provider::consume_resource(fsl_test_provider::ResourceWorkload::Memory)
         }
-        "cpu" => {
-            let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while std::time::Instant::now() < until {
-                std::hint::black_box(1_u64.wrapping_mul(3));
-            }
+        "cpu" | "cpu-partial" => {
+            fsl_test_provider::consume_resource(fsl_test_provider::ResourceWorkload::Cpu)
         }
         _ => {}
     }

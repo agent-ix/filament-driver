@@ -1506,14 +1506,34 @@ fn assert_provider_resource_breach(mode: &str, limit: &str, defect: &str) {
         &even_program(),
     );
     let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", mode]);
-    let output = Command::new(FSL)
+    let child = Command::new(FSL)
         .arg("analyze")
         .arg(request.path())
         .arg("--provider-config")
         .arg(&config)
         .args(["--provider-limit", limit, "--format", "json"])
-        .output()
-        .expect("run process provider under resource limits");
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start process provider under resource limits");
+    let pid = child.id();
+    let (finished, waiting) = std::sync::mpsc::channel();
+    let watchdog = std::thread::spawn(move || {
+        if waiting.recv_timeout(std::time::Duration::from_secs(20))
+            == Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        {
+            // The CLI handles TERM by cancelling and reaping its active
+            // provider. A missing limit must fail this test without leaving
+            // a spinning child behind.
+            let _ = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status();
+        }
+    });
+    let output = child.wait_with_output();
+    let _ = finished.send(());
+    watchdog.join().expect("resource test watchdog finishes");
+    let output = output.expect("run process provider under resource limits");
     let document: serde_json::Value = serde_json::from_slice(&output.stdout)
         .unwrap_or_else(|_| panic!("provider document; output {output:?}"));
     assert_eq!(output.status.code(), Some(30), "{document}");
@@ -1531,16 +1551,26 @@ fn assert_provider_resource_breach(mode: &str, limit: &str, defect: &str) {
     );
 }
 
-/// Trace: FR-287-AC-12, FR-006-AC-19, FR-006-AC-23.
+#[trace("FR-006-AC-19", "FR-006-AC-23")]
 #[test]
 fn provider_resource_limits_memory_breach_settles_failed() {
     assert_provider_resource_breach("memory-breach", "max_memory_bytes=67108864", "nonzero-exit");
 }
 
-/// Trace: FR-287-AC-12, FR-006-AC-19, FR-006-AC-23.
+#[trace("FR-006-AC-19", "FR-006-AC-23")]
 #[test]
 fn provider_resource_limits_cpu_breach_settles_failed() {
     assert_provider_resource_breach("cpu-breach", "max_cpu_ms=1", "crash");
+}
+
+#[trace("FR-006-AC-19", "FR-006-AC-23")]
+#[test]
+fn provider_resource_limits_partial_response_breach_settles_failed() {
+    assert_provider_resource_breach(
+        "memory-breach-partial",
+        "max_memory_bytes=67108864",
+        "nonzero-exit",
+    );
 }
 
 /// FSL FR-624: SIGTERM or SIGINT during `fsl analyze` cancels the run with

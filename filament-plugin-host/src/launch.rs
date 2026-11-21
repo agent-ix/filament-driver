@@ -32,8 +32,19 @@ fn launch() -> io::Result<()> {
         (Resource::CPU, cpu_seconds),
     ] {
         if resource.is_supported() {
-            let hard = resource.get_hard()?.min(maximum);
-            resource.set(hard, hard)?;
+            let inherited = resource.get_hard().map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("reading {}: {error}", resource.as_name()),
+                )
+            })?;
+            let hard = inherited.min(maximum);
+            resource.set(hard, hard).map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("setting {} to {hard}: {error}", resource.as_name()),
+                )
+            })?;
         }
     }
     // A failed provider must not leave an unbounded core file behind.
