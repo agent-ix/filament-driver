@@ -3367,13 +3367,101 @@ compose CounterBoundaryAudit rule interface {
             assert!(!line.contains("certification="), "{text}");
         }
     }
-    let counterexample = items[2]["counterexample"].to_string();
-    let last = counterexample
-        .rfind(r#""name":"value""#)
-        .expect("counterexample value");
-    assert!(
-        counterexample[last..]
-            .starts_with(r#""name":"value","value":{"type":"integer","value":"3"}"#),
+    fn counter_field<'a>(
+        state: &'a serde_json::Value,
+        package: &str,
+        object_identity: &str,
+    ) -> (&'a serde_json::Value, &'a serde_json::Value) {
+        assert_eq!(state["type"], "simulation-state");
+        assert_eq!(state["semantic"]["type"], "map");
+        let population_identity = serde_json::json!({
+            "package": package, "node": format!("ix://{package}/counters")
+        });
+        let population = state["semantic"]["entries"]
+            .as_array()
+            .expect("population map")
+            .iter()
+            .find(|entry| {
+                assert_eq!(entry["key"]["type"], "text");
+                let identity: serde_json::Value = serde_json::from_str(
+                    entry["key"]["value"]
+                        .as_str()
+                        .expect("population identity text"),
+                )
+                .expect("canonical population declaration identity");
+                identity == population_identity
+            })
+            .expect("the declared population");
+        assert_eq!(population["value"]["type"], "map");
+        let type_identity = serde_json::json!({
+            "package": package, "node": format!("ix://{package}/Counter")
+        });
+        let object = population["value"]["entries"]
+            .as_array()
+            .expect("object map")
+            .iter()
+            .find(|entry| {
+                entry["key"]["type"] == "reference"
+                    && entry["key"]["identity"] == object_identity
+                    && entry["key"]["object_type"]["original"] == type_identity
+            })
+            .expect("the declared object identity and type");
+        assert_eq!(object["value"]["type"], "record");
+        let record_identity: serde_json::Value = serde_json::from_str(
+            object["value"]["name"]
+                .as_str()
+                .expect("record declaration identity"),
+        )
+        .expect("canonical record declaration identity");
+        assert_eq!(record_identity, type_identity);
+        let field = object["value"]["fields"]
+            .as_array()
+            .expect("declared fields")
+            .iter()
+            .find(|field| field["name"] == "value")
+            .expect("the Counter value field");
+        assert_eq!(field["value"]["type"], "integer");
+        (&field["value"], &object["key"])
+    }
+    let counterexample = &items[2]["counterexample"];
+    assert_eq!(items[2]["replay"]["reproduced"], true, "{document}");
+    let binding = &counterexample["over_binding"];
+    assert_eq!(binding["type"], "reference", "{document}");
+    assert_eq!(binding["identity"], "meter", "{document}");
+    assert_eq!(
+        binding["object_type"]["original"],
+        serde_json::json!({
+            "package": "driver/audit-meter", "node": "ix://driver/audit-meter/Counter"
+        }),
+        "{document}"
+    );
+    let prefix = counterexample["prefix"]
+        .as_array()
+        .expect("native counterexample trajectory");
+    let mut deciding = Vec::new();
+    let mut peer = Vec::new();
+    for step in prefix {
+        let state = &step["post_state"]["state"];
+        let (value, reference) = counter_field(state, "driver/audit-meter", "meter");
+        assert_eq!(
+            reference, binding,
+            "the witness follows the actual clause binding"
+        );
+        deciding.push(value["value"].as_str().expect("integer spelling"));
+        let (value, _) = counter_field(state, "test/counter", "a");
+        peer.push(value["value"].as_str().expect("peer integer spelling"));
+    }
+    assert_eq!(deciding, ["1", "2", "3"], "{document}");
+    assert_eq!(peer, ["0", "0", "0"], "{document}");
+    let final_state = &prefix.last().expect("a deciding final state")["post_state"]["state"];
+    assert_eq!(
+        counter_field(final_state, "driver/audit-meter", "meter").0,
+        &serde_json::json!({"type": "integer", "value": "3"}),
+        "{document}"
+    );
+    assert_eq!(
+        counter_field(final_state, "test/counter", "a").0,
+        &serde_json::json!({"type": "integer", "value": "0"}),
         "{document}"
     );
 }
