@@ -19,6 +19,8 @@ const MISSING_SOURCE: &str = concat!(
     "/tests/fixtures/missing-source.fsl"
 );
 
+#[path = "../../tests/common/dependency_fixtures.rs"]
+mod dependency_fixtures;
 #[path = "common/test_provider_path.rs"]
 mod test_provider_path;
 #[path = "common/timed_analyze.rs"]
@@ -1689,9 +1691,24 @@ fn analyze_text_mode_prints_item_lines() {
     let output = refused.run("text");
     assert_eq!(output.status.code(), Some(20));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        stdout.lines().next(),
-        Some("0 Bounded invalid-request invalid_capability/unknown-backend"),
+    assert!(
+        stdout
+            .lines()
+            .next()
+            .expect("item line")
+            .starts_with("0 Bounded invalid-request invalid_capability/unknown-backend"),
+        "{stdout}"
+    );
+    let (machine, _) = refused.json();
+    let extent =
+        ix_cli_kit::json::encode_canonical(&machine["items"][0]["request"]["extent"], false)
+            .expect("canonical extent");
+    assert!(
+        stdout
+            .lines()
+            .next()
+            .expect("item line")
+            .contains(&format!("extent={extent}")),
         "{stdout}"
     );
 }
@@ -2760,5 +2777,726 @@ fn extension_definitions_are_validated_and_unselected_sets_change_nothing() {
         let with = in_directory(&directory, &without);
         assert_eq!(plain.status, with.status, "{verb}");
         assert_eq!(plain.stdout, with.stdout, "{verb}");
+    }
+}
+
+fn hybrid_braking_request(name: &str, items: serde_json::Value) -> AnalyzeRequest {
+    let request = AnalyzeRequest::new(
+        name,
+        items,
+        serde_json::json!({"models": [], "documents": []}),
+    );
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
+    document["request"]["program"]["source"] = serde_json::json!({
+        "file": dependency_fixtures::fsl_example("hybrid-braking/braking.native"), "authority": "driver",
+        "identity": "driver:configured-hybrid", "document": "ConfiguredHybrid", "formal_revision": 1
+    });
+    std::fs::write(request.path(), document.to_string())
+        .expect("configured request referencing the owner source");
+    request
+}
+
+fn provider_document(output: &Output, code: i32) -> serde_json::Value {
+    assert_eq!(output.status.code(), Some(code), "{output:?}");
+    serde_json::from_slice(&output.stdout).expect("provider outcome JSON")
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_braking_default_proof_and_refutation_have_real_evidence() {
+    for (request, code, result) in [
+        ("slow-enough.analyze.json", 0, "proved"),
+        ("too-slow.analyze.json", 10, "refuted"),
+    ] {
+        let output = Command::new(FSL)
+            .arg("analyze")
+            .arg(dependency_fixtures::fsl_example(&format!(
+                "hybrid-braking/{request}"
+            )))
+            .args(["--format", "json"])
+            .output()
+            .expect("analyze the actual owner example request");
+        let document = provider_document(&output, code);
+        let item = &document["items"][0];
+        assert_eq!(item["record"]["result"], result, "{document}");
+        assert_eq!(
+            item["record"]["backend"], "fsl-hybrid-reference",
+            "{document}"
+        );
+        if result == "proved" {
+            assert_eq!(item["record"]["certification"], "certified", "{document}");
+            assert_eq!(item["certificate"]["accepted"], true, "{document}");
+        } else {
+            assert_eq!(item["replay"]["reproduced"], true, "{document}");
+            assert!(!item["counterexample"].is_null(), "{document}");
+        }
+        let registry = document["registry"].as_array().expect("registry");
+        for backend in ["fsl-hybrid-reference", "en-1"] {
+            assert!(
+                registry.iter().any(|entry| entry["backend"] == backend),
+                "{document}"
+            );
+        }
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_selection_transports_fsl_request_and_keeps_trusted_proof() {
+    let request = hybrid_braking_request(
+        "hybrid-process",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            {"claim": "SlowEnough", "backend": "fsl-hybrid-reference"},
+            {"claim": "SlowEnough"},
+        ]),
+    );
+    let log = request.directory.0.join("hybrid-request.json");
+    let shutdown = request.directory.0.join("shutdown");
+    let config = provider_config(
+        &request,
+        &[
+            PROVIDER_BACKEND,
+            "hybrid",
+            "unsat",
+            log.to_str().expect("log path"),
+            shutdown.to_str().expect("shutdown path"),
+        ],
+    );
+    let document = provider_document(&analyze_with_config(&request, &config), 20);
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(
+        item["record"]["basis"]["type"], "bounded-solver",
+        "{document}"
+    );
+    assert_eq!(
+        item["record"]["basis"]["method"], "delta-complete",
+        "{document}"
+    );
+    assert_eq!(item["record"]["certification"], "trusted", "{document}");
+    assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{document}");
+    assert_eq!(
+        document["items"][1]["record"]["result"], "proved",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["backend"], "fsl-hybrid-reference",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["certification"], "certified",
+        "{document}"
+    );
+    assert!(
+        document["items"][2]
+            .to_string()
+            .contains("ambiguous-backend"),
+        "{document}"
+    );
+    assert_eq!(
+        std::fs::read(shutdown).expect("orderly provider shutdown"),
+        b"shutdown"
+    );
+    let sent: serde_json::Value = serde_json::from_slice(&std::fs::read(log).expect("request log"))
+        .expect("FSL's hybrid request");
+    assert_eq!(
+        sent["contract_version"], "filament.backend-provider/v1",
+        "{sent}"
+    );
+    assert_eq!(sent["request"]["items"][0]["request_index"], 0, "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["kind"], "temporal-satisfaction",
+        "{sent}"
+    );
+    assert!(sent.to_string().contains("hybrid"), "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["requirements"],
+        serde_json::json!(["hybrid-dynamics"]),
+        "{sent}"
+    );
+    assert_eq!(sent["request"]["deadline_ms"], 600_000, "{sent}");
+    let encoded = sent["request"]["package"].as_str().expect("base64 package");
+    use base64::Engine as _;
+    let package = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .expect("FSL emitted package bytes");
+    assert!(
+        String::from_utf8_lossy(&package).contains("SlowEnough"),
+        "emitted package"
+    );
+    assert!(!sent["request"]["package"].is_null(), "{sent}");
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_preserves_malformed_results_for_fsl_refusal() {
+    for result in ["malformed", "unknown-member"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-{result}"),
+            serde_json::json!([
+                {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let shutdown = request.directory.0.join("shutdown");
+        let config = provider_config(
+            &request,
+            &[
+                PROVIDER_BACKEND,
+                "hybrid",
+                result,
+                "-",
+                shutdown.to_str().expect("shutdown path"),
+            ],
+        );
+        let output = analyze_with_config(&request, &config);
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("outcome");
+        assert_ne!(output.status.code(), Some(0), "{document}");
+        assert_eq!(
+            document["items"][0]["record"]["result"], "failed",
+            "{document}"
+        );
+        assert_eq!(std::fs::read(shutdown).expect("shutdown"), b"shutdown");
+        if result == "unknown-member" {
+            assert!(
+                document.to_string().contains("malformed-body"),
+                "{document}"
+            );
+        }
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_provider_unsuitable_hello_is_refused_and_started_sessions_are_closed() {
+    for mode in ["hybrid-bounded", "hybrid-no-dynamics"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-hello-{mode}"),
+            serde_json::json!([
+                {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let shutdown = request.directory.0.join("shutdown");
+        let first_shutdown = request.directory.0.join("first-shutdown");
+        let config = request.directory.0.join("providers.json");
+        std::fs::write(&config, serde_json::json!({"format": "filament.provider-config/v1",
+            "providers": [
+                {"path": test_provider_path::executable(), "arguments": [
+                    "first-hybrid", "hybrid", "unsat", "-", first_shutdown.to_str().expect("path")]},
+                {"path": test_provider_path::executable(), "arguments": [
+                    PROVIDER_BACKEND, mode, "unsat", "-", shutdown.to_str().expect("path")]}
+            ]}).to_string()).expect("configuration");
+        let output = analyze_with_config(&request, &config);
+        assert_eq!(output.status.code(), Some(20), "{output:?}");
+        assert_eq!(
+            std::fs::read(first_shutdown).expect("earlier session shutdown"),
+            b"shutdown"
+        );
+        // Admission may terminate an invalid hello immediately; a started,
+        // admitted but unsuitable provider must receive orderly shutdown.
+        if mode == "hybrid-bounded" {
+            assert_eq!(
+                std::fs::read(shutdown).expect("unsuitable session shutdown"),
+                b"shutdown"
+            );
+        }
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_deadline_settles_incomplete_instead_of_accepting_a_late_proof() {
+    let request = hybrid_braking_request(
+        "hybrid-deadline",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            {"claim": "SlowEnough", "backend": "fsl-hybrid-reference"},
+        ]),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", "late"]);
+    let output = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(config)
+        .args(["--provider-limit", "deadline_ms=500", "--format", "json"])
+        .output()
+        .expect("deadline hybrid run");
+    let document = provider_document(&output, 22);
+    assert_eq!(
+        document["items"][0]["record"]["result"], "incomplete",
+        "{document}"
+    );
+    assert!(document.to_string().contains("timed-out"), "{document}");
+    assert_eq!(
+        document["items"][1]["record"]["result"], "proved",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["certification"], "certified",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["certificate"]["accepted"], true,
+        "{document}"
+    );
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_signal_cancels_the_open_item() {
+    for signal in ["term", "int"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-signal-{signal}"),
+            serde_json::json!([
+                {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", signal]);
+        let document = provider_document(&analyze_with_config(&request, &config), 22);
+        assert_eq!(
+            document["items"][0]["record"]["result"], "incomplete",
+            "{document}"
+        );
+        assert!(document.to_string().contains("cancelled"), "{document}");
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_refutation_requires_exact_native_replay() {
+    for (result, terminal) in [("refuted", "refuted"), ("false-refutation", "inconclusive")] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-replay-{result}"),
+            serde_json::json!([
+                {"claim": "TooSlow", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", result]);
+        let output = analyze_with_config(&request, &config);
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("outcome");
+        let item = &document["items"][0];
+        assert_eq!(item["record"]["result"], terminal, "{document}");
+        if result == "refuted" {
+            assert_eq!(output.status.code(), Some(10), "{document}");
+            assert_eq!(item["replay"]["reproduced"], true, "{document}");
+            assert!(!item["counterexample"].is_null(), "{document}");
+        } else {
+            assert_ne!(output.status.code(), Some(10), "{document}");
+            assert!(item.to_string().contains("replay-parity"), "{document}");
+            assert!(
+                item.get("counterexample")
+                    .is_none_or(serde_json::Value::is_null),
+                "{document}"
+            );
+        }
+    }
+}
+
+// Mixed capability support needs a combined FSL engine under one identity.
+// This checks the current refusal and cleanup rather than claiming support.
+#[trace("TC-047")]
+#[test]
+fn hybrid_mixed_capability_refusal_names_both_groups_and_closes_every_session() {
+    let request = hybrid_braking_request(
+        "hybrid-mixed-refusal",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+        ]),
+    );
+    let first_shutdown = request.directory.0.join("first-shutdown");
+    let mixed_shutdown = request.directory.0.join("mixed-shutdown");
+    let final_shutdown = request.directory.0.join("final-shutdown");
+    let request_log = request.directory.0.join("should-not-run");
+    let config = request.directory.0.join("providers.json");
+    std::fs::write(
+        &config,
+        serde_json::json!({"format": "filament.provider-config/v1",
+        "providers": [
+            {"path": test_provider_path::executable(), "arguments": [
+                "first-value", "unbounded", "proved", "-", first_shutdown.to_str().expect("path")]},
+            {"path": test_provider_path::executable(), "arguments": [
+                PROVIDER_BACKEND, "hybrid-mixed", "unsat", request_log.to_str().expect("path"),
+                mixed_shutdown.to_str().expect("path")]},
+            {"path": test_provider_path::executable(), "arguments": [
+                "final-hybrid", "hybrid", "unsat", "-", final_shutdown.to_str().expect("path")]}
+        ]})
+        .to_string(),
+    )
+    .expect("configuration");
+    let output = analyze_with_config(&request, &config);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for member in [
+        PROVIDER_BACKEND,
+        "value-validity",
+        "temporal-satisfaction",
+        "hybrid",
+    ] {
+        assert!(diagnostic.contains(member), "{diagnostic}");
+    }
+    assert!(!request_log.exists(), "refusal precedes item dispatch");
+    for marker in [first_shutdown, mixed_shutdown, final_shutdown] {
+        assert_eq!(
+            std::fs::read(marker).expect("all admitted sessions close"),
+            b"shutdown"
+        );
+    }
+}
+
+#[trace("TC-047")]
+#[test]
+fn hybrid_unbounded_only_provider_does_not_authorize_a_bounded_claim() {
+    let request = hybrid_braking_request(
+        "hybrid-unbounded-only",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+        ]),
+    );
+    let log = request.directory.0.join("should-not-dispatch");
+    let shutdown = request.directory.0.join("shutdown");
+    let config = provider_config(
+        &request,
+        &[
+            PROVIDER_BACKEND,
+            "hybrid-unbounded",
+            "unsat",
+            log.to_str().expect("log path"),
+            shutdown.to_str().expect("shutdown path"),
+        ],
+    );
+    let document = provider_document(&analyze_with_config(&request, &config), 21);
+    assert!(
+        document["items"][0]
+            .to_string()
+            .contains("unsupported-requested-capability"),
+        "{document}"
+    );
+    assert!(
+        document["registry"]
+            .as_array()
+            .expect("registry")
+            .iter()
+            .any(|entry| entry["backend"] == PROVIDER_BACKEND),
+        "{document}"
+    );
+    assert!(!log.exists(), "the driver must preserve advertised modes");
+    assert_eq!(
+        std::fs::read(shutdown).expect("admitted session shutdown"),
+        b"shutdown"
+    );
+}
+
+#[trace("TC-036", "FR-022-AC-7")]
+#[test]
+fn composition_text_preserves_derived_outcomes_trust_basis_and_extents_from_json() {
+    let program = br#"language "ix:native" edition "1-draft";
+profile audit = "filament.model.complete/v1";
+import "driver/counter-invariants" as Invariants;
+import "driver/meter-invariants" as MeterInvariants;
+model M = "test/counter";
+model Meter = "driver/audit-meter";
+compose CounterBoundaryAudit rule interface {
+  component Proven from Invariants using M;
+  component Violated from MeterInvariants using Meter;
+  guarantee Proven::Bounded;
+  guarantee Violated::BelowThree;
+}
+"#;
+    let request = AnalyzeRequest::new(
+        "composition-text-trust",
+        serde_json::json!([{"claim": "CounterBoundaryAudit", "kind": "composition"}]),
+        serde_json::json!({}),
+    )
+    .with_file("/request/program/source/file", "counter-audit.fsl", program);
+    let source = std::path::Path::new(ANALYZE_REQUEST)
+        .parent()
+        .expect("driver fixture directory")
+        .join("analyze-counter.fsl");
+    // Instantiate the existing driver schema and initial data for a second
+    // selected model. Both components keep the original clause predicates.
+    fn meter_identity(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) => {
+                if text == "test/counter" {
+                    *text = "driver/audit-meter".to_owned();
+                } else if let Some(suffix) = text.strip_prefix("ix://test/counter/") {
+                    *text = format!("ix://driver/audit-meter/{suffix}");
+                }
+            }
+            serde_json::Value::Array(entries) => {
+                for entry in entries {
+                    meter_identity(entry);
+                }
+            }
+            serde_json::Value::Object(members) => {
+                for value in members.values_mut() {
+                    meter_identity(value);
+                }
+            }
+            serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {
+            }
+        }
+    }
+    let fixtures = source.parent().expect("driver fixture directory");
+    let mut meter_model: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixtures.join("analyze-counter.semantic-ir.json"))
+            .expect("owned Counter schema"),
+    )
+    .expect("Counter model JSON");
+    meter_identity(&mut meter_model);
+    let model_path = request.directory.0.join("meter.semantic-ir.json");
+    std::fs::write(&model_path, meter_model.to_string()).expect("independent meter model");
+    let mut initial_world: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixtures.join("analyze-counter-start.json"))
+            .expect("owned Counter initial data"),
+    )
+    .expect("Counter snapshot JSON");
+    let mut meter_start = initial_world.clone();
+    meter_identity(&mut meter_start);
+    meter_start["populations"][0]["objects"][0]["key"] = "meter".into();
+    // Every initialization document is a whole initial world. Supply both
+    // real populations together, rather than two partial alternative worlds.
+    initial_world["identity"] =
+        serde_json::json!({"authority": "driver", "identity": "audit-world-start"});
+    initial_world["populations"]
+        .as_array_mut()
+        .expect("initial world populations")
+        .extend(
+            meter_start["populations"]
+                .as_array()
+                .expect("meter population and initial object")
+                .iter()
+                .cloned(),
+        );
+    let start_path = request.directory.0.join("audit-world-start.json");
+    std::fs::write(&start_path, initial_world.to_string())
+        .expect("complete two-model initial world");
+    let counter_source = std::fs::read_to_string(&source).expect("owned Counter clauses");
+    // Each premise is checked in its own library scope. Both scopes must
+    // map both populations present in the shared initialization world.
+    let counter_library = counter_source.replace(
+        "model M = \"test/counter\";",
+        "model M = \"test/counter\";\nmodel Meter = \"driver/audit-meter\";",
+    );
+    let counter_library_path = request.directory.0.join("counter-invariants.fsl");
+    std::fs::write(&counter_library_path, counter_library).expect("counter library model mappings");
+    let meter_source = counter_source
+        .replace(
+            "model M = \"test/counter\";",
+            "model Meter = \"driver/audit-meter\";\nmodel M = \"test/counter\";",
+        )
+        .replace("M::Counter", "Meter::Counter");
+    let library_path = request.directory.0.join("meter-invariants.fsl");
+    std::fs::write(&library_path, meter_source).expect("meter library model mappings");
+    let mut input: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
+    input["request"]["libraries"] = serde_json::json!([
+        {"identity": "driver/counter-invariants", "source": {"file": counter_library_path,
+            "authority": "driver", "identity": "counter-fixture", "document": "CounterInvariants", "formal_revision": 1}},
+        {"identity": "driver/meter-invariants", "source": {"file": library_path,
+            "authority": "driver", "identity": "meter-fixture", "document": "MeterInvariants", "formal_revision": 1}}
+    ]);
+    input["request"]["models"].as_array_mut().expect("model selections").push(
+        serde_json::json!({"format": "semantic-ir/2.0.0", "source": {"file": model_path,
+            "authority": "driver", "identity": "meter-model", "document": "AuditMeter", "formal_revision": 1}}));
+    input["request"]["documents"] = serde_json::json!([{"file": start_path}]);
+    std::fs::write(request.path(), input.to_string()).expect("composition request");
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(21), "{document}");
+    let items = document["items"].as_array().expect("ordered items");
+    assert_eq!(items.len(), 3, "{document}");
+    assert_eq!(items[0]["record"]["result"], "unsupported", "{document}");
+    assert_eq!(
+        items[0]["record"]["diagnostic"]["detail"]["kind"], "composition",
+        "{document}"
+    );
+    assert_eq!(items[1]["record"]["result"], "proved", "{document}");
+    assert_eq!(
+        items[1]["record"]["certification"], "certified",
+        "{document}"
+    );
+    assert!(
+        items[1]["record"]["basis"].is_object(),
+        "the proved premise carries its full trust basis: {document}"
+    );
+    assert_eq!(items[2]["record"]["result"], "refuted", "{document}");
+    assert!(items[2]["record"]["certification"].is_null(), "{document}");
+    let text = request.run("text");
+    assert_eq!(text.status.code(), Some(21), "{text:?}");
+    let text = String::from_utf8(text.stdout).expect("text output");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 4, "{text}");
+    assert!(lines[0].contains("capability=composition"), "{text}");
+    assert_eq!(lines[3], "unsupported", "{text}");
+    for (slot, item) in items[1..].iter().enumerate() {
+        let line = lines[slot + 1];
+        assert!(
+            line.contains(item["record"]["result"].as_str().expect("outcome")),
+            "{text}"
+        );
+        assert_eq!(item["record"]["backend"], "en-1", "{document}");
+        assert!(line.contains("backend=en-1"), "{text}");
+        assert_eq!(
+            item["request"]["extent"]["classification"], "unbounded",
+            "{document}"
+        );
+        assert_eq!(
+            item["request"]["extent"]["classification"],
+            items[0]["request"]["premises"][slot]["key"]["extent"]["classification"],
+            "{document}"
+        );
+        let extent =
+            ix_cli_kit::json::encode_canonical(&item["request"]["extent"], false).expect("extent");
+        assert!(line.contains(&format!("extent={extent}")), "{text}");
+        if let Some(basis) = item["record"].get("basis") {
+            let basis = ix_cli_kit::json::encode_canonical(basis, false).expect("full basis");
+            assert!(line.contains(&basis), "{text}");
+        }
+        if let Some(certification) = item["record"]["certification"].as_str() {
+            assert!(
+                line.contains(&format!("certification={certification}")),
+                "{text}"
+            );
+        } else {
+            assert!(!line.contains("certification="), "{text}");
+        }
+    }
+    fn counter_field<'a>(
+        state: &'a serde_json::Value,
+        package: &str,
+        object_identity: &str,
+    ) -> (&'a serde_json::Value, &'a serde_json::Value) {
+        assert_eq!(state["type"], "simulation-state");
+        assert_eq!(state["semantic"]["type"], "map");
+        let population_identity = serde_json::json!({
+            "package": package, "node": format!("ix://{package}/counters")
+        });
+        let population = state["semantic"]["entries"]
+            .as_array()
+            .expect("population map")
+            .iter()
+            .find(|entry| {
+                assert_eq!(entry["key"]["type"], "text");
+                let identity: serde_json::Value = serde_json::from_str(
+                    entry["key"]["value"]
+                        .as_str()
+                        .expect("population identity text"),
+                )
+                .expect("canonical population declaration identity");
+                identity == population_identity
+            })
+            .expect("the declared population");
+        assert_eq!(population["value"]["type"], "map");
+        let type_identity = serde_json::json!({
+            "package": package, "node": format!("ix://{package}/Counter")
+        });
+        let object = population["value"]["entries"]
+            .as_array()
+            .expect("object map")
+            .iter()
+            .find(|entry| {
+                entry["key"]["type"] == "reference"
+                    && entry["key"]["identity"] == object_identity
+                    && entry["key"]["object_type"]["original"] == type_identity
+            })
+            .expect("the declared object identity and type");
+        assert_eq!(object["value"]["type"], "record");
+        let record_identity: serde_json::Value = serde_json::from_str(
+            object["value"]["name"]
+                .as_str()
+                .expect("record declaration identity"),
+        )
+        .expect("canonical record declaration identity");
+        assert_eq!(record_identity, type_identity);
+        let field = object["value"]["fields"]
+            .as_array()
+            .expect("declared fields")
+            .iter()
+            .find(|field| field["name"] == "value")
+            .expect("the Counter value field");
+        assert_eq!(field["value"]["type"], "integer");
+        (&field["value"], &object["key"])
+    }
+    let counterexample = &items[2]["counterexample"];
+    assert_eq!(items[2]["replay"]["reproduced"], true, "{document}");
+    let binding = &counterexample["over_binding"];
+    assert_eq!(binding["type"], "reference", "{document}");
+    assert_eq!(binding["identity"], "meter", "{document}");
+    assert_eq!(
+        binding["object_type"]["original"],
+        serde_json::json!({
+            "package": "driver/audit-meter", "node": "ix://driver/audit-meter/Counter"
+        }),
+        "{document}"
+    );
+    let prefix = counterexample["prefix"]
+        .as_array()
+        .expect("native counterexample trajectory");
+    let mut deciding = Vec::new();
+    let mut peer = Vec::new();
+    for step in prefix {
+        let state = &step["post_state"]["state"];
+        let (value, reference) = counter_field(state, "driver/audit-meter", "meter");
+        assert_eq!(
+            reference, binding,
+            "the witness follows the actual clause binding"
+        );
+        deciding.push(value["value"].as_str().expect("integer spelling"));
+        let (value, _) = counter_field(state, "test/counter", "a");
+        peer.push(value["value"].as_str().expect("peer integer spelling"));
+    }
+    assert_eq!(deciding, ["1", "2", "3"], "{document}");
+    assert_eq!(peer, ["0", "0", "0"], "{document}");
+    let final_state = &prefix.last().expect("a deciding final state")["post_state"]["state"];
+    assert_eq!(
+        counter_field(final_state, "driver/audit-meter", "meter").0,
+        &serde_json::json!({"type": "integer", "value": "3"}),
+        "{document}"
+    );
+    assert_eq!(
+        counter_field(final_state, "test/counter", "a").0,
+        &serde_json::json!({"type": "integer", "value": "0"}),
+        "{document}"
+    );
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_refuses_nontrusted_plugin_certification() {
+    for certification in ["uncertified", "certified"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-trust-{certification}"),
+            serde_json::json!([{"claim": "SlowEnough", "backend": PROVIDER_BACKEND}]),
+        );
+        let shutdown = request.directory.0.join("shutdown");
+        let config = provider_config(
+            &request,
+            &[
+                PROVIDER_BACKEND,
+                "hybrid",
+                certification,
+                "-",
+                shutdown.to_str().expect("shutdown path"),
+            ],
+        );
+        let document = provider_document(&analyze_with_config(&request, &config), 30);
+        let item = &document["items"][0];
+        assert_eq!(item["record"]["result"], "failed", "{document}");
+        assert!(
+            item.to_string().contains("certification-mismatch"),
+            "{document}"
+        );
+        assert!(item.to_string().contains("/certification"), "{document}");
+        assert_ne!(item["certificate"]["accepted"], true, "{document}");
+        assert_eq!(
+            std::fs::read(shutdown).expect("provider closed"),
+            b"shutdown"
+        );
     }
 }

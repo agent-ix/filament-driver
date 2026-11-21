@@ -642,6 +642,74 @@ where
         }
     }
 
+    /// Exchange under a per-request timeout while preserving the parent's
+    /// cancellation handle. Late successful replies are rejected after the
+    /// blocking wait, and every stopped exchange uses the session's cleanup.
+    pub fn request_with_timeout<Q, R, V>(
+        &mut self,
+        body: &Q,
+        cancel: &Cancel,
+        timeout: Duration,
+        validate_result: impl FnOnce(&M, &R) -> Result<(), V>,
+    ) -> Result<R, PluginError<A, V, F>>
+    where
+        Q: Serialize,
+        R: DeserializeOwned,
+    {
+        let started = Instant::now();
+        let exchange_cancel = Cancel::new();
+        thread::scope(|scope| {
+            let (done, finished) = mpsc::channel::<()>();
+            // This private token wakes the existing cancellation/grace path.
+            // The real parent source and provider timeout remain separate.
+            let timer_cancel = exchange_cancel.clone();
+            let timer = thread::Builder::new()
+                .name("filament-plugin-deadline".to_owned())
+                .spawn_scoped(scope, move || loop {
+                    if cancel.cause().is_some() {
+                        timer_cancel.cancel(CancelCause::Requested);
+                        break;
+                    }
+                    let elapsed = started.elapsed();
+                    if elapsed >= timeout {
+                        timer_cancel.cancel(CancelCause::Requested);
+                        break;
+                    }
+                    match finished.recv_timeout((timeout - elapsed).min(Duration::from_millis(5))) {
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                })
+                .map_err(|source| PluginError::WorkerSpawn {
+                    worker: "request timer",
+                    source,
+                })?;
+            let result = self.request(body, &exchange_cancel, validate_result);
+            let _ = done.send(());
+            timer
+                .join()
+                .map_err(|_| self.abort(PluginError::TimerThread))?;
+            // Read both conditions after every wait and before accepting bytes.
+            // A parent stop retains its actual source, ahead of this timeout.
+            let stopped = cancel
+                .cause()
+                .map(cancel_error)
+                .or_else(|| (started.elapsed() >= timeout).then_some(PluginError::TimedOut));
+            match (result, stopped) {
+                (Ok(_), Some(cause)) => Err(self.abort(cause)),
+                (Err(error), Some(cause))
+                    if matches!(
+                        error.primary_cause(),
+                        PluginError::Cancelled | PluginError::TimedOut
+                    ) =>
+                {
+                    Err(error.replace_primary_cause(cause))
+                }
+                (result, _) => result,
+            }
+        })
+    }
+
     /// Send shutdown, wait for the process to exit, and return session
     /// diagnostics. A session with zero requests may be shut down normally.
     pub fn shutdown(
@@ -1324,6 +1392,9 @@ pub enum PluginError<A, V, F> {
     /// A typed request or fault body could not be serialized or deserialized.
     #[error("plugin typed JSON failed: {0}")]
     Json(#[from] serde_json::Error),
+    /// The per-request deadline thread panicked.
+    #[error("plugin request timer terminated unexpectedly")]
+    TimerThread,
     /// The stdout frame thread panicked.
     #[error("plugin frame reader thread terminated unexpectedly")]
     ReaderThread,
@@ -1358,6 +1429,29 @@ impl<A, V, F> PluginError<A, V, F> {
         Self::Spawn {
             path: path.to_path_buf(),
             source,
+        }
+    }
+
+    fn replace_primary_cause(self, replacement: Self) -> Self {
+        match self {
+            Self::WithDiagnostics {
+                stderr,
+                stderr_truncated,
+                capture_error,
+                process_tree_cleanup_failed,
+                reader_join_failed,
+                writer_join_failed,
+                ..
+            } => Self::WithDiagnostics {
+                cause: Box::new(replacement),
+                stderr,
+                stderr_truncated,
+                capture_error,
+                process_tree_cleanup_failed,
+                reader_join_failed,
+                writer_join_failed,
+            },
+            _ => replacement,
         }
     }
 
@@ -2401,5 +2495,122 @@ mod tests {
             .shutdown()
             .expect("shutdown reaps detached descendants");
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[cfg(unix)]
+    /// Trace: FR-013-AC-6, TC-025.
+    #[test]
+    fn request_timeout_rejects_a_reply_arriving_inside_the_receive_wait() {
+        let parent = Cancel::new();
+        let executable = echo_fixture();
+        let arguments = [OsString::from("delay-result"), OsString::from("210")];
+        let mut session = PluginSession::<TestManifest, serde_json::Value, String>::start(
+            SessionStart {
+                executable: &executable,
+                arguments: &arguments,
+                limits: session_limits(),
+                cancel: &parent,
+            },
+            |_| Ok(()),
+        )
+        .expect("real delayed provider admitted");
+        let mut received = false;
+        let error = session
+            .request_with_timeout(
+                &test_request(),
+                &parent,
+                Duration::from_millis(200),
+                |_, result: &TestResult| {
+                    received = true;
+                    assert_eq!(result.items, ["item-1"]);
+                    Ok::<(), String>(())
+                },
+            )
+            .expect_err("a ready frame after the deadline must not win the wait");
+        assert!(
+            received,
+            "the regression must reach the actual delayed result frame"
+        );
+        assert!(
+            matches!(error.primary_cause(), PluginError::TimedOut),
+            "{error:?}"
+        );
+        assert_eq!(
+            parent.cause(),
+            None,
+            "provider timeout must leave the run live"
+        );
+        assert!(!parent.poll());
+        let next = session.request(&test_request(), &parent, |_, _: &TestResult| {
+            Ok::<(), String>(())
+        });
+        assert!(
+            matches!(next, Err(PluginError::SessionClosed)),
+            "stopped child must be reaped"
+        );
+        let mut independent = PluginSession::<TestManifest, serde_json::Value, String>::start(
+            SessionStart {
+                executable: &executable,
+                arguments: &[],
+                limits: session_limits(),
+                cancel: &parent,
+            },
+            |_| Ok(()),
+        )
+        .expect("independent provider still starts under the original run token");
+        let result = independent
+            .request(&test_request(), &parent, |_, _: &TestResult| {
+                Ok::<(), String>(())
+            })
+            .expect("independent request completes");
+        assert_eq!(result.items, ["item-1"]);
+        independent
+            .shutdown()
+            .expect("independent session closes normally");
+    }
+
+    #[cfg(unix)]
+    /// Trace: FR-013-AC-5, FR-013-AC-6, TC-025.
+    #[test]
+    fn request_timeout_preserves_parent_cancellation_over_a_late_ready_reply() {
+        let parent = Cancel::new();
+        let executable = echo_fixture();
+        let arguments = [OsString::from("delay-result"), OsString::from("210")];
+        let mut session = PluginSession::<TestManifest, serde_json::Value, String>::start(
+            SessionStart {
+                executable: &executable,
+                arguments: &arguments,
+                limits: session_limits(),
+                cancel: &parent,
+            },
+            |_| Ok(()),
+        )
+        .expect("real delayed provider admitted");
+        let mut received = false;
+        let error = session
+            .request_with_timeout(
+                &test_request(),
+                &parent,
+                Duration::from_millis(200),
+                |_, _: &TestResult| {
+                    received = true;
+                    parent.cancel(CancelCause::Requested);
+                    Ok::<(), String>(())
+                },
+            )
+            .expect_err("parent cancellation wins over a late ready frame and provider timeout");
+        assert!(received, "the provider's actual result reaches validation");
+        assert_eq!(parent.cause(), Some(CancelCause::Requested));
+        assert!(
+            matches!(error.primary_cause(), PluginError::Cancelled),
+            "{error:?}"
+        );
+        let next = session.request(&test_request(), &Cancel::new(), |_, _: &TestResult| {
+            Ok::<(), String>(())
+        });
+        assert!(
+            matches!(next, Err(PluginError::SessionClosed)),
+            "cancelled child must be reaped"
+        );
     }
 }

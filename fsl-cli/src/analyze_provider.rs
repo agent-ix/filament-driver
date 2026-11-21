@@ -1,16 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Configured process providers for `fsl analyze` (FSL FR-635, FR-287).
+//! Configured process providers for `fsl analyze`.
 //!
-//! The driver starts each `--provider-config` entry, admits its `hello`
-//! manifest with `Process` origin, and hands FSL one
-//! [`Engine::external`](fsl_analyze::analyze::Engine::external) per provider
-//! through `fsl_command::command::analyze_with_providers`. FSL routes,
-//! negotiates and builds the FSpec FR-331 request for the items it settled on
-//! a provider; [`SessionProvider::settle`] only transports it: it forwards
-//! the request through [`filament_driver::ProcessProviderSession::invoke`] over the started
-//! session and maps the FR-331 response back to one verdict per item. The
-//! driver holds no package or routed item of its own. FSL replays a reported
-//! counterexample before the item can settle `refuted` (FSL FR-281).
+//! Value providers map admitted result assignments to FSL verdicts. Hybrid
+//! providers carry FSL's opaque request and result bytes through the same
+//! started session. FSL owns negotiation, certificate admission and replay;
+//! the driver closes each shared session after the run.
 
 use std::sync::{Arc, Mutex};
 
@@ -92,6 +86,10 @@ impl SessionProvider {
                     // This adapter admits only value-validity verdicts; a
                     // contract target has no value-parameter assignment here.
                     ProviderTarget::Contract(_) => ProviderVerdict::Unknown,
+                    ProviderTarget::Composition(_) => {
+                        composition_verdict(&results.items, item.index())
+                            .unwrap_or(ProviderVerdict::Unknown)
+                    }
                 })
                 .collect(),
         )
@@ -125,6 +123,32 @@ fn verdict(
         } if capability_kind == VALUE_VALIDITY => {
             counterexample(index, backend, target, &outcome.response)
         }
+        _ => None,
+    }
+}
+
+fn composition_verdict(
+    results: &[filament_driver::ProviderItemResult<ProcessProviderOutcome, String>],
+    index: RequestIndex,
+) -> Option<ProviderVerdict> {
+    let outcome = results
+        .iter()
+        .find(|item| item.request_index == index.get())?
+        .result
+        .as_ref()
+        .ok()?;
+    match &outcome.item {
+        ProcessProviderItemOutcome::Result {
+            capability_kind,
+            kind,
+        } if capability_kind == "composition" => match kind {
+            Fr331ResultKind::Proved => Some(ProviderVerdict::Proved),
+            // FSL owns the explicit no-replay settlement for composition.
+            Fr331ResultKind::Refuted => Some(ProviderVerdict::Refuted {
+                counterexample: Vec::new(),
+            }),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -176,5 +200,33 @@ fn value(value: &WitnessValue) -> Option<Value> {
         WitnessValue::ExactInteger(integer) => integer.to_string().parse().ok().map(Value::Integer),
         WitnessValue::Boolean(boolean) => Some(Value::Boolean(*boolean)),
         _ => None,
+    }
+}
+
+/// An opaque hybrid exchange sharing the driver's admitted session lifetime.
+pub(crate) struct HybridSessionProvider {
+    pub(crate) session: SharedSession,
+}
+
+impl fsl_analyze::analyze::HybridProcessExchange for HybridSessionProvider {
+    fn exchange(
+        &self,
+        request: &[u8],
+        cancel: &Cancel,
+    ) -> Result<Vec<u8>, fsl_analyze::analyze::HybridExchangeError> {
+        let crash = || {
+            fsl_analyze::analyze::HybridExchangeError::ToolFailure(fsl_replay::ToolFailure::Crash)
+        };
+        let mut guard = self.session.lock().map_err(|_| crash())?;
+        let session = guard.as_mut().ok_or_else(crash)?;
+        session.exchange_hybrid(request, cancel)
+    }
+}
+
+impl std::fmt::Debug for HybridSessionProvider {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HybridSessionProvider")
+            .finish_non_exhaustive()
     }
 }

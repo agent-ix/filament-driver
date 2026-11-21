@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Functional diagnostic derivation from FSL emission and strict IR admission.
 
-use std::{path::PathBuf, process::Command, sync::LazyLock};
+use std::sync::LazyLock;
 
 use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedNodeKind, CheckedOccurrence, CheckedOccurrenceRole,
@@ -17,6 +17,9 @@ use fsl_package::{emit_checked, emit_monitor_plan_over, Emission, MonitorPlanWir
 use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
 use fsl_semantics::{library::LibraryName, model::intake::package_input};
 use ix_trace_rs::trace;
+
+#[path = "common/dependency_fixtures.rs"]
+mod dependency_fixtures;
 
 // These ordinary functions only supply admitted diagnostic data. They are
 // neither a temporal algorithm nor evidence of monitor preparation/build.
@@ -61,34 +64,10 @@ struct Fixture {
 static FIXTURE: LazyLock<Fixture> = LazyLock::new(fixture);
 
 fn model_document() -> Vec<u8> {
-    let output = Command::new(env!("CARGO"))
-        .args(["metadata", "--locked", "--format-version", "1"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let manifest = metadata["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["name"] == "fsl-replay")
-        .unwrap()["manifest_path"]
-        .as_str()
-        .unwrap();
-    let path = PathBuf::from(manifest);
-    std::fs::read(
-        path.parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("examples/config-version/model.semantic-ir.json"),
-    )
-    .unwrap()
+    std::fs::read(dependency_fixtures::fsl_example(
+        "config-version/model.semantic-ir.json",
+    ))
+    .expect("the owner model document")
 }
 
 fn admit(emission: &Emission, evidence: &CheckedPackageEvidence) -> Box<CheckedPackageV2> {

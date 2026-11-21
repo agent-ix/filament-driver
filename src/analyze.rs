@@ -227,6 +227,10 @@ fn request_item(item: &ClaimItem, candidates: &CandidateOutcome) -> cg::RequestI
             bounds.clone_from(&hybrid.proof_bounds);
             requirements.hybrid_dynamics = true;
         }
+        Some(ItemForm::Composition(_)) => {
+            // Derived premise slots remain FSL's provider request data; the
+            // common capability, extent and candidate projection applies.
+        }
         Some(ItemForm::FiniteHyper(_)) => {
             // The checked clause's bound limits its trace population, which
             // FSL evaluates with ItemOptions::traces. It is not a substituted

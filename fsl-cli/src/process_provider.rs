@@ -328,6 +328,110 @@ pub struct HostProcessSession<M, Q, R, F, A, V, I, E, Encode, Validate, Convert>
     _wire_types: PhantomData<SessionWireTypes<Q, R, V, I, E>>,
 }
 
+impl<M, Q, R, F, A, V, I, E, Encode, Validate, Convert>
+    HostProcessSession<M, Q, R, F, A, V, I, E, Encode, Validate, Convert>
+where
+    M: DeserializeOwned,
+    F: DeserializeOwned,
+{
+    /// Transport an opaque FSL request through the same bounded session.
+    /// FSL alone reads the hybrid result and admits its semantic evidence.
+    pub(crate) fn exchange_hybrid(
+        &mut self,
+        request: &[u8],
+        cancel: &Cancel,
+    ) -> Result<Vec<u8>, fsl_analyze::analyze::HybridExchangeError> {
+        use fsl_analyze::analyze::HybridExchangeError;
+        use fsl_replay::ToolFailure;
+
+        let _request_active = self.signals.activate(cancel.clone());
+        let body: serde_json::Value = serde_json::from_slice(request)
+            .map_err(|_| HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))?;
+        let deadline_ms = body
+            .pointer("/request/deadline_ms")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or(HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))?;
+        let result: serde_json::Value = self
+            .host
+            .request_with_timeout(
+                &body,
+                cancel,
+                std::time::Duration::from_millis(deadline_ms),
+                |_, _: &serde_json::Value| Ok::<_, Infallible>(()),
+            )
+            .map_err(|error| {
+                if let Some(source) = cancel.cause() {
+                    let _ = cancel.poll();
+                    HybridExchangeError::Cancelled { source }
+                } else if matches!(error.primary_cause(), PluginError::TimedOut) {
+                    HybridExchangeError::TimedOut
+                } else {
+                    HybridExchangeError::ToolFailure(hybrid_transport_failure(
+                        error.primary_cause(),
+                    ))
+                }
+            })?;
+        // The host admits only exact canonical frames. Re-encoding their
+        // opaque body preserves every member while the host owns byte limits.
+        quire_canonical::to_vec(&result, quire_canonical::Limits::new(u64::MAX))
+            .map_err(|_| HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))
+    }
+}
+
+fn hybrid_transport_failure<A, V, F>(error: &PluginError<A, V, F>) -> fsl_replay::ToolFailure {
+    use filament_plugin_host::FrameError;
+    use fsl_replay::ToolFailure;
+
+    match error {
+        PluginError::Frame(FrameError::FrameTooLarge { actual, maximum }) => {
+            ToolFailure::FrameLength {
+                limit: *maximum,
+                value: *actual,
+            }
+        }
+        PluginError::Frame(FrameError::RunTooLarge { actual, maximum }) => {
+            ToolFailure::TotalBytes {
+                limit: *maximum,
+                value: *actual,
+            }
+        }
+        PluginError::Frame(FrameError::NonCanonical) => ToolFailure::NoncanonicalFrame,
+        PluginError::Frame(FrameError::WrongProtocol(_)) => ToolFailure::UnknownProtocol,
+        PluginError::UnexpectedId { .. } => ToolFailure::UnknownRequestId,
+        PluginError::UnexpectedKind { .. } => ToolFailure::UnknownFrameKind,
+        PluginError::Exited(status) if status.code().is_none() => ToolFailure::Crash,
+        PluginError::Exited(status) if !status.success() => ToolFailure::NonzeroExit,
+        PluginError::MissingFrame | PluginError::Exited(_) => ToolFailure::MissingTerminalRecord,
+        PluginError::SessionClosed => ToolFailure::Crash,
+        PluginError::Fault(_) | PluginError::ResultValidation(_) => ToolFailure::MalformedBody,
+        PluginError::WithDiagnostics { cause, .. } => hybrid_transport_failure(cause),
+        PluginError::BareExecutableName(_)
+        | PluginError::ShellScriptExecutable(_)
+        | PluginError::MissingManifest
+        | PluginError::Spawn { .. }
+        | PluginError::MissingPipe(_)
+        | PluginError::Wait(_)
+        | PluginError::RequestIdsExhausted
+        | PluginError::UnexpectedFrame
+        | PluginError::GraceExpired
+        | PluginError::ShutdownTimeout
+        | PluginError::ProcessTreeCleanupTimeout
+        | PluginError::Cancelled
+        | PluginError::TimedOut
+        | PluginError::ManifestAdmission(_)
+        | PluginError::Json(_)
+        | PluginError::TimerThread
+        | PluginError::ReaderThread
+        | PluginError::WriterThread
+        | PluginError::WriterUnresponsive
+        | PluginError::WorkerJoinTimeout(_)
+        | PluginError::WorkerSpawn { .. }
+        | PluginError::CaptureThread
+        | PluginError::Stderr(_)
+        | PluginError::Frame(_) => ToolFailure::MalformedFrame,
+    }
+}
+
 impl<M, Q, R, F, A, V, I, E, Encode, Validate, Convert> ProcessProviderSession
     for HostProcessSession<M, Q, R, F, A, V, I, E, Encode, Validate, Convert>
 where
