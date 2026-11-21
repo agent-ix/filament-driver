@@ -60,3 +60,10 @@ Round 1, fix commits 76863ce and e55077b796d34e6e5163bfcd66dd452efd019894, judge
 | FND-003 | fixed | Test asserts `stage_limit_exceeded` (JSON) and `limit 1 reached` (text) |
 | FND-004 | still-open | Not dead any more but still ineffective: FSL ignores `RequestOverrides.observation` for a call run, so wiring it accepts and drops observation settings; see FND-006 |
 | FND-005 | fixed | One `native_run_request` read; `carries_extraction` / `carries_call_requirements` borrow without cloning |
+
+Round 2, fix commit c14b5bbd851e185a99249d0a978d613b34642269, judged from code reading (no build).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | `observation_limits` parameter removed and `RequestOverrides.observation` no longer set on the requirements route |
+| FND-006 | fixed | `requirement_run_limits` accepts stage settings only through `SpineLimits::set_bound`, which has no observation member in FSL 8f71444, so `observation.input_bytes` is refused exit 20 naming `requirements`; test asserts it |

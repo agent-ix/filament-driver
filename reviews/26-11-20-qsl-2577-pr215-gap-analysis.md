@@ -46,3 +46,10 @@ Round 1, fix commits 76863ce and e55077b796d34e6e5163bfcd66dd452efd019894, judge
 | --- | --- | --- |
 | FND-001 | fixed | FR-002-AC-27 states the accounting refusal (exit 20, naming `accounting.work_units` and `requirements`), FR-003-AC-10 points to it, test asserts it |
 | FND-002 | fixed | AC-27 now names FR-002-AC-22's document as the reference instead of comparing a command with itself |
+
+Round 2, fix commit c14b5bbd851e185a99249d0a978d613b34642269, judged from code reading.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-003 | fixed | Both FR-003 accounting SHALL statements now carry the requirements-call exception citing FR-002-AC-27, matching FR-003-AC-10 |
+| FND-004 | fixed | Test asserts the default document contains `{"integer":"16"}`; adequate, since a wrong value fails and no other member of this document carries that object |
