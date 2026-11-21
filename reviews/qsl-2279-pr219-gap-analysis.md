@@ -198,6 +198,12 @@ Selected FSL fsl-analyze/src/analyze/request.rs declares FiniteHyper(Box<FiniteH
 | FND-003 | low | The new foreign FSL-FR-898 trace strings normalize to unmatched local FR-898-AC-3 and FR-898-AC-4 in Quire coverage. Keep the local FR-022-AC-8 binding and express upstream partial coverage as provenance or use a supported declared foreign binding. | fsl-cli/tests/frontend_cli.rs:844 |
 | FND-004 | high | The selected FSL PreparedRun enum includes RefinementTransfer, but the frozen driver CLI match omits it, causing E0004 at fsl-cli/src/cli.rs:1085 and preventing a fresh CLI build before the remaining checks can run. | fsl-cli/src/cli.rs:1085 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The new transfer test provenance docstring emits unmatched FR-1031 and trace-id-outside-marker in fresh Quire coverage; retain the valid local bindings while avoiding an unsupported foreign ID token in the scanned test comment. | fsl-cli/tests/frontend_cli.rs:514 |
+
 ## Dispositions
 
 ### Round 1
@@ -236,4 +242,41 @@ dispositions:
   outcome: still-open
   reason: Frozen dda276 CLI match omits PreparedRun::RefinementTransfer; delegate
     explicitly to the native FSL executor preserving owner results and limits.
+```
+
+### Round 2
+
+Frozen `da01aa94cd4f65a8e9661f6af6d514556af4825e` reviewed against `dda27605300a7298ce42c9a6cf2638b790669a9d`. FND-001 remains fixed from round 1; no new disposition row is needed for it. Direct Option comparison fixes FND-002. The explicit RefinementTransfer pattern fixes FND-004 and uses the existing owner executor with unchanged request path, intake limits, overrides, negotiation, reference engines, provider options, render-source retention and native result/error conversion. Native execute_prepared delegates transfer to transfer::execute, whose selected-name resolution produces the asserted typed missing-name refusal. The new real CLI regression first proves native transfer preparation, then asserts exact refusal stage/member/cause/code, exit 20, owner category parity and complete owner/CLI document equality. This demonstrates delegation/refusal only, with no successful refinement proof claim.
+
+FND-003 remains open: removing the attributes is insufficient because the engine also scans the replacement provenance docstring. Fresh Quire coverage reports unmatched FR-898-AC-3 at frontend_cli.rs:927 and trace-id-outside-marker. A separate new transfer provenance token similarly reports unmatched FR-1031 at line 514 (FND-005). Local FR-022-AC-8 binds the finite-hyper test at line 930; FR-002-AC-1/AC-2 bind the transfer test at line 517. Both tests are tracked locally, but the new unmatched tokens remain. The native population proof/refutation/open/bound/replay assertions remain unchanged except the corrected Option comparison. No runtime result exists yet.
+
+Round 2 dispositions (append-only continuation of Dispositions):
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | Compares exit directly to the existing Option<i32> expected_exit. |
+| FND-003 | still-open | Foreign-looking attribute tags are gone, but provenance still emits unmatched FR-898-AC-3 and trace-id-outside-marker. |
+| FND-004 | fixed | Explicit native transfer variant delegates through the existing FSL owner execution branch. |
+| FND-005 | still-open | New transfer provenance docstring emits unmatched FR-1031 and trace-id-outside-marker. |
+
+Round 2 verdict: NOT MERGEABLE while FND-003/FND-005 remain open. Both authorized fix rounds are used; the lead must route the remaining low findings through the owner/architecture decision rather than silently waive them or start an automatic third round. All production compile blockers are statically corrected, subject to actual compilation. Exact-da01aa 15-command Draco batch is pending; prior two CLI builds failed and their subsequent checks were NOT RUN. No local Cargo build/test/Clippy or runtime PASS is asserted. git diff --check and fresh quire coverage exited 0. No pins, original monitor source/assertions/budgets or architecture changed; the single QSL-2279 monitor ignore remains removed. No whole-repository assurance PASS. Plan completion: not assessed.
+
+```yaml
+dispositions:
+- fnd: FND-002
+  outcome: fixed
+  after_excerpt: 'assert_eq!(exit, expected_exit, "{name}: {document}");'
+- fnd: FND-003
+  outcome: still-open
+  reason: Unsupported foreign attribute strings were removed, but the finite-hyper
+    test provenance docstring still emits unmatched FR-898-AC-3 and trace-id-outside-marker
+    in fresh Quire coverage.
+- fnd: FND-004
+  outcome: fixed
+  after_excerpt: "PreparedRun::Package(_)\n        | PreparedRun::ModelBasedTest(_)\n\
+    \        | PreparedRun::RefinementTransfer(_) => {"
+- fnd: FND-005
+  outcome: still-open
+  reason: New transfer provenance emits unmatched FR-1031 and trace-id-outside-marker;
+    valid local FR-002 bindings are present.
 ```

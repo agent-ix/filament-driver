@@ -511,7 +511,6 @@ predicate Square using v(x: Integer): Boolean { x * x >= 0 }
 
 /// A prepared transfer delegates execution and its typed selection refusal to
 /// FSL, preserving the same outcome document and process category.
-/// Provenance: FSL FR-1031's selection order resolves selected models first.
 #[trace("FR-002-AC-1", "FR-002-AC-2")]
 #[test]
 fn refinement_transfer_run_preserves_the_owner_selection_refusal() {
@@ -924,7 +923,6 @@ fn analyze_holds_prints_result_and_exit_zero() {
 
 /// The checked finite-hyper clause reaches EN-1 with its original population
 /// context and bound; negotiation does not replace them with proof bounds.
-/// Provenance: FSL FR-898-AC-3 and AC-4 supply the finite-population cases.
 #[trace("TC-036", "FR-022-AC-8")]
 #[test]
 fn analyze_finite_hyper_preserves_population_results_and_declared_bound() {
