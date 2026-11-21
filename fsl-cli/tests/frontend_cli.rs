@@ -3277,19 +3277,27 @@ compose CounterBoundaryAudit rule interface {
     let start_path = request.directory.0.join("audit-world-start.json");
     std::fs::write(&start_path, initial_world.to_string())
         .expect("complete two-model initial world");
-    let meter_source = std::fs::read_to_string(&source)
-        .expect("owned Counter clauses")
+    let counter_source = std::fs::read_to_string(&source).expect("owned Counter clauses");
+    // Each premise is checked in its own library scope. Both scopes must
+    // map both populations present in the shared initialization world.
+    let counter_library = counter_source.replace(
+        "model M = \"test/counter\";",
+        "model M = \"test/counter\";\nmodel Meter = \"driver/audit-meter\";",
+    );
+    let counter_library_path = request.directory.0.join("counter-invariants.fsl");
+    std::fs::write(&counter_library_path, counter_library).expect("counter library model mappings");
+    let meter_source = counter_source
         .replace(
             "model M = \"test/counter\";",
-            "model Meter = \"driver/audit-meter\";",
+            "model Meter = \"driver/audit-meter\";\nmodel M = \"test/counter\";",
         )
         .replace("M::Counter", "Meter::Counter");
     let library_path = request.directory.0.join("meter-invariants.fsl");
-    std::fs::write(&library_path, meter_source).expect("meter library binding");
+    std::fs::write(&library_path, meter_source).expect("meter library model mappings");
     let mut input: serde_json::Value =
         serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
     input["request"]["libraries"] = serde_json::json!([
-        {"identity": "driver/counter-invariants", "source": {"file": source,
+        {"identity": "driver/counter-invariants", "source": {"file": counter_library_path,
             "authority": "driver", "identity": "counter-fixture", "document": "CounterInvariants", "formal_revision": 1}},
         {"identity": "driver/meter-invariants", "source": {"file": library_path,
             "authority": "driver", "identity": "meter-fixture", "document": "MeterInvariants", "formal_revision": 1}}
