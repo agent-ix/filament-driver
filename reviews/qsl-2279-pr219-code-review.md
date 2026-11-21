@@ -280,3 +280,44 @@ dispositions:
   reason: New transfer provenance emits unmatched FR-1031 and trace-id-outside-marker;
     valid local FR-002 bindings are present.
 ```
+
+### Round 3
+
+Architecture-authorized mechanical follow-up after the two ordinary fix rounds. Frozen `3991feacaaa8f57bfadb480033aaee79f3e08a92` differs from da01aa94 only by deleting the two newly added provenance docstrings, apart from review custody. No Rust statements, attributes, test assertions, dependency pins or budgets changed. Existing FND-001/FND-002/FND-004 remain fixed; this pass rechecked only the remaining trace findings and the unchanged source delta.
+
+Fresh quire coverage exits 0. Both new tests have zero unmatched tags, zero trace diagnostics and zero untracked symbols. FR-002-AC-1/AC-2 bind refinement_transfer_run_preserves_the_owner_selection_refusal at frontend_cli.rs:516; FR-022-AC-8 binds analyze_finite_hyper_preserves_population_results_and_declared_bound at line 928. The foreign-looking ID tokens are gone; FND-003 and FND-005 are fixed. Whole-repository baseline diagnostics are outside this scoped conclusion.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | Deleted the scanned upstream provenance token; valid local finite-hyper trace binding remains and fresh coverage has no scoped diagnostics. |
+| FND-005 | fixed | Deleted the scanned upstream provenance token; both local transfer bindings remain and fresh coverage has no scoped diagnostics. |
+
+Round 3 verdict: MERGEABLE CONDITIONAL on the delegated focused runtime checks passing. All five findings now have latest fixed outcomes; no new findings. The code lead reports the AST-identical da01aa production CLI build passed, with the rest of the 15-command batch still pending, including the actual unignored monitor fixture. That is reported build evidence, not reviewer-observed runtime qualification. Comment-only changes require no additional Cargo rerun under the authorized execution policy. No local Cargo build, tests or Clippy run; no monitor/test PASS or whole-repository assurance PASS asserted. Plan completion: not assessed.
+
+```yaml
+dispositions:
+- fnd: FND-003
+  outcome: fixed
+  after_excerpt: '/// The checked finite-hyper clause reaches EN-1 with its original
+    population
+
+    /// context and bound; negotiation does not replace them with proof bounds.
+
+    #[trace("TC-036", "FR-022-AC-8")]
+
+    #[test]
+
+    fn analyze_finite_hyper_preserves_population_results_and_declared_bound() {'
+- fnd: FND-005
+  outcome: fixed
+  after_excerpt: '/// A prepared transfer delegates execution and its typed selection
+    refusal to
+
+    /// FSL, preserving the same outcome document and process category.
+
+    #[trace("FR-002-AC-1", "FR-002-AC-2")]
+
+    #[test]
+
+    fn refinement_transfer_run_preserves_the_owner_selection_refusal() {'
+```
