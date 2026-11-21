@@ -1083,7 +1083,7 @@ fn run(options: RunOptions) -> CommandResult {
         };
     let input = match prepared {
         PreparedRun::Function(prepared) => {
-            if prepared.requirements().is_some() {
+            if has_call_requirements(&options.path, options.intake_limits.request_bytes) {
                 let mut spine_limits = SpineLimits::default();
                 if let Err(error) = options.limits.apply_to_limits(&mut spine_limits, "run") {
                     return CommandResult::input_refusal(
@@ -1300,30 +1300,35 @@ impl fsl_analyze::analyze::document::Negotiate for DriverNegotiation {
 /// `program.extraction`. The bounded dispatch read does not open dependent
 /// observation or source files; FSL remains their sole reader.
 fn has_extraction_request(path: &Path, request_limit: usize) -> bool {
-    let Ok(read_limit) = u64::try_from(request_limit) else {
-        return false;
-    };
-    let Ok(file) = File::open(path) else {
-        return false;
-    };
+    native_run_request(path, request_limit)
+        .and_then(|request| request.get("program")?.get("extraction").cloned())
+        .is_some()
+}
+
+/// Whether the `native-run/1` request carries a call-level `requirements`
+/// member.
+fn has_call_requirements(path: &Path, request_limit: usize) -> bool {
+    native_run_request(path, request_limit)
+        .and_then(|request| request.get("call")?.get("requirements").cloned())
+        .is_some()
+}
+
+/// The `request` member of the bounded `native-run/1` document at `path`.
+fn native_run_request(path: &Path, request_limit: usize) -> Option<serde_json::Value> {
+    let read_limit = u64::try_from(request_limit).ok()?;
+    let file = File::open(path).ok()?;
     let mut bytes = Vec::new();
-    if file
-        .take(read_limit.saturating_add(1))
+    file.take(read_limit.saturating_add(1))
         .read_to_end(&mut bytes)
-        .is_err()
-        || bytes.len() > request_limit
-    {
-        return false;
+        .ok()?;
+    if bytes.len() > request_limit {
+        return None;
     }
-    let Ok(document) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return false;
-    };
-    document.get("format").and_then(serde_json::Value::as_str) == Some("native-run/1")
-        && document
-            .get("request")
-            .and_then(|request| request.get("program"))
-            .and_then(|program| program.get("extraction"))
-            .is_some()
+    let mut document = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    if document.get("format")?.as_str() != Some("native-run/1") {
+        return None;
+    }
+    Some(document.get_mut("request")?.take())
 }
 
 /// Dispatch typed clause dispositions to FSL's existing document producers.
