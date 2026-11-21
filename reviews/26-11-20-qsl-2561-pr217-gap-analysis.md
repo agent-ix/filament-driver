@@ -35,3 +35,7 @@ Ticket: QSL-2561. A diff-scoped gap audit of the one production behaviour change
 ## Dispositions
 
 No findings to dispose; the placeholder row has no outcome. Re-checked at 3f8b20f: FR-022 Behavior bullet 1 is now met for `fsl analyze` and for `fsl run` with providers. It is not met for `fsl run` without provider flags, which is recorded as SR-202612 FND-002.
+
+## Dispositions (round 2)
+
+No findings to dispose. Re-checked at 11b747f: FR-022 Behavior bullet 1 is now met for `fsl analyze`, and for `fsl run` with and without provider flags. FR-022-AC-11 remains ignored under QSL-2234, which is blocked by FSL's hybrid package admission refusal measured in the review pass.
