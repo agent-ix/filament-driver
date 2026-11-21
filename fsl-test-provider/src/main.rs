@@ -122,6 +122,21 @@ fn main() -> io::Result<()> {
         if let Some(log) = log {
             std::fs::write(log, body.to_string())?;
         }
+        match result.as_str() {
+            "memory-breach" => {
+                let mut allocation = Vec::<u8>::new();
+                if allocation.try_reserve_exact(256 * 1024 * 1024).is_err() {
+                    std::process::exit(71);
+                }
+            }
+            "cpu-breach" => {
+                let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                while std::time::Instant::now() < until {
+                    std::hint::black_box(1_u64.wrapping_mul(3));
+                }
+            }
+            _ => {}
+        }
         // `term` and `int` send that signal to `fsl` while the request is
         // open, then wait for the host's `cancel` and stop answering.
         if let Some(signal) = match result.as_str() {

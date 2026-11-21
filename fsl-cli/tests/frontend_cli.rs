@@ -1496,6 +1496,53 @@ fn analyze_provider_without_a_verdict_is_inconclusive() {
     );
 }
 
+fn assert_provider_resource_breach(mode: &str, limit: &str, defect: &str) {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND},
+        {"claim": "Bounded"}]);
+    let request = AnalyzeRequest::new(mode, items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", mode]);
+    let output = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(&config)
+        .args(["--provider-limit", limit, "--format", "json"])
+        .output()
+        .expect("run process provider under resource limits");
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|_| panic!("provider document; output {output:?}"));
+    assert_eq!(output.status.code(), Some(30), "{document}");
+    let record = &document["items"][0]["record"];
+    assert_eq!(record["result"], "failed", "{document}");
+    assert_eq!(
+        record["cause"],
+        serde_json::json!({"kind": "tool-failure", "defect": defect}),
+        "{document}"
+    );
+    let (without, _) = request.json();
+    assert_eq!(
+        document["items"][1], without["items"][1],
+        "unrelated item changed"
+    );
+}
+
+/// Trace: FR-287-AC-12, FR-006-AC-19, FR-006-AC-23.
+#[test]
+fn provider_resource_limits_memory_breach_settles_failed() {
+    assert_provider_resource_breach("memory-breach", "max_memory_bytes=67108864", "nonzero-exit");
+}
+
+/// Trace: FR-287-AC-12, FR-006-AC-19, FR-006-AC-23.
+#[test]
+fn provider_resource_limits_cpu_breach_settles_failed() {
+    assert_provider_resource_breach("cpu-breach", "max_cpu_ms=1", "crash");
+}
+
 /// FSL FR-624: SIGTERM or SIGINT during `fsl analyze` cancels the run with
 /// cause `requested`: the open item settles `incomplete` with
 /// `{"kind": "cancelled", "source": "requested"}`, the document is written,

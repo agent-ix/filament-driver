@@ -34,9 +34,12 @@ fn main() -> io::Result<()> {
                 std::process::exit(71);
             }
         }
-        "cpu" => loop {
-            std::hint::black_box(1_u64.wrapping_mul(3));
-        },
+        "cpu" => {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while std::time::Instant::now() < until {
+                std::hint::black_box(1_u64.wrapping_mul(3));
+            }
+        }
         _ => {}
     }
     writer
