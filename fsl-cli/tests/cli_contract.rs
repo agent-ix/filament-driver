@@ -16,7 +16,7 @@ use fsl_command::command::{self, CheckInputs};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::{
     diagnostic::{Code, Staged},
-    SettingLimits, Source, SourceIdentity,
+    Setting, SettingLimits, Source, SourceIdentity,
 };
 use fsl_replay::{
     spine::{
@@ -2855,4 +2855,134 @@ fn check_takes_two_model_operands_for_a_unit_selecting_two_models() {
         stdout.contains("--model") && stdout.contains("driver/unused"),
         "{stdout}"
     );
+}
+
+/// FR-002-AC-27: `fsl run` sends requirement-bearing calls through FSL's
+/// provider entry and carries the caller's S1 limit into that entry.
+#[trace("TC-046", "FR-002-AC-27")]
+#[test]
+fn run_routes_requirement_items_with_caller_spine_limits() {
+    let directory = TemporaryDirectory::new("run-requirement-spine-limits");
+    let source = directory.0.join("unit.native");
+    std::fs::write(
+        &source,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"filament.value.complete/v1\";\n\
+         function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }\n",
+    )
+    .expect("write requirement source");
+    let request_path = directory.0.join("run.json");
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [],
+            "program": {"source": {
+                "file": source,
+                "authority": "agent-ix",
+                "identity": "test:run-requirement-spine-limits",
+                "document": "Requirements",
+                "formal_revision": 1
+            }},
+            "call": {
+                "function": "sq",
+                "arguments": [{"parameter": "x", "value": 3}],
+                "requirements": {}
+            }
+        }
+    });
+    std::fs::write(&request_path, request.to_string()).expect("write requirement request");
+
+    let run = |limit: Option<&str>| {
+        let mut command = Command::new(FSL);
+        command.arg("run").arg(&request_path);
+        if let Some(limit) = limit {
+            command.args(["--limit", limit]);
+        }
+        command
+            .args(["--format", "json"])
+            .output()
+            .expect("run requirement request")
+    };
+
+    let without_limit = run(None);
+    assert_eq!(without_limit.status.code(), Some(0), "{without_limit:?}");
+    let default_document: serde_json::Value =
+        serde_json::from_slice(&without_limit.stdout).expect("default outcome document");
+    assert_eq!(
+        default_document["items"].as_array().map(Vec::len),
+        Some(3),
+        "the provider entry settles every default requirement item: {default_document}"
+    );
+    assert!(
+        default_document.to_string().contains(r#"{"integer":"16"}"#),
+        "the call's value is 16: {default_document}"
+    );
+    let default_nodes = SpineLimits::default()
+        .bounds()
+        .into_iter()
+        .find_map(|(setting, value)| (setting == Setting::S1Nodes).then_some(value))
+        .expect("the published S1 node default");
+    let explicit_default = run(Some(&format!("s1.nodes={default_nodes}")));
+    assert_eq!(
+        explicit_default.status.code(),
+        Some(0),
+        "{explicit_default:?}"
+    );
+    assert_eq!(explicit_default.stdout, without_limit.stdout);
+
+    let limited = run(Some("s1.nodes=1"));
+    assert_eq!(limited.status.code(), Some(22), "{limited:?}");
+    let outcome: serde_json::Value =
+        serde_json::from_slice(&limited.stdout).expect("limit outcome");
+    assert_eq!(outcome["category"], "incomplete", "{outcome}");
+    let rendered = outcome.to_string();
+    assert!(rendered.contains("s1.nodes"), "{outcome}");
+    assert!(rendered.contains("stage_limit_exceeded"), "{outcome}");
+    assert_eq!(outcome["items"], serde_json::json!([]), "{outcome}");
+
+    let text = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--limit", "s1.nodes=1"])
+        .output()
+        .expect("run requirement request in text mode");
+    assert_eq!(text.status.code(), Some(22), "{text:?}");
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("limit 1 reached"), "{text}");
+    assert!(
+        text.contains("unit.native:3"),
+        "the diagnostic names the authored source locus: {text}"
+    );
+
+    let accounting = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args([
+            "--limit",
+            "accounting.work_units=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run requirement request with an accounting limit");
+    assert_eq!(accounting.status.code(), Some(20), "{accounting:?}");
+    let refusal = String::from_utf8_lossy(&accounting.stdout);
+    assert!(refusal.contains("accounting.work_units"), "{refusal}");
+    assert!(refusal.contains("requirements"), "{refusal}");
+
+    let observation = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args([
+            "--limit",
+            "observation.input_bytes=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run requirement request with an observation limit");
+    assert_eq!(observation.status.code(), Some(20), "{observation:?}");
+    let refusal = String::from_utf8_lossy(&observation.stdout);
+    assert!(refusal.contains("observation.input_bytes"), "{refusal}");
+    assert!(refusal.contains("requirements"), "{refusal}");
 }

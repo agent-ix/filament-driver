@@ -14,7 +14,8 @@ Verify that `fsl run` routes a `tl_lowering` request (FSL FR-931) and a
 package-selected request (FSL FR-1039) through FSL's executors, writes the
 document FSL's in-process `run` writes, and applies `--limit` to the lowering.
 Also verify that a run settling requirement items registers FSL's reference
-hybrid provider. Scope: FR-002-AC-20, FR-002-AC-21, FR-002-AC-22.
+hybrid provider and passes caller spine limits to the provider-backed run
+entry. Scope: FR-002-AC-20, FR-002-AC-21, FR-002-AC-22, FR-002-AC-27.
 
 ## Test Procedure
 
@@ -35,8 +36,12 @@ hybrid provider. Scope: FR-002-AC-20, FR-002-AC-21, FR-002-AC-22.
    `[Engine::hybrid_reference()]` and default limits.
 8. Run `Q` with a `--provider-config` starting a fixture provider whose
    `hello` names the backend `fsl-hybrid-reference`.
+9. Run `Q` without `--limit`, with `--limit s1.nodes=50000`, and with
+   `--limit s1.nodes=1` (JSON and text), and with
+   `--limit accounting.work_units=1000000` and `--limit observation.input_bytes=1000000`; compare the first two documents
+   and inspect the other outcomes and their settled requirement items.
 
-Test: `fsl-cli/tests/cli_contract.rs` `run_routes_tl_lowering_and_package_requests`.
+Test: `fsl-cli/tests/cli_contract.rs` `run_routes_requirement_items_with_caller_spine_limits`.
 
 ## Expected Results
 
@@ -53,3 +58,10 @@ Test: `fsl-cli/tests/cli_contract.rs` `run_routes_tl_lowering_and_package_reques
   settled requirement entries, exit 0.
 - Step 8: `invalid-request` naming `providers`, exit 20. Fails today: the
   driver registers no reference provider, so the fixture is admitted.
+- Step 9: the default and `s1.nodes=50000` documents are byte-equal and
+  settle three requirement items; `s1.nodes=1` writes FSL's typed
+  `incomplete` outcome naming the setting and configured value 1, exit 22,
+  with no requirement item settled. A provider call that uses default spine
+  limits fails this step. In text mode the `s1.nodes=1` diagnostic names the
+  source locus `unit.native:3:1`. The accounting and observation limits each refuse `invalid-request`,
+  exit 20, naming the setting and `requirements`.

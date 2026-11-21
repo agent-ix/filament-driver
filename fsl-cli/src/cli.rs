@@ -1028,7 +1028,8 @@ fn run(options: RunOptions) -> CommandResult {
         observation: observation_limits.as_ref(),
         ..command::RequestOverrides::default()
     };
-    if has_extraction_request(&options.path, options.intake_limits.request_bytes) {
+    let request = native_run_request(&options.path, options.intake_limits.request_bytes);
+    if request.as_ref().is_some_and(carries_extraction) {
         if !only_observation_limits {
             return CommandResult::input_refusal(
                 Operation::Execute,
@@ -1082,7 +1083,28 @@ fn run(options: RunOptions) -> CommandResult {
             }
         };
     let input = match prepared {
-        PreparedRun::Function(prepared) => prepared.into_input(),
+        PreparedRun::Function(prepared) => {
+            if request.as_ref().is_some_and(carries_call_requirements) {
+                let spine_limits = match requirement_run_limits(&options.limits) {
+                    Ok(limits) => limits,
+                    Err(message) => {
+                        return CommandResult::input_refusal(Operation::Execute, message);
+                    }
+                };
+                let render_sources =
+                    fsl_inspect::RenderSources::from_sources([prepared.into_input().source]);
+                return run_with_requirement_items(
+                    &options.path,
+                    render_sources,
+                    provider_config,
+                    options.providers.limits,
+                    options.intake_limits,
+                    spine_limits,
+                    clocks,
+                );
+            }
+            prepared.into_input()
+        }
         PreparedRun::Clause(request) => {
             return run_clause_request(*request.into_request(), &options.limits);
         }
@@ -1279,31 +1301,63 @@ impl fsl_analyze::analyze::document::Negotiate for DriverNegotiation {
 /// Select FSL's extraction-aware run entry for a native-run request carrying
 /// `program.extraction`. The bounded dispatch read does not open dependent
 /// observation or source files; FSL remains their sole reader.
-fn has_extraction_request(path: &Path, request_limit: usize) -> bool {
-    let Ok(read_limit) = u64::try_from(request_limit) else {
-        return false;
-    };
-    let Ok(file) = File::open(path) else {
-        return false;
-    };
-    let mut bytes = Vec::new();
-    if file
-        .take(read_limit.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .is_err()
-        || bytes.len() > request_limit
-    {
-        return false;
+fn carries_extraction(request: &serde_json::Value) -> bool {
+    request
+        .get("program")
+        .and_then(|program| program.get("extraction"))
+        .is_some()
+}
+
+/// Whether the `native-run/1` request carries a call-level `requirements`
+/// member.
+fn carries_call_requirements(request: &serde_json::Value) -> bool {
+    request
+        .get("call")
+        .and_then(|call| call.get("requirements"))
+        .is_some()
+}
+
+/// The run's spine limits for a call with `requirements`. FSL's provider run
+/// entry carries stage limits only: it reads no observation override for a
+/// call and carries no accounting settings, so those are refused here rather
+/// than dropped.
+fn requirement_run_limits(limits: &LimitOverrides) -> Result<SpineLimits, String> {
+    let mut spine = SpineLimits::default();
+    for (name, value) in limits.values() {
+        let accepted = match name {
+            SettingName::Stage(setting) => spine.set_bound(*setting, *value),
+            SettingName::Accounting(_) => false,
+        };
+        if !accepted {
+            let error = filament_driver::LimitError::OperationUnavailable {
+                setting: *name,
+                operation: "run",
+            };
+            return Err(format!(
+                "{}: FSL's provider run entry does not carry this setting on a call with `requirements`",
+                error.message_for("run")
+            ));
+        }
     }
-    let Ok(document) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return false;
-    };
-    document.get("format").and_then(serde_json::Value::as_str) == Some("native-run/1")
-        && document
-            .get("request")
-            .and_then(|request| request.get("program"))
-            .and_then(|program| program.get("extraction"))
-            .is_some()
+    Ok(spine)
+}
+
+/// The `request` member of the bounded `native-run/1` document at `path`.
+fn native_run_request(path: &Path, request_limit: usize) -> Option<serde_json::Value> {
+    let read_limit = u64::try_from(request_limit).ok()?;
+    let file = File::open(path).ok()?;
+    let mut bytes = Vec::new();
+    file.take(read_limit.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() > request_limit {
+        return None;
+    }
+    let mut document = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    if document.get("format")?.as_str() != Some("native-run/1") {
+        return None;
+    }
+    Some(document.get_mut("request")?.take())
 }
 
 /// Dispatch typed clause dispositions to FSL's existing document producers.
@@ -2117,6 +2171,60 @@ fn run_with_providers(
             None => native_result(result.value.as_value().clone(), result.exit_code),
         },
         Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
+    }
+}
+
+/// `fsl run` with a call-level `requirements` member: use FSL FR-961's
+/// provider entry even when the caller supplied no process providers, and
+/// carry the same run limits and request overrides as the ordinary run path.
+fn run_with_requirement_items(
+    path: &Path,
+    render_sources: fsl_inspect::RenderSources,
+    config: crate::provider_config::ProviderConfig,
+    provider_limits: fsl_analyze::provider::ProviderLimits,
+    intake_limits: RunLimits,
+    spine_limits: SpineLimits,
+    clocks: Option<Box<serde_json::value::RawValue>>,
+) -> CommandResult {
+    let path = path.to_path_buf();
+    let ran = with_started_providers(
+        config,
+        provider_limits,
+        false,
+        move |negotiation, engines, options, cancel| {
+            let overrides = command::RequestOverrides {
+                clocks: clocks.as_deref(),
+                limits: Some(&spine_limits),
+                ..command::RequestOverrides::default()
+            };
+            command::run_with_providers_and_limits_and_overrides(
+                &path,
+                intake_limits,
+                &overrides,
+                negotiation,
+                engines,
+                options,
+                cancel,
+            )
+        },
+    );
+    let written = match ran {
+        Ok(Ok(written)) => written,
+        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Execute, message),
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize process signal handling: {error}"),
+            );
+        }
+    };
+    match written {
+        Ok(result) => match result.outcome {
+            Some(document) => CommandResult::document(document).with_sources(render_sources),
+            None => native_result(result.value.as_value().clone(), result.exit_code),
+        },
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute))
+            .with_sources(render_sources),
     }
 }
 
