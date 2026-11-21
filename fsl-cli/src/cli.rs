@@ -2678,18 +2678,9 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
 /// not list refuses, a help option answers, the verb's operand and value
 /// checks refuse, and only then does the operation run.
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
-    if verb == Verb::Prove
-        && raw_arguments
-            .iter()
-            .any(|argument| argument.to_str() == Some("--integer-division"))
-    {
-        return CommandResult::failure(
-            Category::Refusal,
-            "unknown prove option `--integer-division`",
-        );
-    }
     let Some(entry) = options::entry(verb.name()) else {
-        return unrouted_verb(verb, format);
+        return unrouted_option_refusal(verb, raw_arguments)
+            .unwrap_or_else(|| unrouted_verb(verb, format));
     };
     let operation = verb.operation();
     let scanned = match options::scan(entry, raw_arguments) {
@@ -2744,6 +2735,27 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => CommandResult::input_refusal(operation, error),
         },
         Verb::Prove | Verb::Generate | Verb::Render => unrouted_verb(verb, format),
+    }
+}
+
+/// An unknown option on an unrouted verb refuses as it does on a routed one.
+/// Help and version spellings are left for the unsupported answer (FR-002-AC-25).
+fn unrouted_option_refusal(verb: Verb, raw_arguments: &[OsString]) -> Option<CommandResult> {
+    let entry = options::unrouted_entry(verb.name())?;
+    let arguments: Vec<OsString> = raw_arguments
+        .iter()
+        .filter(|argument| {
+            argument.to_str().is_none_or(|text| {
+                !options::HELP_OPTIONS.contains(&text) && !options::VERSION_OPTIONS.contains(&text)
+            })
+        })
+        .cloned()
+        .collect();
+    match options::scan(entry, &arguments) {
+        Err(options::Refusal::Usage(message)) => {
+            Some(CommandResult::input_refusal(verb.operation(), message))
+        }
+        Ok(_) | Err(options::Refusal::Repeated(_)) => None,
     }
 }
 

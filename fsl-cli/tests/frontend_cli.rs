@@ -2053,6 +2053,26 @@ fn check_takes_the_integer_division_law_from_its_option() {
         );
         assert!(!stderr.contains("could not read"), "{verb}: {stderr}");
     }
+
+    for flag in ["--integer-division", "--bogus"] {
+        let output = fsl(&["prove", "request.json", flag, "floor", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(20), "{flag}: {output:?}");
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("an outcome document");
+        assert_eq!(document["operation"], "prove", "{document}");
+        assert_eq!(document["category"], "refusal", "{document}");
+        assert!(
+            document["diagnostics"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|diagnostic| diagnostic["code"] == "invalid-request"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains(flag))),
+            "{flag}: {document}"
+        );
+    }
 }
 
 /// FSL FR-767-AC-7, run half: `fsl run` over a request with
