@@ -3198,11 +3198,14 @@ fn composition_text_preserves_derived_outcomes_trust_basis_and_extents_from_json
     let program = br#"language "ix:native" edition "1-draft";
 profile audit = "filament.model.complete/v1";
 import "driver/counter-invariants" as Invariants;
+import "driver/meter-invariants" as MeterInvariants;
 model M = "test/counter";
+model Meter = "driver/audit-meter";
 compose CounterBoundaryAudit rule interface {
-  component Counter from Invariants using M;
-  guarantee Counter::Bounded;
-  guarantee Counter::BelowThree;
+  component Proven from Invariants using M;
+  component Violated from MeterInvariants using Meter;
+  guarantee Proven::Bounded;
+  guarantee Violated::BelowThree;
 }
 "#;
     let request = AnalyzeRequest::new(
@@ -3215,12 +3218,75 @@ compose CounterBoundaryAudit rule interface {
         .parent()
         .expect("driver fixture directory")
         .join("analyze-counter.fsl");
+    // Instantiate the existing driver schema and initial data for a second
+    // selected model. Both components keep the original clause predicates.
+    fn meter_identity(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) => {
+                if text == "test/counter" {
+                    *text = "driver/audit-meter".to_owned();
+                } else if let Some(suffix) = text.strip_prefix("ix://test/counter/") {
+                    *text = format!("ix://driver/audit-meter/{suffix}");
+                }
+            }
+            serde_json::Value::Array(entries) => {
+                for entry in entries {
+                    meter_identity(entry);
+                }
+            }
+            serde_json::Value::Object(members) => {
+                for value in members.values_mut() {
+                    meter_identity(value);
+                }
+            }
+            serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {
+            }
+        }
+    }
+    let fixtures = source.parent().expect("driver fixture directory");
+    let mut meter_model: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixtures.join("analyze-counter.semantic-ir.json"))
+            .expect("owned Counter schema"),
+    )
+    .expect("Counter model JSON");
+    meter_identity(&mut meter_model);
+    let model_path = request.directory.0.join("meter.semantic-ir.json");
+    std::fs::write(&model_path, meter_model.to_string()).expect("independent meter model");
+    let mut meter_start: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixtures.join("analyze-counter-start.json"))
+            .expect("owned Counter initial data"),
+    )
+    .expect("Counter snapshot JSON");
+    meter_identity(&mut meter_start);
+    meter_start["identity"] =
+        serde_json::json!({"authority": "driver", "identity": "audit-meter-start"});
+    meter_start["populations"][0]["objects"][0]["key"] = "meter".into();
+    let start_path = request.directory.0.join("meter-start.json");
+    std::fs::write(&start_path, meter_start.to_string()).expect("independent meter initial data");
+    let meter_source = std::fs::read_to_string(&source)
+        .expect("owned Counter clauses")
+        .replace(
+            "model M = \"test/counter\";",
+            "model Meter = \"driver/audit-meter\";",
+        )
+        .replace("M::Counter", "Meter::Counter");
+    let library_path = request.directory.0.join("meter-invariants.fsl");
+    std::fs::write(&library_path, meter_source).expect("meter library binding");
     let mut input: serde_json::Value =
         serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
-    input["request"]["libraries"] = serde_json::json!([{
-        "identity": "driver/counter-invariants", "source": {"file": source,
-            "authority": "driver", "identity": "counter-fixture", "document": "CounterInvariants", "formal_revision": 1}
-    }]);
+    input["request"]["libraries"] = serde_json::json!([
+        {"identity": "driver/counter-invariants", "source": {"file": source,
+            "authority": "driver", "identity": "counter-fixture", "document": "CounterInvariants", "formal_revision": 1}},
+        {"identity": "driver/meter-invariants", "source": {"file": library_path,
+            "authority": "driver", "identity": "meter-fixture", "document": "MeterInvariants", "formal_revision": 1}}
+    ]);
+    input["request"]["models"].as_array_mut().expect("model selections").push(
+        serde_json::json!({"format": "semantic-ir/2.0.0", "source": {"file": model_path,
+            "authority": "driver", "identity": "meter-model", "document": "AuditMeter", "formal_revision": 1}}));
+    input["request"]["documents"]
+        .as_array_mut()
+        .expect("initial observations")
+        .push(serde_json::json!({"file": start_path}));
     std::fs::write(request.path(), input.to_string()).expect("composition request");
     let (document, exit) = request.json();
     assert_eq!(exit, Some(21), "{document}");
