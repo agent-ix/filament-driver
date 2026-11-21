@@ -37,8 +37,9 @@ entry. Scope: FR-002-AC-20, FR-002-AC-21, FR-002-AC-22, FR-002-AC-27.
 8. Run `Q` with a `--provider-config` starting a fixture provider whose
    `hello` names the backend `fsl-hybrid-reference`.
 9. Run `Q` without `--limit`, with `--limit s1.nodes=50000`, and with
-   `--limit s1.nodes=1`; compare the first two documents and inspect the
-   third outcome and its settled requirement items.
+   `--limit s1.nodes=1` (JSON and text), and with
+   `--limit accounting.work_units=1000000`; compare the first two documents
+   and inspect the other outcomes and their settled requirement items.
 
 Test: `fsl-cli/tests/cli_contract.rs` `run_routes_requirement_items_with_caller_spine_limits`.
 
@@ -61,4 +62,6 @@ Test: `fsl-cli/tests/cli_contract.rs` `run_routes_requirement_items_with_caller_
   settle three requirement items; `s1.nodes=1` writes FSL's typed
   `incomplete` outcome naming the setting and configured value 1, exit 22,
   with no requirement item settled. A provider call that uses default spine
-  limits fails this step.
+  limits fails this step. In text mode the `s1.nodes=1` diagnostic names the
+  source locus `unit.native:3:1`. The accounting limit refuses `invalid-request`,
+  exit 20, naming `accounting.work_units` and `requirements`.

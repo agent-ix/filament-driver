@@ -89,7 +89,7 @@ limit outcome and report no success.
 | FR-003-AC-7 | A malformed `--limit` operand is refused before any stage with code `invalid-request` and identifies that operand. | Test (TC-010) |
 | FR-003-AC-8 | A duplicate `--limit` setting is refused before any stage with code `invalid-request` and identifies the duplicate setting. | Test (TC-010) |
 | FR-003-AC-9 | The driver accepts FSL FR-255's `accounting.<counter>` setting names through FSL's operand APIs and retains FSL's unknown-setting refusal for a bare counter such as `work_units`, without adding a driver-defined namespace or aliases. | Test (TC-010) |
-| FR-003-AC-10 | When FSL resolves an `accounting.<counter>` setting name, the driver applies its value through FSL `AccountingLimits::set_bound` to `Call.accounting`; the stage `SpineLimits` remain unchanged and the accounting value reaches `spine::run`. | Test (TC-010) |
+| FR-003-AC-10 | When FSL resolves an `accounting.<counter>` setting name, the driver applies its value through FSL `AccountingLimits::set_bound` to `Call.accounting`; the stage `SpineLimits` remain unchanged and the accounting value reaches `spine::run`, except on a `fsl run` whose call carries `requirements`, which refuses accounting settings (FR-002-AC-27). | Test (TC-010) |
 
 ## Dependencies
 

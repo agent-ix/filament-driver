@@ -2933,6 +2933,36 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
     assert_eq!(outcome["category"], "incomplete", "{outcome}");
     let rendered = outcome.to_string();
     assert!(rendered.contains("s1.nodes"), "{outcome}");
-    assert!(rendered.contains('1'), "{outcome}");
+    assert!(rendered.contains("stage_limit_exceeded"), "{outcome}");
     assert_eq!(outcome["items"], serde_json::json!([]), "{outcome}");
+
+    let text = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args(["--limit", "s1.nodes=1"])
+        .output()
+        .expect("run requirement request in text mode");
+    assert_eq!(text.status.code(), Some(22), "{text:?}");
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("limit 1 reached"), "{text}");
+    assert!(
+        text.contains("unit.native:3"),
+        "the diagnostic names the authored source locus: {text}"
+    );
+
+    let accounting = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args([
+            "--limit",
+            "accounting.work_units=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run requirement request with an accounting limit");
+    assert_eq!(accounting.status.code(), Some(20), "{accounting:?}");
+    let refusal = String::from_utf8_lossy(&accounting.stdout);
+    assert!(refusal.contains("accounting.work_units"), "{refusal}");
+    assert!(refusal.contains("requirements"), "{refusal}");
 }

@@ -1028,7 +1028,8 @@ fn run(options: RunOptions) -> CommandResult {
         observation: observation_limits.as_ref(),
         ..command::RequestOverrides::default()
     };
-    if has_extraction_request(&options.path, options.intake_limits.request_bytes) {
+    let request = native_run_request(&options.path, options.intake_limits.request_bytes);
+    if request.as_ref().is_some_and(carries_extraction) {
         if !only_observation_limits {
             return CommandResult::input_refusal(
                 Operation::Execute,
@@ -1083,14 +1084,13 @@ fn run(options: RunOptions) -> CommandResult {
         };
     let input = match prepared {
         PreparedRun::Function(prepared) => {
-            if has_call_requirements(&options.path, options.intake_limits.request_bytes) {
-                let mut spine_limits = SpineLimits::default();
-                if let Err(error) = options.limits.apply_to_limits(&mut spine_limits, "run") {
-                    return CommandResult::input_refusal(
-                        Operation::Execute,
-                        error.message_for("run"),
-                    );
-                }
+            if request.as_ref().is_some_and(carries_call_requirements) {
+                let spine_limits = match requirement_run_limits(&options.limits) {
+                    Ok(limits) => limits,
+                    Err(message) => {
+                        return CommandResult::input_refusal(Operation::Execute, message);
+                    }
+                };
                 return run_with_requirement_items(
                     &options.path,
                     provider_config,
@@ -1299,18 +1299,52 @@ impl fsl_analyze::analyze::document::Negotiate for DriverNegotiation {
 /// Select FSL's extraction-aware run entry for a native-run request carrying
 /// `program.extraction`. The bounded dispatch read does not open dependent
 /// observation or source files; FSL remains their sole reader.
-fn has_extraction_request(path: &Path, request_limit: usize) -> bool {
-    native_run_request(path, request_limit)
-        .and_then(|request| request.get("program")?.get("extraction").cloned())
+fn carries_extraction(request: &serde_json::Value) -> bool {
+    request
+        .get("program")
+        .and_then(|program| program.get("extraction"))
         .is_some()
 }
 
 /// Whether the `native-run/1` request carries a call-level `requirements`
 /// member.
-fn has_call_requirements(path: &Path, request_limit: usize) -> bool {
-    native_run_request(path, request_limit)
-        .and_then(|request| request.get("call")?.get("requirements").cloned())
+fn carries_call_requirements(request: &serde_json::Value) -> bool {
+    request
+        .get("call")
+        .and_then(|call| call.get("requirements"))
         .is_some()
+}
+
+/// The run's spine limits for a call with `requirements`. FSL's provider run
+/// entry carries stage limits and observation overrides; it carries no
+/// accounting settings, so those are refused here rather than dropped.
+fn requirement_run_limits(limits: &LimitOverrides) -> Result<SpineLimits, String> {
+    let observation = fsl_replay::ObservationLimits::default().bounds();
+    let mut spine = SpineLimits::default();
+    for (name, value) in limits.values() {
+        let accepted = match name {
+            SettingName::Stage(setting)
+                if observation
+                    .iter()
+                    .any(|(candidate, _)| candidate == setting) =>
+            {
+                true
+            }
+            SettingName::Stage(setting) => spine.set_bound(*setting, *value),
+            SettingName::Accounting(_) => false,
+        };
+        if !accepted {
+            let error = filament_driver::LimitError::OperationUnavailable {
+                setting: *name,
+                operation: "run",
+            };
+            return Err(format!(
+                "{}: FSL's provider run entry does not carry this setting on a call with `requirements`",
+                error.message_for("run")
+            ));
+        }
+    }
+    Ok(spine)
 }
 
 /// The `request` member of the bounded `native-run/1` document at `path`.
@@ -2191,10 +2225,13 @@ fn run_with_requirement_items(
         }
     };
     match written {
-        Ok(result) => match result.outcome {
-            Some(document) => CommandResult::document(document),
-            None => native_result(result.value.as_value().clone(), result.exit_code),
-        },
+        Ok(result) => {
+            let render_sources = fsl_command::render_sources(result.sources());
+            match result.outcome {
+                Some(document) => CommandResult::document(document).with_sources(render_sources),
+                None => native_result(result.value.as_value().clone(), result.exit_code),
+            }
+        }
         Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
     }
 }
