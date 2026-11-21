@@ -2424,6 +2424,21 @@ fn analyze_text(document: &serde_json::Value, category: Category) -> String {
             text.push(' ');
             text.push_str(&detail);
         }
+        for (name, value) in [
+            ("capability", &record["diagnostic"]["detail"]["kind"]),
+            ("backend", &record["backend"]),
+            ("certification", &record["certification"]),
+            ("extent", &item["request"]["extent"]),
+        ] {
+            if !value.is_null() {
+                text.push_str(&format!(
+                    " {name}={}",
+                    value
+                        .as_str()
+                        .map_or_else(|| compact_json(value), str::to_owned)
+                ));
+            }
+        }
         text.push('\n');
     }
     text.push_str(category.as_str());
@@ -2443,11 +2458,7 @@ fn analyze_detail(record: &serde_json::Value) -> Option<String> {
         return Some(compact_json(cause));
     }
     let basis = record.get("basis").filter(|basis| !basis.is_null())?;
-    Some(
-        basis["type"]
-            .as_str()
-            .map_or_else(|| compact_json(basis), str::to_owned),
-    )
+    Some(compact_json(basis))
 }
 
 fn compact_json(value: &serde_json::Value) -> String {

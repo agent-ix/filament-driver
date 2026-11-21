@@ -86,6 +86,10 @@ impl SessionProvider {
                     // This adapter admits only value-validity verdicts; a
                     // contract target has no value-parameter assignment here.
                     ProviderTarget::Contract(_) => ProviderVerdict::Unknown,
+                    ProviderTarget::Composition(_) => {
+                        composition_verdict(&results.items, item.index())
+                            .unwrap_or(ProviderVerdict::Unknown)
+                    }
                 })
                 .collect(),
         )
@@ -119,6 +123,32 @@ fn verdict(
         } if capability_kind == VALUE_VALIDITY => {
             counterexample(index, backend, target, &outcome.response)
         }
+        _ => None,
+    }
+}
+
+fn composition_verdict(
+    results: &[filament_driver::ProviderItemResult<ProcessProviderOutcome, String>],
+    index: RequestIndex,
+) -> Option<ProviderVerdict> {
+    let outcome = results
+        .iter()
+        .find(|item| item.request_index == index.get())?
+        .result
+        .as_ref()
+        .ok()?;
+    match &outcome.item {
+        ProcessProviderItemOutcome::Result {
+            capability_kind,
+            kind,
+        } if capability_kind == "composition" => match kind {
+            Fr331ResultKind::Proved => Some(ProviderVerdict::Proved),
+            // FSL owns the explicit no-replay settlement for composition.
+            Fr331ResultKind::Refuted => Some(ProviderVerdict::Refuted {
+                counterexample: Vec::new(),
+            }),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -183,12 +213,12 @@ impl fsl_analyze::analyze::HybridProcessExchange for HybridSessionProvider {
         &self,
         request: &[u8],
         cancel: &Cancel,
-    ) -> Result<Vec<u8>, fsl_replay::ToolFailure> {
-        let mut guard = self
-            .session
-            .lock()
-            .map_err(|_| fsl_replay::ToolFailure::Crash)?;
-        let session = guard.as_mut().ok_or(fsl_replay::ToolFailure::Crash)?;
+    ) -> Result<Vec<u8>, fsl_analyze::analyze::HybridExchangeError> {
+        let crash = || {
+            fsl_analyze::analyze::HybridExchangeError::ToolFailure(fsl_replay::ToolFailure::Crash)
+        };
+        let mut guard = self.session.lock().map_err(|_| crash())?;
+        let session = guard.as_mut().ok_or_else(crash)?;
         session.exchange_hybrid(request, cancel)
     }
 }

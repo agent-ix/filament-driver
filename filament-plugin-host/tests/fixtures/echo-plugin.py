@@ -4,6 +4,7 @@
 import json
 import struct
 import sys
+import time
 
 
 def read_frame():
@@ -38,6 +39,8 @@ while True:
     request = read_frame()
     if request["kind"] == "shutdown":
         break
+    if request["kind"] == "cancel" and mode == "delay-result":
+        continue
     if request["kind"] != "request":
         raise SystemExit(3)
     if mode == "wait-cancel":
@@ -46,6 +49,8 @@ while True:
         cancel = read_frame()
         if cancel["kind"] != "cancel":
             raise SystemExit(4)
+    if mode == "delay-result":
+        time.sleep(int(sys.argv[2]) / 1000)
     write_frame(
         {
             "protocol": protocol,

@@ -1689,9 +1689,24 @@ fn analyze_text_mode_prints_item_lines() {
     let output = refused.run("text");
     assert_eq!(output.status.code(), Some(20));
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        stdout.lines().next(),
-        Some("0 Bounded invalid-request invalid_capability/unknown-backend"),
+    assert!(
+        stdout
+            .lines()
+            .next()
+            .expect("item line")
+            .starts_with("0 Bounded invalid-request invalid_capability/unknown-backend"),
+        "{stdout}"
+    );
+    let (machine, _) = refused.json();
+    let extent =
+        ix_cli_kit::json::encode_canonical(&machine["items"][0]["request"]["extent"], false)
+            .expect("canonical extent");
+    assert!(
+        stdout
+            .lines()
+            .next()
+            .expect("item line")
+            .contains(&format!("extent={extent}")),
         "{stdout}"
     );
 }
@@ -2995,6 +3010,7 @@ fn hybrid_process_deadline_settles_incomplete_instead_of_accepting_a_late_proof(
         "hybrid-deadline",
         serde_json::json!([
             {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            {"claim": "SlowEnough", "backend": "fsl-hybrid-reference"},
         ]),
     );
     let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", "late"]);
@@ -3012,6 +3028,18 @@ fn hybrid_process_deadline_settles_incomplete_instead_of_accepting_a_late_proof(
         "{document}"
     );
     assert!(document.to_string().contains("timed-out"), "{document}");
+    assert_eq!(
+        document["items"][1]["record"]["result"], "proved",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["certification"], "certified",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["certificate"]["accepted"], true,
+        "{document}"
+    );
 }
 
 #[trace("TC-047", "FR-022-AC-11")]
@@ -3160,5 +3188,125 @@ fn hybrid_unbounded_only_provider_does_not_authorize_a_bounded_claim() {
     assert_eq!(
         std::fs::read(shutdown).expect("admitted session shutdown"),
         b"shutdown"
+    );
+}
+
+#[trace("TC-036", "FR-022-AC-7")]
+#[test]
+fn composition_text_preserves_derived_outcomes_trust_basis_and_extents_from_json() {
+    let clause = |name: &str, bound: i32| {
+        format!(
+        "temporal {name} using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ always holds(c.value <= {bound}) }}\n")
+    };
+    let unit = |body: String| {
+        format!(
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nprofile t0 = \"filament.temporal.infinite-trace/v1\";\nmodel M = \"test/counter\";\nfunction Noop using v(): Boolean pure {{ true }}\n{body}")
+    };
+    let components = "component PA from A using M; component PB from B using M; guarantee PA::Bounded; guarantee PB::Capped; ";
+    let compose = |name: &str, rule: &str, members: &str| {
+        format!("compose {name} rule {rule} {{ {components}{members} }}\n")
+    };
+    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nprofile m0 = \"filament.model.complete/v1\";\nprofile t0 = \"filament.temporal.infinite-trace/v1\";\nimport \"test/part-a\" as A;\nimport \"test/part-b\" as B;\nmodel M = \"test/counter\";\nfunction Noop using v(): Boolean pure {{ true }}\n{}{}{}{}{}{}{}",
+        clause("Local", 3), compose("Sys", "interface", ""),
+        compose("SysPR", "protocol-refinement", ""), compose("SysRT", "refinement-transfer", ""),
+        compose("SysAG", "assume-guarantee", ""),
+        compose("SysRely", "interface", "rely PB::Capped on PA::Bounded;"),
+        compose("SysCycle", "interface", "rely PB::Capped on PA::Bounded; rely PA::Bounded on PB::Capped;"));
+    let request = AnalyzeRequest::new(
+        "composition-text-trust",
+        serde_json::json!([
+            {"claim": "Sys", "kind": "composition"},
+        ]),
+        serde_json::json!({}),
+    )
+    .with_file(
+        "/request/program/source/file",
+        "program.fsl",
+        program.as_bytes(),
+    );
+    let libraries: Vec<_> = [
+        ("test/part-a", "part-a.fsl", unit(clause("Bounded", 3))),
+        ("test/part-b", "part-b.fsl", unit(clause("Capped", 2))),
+    ]
+    .into_iter()
+    .map(|(identity, file, source)| {
+        let path = request.directory.0.join(file);
+        std::fs::write(&path, source).expect("component source");
+        serde_json::json!({"identity": identity, "source": {"file": path, "authority": "test",
+                "identity": file, "document": "Component", "formal_revision": 1}})
+    })
+    .collect();
+    let mut input: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
+    input["request"]["libraries"] = libraries.into();
+    std::fs::write(request.path(), input.to_string()).expect("component request");
+    let (document, exit) = request.json();
+    assert_eq!(exit, Some(21), "{document}");
+    let items = document["items"].as_array().expect("ordered items");
+    assert_eq!(items.len(), 3, "{document}");
+    assert_eq!(items[0]["record"]["result"], "unsupported", "{document}");
+    assert_eq!(
+        items[0]["record"]["diagnostic"]["detail"]["kind"], "composition",
+        "{document}"
+    );
+    assert_eq!(items[1]["record"]["result"], "proved", "{document}");
+    assert_eq!(
+        items[1]["record"]["certification"], "certified",
+        "{document}"
+    );
+    assert!(
+        items[1]["record"]["basis"].is_object(),
+        "the proved premise carries its full trust basis: {document}"
+    );
+    assert_eq!(items[2]["record"]["result"], "refuted", "{document}");
+    assert!(items[2]["record"]["certification"].is_null(), "{document}");
+    let text = request.run("text");
+    assert_eq!(text.status.code(), Some(21), "{text:?}");
+    let text = String::from_utf8(text.stdout).expect("text output");
+    let lines: Vec<_> = text.lines().collect();
+    assert_eq!(lines.len(), 4, "{text}");
+    assert!(lines[0].contains("capability=composition"), "{text}");
+    assert_eq!(lines[3], "unsupported", "{text}");
+    for (slot, item) in items[1..].iter().enumerate() {
+        let line = lines[slot + 1];
+        assert!(
+            line.contains(item["record"]["result"].as_str().expect("outcome")),
+            "{text}"
+        );
+        assert_eq!(item["record"]["backend"], "en-1", "{document}");
+        assert!(line.contains("backend=en-1"), "{text}");
+        assert_eq!(
+            item["request"]["extent"]["classification"], "unbounded",
+            "{document}"
+        );
+        assert_eq!(
+            item["request"]["extent"]["classification"],
+            items[0]["request"]["premises"][slot]["key"]["extent"]["classification"],
+            "{document}"
+        );
+        let extent =
+            ix_cli_kit::json::encode_canonical(&item["request"]["extent"], false).expect("extent");
+        assert!(line.contains(&format!("extent={extent}")), "{text}");
+        if let Some(basis) = item["record"].get("basis") {
+            let basis = ix_cli_kit::json::encode_canonical(basis, false).expect("full basis");
+            assert!(line.contains(&basis), "{text}");
+        }
+        if let Some(certification) = item["record"]["certification"].as_str() {
+            assert!(
+                line.contains(&format!("certification={certification}")),
+                "{text}"
+            );
+        } else {
+            assert!(!line.contains("certification="), "{text}");
+        }
+    }
+    let counterexample = items[2]["counterexample"].to_string();
+    let last = counterexample
+        .rfind(r#""name":"value""#)
+        .expect("counterexample value");
+    assert!(
+        counterexample[last..]
+            .starts_with(r#""name":"value","value":{"type":"integer","value":"3"}"#),
+        "{document}"
     );
 }

@@ -340,26 +340,41 @@ where
         &mut self,
         request: &[u8],
         cancel: &Cancel,
-    ) -> Result<Vec<u8>, fsl_replay::ToolFailure> {
+    ) -> Result<Vec<u8>, fsl_analyze::analyze::HybridExchangeError> {
+        use fsl_analyze::analyze::HybridExchangeError;
+        use fsl_replay::ToolFailure;
+
         let _request_active = self.signals.activate(cancel.clone());
-        let body: serde_json::Value =
-            serde_json::from_slice(request).map_err(|_| fsl_replay::ToolFailure::MalformedBody)?;
+        let body: serde_json::Value = serde_json::from_slice(request)
+            .map_err(|_| HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))?;
+        let deadline_ms = body
+            .pointer("/request/deadline_ms")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or(HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))?;
         let result: serde_json::Value = self
             .host
-            .request(&body, cancel, |_, _: &serde_json::Value| {
-                Ok::<_, Infallible>(())
-            })
+            .request_with_timeout(
+                &body,
+                cancel,
+                std::time::Duration::from_millis(deadline_ms),
+                |_, _: &serde_json::Value| Ok::<_, Infallible>(()),
+            )
             .map_err(|error| {
-                // Charge cancellation to FSL's handle so it settles incomplete
-                // with the original cancellation cause after this call returns.
-                let _ = cancel.poll();
-                hybrid_transport_failure(error.primary_cause())
+                if let Some(source) = cancel.cause() {
+                    let _ = cancel.poll();
+                    HybridExchangeError::Cancelled { source }
+                } else if matches!(error.primary_cause(), PluginError::TimedOut) {
+                    HybridExchangeError::TimedOut
+                } else {
+                    HybridExchangeError::ToolFailure(hybrid_transport_failure(
+                        error.primary_cause(),
+                    ))
+                }
             })?;
         // The host admits only exact canonical frames. Re-encoding their
-        // opaque body preserves its bytes, including unknown members, while
-        // the host remains responsible for frame and aggregate byte limits.
+        // opaque body preserves every member while the host owns byte limits.
         quire_canonical::to_vec(&result, quire_canonical::Limits::new(u64::MAX))
-            .map_err(|_| fsl_replay::ToolFailure::MalformedBody)
+            .map_err(|_| HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))
     }
 }
 
@@ -405,6 +420,7 @@ fn hybrid_transport_failure<A, V, F>(error: &PluginError<A, V, F>) -> fsl_replay
         | PluginError::TimedOut
         | PluginError::ManifestAdmission(_)
         | PluginError::Json(_)
+        | PluginError::TimerThread
         | PluginError::ReaderThread
         | PluginError::WriterThread
         | PluginError::WriterUnresponsive
