@@ -245,7 +245,6 @@ fn selected<'a>(
 
 #[trace("TC-030", "FR-016-AC-1", "FR-016-AC-3", "FR-016-AC-6", "FR-016-AC-7")]
 #[test]
-#[ignore = "QSL-2279: FSL monitor_plan stale origin.function ids + IR body walk skips record/tuple value children (contract-ir #1110)"]
 fn every_target_premise_names_its_actual_admitted_value() {
     let package = &FIXTURE.package;
     let before = serde_json::to_value((package.graph(), package.source_map())).unwrap();
@@ -305,6 +304,7 @@ fn every_target_premise_names_its_actual_admitted_value() {
         let CheckedTerm::Binding {
             name: actual_name,
             value,
+            ..
         } = selected(package, root, &path[..path.len() - 1])
         else {
             panic!("the value's original binding");

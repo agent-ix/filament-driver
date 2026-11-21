@@ -39,7 +39,7 @@ pub fn project_monitor_initializer(
     let mut body = None;
     for member in members {
         budget.charge(1)?;
-        if let CheckedTerm::Binding { name, value } = member {
+        if let CheckedTerm::Binding { name, value, .. } = member {
             if name.as_ref() == "body" {
                 body = Some(value.as_ref());
                 break;
