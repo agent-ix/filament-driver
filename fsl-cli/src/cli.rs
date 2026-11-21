@@ -15,7 +15,7 @@ use filament_driver::{
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
-use fsl_command::command::{self, PreparedRun, RunLimits};
+use fsl_command::command::{self, ExportSelection, PreparedRun, RunLimits};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
@@ -246,7 +246,8 @@ enum Invocation {
 /// The operands of `fsl export` (FSpec FR-817).
 struct ExportOptions {
     output: Option<PathBuf>,
-    request: Option<PathBuf>,
+    request: PathBuf,
+    selection: ExportSelection,
     limits: LimitOverrides,
 }
 
@@ -257,8 +258,8 @@ impl ExportOptions {
         let limit_operands = limit_operands(scanned)?;
         let usage = entry_usage(Verb::Export);
         let request = match (scanned.positionals.as_slice(), evidence.as_ref()) {
-            ([request], None) => Some(PathBuf::from(request)),
-            ([], Some(_)) => None,
+            ([request], None) => (PathBuf::from(request), ExportSelection::Ordinary),
+            ([], Some(path)) => (path.clone(), ExportSelection::Evidence),
             ([], None) => return Err(usage),
             (_, Some(_)) => {
                 return Err(format!(
@@ -275,11 +276,12 @@ impl ExportOptions {
                 options::OUTPUT
             ));
         }
-        let request = request.or_else(|| evidence.clone());
+        let (request, selection) = request;
         let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
         Ok(Self {
             output,
             request,
+            selection,
             limits,
         })
     }
@@ -1203,23 +1205,13 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         limits: Some(&limits),
         ..command::RequestOverrides::default()
     };
-    let Some(request_path) = options.request.as_deref() else {
-        return CommandResult::input_refusal(Operation::Export, entry_usage(Verb::Export));
-    };
-    if has_export_request_member(request_path, RunLimits::default().request_bytes) == Some(false) {
-        return CommandResult::input_refusal(
-            Operation::Export,
-            "the request must include an `export` member",
-        );
-    }
-    let runner = match command::run_with_overrides(request_path, &overrides, &DriverNegotiation) {
+    let runner = match command::export_with_limits_and_overrides(
+        &options.request,
+        options.selection,
+        RunLimits::default(),
+        &overrides,
+    ) {
         Ok(result) => result,
-        Err(error) if matches!(error.cause, command::RunCause::OutputGivenTwice) => {
-            return CommandResult::input_refusal(
-                Operation::Export,
-                "the request's export.output cannot be combined with --output",
-            );
-        }
         Err(error) => {
             return CommandResult::document(error.outcome_document(Operation::Export));
         }
@@ -1233,66 +1225,6 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     with_format(CommandResult::document(document), format)
 }
 
-/// Detect a valid native-run request that lacks the export member without
-/// consuming an unbounded or malformed request before FSL handles it.
-fn has_export_request_member(path: &Path, maximum_bytes: usize) -> Option<bool> {
-    let file = File::open(path).ok()?;
-    let read_limit = u64::try_from(maximum_bytes).ok()?.checked_add(1)?;
-    let mut bytes = Vec::new();
-    file.take(read_limit).read_to_end(&mut bytes).ok()?;
-    if bytes.len() > maximum_bytes {
-        return None;
-    }
-    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    if value.get("format").and_then(serde_json::Value::as_str) != Some("native-run/1") {
-        return None;
-    }
-    Some(value.get("request")?.as_object()?.contains_key("export"))
-}
-
-/// The export request does not settle routed capability items. This
-/// negotiation is present only because the shared run adapter owns that
-/// parameter; if it is called, preserve the candidate result deterministically.
-struct DriverNegotiation;
-
-impl fsl_analyze::analyze::document::Negotiate for DriverNegotiation {
-    fn negotiate(
-        &self,
-        item: &fsl_analyze::analyze::ClaimItem,
-        candidates: &fsl_route::CandidateOutcome,
-    ) -> (
-        fsl_route::routing::Disposition,
-        Option<fsl_analyze::analyze::Diagnostic>,
-    ) {
-        use fsl_analyze::analyze::{Diagnostic, Payload};
-        use fsl_route::routing::Disposition;
-        use fsl_route::NegotiationOutcome;
-
-        match candidates {
-            fsl_route::CandidateOutcome::UnknownBackend(backend) => (
-                Disposition::InvalidRequest,
-                Some(Diagnostic {
-                    code: NegotiationOutcome::UnknownBackend.code(),
-                    payload: Payload::Backend(backend.clone()),
-                }),
-            ),
-            fsl_route::CandidateOutcome::Candidates(set) => match set.candidates() {
-                [candidate] => (Disposition::Supported(candidate.clone()), None),
-                [] => (
-                    Disposition::Unsupported,
-                    Some(Diagnostic {
-                        code: NegotiationOutcome::UnsupportedRequestedCapability.code(),
-                        payload: Payload::Kind(item.kind),
-                    }),
-                ),
-                _ => (
-                    Disposition::InvalidRequest,
-                    Some(Diagnostic::new(NegotiationOutcome::AmbiguousBackend.code())),
-                ),
-            },
-        }
-    }
-}
 /// Select FSL's extraction-aware run entry for a native-run request carrying
 /// `program.extraction`. The bounded dispatch read does not open dependent
 /// observation or source files; FSL remains their sole reader.
@@ -3155,7 +3087,7 @@ mod tests {
         ])
         .expect("valid export arguments");
         assert_eq!(parsed.output.as_deref(), Some(Path::new("model.tla")));
-        assert_eq!(parsed.request.as_deref(), Some(Path::new("request.json")));
+        assert_eq!(parsed.request, Path::new("request.json"));
         assert!(parsed.limits.values().is_empty());
         let request_only = parse_export(&[OsString::from("request.json")])
             .expect("the request may name its own output");
@@ -3215,9 +3147,13 @@ mod tests {
             OsString::from("evidence.json"),
         ])
         .expect("evidence request");
+        assert_eq!(evidence.request, Path::new("evidence.json"));
+        assert_eq!(evidence.selection, super::ExportSelection::Evidence);
         assert_eq!(
-            evidence.request.as_deref(),
-            Some(Path::new("evidence.json"))
+            parse_export(&[OsString::from("request.json")])
+                .unwrap()
+                .selection,
+            super::ExportSelection::Ordinary
         );
         assert!(parse_export(&[
             OsString::from("--evidence"),
@@ -3242,16 +3178,21 @@ mod tests {
         let result = super::export(
             &ExportOptions {
                 output: Some(output.clone()),
-                request: Some(fixtures.join("frontend-run.json")),
+                request: fixtures.join("frontend-run.json"),
+                selection: super::ExportSelection::Ordinary,
                 limits: LimitOverrides::default(),
             },
             OutputFormat::Json,
         );
         assert_eq!(result.category, super::Category::Refusal);
-        assert!(result
-            .diagnostic
-            .as_deref()
-            .is_some_and(|message| message.contains("must include an `export` member")));
+        let document = serde_json::to_value(result.document.expect("FSL refusal")).unwrap();
+        assert_eq!(document["diagnostics"][0]["code"], "invalid-request");
+        assert!(document["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("requires export"));
+        assert!(document["last_stage"].is_null());
+        assert!(document["result"].is_null());
         assert!(!output.exists());
     }
 

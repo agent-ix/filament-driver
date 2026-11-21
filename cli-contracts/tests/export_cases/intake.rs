@@ -164,32 +164,40 @@ fn export_envelope_and_output_records_reject_unknown_and_invalid_fields(
 /// Trace: FR-002-AC-1
 /// Provenance: QSL-2474
 #[test]
-#[ignore = "QSL-2669: export accepts duplicate models in the native-run envelope"]
 fn duplicate_envelope_members_refuse_before_export_and_write_no_target(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
-    let original = request().to_string();
-    let duplicated = original.replacen("\"models\":[]", "\"models\":[],\"models\":[]", 1);
-    assert_ne!(duplicated, original);
-    case.write("duplicate.json", duplicated.as_bytes())?;
-    let value = outcome(
-        &run(
-            &case,
-            "duplicate.json",
-            false,
-            &["--output", "must-not-exist.tla"],
-        )?,
-        20,
-        "refusal",
-    );
-    let d = diagnostic(&value, "invalid-request");
-    assert!(
-        d["message"].as_str().expect("message").contains("models"),
-        "{value}"
-    );
-    assert!(value["last_stage"].is_null(), "{value}");
-    assert!(value["result"].is_null(), "{value}");
-    assert!(!case.directory().join("must-not-exist.tla").exists());
+    let mut input = request();
+    input["request"]["program"]["source"]["file"] = json!("must-not-open.fsl");
+    let original = input.to_string();
+    for repeated in [
+        "\"models\":[],\"models\":[]",
+        "\"models\":[],\"models\":[{}]",
+    ] {
+        let duplicated = original.replacen("\"models\":[]", repeated, 1);
+        assert_ne!(duplicated, original);
+        case.write("duplicate.json", duplicated.as_bytes())?;
+        for evidence in [false, true] {
+            let extra = if evidence {
+                &[][..]
+            } else {
+                &["--output", "must-not-exist.tla"][..]
+            };
+            let value = outcome(
+                &run(&case, "duplicate.json", evidence, extra)?,
+                20,
+                "refusal",
+            );
+            let d = diagnostic(&value, "invalid-request");
+            assert!(
+                d["message"].as_str().expect("message").contains("models"),
+                "{value}"
+            );
+            assert!(value["last_stage"].is_null(), "{value}");
+            assert!(value["result"].is_null(), "{value}");
+            assert!(!case.directory().join("must-not-exist.tla").exists());
+        }
+    }
     Ok(())
 }
 
@@ -292,7 +300,6 @@ fn named_request_is_authoritative_and_file_named_dash_is_addressable(
 /// Trace: FR-027-AC-5
 /// Provenance: QSL-2474
 #[test]
-#[ignore = "QSL-2667: export discards evidence mode before dispatch and requires export member"]
 fn evidence_mode_rejects_an_ordinary_export_request() -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
     let missing = outcome(&run(&case, "export.json", true, &[])?, 20, "refusal");
@@ -341,7 +348,6 @@ fn default_and_explicit_text_preserve_the_json_refusal_on_each_route(
 /// FSL FR-026 requires a request to be read once before dispatch.
 #[cfg(unix)]
 #[test]
-#[ignore = "QSL-2670: export preflight consumes the request stream before FSL reads it"]
 fn explicit_stdin_file_is_read_once_and_keeps_the_absolute_program_selection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
@@ -352,11 +358,13 @@ fn explicit_stdin_file_is_read_once_and_keeps_the_absolute_program_selection(
         .to_str()
         .expect("UTF8 path"));
     let bytes = serde_json::to_vec(&input)?;
-    let value = outcome(
-        &case.run_stdin(&["export", "/dev/stdin", "--format", "json"], &bytes)?,
-        21,
-        "unsupported",
-    );
+    case.write("absolute.json", &bytes)?;
+    let regular = run(&case, "absolute.json", false, &[])?;
+    let streamed = case.run_stdin(&["export", "/dev/stdin", "--format", "json"], &bytes)?;
+    assert_eq!(streamed.0.stdout, regular.0.stdout);
+    assert_eq!(streamed.0.stderr, regular.0.stderr);
+    assert_eq!(streamed.0.status.code(), regular.0.status.code());
+    let value = outcome(&streamed, 21, "unsupported");
     assert_eq!(value["last_stage"], "S4", "{value}");
     assert_eq!(value["result"]["kind"], "exported", "{value}");
     assert_eq!(
@@ -443,6 +451,56 @@ fn package_source_reference_is_closed_and_typed_before_opening_the_package(
         assert!(value["last_stage"].is_null(), "{value}");
         assert!(value["result"].is_null(), "{value}");
         assert!(!case.directory().join("must-not-write.tla").exists());
+    }
+    Ok(())
+}
+
+/// Trace: FR-027-AC-5, FR-002-AC-1
+/// Provenance: QSL-2667, QSL-2670
+#[test]
+fn required_selection_refuses_before_opening_a_missing_program(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    let mut input = request();
+    input["request"]["program"]["source"]["file"] = json!("must-not-open.fsl");
+    input["request"]
+        .as_object_mut()
+        .expect("request")
+        .remove("export");
+    write_json(&case, "missing-selection.json", &input)?;
+    for (evidence, required) in [(false, "export"), (true, "export_evidence")] {
+        invalid(
+            &run(&case, "missing-selection.json", evidence, &[])?,
+            &[required],
+        );
+    }
+    assert!(!case.directory().join("must-not-open.fsl").exists());
+    Ok(())
+}
+
+/// Trace: FR-002-AC-1
+/// Provenance: QSL-2670
+#[cfg(unix)]
+#[test]
+fn oversized_streams_match_file_byte_limits_on_both_routes(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = fixture()?;
+    let bytes = vec![b' '; 1_048_577];
+    case.write("oversized.json", &bytes)?;
+    for evidence in [false, true] {
+        let regular = run(&case, "oversized.json", evidence, &[])?;
+        let args = if evidence {
+            &["export", "--evidence", "/dev/stdin", "--format", "json"][..]
+        } else {
+            &["export", "/dev/stdin", "--format", "json"][..]
+        };
+        let streamed = case.run_stdin(args, &bytes)?;
+        let value = outcome(&streamed, 22, "incomplete");
+        diagnostic(&value, "resource_exhausted");
+        assert_eq!(streamed.0.stdout, regular.0.stdout);
+        assert_eq!(streamed.0.stderr, regular.0.stderr);
+        assert_eq!(streamed.0.status.code(), regular.0.status.code());
+        assert!(value["result"].is_null(), "{value}");
     }
     Ok(())
 }
