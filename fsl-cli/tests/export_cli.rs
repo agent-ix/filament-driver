@@ -132,15 +132,25 @@ fn assert_counter_export_correspondence(source: &Value, selected: &Value, packag
     let selected_anchor = anchor("counter-unit", 5);
     let source_clause = clause("example/counter-unit", 0);
     let selected_clause = clause("counter-unit", 5);
-    let admitted: Value = serde_json::from_slice(package_bytes).unwrap();
-    let nodes = admitted["semantic_graph"]["nodes"]
-        .as_array()
-        .expect("emitted graph");
+    // The wire holds operand slots; reports name document-held graph indices.
+    // Use the owning reader's resolved view to check the reported references.
+    let admitted = fsl_package::admit_checked_package(
+        package_bytes,
+        &std::collections::BTreeMap::from([(
+            "example/counter".to_owned(),
+            MODEL.as_bytes().to_vec(),
+        )]),
+        fsl_package::V2ReadLimits::bounded(fsl_replay::spine::I2_NATIVE_JOIN_STORAGE_DEFAULT),
+    )
+    .expect("the original producer package with its selected model");
+    let nodes: Vec<_> = admitted
+        .resolved_graph()
+        .nodes
+        .iter()
+        .map(|node| serde_json::to_value(&node.node_id).unwrap())
+        .collect();
     for expected in [&model, &selected_anchor, &selected_clause] {
-        assert!(
-            nodes.iter().any(|node| node["node_id"] == *expected),
-            "{expected}: {admitted}"
-        );
+        assert!(nodes.contains(expected), "{expected}: {nodes:?}");
     }
     let comment =
         |node: &Value, region: &str| format!("\\* fsl: {node} test/example/counter-unit:{region}");
