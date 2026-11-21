@@ -179,6 +179,7 @@ fn named_value<'a>(term: &'a CheckedTerm, name: &str) -> Option<(usize, &'a Chec
             CheckedTerm::Binding {
                 name: actual,
                 value,
+                ..
             } if actual.as_ref() == name => Some((index, value.as_ref())),
             _ => None,
         })

@@ -162,7 +162,7 @@ fn binding_kind<'t>(
     term: &'t CheckedTerm,
 ) -> Option<(CheckedBindingNameKind<'t>, &'t CheckedTerm)> {
     match term {
-        CheckedTerm::Binding { name, value } => Some((name.kind(), value)),
+        CheckedTerm::Binding { name, value, .. } => Some((name.kind(), value)),
         _ => None,
     }
 }
