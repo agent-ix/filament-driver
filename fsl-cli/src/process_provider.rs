@@ -413,6 +413,7 @@ fn hybrid_transport_failure<A, V, F>(error: &PluginError<A, V, F>) -> fsl_replay
         PluginError::Fault(_) | PluginError::ResultValidation(_) => ToolFailure::MalformedBody,
         PluginError::WithDiagnostics { cause, .. } => hybrid_transport_failure(cause),
         PluginError::BareExecutableName(_)
+        | PluginError::UnsupportedPlatform { .. }
         | PluginError::ShellScriptExecutable(_)
         | PluginError::MissingManifest
         | PluginError::Spawn { .. }
