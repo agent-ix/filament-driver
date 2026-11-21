@@ -610,6 +610,7 @@ dependencies = [
  "nix",
  "process-wrap",
  "quire-canonical",
+ "rlimit",
  "serde",
  "serde_json",
  "thiserror",
@@ -1975,6 +1976,15 @@ checksum = "158a764437582235e3501f683b93a0a6f8d825d04a789dbe5ed30b8799b8908a"
 dependencies = [
  "hashbrown 0.16.1",
  "memchr",
+]
+
+[[package]]
+name = "rlimit"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f35ee2729c56bb610f6dba436bf78135f728b7373bdffae2ec815b2d3eb98cc3"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
