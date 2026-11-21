@@ -5,19 +5,20 @@ use super::*;
 use filament_contract_model::CheckedPackageReadLimits;
 use fsl_foundation::SourceIdentity;
 use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+use ix_trace_rs::trace;
 
-/// FR-017-AC-4 component: a clock-shaped member refuses as Unsupported with
+/// Unsupported-refusal component: a clock-shaped member refuses as Unsupported with
 /// its original node and path before a runtime field is constructed. This is
 /// a defensive input control, with no clock witness admission or full failure
 /// classification claim.
-#[ix_trace_rs::trace("FR-017-AC-4")]
+#[trace("FR-017-AC-4")]
 #[test]
 fn clock_record_member_refuses_without_a_substitute_runtime_type() {
     let source = SourceIdentity::new("agent-ix", "clock-row-refusal");
     let text = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"filament.value.complete/v1\";\n\
-        record Reading { count: Integer; }\n\
-        function read using v(r: Reading): Integer pure { r.count }\n";
+        record Reading { amount: Integer; }\n\
+        function read using v(r: Reading): Integer pure { r.amount }\n";
     let limits = SpineLimits::default();
     let cancel = Cancel::new();
     let packages = std::collections::BTreeMap::new();

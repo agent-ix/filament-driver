@@ -20,6 +20,9 @@ use ix_trace_rs::trace;
 
 // These ordinary functions only supply admitted diagnostic data. They are
 // neither a temporal algorithm nor evidence of monitor preparation/build.
+// Bind computations before assembling values: IR body-location walks follow
+// expression references, while record/tuple value nodes are traversal leaves.
+// FSL authors the explicit location rows for these outer let-bound terms.
 const SOURCE: &str = r#"language "ix:native" edition "1-draft";
 profile v = "filament.value.complete/v1";
 profile timed = "filament.temporal.timed/v1";
@@ -45,11 +48,12 @@ type DResults = Sequence<DResult>;
 tuple DStep(DState, DResults);
 function emptyResults using v(): DResults pure { sequence[] }
 function fixtureInit using v(): DState pure {
-    let initial = DState { now: 0, history_start: 0 - 1, buffer_0: sequence[], activations: sequence[], event_position: 0 } in initial
+    let historyStart = 0 - 1 in
+    let initial = DState { now: 0, history_start: historyStart, buffer_0: sequence[], activations: sequence[], event_position: 0 } in initial
 }
-function fixtureEvent using v(s: DState, delta: Integer, i: DInputs): DStep pure { let pair = DStep(s, emptyResults()) in pair }
-function fixtureWatermark using v(s: DState, delta: Integer, progress: DScope): DStep pure { let pair = DStep(s, emptyResults()) in pair }
-function fixtureGap using v(s: DState, delta: Integer): DStep pure { let pair = DStep(s, emptyResults()) in pair }
+function fixtureEvent using v(s: DState, delta: Integer, i: DInputs): DStep pure { let results = emptyResults() in let pair = DStep(s, results) in pair }
+function fixtureWatermark using v(s: DState, delta: Integer, progress: DScope): DStep pure { let results = emptyResults() in let pair = DStep(s, results) in pair }
+function fixtureGap using v(s: DState, delta: Integer): DStep pure { let results = emptyResults() in let pair = DStep(s, results) in pair }
 function plus using v(a: Integer, b: Integer): Integer pure { a + b }
 function remainder using v(a: Integer, b: Int[1, 9]): Integer pure { a mod b }
 function narrowed using v(a: Float64[nearest-even]): Float32[toward-negative] pure { convert<Float32[toward-negative]>(a) }
@@ -92,15 +96,49 @@ fn model_document() -> Vec<u8> {
 }
 
 fn admit(emission: &Emission, evidence: &CheckedPackageEvidence) -> Box<CheckedPackageV2> {
-    match read_checked_package(
-        emission.package().bytes(),
-        CheckedPackageReadLimits::bounded(),
-        evidence,
-    ) {
+    let mut wire: serde_json::Value = serde_json::from_slice(emission.package().bytes()).unwrap();
+    // The monitor writer changes these four entry IDs but carries the base
+    // sidecar unchanged. Preserve its explicit application/occurrence/path
+    // rows, rebinding only their function owner to the fixture's final entry.
+    let entries = {
+        let root = wire["semantic_graph"]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["semantic_form"] == "monitor_plan")
+            .unwrap();
+        [
+            ("fixtureInit", "init"),
+            ("fixtureEvent", "on_event"),
+            ("fixtureWatermark", "on_watermark"),
+            ("fixtureGap", "on_gap"),
+        ]
+        .map(|(name, binding)| {
+            let entry = root["body"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|member| member["name"] == binding)
+                .unwrap()["value"]["target"]
+                .clone();
+            (name, entry)
+        })
+    };
+    for row in wire["checked_term_data"]["body_locations"]
+        .as_array_mut()
+        .unwrap()
+    {
+        if let Some((_, entry)) = entries
+            .iter()
+            .find(|(name, _)| row["location"]["origin"]["name"] == *name)
+        {
+            row["location"]["origin"]["function"] = entry.clone();
+        }
+    }
+    let bytes = serde_json::to_vec(&wire).unwrap();
+    match read_checked_package(&bytes, CheckedPackageReadLimits::bounded(), evidence) {
         CheckedPackageDispatchResult::AdmittedV2(package) => package,
         other => {
-            let wire: serde_json::Value =
-                serde_json::from_slice(emission.package().bytes()).unwrap();
             let nodes = wire["semantic_graph"]["nodes"].as_array().unwrap();
             let root = nodes
                 .iter()

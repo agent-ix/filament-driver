@@ -446,6 +446,69 @@ impl Drop for TestDirectory {
     }
 }
 
+/// Dispatch component: preserve the native model-based result and its process exit.
+#[trace("FR-002-AC-1", "FR-002-AC-2")]
+#[test]
+fn model_based_test_run_matches_the_owner_result() {
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-model-based-run-{}", std::process::id())),
+    );
+    std::fs::create_dir_all(&directory.0).expect("request directory");
+    let source = directory.0.join("unit.native");
+    std::fs::write(
+        &source,
+        r#"language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+predicate Square using v(x: Integer): Boolean { x * x >= 0 }
+"#,
+    )
+    .expect("model-based source");
+    let path = directory.0.join("request.json");
+    let request = serde_json::json!({
+        "format": "native-run/1",
+        "request": {
+            "models": [],
+            "program": {
+                "source": {
+                    "file": source,
+                    "authority": "test",
+                    "identity": "model-based-run",
+                    "document": "ModelBased",
+                    "formal_revision": 1
+                }
+            },
+            "model_based_test": {
+                "clause": "Square", "seed": 7, "max_cases": 3, "max_value_bits": 8
+            }
+        }
+    });
+    std::fs::write(&path, request.to_string()).expect("model-based request");
+    let negotiation = filament_driver::AnalyzeNegotiation::fsl().expect("owner negotiation");
+    let library = fsl_command::command::run(&path, &negotiation).expect("owner model-based run");
+    let expected: serde_json::Value =
+        serde_json::from_str(&library.value.to_string()).expect("owner result document");
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(&path)
+        .args(["--format", "json"])
+        .output()
+        .expect("driver model-based run");
+    assert_eq!(
+        output.status.code(),
+        Some(i32::from(library.exit_code)),
+        "{output:?}"
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let actual: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one owner result document");
+    assert_eq!(actual, expected);
+    assert_eq!(actual["model_based_test"]["status"], "tested", "{actual}");
+    assert_eq!(
+        actual["model_based_test"]["cases"]["generated"], 3,
+        "{actual}"
+    );
+}
+
 #[trace("TC-1262", "FR-287-AC-9")]
 #[test]
 fn request_paths_are_independent_and_documents_equal_the_actual_producers() {

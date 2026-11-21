@@ -8,6 +8,7 @@ use std::sync::{
 
 use filament_contract_model::{CheckedNodeId, CheckedNodePathSegment};
 use filament_exact::CancelCause;
+use ix_trace_rs::trace;
 
 use super::*;
 
@@ -19,11 +20,11 @@ fn key() -> CheckedNodeId {
     }
 }
 
-/// FR-019-AC-2 component: this borrowed-material inspection succeeds at its
+/// Budget component: this borrowed-material inspection succeeds at its
 /// measured work total and refuses one below, retaining the first unpaid
 /// amount and earlier consumption. Full preparation, phase loci and storage
 /// accounting are outside this test; the criterion's D2 deferral remains.
-#[ix_trace_rs::trace("FR-019-AC-2")]
+#[trace("FR-019-AC-2")]
 #[test]
 fn temporal_binding_declaring_source_is_charged_before_inspection_completes() {
     use filament_contract_model::{CheckedSourceRef, ClockConfiguration, TemporalBinding};

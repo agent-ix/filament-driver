@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use filament_driver::{ProcessProviderRequest, ProcessProviderSession as _, ProviderManifest};
 use filament_exact::{Cancel, Integer, Value};
-use fsl_analyze::provider::{ExternalProvider, ProviderRequest, ProviderVerdict};
+use fsl_analyze::provider::{ExternalProvider, ProviderRequest, ProviderTarget, ProviderVerdict};
 use fsl_foundation::{BackendId, RequestIndex};
 use fsl_replay::value_check::ValueTarget;
 use fsl_replay::WitnessValue;
@@ -84,9 +84,14 @@ impl SessionProvider {
                 .items()
                 .iter()
                 .zip(request.targets())
-                .map(|(item, target)| {
-                    verdict(&results.items, item.index(), backend, target)
-                        .unwrap_or(ProviderVerdict::Unknown)
+                .map(|(item, target)| match target {
+                    ProviderTarget::Value(target) => {
+                        verdict(&results.items, item.index(), backend, target)
+                            .unwrap_or(ProviderVerdict::Unknown)
+                    }
+                    // This adapter admits only value-validity verdicts; a
+                    // contract target has no value-parameter assignment here.
+                    ProviderTarget::Contract(_) => ProviderVerdict::Unknown,
                 })
                 .collect(),
         )

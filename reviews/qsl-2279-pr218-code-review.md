@@ -95,3 +95,16 @@ Runtime: no Cargo, build, lint, test or all-target gate run by this reviewer. De
   }
 ]
 ```
+
+## Dispositions
+
+### Round 1
+
+Frozen c5552606951f98d8ab5df6e703905a8cdcd7c341. Only test attributes/docs and review custody changed; production and test bodies are unchanged. quire matrix and coverage both exited 0 with baseline diagnostics; both selected criteria remain untagged and the new prose emits trace-id-outside-marker. No Cargo/tests run. Delegated runtime batch for 279e3e82 remains pending. No repository assurance PASS or genuine clock witness admission credit.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | Round 1: the criterion selection and component/D2 disclaimer are semantically appropriate, but namespaced #[ix_trace_rs::trace("FR-019-AC-2")] remains unmatched by the installed marker grammar; matrix has no binder. Use the supported bare #[trace] form and remove the duplicate criterion ID from prose to eliminate the new trace-id-outside-marker warning. |
+| FND-002 | still-open | Round 1: FR-017-AC-4 matches the defensive original-locus Unsupported control without claiming clock witness admission. However namespaced #[ix_trace_rs::trace("FR-017-AC-4")] remains unmatched; matrix has no binder. Use supported bare #[trace] and remove the duplicate criterion ID from prose. |
+
+Verdict: NOT MERGEABLE while these trace findings remain open.
