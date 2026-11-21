@@ -607,6 +607,8 @@ name = "filament-plugin-host"
 version = "0.1.0"
 dependencies = [
  "filament-exact",
+ "fsl-test-provider",
+ "ix-trace-rs",
  "nix",
  "process-wrap",
  "quire-canonical",
