@@ -3252,17 +3252,31 @@ compose CounterBoundaryAudit rule interface {
     meter_identity(&mut meter_model);
     let model_path = request.directory.0.join("meter.semantic-ir.json");
     std::fs::write(&model_path, meter_model.to_string()).expect("independent meter model");
-    let mut meter_start: serde_json::Value = serde_json::from_slice(
+    let mut initial_world: serde_json::Value = serde_json::from_slice(
         &std::fs::read(fixtures.join("analyze-counter-start.json"))
             .expect("owned Counter initial data"),
     )
     .expect("Counter snapshot JSON");
+    let mut meter_start = initial_world.clone();
     meter_identity(&mut meter_start);
-    meter_start["identity"] =
-        serde_json::json!({"authority": "driver", "identity": "audit-meter-start"});
     meter_start["populations"][0]["objects"][0]["key"] = "meter".into();
-    let start_path = request.directory.0.join("meter-start.json");
-    std::fs::write(&start_path, meter_start.to_string()).expect("independent meter initial data");
+    // Every initialization document is a whole initial world. Supply both
+    // real populations together, rather than two partial alternative worlds.
+    initial_world["identity"] =
+        serde_json::json!({"authority": "driver", "identity": "audit-world-start"});
+    initial_world["populations"]
+        .as_array_mut()
+        .expect("initial world populations")
+        .extend(
+            meter_start["populations"]
+                .as_array()
+                .expect("meter population and initial object")
+                .iter()
+                .cloned(),
+        );
+    let start_path = request.directory.0.join("audit-world-start.json");
+    std::fs::write(&start_path, initial_world.to_string())
+        .expect("complete two-model initial world");
     let meter_source = std::fs::read_to_string(&source)
         .expect("owned Counter clauses")
         .replace(
@@ -3283,10 +3297,7 @@ compose CounterBoundaryAudit rule interface {
     input["request"]["models"].as_array_mut().expect("model selections").push(
         serde_json::json!({"format": "semantic-ir/2.0.0", "source": {"file": model_path,
             "authority": "driver", "identity": "meter-model", "document": "AuditMeter", "formal_revision": 1}}));
-    input["request"]["documents"]
-        .as_array_mut()
-        .expect("initial observations")
-        .push(serde_json::json!({"file": start_path}));
+    input["request"]["documents"] = serde_json::json!([{"file": start_path}]);
     std::fs::write(request.path(), input.to_string()).expect("composition request");
     let (document, exit) = request.json();
     assert_eq!(exit, Some(21), "{document}");
