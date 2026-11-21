@@ -90,7 +90,6 @@ temporal PromptlyFull using timed over (q: Queue::Counter) clock "model-time" on
 /// Trace: FR-022-AC-11
 /// FSL FR-1019: the default CLI supplies its reference hybrid provider.
 #[test]
-#[ignore = "QSL-2234: default hybrid reference provider is absent from the frozen CLI registry"]
 fn a_hybrid_reservoir_has_a_checked_bound_and_a_real_violation() -> Result<(), ContractError> {
     let case = CliCase::from_environment()?;
     case.write(

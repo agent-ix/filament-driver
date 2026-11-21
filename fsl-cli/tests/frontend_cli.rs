@@ -2762,3 +2762,305 @@ fn extension_definitions_are_validated_and_unselected_sets_change_nothing() {
         assert_eq!(plain.stdout, with.stdout, "{verb}");
     }
 }
+
+fn hybrid_braking_request(name: &str, items: serde_json::Value) -> AnalyzeRequest {
+    let program = br#"language "ix:native" edition "1-draft";
+profile p = "filament.temporal.infinite-trace/v1";
+hybrid Braking using p {
+  mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }
+    flow { v' = -a; a' = 0; }
+    transition to Stopped when { v = 0 } reset { v = 0 };
+  mode Stopped invariant { v = 0 }
+    flow { v' = 0; a' = 0; }
+}
+temporal SlowEnough using p over (h: Braking) clock "model-time" on origin {
+  always [0, 10] holds(h.v < 30)
+}
+temporal TooSlow using p over (h: Braking) clock "model-time" on origin {
+  always [0, 10] holds(h.v > 5)
+}
+"#;
+    AnalyzeRequest::new(
+        name,
+        items,
+        serde_json::json!({"models": [], "documents": []}),
+    )
+    .with_file("/request/program/source/file", "braking.fsl", program)
+}
+
+fn provider_document(output: &Output, code: i32) -> serde_json::Value {
+    assert_eq!(output.status.code(), Some(code), "{output:?}");
+    serde_json::from_slice(&output.stdout).expect("provider outcome JSON")
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_braking_default_proof_and_refutation_have_real_evidence() {
+    for (claim, code, result) in [("SlowEnough", 0, "proved"), ("TooSlow", 10, "refuted")] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-default-{claim}"),
+            serde_json::json!([{"claim": claim}]),
+        );
+        let document = provider_document(&request.run("json"), code);
+        let item = &document["items"][0];
+        assert_eq!(item["record"]["result"], result, "{document}");
+        assert_eq!(
+            item["record"]["backend"], "fsl-hybrid-reference",
+            "{document}"
+        );
+        if result == "proved" {
+            assert_eq!(item["record"]["certification"], "certified", "{document}");
+            assert_eq!(item["certificate"]["accepted"], true, "{document}");
+        } else {
+            assert_eq!(item["replay"]["reproduced"], true, "{document}");
+            assert!(!item["counterexample"].is_null(), "{document}");
+        }
+        let registry = document["registry"].as_array().expect("registry");
+        for backend in ["fsl-hybrid-reference", "en-1"] {
+            assert!(
+                registry.iter().any(|entry| entry["backend"] == backend),
+                "{document}"
+            );
+        }
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_selection_transports_fsl_request_and_keeps_uncertified_proof() {
+    let request = hybrid_braking_request(
+        "hybrid-process",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            {"claim": "SlowEnough", "backend": "fsl-hybrid-reference"},
+            {"claim": "SlowEnough"},
+        ]),
+    );
+    let log = request.directory.0.join("hybrid-request.json");
+    let shutdown = request.directory.0.join("shutdown");
+    let config = provider_config(
+        &request,
+        &[
+            PROVIDER_BACKEND,
+            "hybrid",
+            "unsat",
+            log.to_str().expect("log path"),
+            shutdown.to_str().expect("shutdown path"),
+        ],
+    );
+    let document = provider_document(&analyze_with_config(&request, &config), 20);
+    let item = &document["items"][0];
+    assert_eq!(item["record"]["result"], "proved", "{document}");
+    assert_eq!(
+        item["record"]["basis"]["type"], "bounded-solver",
+        "{document}"
+    );
+    assert_eq!(
+        item["record"]["basis"]["method"], "delta-complete",
+        "{document}"
+    );
+    assert_eq!(item["record"]["certification"], "uncertified", "{document}");
+    assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{document}");
+    assert_eq!(
+        document["items"][1]["record"]["result"], "proved",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["backend"], "fsl-hybrid-reference",
+        "{document}"
+    );
+    assert_eq!(
+        document["items"][1]["record"]["certification"], "certified",
+        "{document}"
+    );
+    assert!(
+        document["items"][2]
+            .to_string()
+            .contains("ambiguous-backend"),
+        "{document}"
+    );
+    assert_eq!(
+        std::fs::read(shutdown).expect("orderly provider shutdown"),
+        b"shutdown"
+    );
+    let sent: serde_json::Value = serde_json::from_slice(&std::fs::read(log).expect("request log"))
+        .expect("FSL's hybrid request");
+    assert_eq!(
+        sent["contract_version"], "filament.backend-provider/v1",
+        "{sent}"
+    );
+    assert_eq!(sent["request"]["items"][0]["request_index"], 0, "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["kind"], "temporal-satisfaction",
+        "{sent}"
+    );
+    assert!(sent.to_string().contains("hybrid"), "{sent}");
+    assert_eq!(
+        sent["request"]["items"][0]["requirements"],
+        serde_json::json!(["hybrid-dynamics"]),
+        "{sent}"
+    );
+    assert_eq!(sent["request"]["deadline_ms"], 600_000, "{sent}");
+    let encoded = sent["request"]["package"].as_str().expect("base64 package");
+    use base64::Engine as _;
+    let package = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .expect("FSL emitted package bytes");
+    assert!(
+        String::from_utf8_lossy(&package).contains("SlowEnough"),
+        "emitted package"
+    );
+    assert!(!sent["request"]["package"].is_null(), "{sent}");
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_preserves_malformed_results_for_fsl_refusal() {
+    for result in ["malformed", "unknown-member"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-{result}"),
+            serde_json::json!([
+                {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let shutdown = request.directory.0.join("shutdown");
+        let config = provider_config(
+            &request,
+            &[
+                PROVIDER_BACKEND,
+                "hybrid",
+                result,
+                "-",
+                shutdown.to_str().expect("shutdown path"),
+            ],
+        );
+        let output = analyze_with_config(&request, &config);
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("outcome");
+        assert_ne!(output.status.code(), Some(0), "{document}");
+        assert_eq!(
+            document["items"][0]["record"]["result"], "failed",
+            "{document}"
+        );
+        assert_eq!(std::fs::read(shutdown).expect("shutdown"), b"shutdown");
+        if result == "unknown-member" {
+            assert!(
+                document.to_string().contains("malformed-body"),
+                "{document}"
+            );
+        }
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_provider_unsuitable_hello_is_refused_and_started_sessions_are_closed() {
+    for mode in ["hybrid-bounded", "hybrid-no-dynamics"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-hello-{mode}"),
+            serde_json::json!([
+                {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let shutdown = request.directory.0.join("shutdown");
+        let first_shutdown = request.directory.0.join("first-shutdown");
+        let config = request.directory.0.join("providers.json");
+        std::fs::write(&config, serde_json::json!({"format": "filament.provider-config/v1",
+            "providers": [
+                {"path": test_provider_path::executable(), "arguments": [
+                    "first-hybrid", "hybrid", "unsat", "-", first_shutdown.to_str().expect("path")]},
+                {"path": test_provider_path::executable(), "arguments": [
+                    PROVIDER_BACKEND, mode, "unsat", "-", shutdown.to_str().expect("path")]}
+            ]}).to_string()).expect("configuration");
+        let output = analyze_with_config(&request, &config);
+        assert_eq!(output.status.code(), Some(20), "{output:?}");
+        assert_eq!(
+            std::fs::read(first_shutdown).expect("earlier session shutdown"),
+            b"shutdown"
+        );
+        // Admission may terminate an invalid hello immediately; a started,
+        // admitted but unsuitable provider must receive orderly shutdown.
+        if mode == "hybrid-bounded" {
+            assert_eq!(
+                std::fs::read(shutdown).expect("unsuitable session shutdown"),
+                b"shutdown"
+            );
+        }
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_deadline_settles_incomplete_instead_of_accepting_a_late_proof() {
+    let request = hybrid_braking_request(
+        "hybrid-deadline",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+        ]),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", "late"]);
+    let output = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(config)
+        .args(["--provider-limit", "deadline_ms=500", "--format", "json"])
+        .output()
+        .expect("deadline hybrid run");
+    let document = provider_document(&output, 22);
+    assert_eq!(
+        document["items"][0]["record"]["result"], "incomplete",
+        "{document}"
+    );
+    assert!(document.to_string().contains("timed-out"), "{document}");
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_signal_cancels_the_open_item() {
+    for signal in ["term", "int"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-signal-{signal}"),
+            serde_json::json!([
+                {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", signal]);
+        let document = provider_document(&analyze_with_config(&request, &config), 22);
+        assert_eq!(
+            document["items"][0]["record"]["result"], "incomplete",
+            "{document}"
+        );
+        assert!(document.to_string().contains("cancelled"), "{document}");
+    }
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_refutation_requires_exact_native_replay() {
+    for (result, terminal) in [("refuted", "refuted"), ("false-refutation", "inconclusive")] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-replay-{result}"),
+            serde_json::json!([
+                {"claim": "TooSlow", "backend": PROVIDER_BACKEND},
+            ]),
+        );
+        let config = provider_config(&request, &[PROVIDER_BACKEND, "hybrid", result]);
+        let output = analyze_with_config(&request, &config);
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("outcome");
+        let item = &document["items"][0];
+        assert_eq!(item["record"]["result"], terminal, "{document}");
+        if result == "refuted" {
+            assert_eq!(output.status.code(), Some(10), "{document}");
+            assert_eq!(item["replay"]["reproduced"], true, "{document}");
+            assert!(!item["counterexample"].is_null(), "{document}");
+        } else {
+            assert_ne!(output.status.code(), Some(10), "{document}");
+            assert!(item.to_string().contains("replay-parity"), "{document}");
+            assert!(
+                item.get("counterexample")
+                    .is_none_or(serde_json::Value::is_null),
+                "{document}"
+            );
+        }
+    }
+}

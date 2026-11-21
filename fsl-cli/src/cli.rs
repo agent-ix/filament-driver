@@ -1865,9 +1865,9 @@ impl StartedProviders {
 
 /// Start each configured provider and admit its `hello` manifest with
 /// `Process` origin (FSL FR-635 "Where provider manifests come from"). A
-/// provider that does not start, or whose manifest does not advertise
-/// (`value-validity`, `unbounded`), is a registration failure naming the
-/// entry's executable; the providers already started are shut down. Every
+/// provider that does not start, or advertises neither unbounded value
+/// validity nor unbounded hybrid temporal satisfaction, fails registration;
+/// the providers already started are shut down. Every
 /// session works under the run's one limit set (FSpec FR-777).
 fn start_providers(
     config: crate::provider_config::ProviderConfig,
@@ -1955,11 +1955,38 @@ fn start_providers(
             ));
             continue;
         };
-        let provider = crate::analyze_provider::SessionProvider {
-            session: shared,
-            manifest: std::sync::Arc::clone(&manifest),
+        let hybrid = descriptor
+            .dynamics()
+            .is_some_and(|kinds| kinds.contains(&fsl_route::DynamicsKind::Hybrid))
+            && descriptor.advertises().any(|(kind, mode)| {
+                kind == fsl_semantics::check::Capability::TemporalSatisfaction
+                    && mode == fsl_route::Mode::Unbounded
+            });
+        let engine = if hybrid {
+            fsl_analyze::analyze::Engine::hybrid_process(
+                descriptor.clone(),
+                tool,
+                Box::new(crate::analyze_provider::HybridSessionProvider { session: shared }),
+            )
+            .map_err(|error| error.to_string())
+        } else if descriptor.advertises().any(|(kind, mode)| {
+            kind == fsl_semantics::check::Capability::ValueValidity
+                && mode == fsl_route::Mode::Unbounded
+        }) {
+            let provider = crate::analyze_provider::SessionProvider {
+                session: shared,
+                manifest: std::sync::Arc::clone(&manifest),
+            };
+            fsl_analyze::analyze::Engine::external(descriptor.clone(), tool, Box::new(provider))
+                .map_err(|error| error.to_string())
+        } else {
+            Err(format!(
+                "`{}` advertises neither unbounded value-validity nor unbounded \
+                temporal-satisfaction with hybrid dynamics",
+                descriptor.id().as_str()
+            ))
         };
-        match fsl_analyze::analyze::Engine::external(descriptor.clone(), tool, Box::new(provider)) {
+        match engine {
             Ok(engine) => {
                 providers.engines.push(engine);
                 providers.descriptors.push(descriptor);

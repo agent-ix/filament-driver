@@ -68,6 +68,29 @@ fn main() -> io::Result<()> {
     let descendant_markers = rest.get(2).zip(rest.get(3));
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
+    let hybrid = mode.starts_with("hybrid");
+    let mut descriptor = json!({
+        "backend": backend,
+        "advertises": [{"kind": "value-validity", "mode": mode}],
+        "domains": ["integer"],
+        "tool": {"name": "fsl-test-provider", "version": env!("CARGO_PKG_VERSION")},
+    });
+    if hybrid {
+        descriptor["advertises"] = json!([{"kind": "temporal-satisfaction",
+            "mode": if mode == "hybrid-bounded" { "bounded" } else { "unbounded" }}]);
+        if let Some(members) = descriptor.as_object_mut() {
+            members.remove("domains");
+        }
+        if mode != "hybrid-no-dynamics" {
+            descriptor["dynamics"] = json!(["hybrid"]);
+        }
+        if mode == "hybrid-mixed" {
+            if let Some(entries) = descriptor["advertises"].as_array_mut() {
+                entries.push(json!({"kind": "value-validity", "mode": "unbounded"}));
+            }
+            descriptor["domains"] = json!(["integer"]);
+        }
+    }
     write_frame(
         &mut output,
         &json!({
@@ -75,12 +98,7 @@ fn main() -> io::Result<()> {
             "body": {
                 "contract_version": CONTRACT,
                 "capability_vocabulary": VOCABULARY,
-                "manifest": [{
-                    "backend": backend,
-                    "advertises": [{"kind": "value-validity", "mode": mode}],
-                    "domains": ["integer"],
-                    "tool": {"name": "fsl-test-provider", "version": env!("CARGO_PKG_VERSION")},
-                }],
+                "manifest": [descriptor],
             },
         }),
     )?;
@@ -120,6 +138,50 @@ fn main() -> io::Result<()> {
                 .status()?;
             let _ = read_frame(&mut input);
             return Ok(());
+        }
+        if hybrid {
+            let mut entry = json!({
+                "request_index": 0, "backend": backend, "kind": "temporal-satisfaction",
+                "result": "proved", "certification": "uncertified",
+                "basis": {"type": "bounded-solver", "method": "delta-complete",
+                    "horizon": {"numerator": "10", "denominator": "1"}, "jumps": 1,
+                    "exhaustive": ["time"]},
+            });
+            if result == "malformed" {
+                entry["basis"] = Value::Null;
+            }
+            let mut outcome = json!({
+                "contract_version": CONTRACT, "capability_vocabulary": VOCABULARY,
+                "results": [entry], "dispositions": [], "counterexamples": [],
+                "artifacts": [], "accounting": [],
+            });
+            if result == "unknown-member" {
+                outcome["unexpected"] = json!(true);
+            }
+            if matches!(result.as_str(), "refuted" | "false-refutation") {
+                let rational = |value: &str| json!({"numerator": value, "denominator": "1"});
+                let interval =
+                    |value: &str| json!({"lower": rational(value), "upper": rational(value)});
+                let velocity = if result == "refuted" { "0" } else { "6" };
+                outcome["results"] = json!([{"request_index": 0, "backend": backend,
+                    "kind": "temporal-satisfaction", "result": "refuted", "counterexample": 0}]);
+                outcome["counterexamples"] = json!([{"request_index": 0, "backend": backend,
+                    "counterexample": {"type": "hybrid-counterexample", "kind": "formula",
+                        "trace": {"start": {"mode": "Moving", "time": interval("0"),
+                            "enclosure": {"v": interval(velocity), "a": interval("1")}}, "jumps": []}}}]);
+            }
+
+            if result == "late" {
+                let _ = read_frame(&mut input);
+            }
+            write_frame(
+                &mut output,
+                &json!({
+                    "protocol": PROTOCOL, "id": envelope["id"], "kind": "result",
+                    "body": outcome,
+                }),
+            )?;
+            continue;
         }
         let results: Vec<Value> = body["request"]["items"]
             .as_array()

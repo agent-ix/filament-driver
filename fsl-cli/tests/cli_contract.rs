@@ -2859,7 +2859,7 @@ fn check_takes_two_model_operands_for_a_unit_selecting_two_models() {
 
 /// FR-002-AC-27: `fsl run` sends requirement-bearing calls through FSL's
 /// provider entry and carries the caller's S1 limit into that entry.
-#[trace("TC-046", "FR-002-AC-27")]
+#[trace("TC-046", "FR-002-AC-27", "FR-002-AC-22")]
 #[test]
 fn run_routes_requirement_items_with_caller_spine_limits() {
     let directory = TemporaryDirectory::new("run-requirement-spine-limits");
@@ -2917,6 +2917,8 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
         default_document.to_string().contains(r#"{"integer":"16"}"#),
         "the call's value is 16: {default_document}"
     );
+    assert_requirement_reference_oracle(&request_path, &without_limit);
+
     let default_nodes = SpineLimits::default()
         .bounds()
         .into_iter()
@@ -2985,4 +2987,89 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
     let refusal = String::from_utf8_lossy(&observation.stdout);
     assert!(refusal.contains("observation.input_bytes"), "{refusal}");
     assert!(refusal.contains("requirements"), "{refusal}");
+}
+
+fn assert_requirement_reference_oracle(path: &Path, actual: &std::process::Output) {
+    let negotiation = filament_driver::AnalyzeNegotiation::fsl().expect("default negotiation");
+    let spine = SpineLimits::default();
+    let result = command::run_with_providers_and_limits_and_overrides(
+        path,
+        command::RunLimits::default(),
+        &command::RequestOverrides {
+            limits: Some(&spine),
+            ..Default::default()
+        },
+        &negotiation,
+        vec![fsl_analyze::analyze::Engine::hybrid_reference().expect("reference engine")],
+        &fsl_analyze::provider::ProviderOptions::default(),
+        &Cancel::new(),
+    )
+    .expect("FSL requirement oracle");
+    assert_eq!(result.exit_code, 0);
+    let requirements = result.requirements.as_ref().expect("settled requirements");
+    assert_eq!(requirements.records.len(), 3);
+    let document = result.outcome.expect("FSL requirement outcome");
+    assert_eq!(
+        actual.stdout,
+        canonical_line(&document),
+        "CLI requirement settlement must be byte equal to the real FSL reference-provider entry"
+    );
+}
+
+#[path = "common/test_provider_path.rs"]
+mod test_provider_path;
+
+#[trace("TC-046", "FR-002-AC-22")]
+#[test]
+fn run_refuses_a_configured_provider_with_the_reference_backend_name() {
+    let directory = TemporaryDirectory::new("reserved-hybrid-name");
+    let source = directory.0.join("sq.fsl");
+    std::fs::write(
+        &source,
+        r#"language "ix:native" edition "1-draft";
+profile v = "filament.value.complete/v1";
+function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }
+"#,
+    )
+    .expect("sq source");
+    let request = directory.0.join("run.json");
+    std::fs::write(&request, serde_json::json!({"format": "native-run/1", "request": {
+        "models": [], "program": {"source": {"file": source, "authority": "agent-ix",
+            "identity": "test:reserved-reference", "document": "Requirements", "formal_revision": 1}},
+        "call": {"function": "sq", "arguments": [{"parameter": "x", "value": 3}], "requirements": {}}
+    }}).to_string()).expect("requirement request");
+    let config = directory.0.join("providers.json");
+    let shutdown = directory.0.join("shutdown");
+    std::fs::write(
+        &config,
+        serde_json::json!({
+            "format": "filament.provider-config/v1", "providers": [{
+                "path": test_provider_path::executable(),
+                "arguments": ["fsl-hybrid-reference", "hybrid", "unsat", "-",
+                    shutdown.to_str().expect("shutdown path")]
+            }]
+        })
+        .to_string(),
+    )
+    .expect("provider config");
+    let output = Command::new(FSL)
+        .arg("run")
+        .arg(request)
+        .arg("--provider-config")
+        .arg(config)
+        .args(["--format", "json"])
+        .output()
+        .expect("run reserved provider");
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("refusal document");
+    assert!(
+        document.to_string().contains("invalid-request"),
+        "{document}"
+    );
+    assert!(document.to_string().contains("providers"), "{document}");
+    assert_eq!(
+        std::fs::read(shutdown).expect("colliding session shut down"),
+        b"shutdown"
+    );
 }
