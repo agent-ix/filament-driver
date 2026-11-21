@@ -336,7 +336,7 @@ fn binary_run_equals_the_library_run_under_each_integer_division_law() {
         },
         CallArgument {
             parameter: "b".to_owned(),
-            value: Value::Integer(Integer::from(3)),
+            value: Value::Integer(Integer::from(3_i64)),
         },
     ];
     for (law, role, expected_value) in [
