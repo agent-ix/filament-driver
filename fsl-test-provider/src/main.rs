@@ -147,13 +147,16 @@ fn main() -> io::Result<()> {
         if hybrid {
             let mut entry = json!({
                 "request_index": 0, "backend": backend, "kind": "temporal-satisfaction",
-                "result": "proved", "certification": "uncertified",
+                "result": "proved", "certification": "trusted",
                 "basis": {"type": "bounded-solver", "method": "delta-complete",
                     "horizon": {"numerator": "10", "denominator": "1"}, "jumps": 1,
                     "exhaustive": ["time"]},
             });
             if result == "malformed" {
                 entry["basis"] = Value::Null;
+            }
+            if matches!(result.as_str(), "uncertified" | "certified") {
+                entry["certification"] = json!(result);
             }
             let mut outcome = json!({
                 "contract_version": CONTRACT, "capability_vocabulary": VOCABULARY,

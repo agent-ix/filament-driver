@@ -2842,7 +2842,7 @@ fn hybrid_braking_default_proof_and_refutation_have_real_evidence() {
 
 #[trace("TC-047", "FR-022-AC-11")]
 #[test]
-fn hybrid_process_selection_transports_fsl_request_and_keeps_uncertified_proof() {
+fn hybrid_process_selection_transports_fsl_request_and_keeps_trusted_proof() {
     let request = hybrid_braking_request(
         "hybrid-process",
         serde_json::json!([
@@ -2874,7 +2874,7 @@ fn hybrid_process_selection_transports_fsl_request_and_keeps_uncertified_proof()
         item["record"]["basis"]["method"], "delta-complete",
         "{document}"
     );
-    assert_eq!(item["record"]["certification"], "uncertified", "{document}");
+    assert_eq!(item["record"]["certification"], "trusted", "{document}");
     assert_eq!(item["record"]["backend"], PROVIDER_BACKEND, "{document}");
     assert_eq!(
         document["items"][1]["record"]["result"], "proved",
@@ -3291,4 +3291,39 @@ compose CounterBoundaryAudit rule interface {
             .starts_with(r#""name":"value","value":{"type":"integer","value":"3"}"#),
         "{document}"
     );
+}
+
+#[trace("TC-047", "FR-022-AC-11")]
+#[test]
+fn hybrid_process_refuses_nontrusted_plugin_certification() {
+    for certification in ["uncertified", "certified"] {
+        let request = hybrid_braking_request(
+            &format!("hybrid-trust-{certification}"),
+            serde_json::json!([{"claim": "SlowEnough", "backend": PROVIDER_BACKEND}]),
+        );
+        let shutdown = request.directory.0.join("shutdown");
+        let config = provider_config(
+            &request,
+            &[
+                PROVIDER_BACKEND,
+                "hybrid",
+                certification,
+                "-",
+                shutdown.to_str().expect("shutdown path"),
+            ],
+        );
+        let document = provider_document(&analyze_with_config(&request, &config), 30);
+        let item = &document["items"][0];
+        assert_eq!(item["record"]["result"], "failed", "{document}");
+        assert!(
+            item.to_string().contains("certification-mismatch"),
+            "{document}"
+        );
+        assert!(item.to_string().contains("/certification"), "{document}");
+        assert_ne!(item["certificate"]["accepted"], true, "{document}");
+        assert_eq!(
+            std::fs::read(shutdown).expect("provider closed"),
+            b"shutdown"
+        );
+    }
 }
