@@ -426,7 +426,9 @@ fn export_evidence_routes_to_the_intake_and_refuses_other_arguments() {
         directory.path(),
         &["export", "request.json", "--format", "json"],
     );
+    assert_eq!(exported.status.code(), Some(0), "{exported:?}");
     let package = document(&exported)["result"]["export"]["package"].clone();
+    assert!(package.is_object(), "{exported:?}");
     let evidence = json!({"format": "native-run/1", "request": {
         "export_evidence": {"package": package, "obligation": "Bounded", "tool": "tlc",
             "artifact": "counter.cfg"}}});
@@ -435,7 +437,52 @@ fn export_evidence_routes_to_the_intake_and_refuses_other_arguments() {
         directory.path(),
         &["export", "--evidence", "e.json", "--format", "json"],
     );
-    assert_eq!(document(&output)["operation"], "export", "{output:?}");
+    assert_eq!(output.status.code(), Some(21), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let value = document(&output);
+    assert_eq!(value["operation"], "export", "{value}");
+    assert_eq!(value["category"], "unsupported", "{value}");
+    assert!(value["last_stage"].is_null(), "{value}");
+    assert!(value["result"].is_null(), "{value}");
+    assert_eq!(value["diagnostics"].as_array().unwrap().len(), 1, "{value}");
+    let diagnostic = &value["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "unimplemented_capability", "{value}");
+    assert_eq!(diagnostic["cause"], "unimplemented-meaning", "{value}");
+    assert_eq!(
+        diagnostic["details"]["capability"], "export_evidence",
+        "{value}"
+    );
+    assert!(!directory.path().join("counter.cfg").exists());
+
+    let mut malformed = evidence.clone();
+    malformed["request"]["export_evidence"]["tool"] = json!("observer");
+    std::fs::write(
+        directory.path().join("malformed-evidence.json"),
+        malformed.to_string(),
+    )
+    .unwrap();
+    let output = fsl(
+        directory.path(),
+        &[
+            "export",
+            "--evidence",
+            "malformed-evidence.json",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let value = document(&output);
+    assert_eq!(
+        value["diagnostics"][0]["code"], "invalid_runtime_input",
+        "{value}"
+    );
+    assert_eq!(value["diagnostics"][0]["cause"], "invalid-value", "{value}");
+    assert_eq!(
+        value["diagnostics"][0]["details"]["path"], "/export_evidence/tool",
+        "{value}"
+    );
+    assert!(value["result"].is_null(), "{value}");
     for arguments in [
         &["export", "--evidence", "e.json", "--output", "m.tla"][..],
         &["export", "request.json", "--evidence", "e.json"][..],
