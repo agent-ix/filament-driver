@@ -76,6 +76,8 @@ fn main() -> io::Result<()> {
         "tool": {"name": "fsl-test-provider", "version": env!("CARGO_PKG_VERSION")},
     });
     if hybrid {
+        descriptor["fairness_kinds"] = json!([]);
+        descriptor["bounds"] = json!({"max_solver_steps": 1000, "max_solver_time": 1});
         descriptor["advertises"] = json!([{"kind": "temporal-satisfaction",
             "mode": if mode == "hybrid-bounded" { "bounded" } else { "unbounded" }}]);
         if let Some(members) = descriptor.as_object_mut() {

@@ -157,11 +157,6 @@ fn validate_manifest(shape: &ProviderDescriptorShape) -> Result<(), ManifestAdmi
             shape.reductions.as_deref(),
             &["symmetry", "partial-order", "constraint"][..],
         ),
-        (
-            "fairness_kinds",
-            shape.fairness_kinds.as_deref(),
-            &["weak", "strong"][..],
-        ),
     ] {
         validate_shape_set(field, values, allowed)?;
     }
@@ -448,7 +443,8 @@ mod tests {
     fn hybrid_hello_retains_dynamics_and_solver_bounds_through_fsl_admission() {
         let wire = serde_json::json!({"backend": "hybrid-process",
             "advertises": [{"kind": "temporal-satisfaction", "mode": "unbounded"}],
-            "dynamics": ["hybrid"], "bounds": {"max_solver_steps": 123, "max_solver_time": 2},
+            "dynamics": ["hybrid"], "fairness_kinds": [],
+            "bounds": {"max_solver_steps": 123, "max_solver_time": 2},
             "tool": {"name": "fixture", "version": "1"}});
         let stage = ManifestStage {
             contract_version: CONTRACT_VERSION.to_owned(),
@@ -477,21 +473,128 @@ mod tests {
     #[trace("TC-047", "FR-022-AC-11")]
     #[test]
     fn hybrid_hello_refuses_malformed_or_unrecognized_dynamics() {
-        for dynamics in [
-            serde_json::json!(null),
-            serde_json::json!("hybrid"),
-            serde_json::json!([]),
-            serde_json::json!(["unknown"]),
-            serde_json::json!(["hybrid", "hybrid"]),
+        use fsl_route::{DynamicsDefect, RegistrationCause};
+
+        for (dynamics, expected) in [
+            (serde_json::json!(null), None),
+            (serde_json::json!("hybrid"), None),
+            (serde_json::json!([]), Some(DynamicsDefect::Empty)),
+            (
+                serde_json::json!(["unknown"]),
+                Some(DynamicsDefect::UnknownLabel("unknown".to_owned())),
+            ),
+            (
+                serde_json::json!(["hybrid", "hybrid"]),
+                Some(DynamicsDefect::DuplicateLabel("hybrid".to_owned())),
+            ),
         ] {
             let stage = ManifestStage {
                 contract_version: CONTRACT_VERSION.to_owned(),
                 capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
                 manifest: vec![Arc::new(serde_json::json!({"backend": "hybrid-process",
                     "advertises": [{"kind": "temporal-satisfaction", "mode": "unbounded"}],
+                    "fairness_kinds": [],
+                    "bounds": {"max_solver_steps": 123, "max_solver_time": 2},
                     "dynamics": dynamics}))],
             };
-            assert!(stage.admit_process(65_536).is_err(), "{dynamics}");
+            let error = stage.admit_process(65_536).expect_err("invalid dynamics");
+            match (expected, &error) {
+                (Some(expected), ManifestAdmissionError::Registration(refusal)) => assert_eq!(
+                    refusal.cause(),
+                    &RegistrationCause::InvalidDynamics(expected),
+                    "{dynamics}"
+                ),
+                (None, ManifestAdmissionError::InvalidMember { field, .. }) => {
+                    assert_eq!(field, "dynamics", "{dynamics}: {error}")
+                }
+                _ => panic!("wrong refusal for {dynamics}: {error}"),
+            }
+        }
+    }
+
+    #[trace("TC-047", "FR-022-AC-11")]
+    #[test]
+    fn hybrid_hello_preserves_missing_fairness_and_solver_bound_refusals() {
+        use fsl_route::{DynamicsDefect, FairnessKindsDefect, RegistrationCause};
+
+        for (missing, expected) in [
+            (
+                "fairness_kinds",
+                RegistrationCause::InvalidFairnessKinds(FairnessKindsDefect::Absent),
+            ),
+            (
+                "max_solver_steps",
+                RegistrationCause::InvalidDynamics(DynamicsDefect::MissingBounds(
+                    "max_solver_steps",
+                )),
+            ),
+            (
+                "max_solver_time",
+                RegistrationCause::InvalidDynamics(DynamicsDefect::MissingBounds(
+                    "max_solver_time",
+                )),
+            ),
+        ] {
+            let mut wire = serde_json::json!({"backend": "hybrid-process",
+                "advertises": [{"kind": "temporal-satisfaction", "mode": "unbounded"}],
+                "fairness_kinds": [], "dynamics": ["hybrid"],
+                "bounds": {"max_solver_steps": 123, "max_solver_time": 2}});
+            if missing == "fairness_kinds" {
+                wire.as_object_mut().expect("descriptor").remove(missing);
+            } else {
+                wire["bounds"]
+                    .as_object_mut()
+                    .expect("bounds")
+                    .remove(missing);
+            }
+            let stage = ManifestStage {
+                contract_version: CONTRACT_VERSION.to_owned(),
+                capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
+                manifest: vec![Arc::new(wire)],
+            };
+            let error = stage
+                .admit_process(65_536)
+                .expect_err("missing owner-required metadata");
+            let ManifestAdmissionError::Registration(refusal) = &error else {
+                panic!("expected native FSL refusal for {missing}: {error}");
+            };
+            assert_eq!(refusal.cause(), &expected, "{missing}");
+        }
+    }
+
+    #[trace("TC-047", "FR-022-AC-11")]
+    #[test]
+    fn hybrid_hello_invalid_fairness_labels_retain_owner_refusals() {
+        use fsl_route::{FairnessKindsDefect, RegistrationCause};
+
+        for (labels, expected) in [
+            (
+                serde_json::json!(["unknown"]),
+                FairnessKindsDefect::UnknownLabel("unknown".to_owned()),
+            ),
+            (
+                serde_json::json!(["weak", "weak"]),
+                FairnessKindsDefect::DuplicateLabel("weak".to_owned()),
+            ),
+        ] {
+            let stage = ManifestStage {
+                contract_version: CONTRACT_VERSION.to_owned(),
+                capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
+                manifest: vec![Arc::new(serde_json::json!({"backend": "hybrid-process",
+                    "advertises": [{"kind": "temporal-satisfaction", "mode": "unbounded"}],
+                    "fairness_kinds": labels, "dynamics": ["hybrid"],
+                    "bounds": {"max_solver_steps": 123, "max_solver_time": 2}}))],
+            };
+            let error = stage
+                .admit_process(65_536)
+                .expect_err("invalid fairness labels");
+            let ManifestAdmissionError::Registration(refusal) = &error else {
+                panic!("expected native FSL fairness refusal: {error}");
+            };
+            assert_eq!(
+                refusal.cause(),
+                &RegistrationCause::InvalidFairnessKinds(expected)
+            );
         }
     }
 
