@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use filament_exact::Cancel;
 use filament_plugin_host::{FrameLimits, PluginError, PluginSession, RunLimits, SessionStart};
+use ix_trace_rs::trace;
 use serde_json::Value;
 
 fn start(mode: &str, memory: u64, cpu: u64) -> PluginSession<Value, Value, Infallible> {
@@ -19,8 +20,12 @@ fn start(mode: &str, memory: u64, cpu: u64) -> PluginSession<Value, Value, Infal
             arguments: &arguments,
             limits: RunLimits {
                 frames: FrameLimits {
-                    max_frame_bytes: 4096,
-                    max_total_bytes: 16384,
+                    max_frame_bytes: if mode == "cpu-before-request" {
+                        2 * 1024 * 1024
+                    } else {
+                        4096
+                    },
+                    max_total_bytes: 4 * 1024 * 1024,
                 },
                 max_stderr_bytes: 4096,
                 max_memory_bytes: memory,
@@ -35,7 +40,7 @@ fn start(mode: &str, memory: u64, cpu: u64) -> PluginSession<Value, Value, Infal
     .expect("provider hello within resource limits")
 }
 
-#[ix_trace_rs::trace("FR-013-AC-4", "FR-013-AC-16")]
+#[trace("FR-013-AC-4", "FR-013-AC-16")]
 #[test]
 #[cfg(target_os = "linux")]
 fn resource_limits_memory_breach_is_a_typed_process_failure() {
@@ -49,12 +54,10 @@ fn resource_limits_memory_breach_is_a_typed_process_failure() {
     );
 }
 
-#[ix_trace_rs::trace("FR-013-AC-4", "FR-013-AC-17")]
-#[test]
-fn resource_limits_cpu_breach_is_a_typed_process_failure() {
-    use std::os::unix::process::ExitStatusExt;
-
-    let mut session = start("cpu", 64 * 1024 * 1024, 1);
+fn request_with_watchdog(
+    session: &mut PluginSession<Value, Value, Infallible>,
+    body: &Value,
+) -> Result<Value, PluginError<Infallible, Infallible, Value>> {
     let cancel = Cancel::new();
     let deadline = cancel.clone();
     let (finished, waiting) = std::sync::mpsc::channel();
@@ -63,18 +66,40 @@ fn resource_limits_cpu_breach_is_a_typed_process_failure() {
             deadline.cancel(filament_exact::CancelCause::Deadline);
         }
     });
-    let error = session
-        .request::<_, Value, Infallible>(&(), &cancel, |_, _| Ok(()))
-        .expect_err("CPU loop must be stopped by the OS");
+    let result = session.request(body, &cancel, |_, _| Ok(()));
     let _ = finished.send(());
     watchdog.join().expect("watchdog finishes");
+    result
+}
+
+fn assert_cpu_failure(error: &PluginError<Infallible, Infallible, Value>) {
+    use std::os::unix::process::ExitStatusExt;
     assert!(
         matches!(error.primary_cause(), PluginError::Exited(status) if status.signal() == Some(nix::libc::SIGKILL) || status.signal() == Some(nix::libc::SIGXCPU)),
         "{error:?}"
     );
 }
 
-#[ix_trace_rs::trace("FR-013-AC-3", "FR-013-AC-16", "FR-013-AC-17", "FR-013-AC-18")]
+#[trace("FR-013-AC-4", "FR-013-AC-17")]
+#[test]
+fn resource_limits_cpu_breach_is_a_typed_process_failure() {
+    let mut session = start("cpu", 64 * 1024 * 1024, 1);
+    let error = request_with_watchdog(&mut session, &Value::Null)
+        .expect_err("CPU loop must be stopped by the OS");
+    assert_cpu_failure(&error);
+}
+
+#[trace("FR-013-AC-4", "FR-013-AC-17")]
+#[test]
+fn resource_limits_cpu_death_during_request_write_preserves_process_failure() {
+    let mut session = start("cpu-before-request", 64 * 1024 * 1024, 1);
+    let body = serde_json::json!({"padding": "x".repeat(1024 * 1024)});
+    let error = request_with_watchdog(&mut session, &body)
+        .expect_err("a broken request pipe cannot hide the CPU process failure");
+    assert_cpu_failure(&error);
+}
+
+#[trace("FR-013-AC-3", "FR-013-AC-16", "FR-013-AC-17", "FR-013-AC-18")]
 #[test]
 fn resource_limits_provider_below_limits_completes_with_rounded_cpu_ceiling() {
     let mut session = start("ordinary", 64 * 1024 * 1024, 1_001);
@@ -88,6 +113,16 @@ fn resource_limits_provider_below_limits_completes_with_rounded_cpu_ceiling() {
     #[cfg(not(target_os = "linux"))]
     assert!(result["memory_bytes"].is_null());
     let enforcement = session.memory_enforcement();
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        enforcement,
+        filament_plugin_host::MemoryEnforcement::Enforced
+    );
+    #[cfg(not(target_os = "linux"))]
+    assert_eq!(
+        enforcement,
+        filament_plugin_host::MemoryEnforcement::NotEnforcedOnPlatform
+    );
     assert_eq!(
         session
             .shutdown()
@@ -97,7 +132,7 @@ fn resource_limits_provider_below_limits_completes_with_rounded_cpu_ceiling() {
     );
 }
 
-#[ix_trace_rs::trace("FR-013-AC-4", "FR-013-AC-10", "FR-013-AC-16")]
+#[trace("FR-013-AC-4", "FR-013-AC-10", "FR-013-AC-16")]
 #[test]
 #[cfg(target_os = "linux")]
 fn resource_limits_partial_response_preserves_the_memory_failure() {
@@ -111,7 +146,7 @@ fn resource_limits_partial_response_preserves_the_memory_failure() {
     );
 }
 
-#[ix_trace_rs::trace("FR-013-AC-18")]
+#[trace("FR-013-AC-18")]
 #[test]
 #[cfg(not(target_os = "linux"))]
 fn resource_limits_explicit_memory_is_refused_before_launch() {

@@ -3003,6 +3003,7 @@ pub(super) fn entrypoint() -> ExitCode {
     reason = "a failed assertion is the test failure report"
 )]
 mod outcome_tests {
+    use ix_trace_rs::trace;
     use std::io;
     use std::process::ExitCode;
 
@@ -3015,7 +3016,7 @@ mod outcome_tests {
     };
 
     /// An unsupported host limit is not an invalid request.
-    #[ix_trace_rs::trace("FR-013-AC-18")]
+    #[trace("FR-013-AC-18")]
     #[test]
     fn provider_platform_refusal_preserves_unsupported_without_a_fsl_document() {
         for operation in [

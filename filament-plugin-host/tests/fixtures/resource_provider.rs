@@ -20,6 +20,9 @@ fn main() -> io::Result<()> {
             body: serde_json::json!({}),
         })
         .map_err(io::Error::other)?;
+    if mode == "cpu-before-request" {
+        fsl_test_provider::consume_resource(fsl_test_provider::ResourceWorkload::Cpu);
+    }
     let mut reader = FrameReader::new(io::stdin().lock(), limits);
     let request = reader
         .read::<Envelope>()

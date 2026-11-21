@@ -134,13 +134,13 @@ specifies the driver-owned process-provider seam and settlement composition.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-013-AC-1 | Given a bare executable name, the host refuses to spawn it; given an explicit path, it launches only that executable with the supplied arguments and no shell. | Test |
+| FR-013-AC-1 | Given a bare executable name, the host refuses to spawn it; given an explicit path, it executes exactly that provider with the supplied arguments and no shell. On Unix, the bundled resource launcher applies supported limits before replacing itself with the provider. | Test |
 | FR-013-AC-2 | Before any request, the session returns a valid canonical `hello`; a rejected protocol identity or manifest ends the session and writes no request frame. | Test |
 | FR-013-AC-3 | After successful admission, a session accepts zero, one, or multiple requests over the same process, validates each response, and preserves each typed result and request identity. | Test |
 | FR-013-AC-4 | An invalid typed result, wrong request identity, plugin fault, or non-zero exit is returned as its specific failure and is not converted to cancellation or timeout. | Test |
 | FR-013-AC-5 | A plugin's valid typed cancellation settlement received within grace is returned unchanged; no settlement by grace expiry terminates the child and descendants and returns cancellation within the one-second cleanup bound. | Test |
 | FR-013-AC-6 | A deadline expiring while a plugin does not read a request frame returns `TimedOut` within the 20-millisecond polling interval plus the one-second cleanup bound. | Test |
-| FR-013-AC-7 | Truncated, malformed, non-canonical, oversized, unexpected, and wrongly correlated frames produce their specific typed failures without allocation above configured limits. | Test |
+| FR-013-AC-7 | Truncated, malformed, non-canonical, oversized, unexpected, and wrongly correlated frames produce their specific typed failures without allocation above configured limits; when EOF truncates a frame and an unsuccessful process exit is observed, that process failure takes precedence. | Test |
 | FR-013-AC-9 | Stderr beyond the session retention limit is drained but not retained; stderr is available on failures, and reader/writer workers are joined within one second after termination begins. | Test |
 | FR-013-AC-10 | After stdout closes while the child remains alive, process-exit waiting does not busy-wait; EOF before a response preserves an available child exit status. | Test |
 | FR-013-AC-11 | The host uses FSL ADR-029 PL-1 through PL-7 without defining a local wire or manifest-digest format; `filament-driver` excludes the host crate, and `fsl-cli` has a direct host dependency and composes it with the driver's seam. | Test (TC-005, TC-028) and analysis |

@@ -219,6 +219,7 @@ pub(crate) fn load(path: &Path) -> Result<ProviderConfig, ProviderConfigError> {
 )]
 mod tests {
     use super::*;
+    use ix_trace_rs::trace;
     use std::ffi::OsString;
 
     const VALID: &str = r#"{
@@ -322,7 +323,7 @@ mod tests {
     }
 
     /// Explicitly requested memory remains distinct from a default.
-    #[ix_trace_rs::trace("FR-013-AC-18")]
+    #[trace("FR-013-AC-18")]
     #[test]
     fn provider_memory_limit_presence_survives_an_explicit_default_value() {
         let defaults = take_limits(&[]).expect("default limits");

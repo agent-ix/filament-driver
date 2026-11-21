@@ -655,6 +655,7 @@ where
                 },
                 cancel,
                 child.as_mut(),
+                self.limits.cancellation_grace,
             )?;
             let frame = match next_frame(
                 &self.receiver,
@@ -964,7 +965,14 @@ fn next_frame_with_grace<A, V, F>(
             Ok(Ok(None)) | Err(RecvTimeoutError::Disconnected) => {
                 return Err(PluginError::MissingFrame);
             }
-            Ok(Err(error)) => return Err(frame_or_exit_error(child, error, grace, None)?),
+            Ok(Err(error)) => {
+                return Err(frame_or_exit_error(
+                    child,
+                    error,
+                    until.saturating_duration_since(Instant::now()),
+                    None,
+                )?)
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(PluginError::Wait)? {
                     return Err(PluginError::Exited(status));
@@ -979,6 +987,7 @@ fn write_frame_cancellable<A, V, F>(
     frame: Envelope,
     cancel: &Cancel,
     child: &mut dyn ChildWrapper,
+    exit_grace: Duration,
 ) -> Result<(), PluginError<A, V, F>> {
     let (completion, receiver) = mpsc::channel();
     writer
@@ -987,7 +996,9 @@ fn write_frame_cancellable<A, V, F>(
     loop {
         match receiver.recv_timeout(Duration::from_millis(20)) {
             Ok(Ok(())) => return Ok(()),
-            Ok(Err(error)) => return Err(PluginError::Frame(error)),
+            Ok(Err(error)) => {
+                return Err(frame_or_exit_error(child, error, exit_grace, Some(cancel))?)
+            }
             Err(RecvTimeoutError::Disconnected) => return Err(PluginError::WriterThread),
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(result) = completed_write_wins_cancellation(&receiver, cancel) {
@@ -1191,7 +1202,8 @@ fn frame_or_exit_error<A, V, F>(
     if matches!(
         error,
         FrameError::TruncatedLength | FrameError::TruncatedFrame
-    ) {
+    ) || matches!(&error, FrameError::Io(source) if source.kind() == io::ErrorKind::BrokenPipe)
+    {
         if let PluginError::Exited(status) = eof_error(child, grace, cancel)? {
             if !status.success() {
                 return Ok(PluginError::Exited(status));
