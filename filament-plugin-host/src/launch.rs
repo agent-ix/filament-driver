@@ -14,23 +14,36 @@ fn launch() -> io::Result<()> {
         arguments
             .next()
             .and_then(|value| value.to_str().and_then(|value| value.parse::<u64>().ok()))
-            .filter(|value| *value > 0)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "expected a positive limit"))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "expected a decimal limit"))
     };
     let memory_bytes = limit()?;
-    let cpu_seconds = limit()?.div_ceil(1000);
+    let cpu_ms = limit()?;
+    if cpu_ms == 0 || (cfg!(target_os = "linux") && memory_bytes == 0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a positive limit",
+        ));
+    }
+    let cpu_seconds = cpu_ms.div_ceil(1000);
     let executable = arguments.next().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "expected a provider executable",
         )
     })?;
-    // Never raise an inherited hard ceiling. Both limits survive exec.
-    for (resource, maximum) in [
-        (Resource::AS, memory_bytes),
-        (Resource::DATA, memory_bytes),
-        (Resource::CPU, cpu_seconds),
-    ] {
+    let mut resources = Vec::new();
+    #[cfg(target_os = "linux")]
+    resources.extend([(Resource::AS, memory_bytes), (Resource::DATA, memory_bytes)]);
+    #[cfg(not(target_os = "linux"))]
+    if memory_bytes != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "memory enforcement is unsupported on this platform",
+        ));
+    }
+    resources.push((Resource::CPU, cpu_seconds));
+    // Never raise an inherited hard ceiling. The selected limits survive exec.
+    for (resource, maximum) in resources {
         if resource.is_supported() {
             let inherited = resource.get_hard().map_err(|error| {
                 io::Error::new(

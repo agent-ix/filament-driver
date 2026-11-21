@@ -49,6 +49,11 @@ impl ProviderArguments {
         self.config.is_some() || !self.named.is_empty()
     }
 
+    /// Whether `max_memory_bytes` appeared, even when its value equals the default.
+    pub(crate) fn memory_limit_requested(&self) -> bool {
+        self.named.contains("max_memory_bytes")
+    }
+
     /// Read every provider option the scan found: `--provider-config` once
     /// and each `--provider-limit` (FSL FR-287, FR-964; FR-006).
     pub(crate) fn take_all(&mut self, scanned: &Scanned) -> Result<(), OptionRefusal> {
@@ -314,6 +319,20 @@ mod tests {
         assert_eq!(set.limits.deadline_ms, 250);
         assert_eq!(set.limits.max_frame_bytes, 1_048_576);
         assert_eq!(set.limits.grace_ms, 5_000);
+    }
+
+    /// Explicitly requested memory remains distinct from a default.
+    #[ix_trace_rs::trace("FR-013-AC-18")]
+    #[test]
+    fn provider_memory_limit_presence_survives_an_explicit_default_value() {
+        let defaults = take_limits(&[]).expect("default limits");
+        assert!(!defaults.memory_limit_requested());
+        let unrelated = take_limits(&["max_cpu_ms=1"]).expect("CPU limit");
+        assert!(!unrelated.memory_limit_requested());
+        for memory in ["max_memory_bytes=4294967296", "max_memory_bytes=67108864"] {
+            let supplied = take_limits(&[memory]).expect("explicit memory limit");
+            assert!(supplied.memory_limit_requested(), "{memory}");
+        }
     }
 
     /// Trace: FR-006-AC-29; each malformed limit refuses naming the option and argument.

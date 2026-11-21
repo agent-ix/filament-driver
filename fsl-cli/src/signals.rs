@@ -587,6 +587,7 @@ mod tests {
                     max_total_bytes: 16_384,
                     max_stderr_bytes: 1024,
                     max_memory_bytes: 4_294_967_296,
+                    memory_limit_requested: false,
                     max_cpu_ms: 600_000,
                     cancellation_grace: Duration::from_millis(100),
                 };

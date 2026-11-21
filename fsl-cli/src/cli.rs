@@ -988,7 +988,7 @@ fn run(options: RunOptions) -> CommandResult {
                 ),
             );
         }
-        return run_with_providers(&options.path, provider_config, options.providers.limits);
+        return run_with_providers(&options.path, provider_config, &options.providers);
     }
     // Reject a setting unavailable to every run family before request-file I/O.
     // The selected function or clause still validates its exact bounds below.
@@ -1099,7 +1099,7 @@ fn run(options: RunOptions) -> CommandResult {
                     &options.path,
                     render_sources,
                     provider_config,
-                    options.providers.limits,
+                    &options.providers,
                     options.intake_limits,
                     spine_limits,
                     clocks,
@@ -1779,6 +1779,40 @@ struct StartedProviders {
     descriptors: Vec<fsl_route::BackendDescriptor>,
 }
 
+/// Startup retains platform refusals separately from invalid provider registration.
+enum ProviderStartFailure {
+    UnsupportedPlatform {
+        limit: &'static str,
+        platform: &'static str,
+    },
+    Registration(String),
+}
+
+impl ProviderStartFailure {
+    fn from_adapter(name: &str, error: CliProviderError) -> Self {
+        if let crate::process_provider::AdapterError::Start(host) = &error {
+            if let filament_plugin_host::PluginError::UnsupportedPlatform { limit, platform } =
+                host.primary_cause()
+            {
+                return Self::UnsupportedPlatform { limit, platform };
+            }
+        }
+        Self::Registration(format!(
+            "process provider `{name}` did not register: {error:?}"
+        ))
+    }
+
+    fn into_result(self, operation: Operation) -> CommandResult {
+        match self {
+            Self::UnsupportedPlatform { limit, platform } => CommandResult::failure(
+                Category::Unsupported,
+                format!("unsupported-on-platform: --provider-limit {limit} cannot be enforced on {platform}"),
+            ),
+            Self::Registration(message) => CommandResult::input_refusal(operation, message),
+        }
+    }
+}
+
 impl StartedProviders {
     /// Shut every started session down, whether or not FSL called it.
     fn close(self) {
@@ -1804,9 +1838,10 @@ impl StartedProviders {
 fn start_providers(
     config: crate::provider_config::ProviderConfig,
     limits: &fsl_analyze::provider::ProviderLimits,
+    memory_limit_requested: bool,
     signals: &crate::signals::SignalContext,
     cancel: &Cancel,
-) -> Result<StartedProviders, String> {
+) -> Result<StartedProviders, ProviderStartFailure> {
     let mut started: Vec<CliProviderSession> = Vec::new();
     let shut = |started: Vec<CliProviderSession>| {
         for session in started {
@@ -1815,13 +1850,26 @@ fn start_providers(
     };
     for configured in config.providers {
         let name = configured.path.display().to_string();
-        match start_configured_provider(&configured, limits, signals, cancel) {
-            Ok(session) => started.push(session),
+        match start_configured_provider(
+            &configured,
+            limits,
+            memory_limit_requested,
+            signals,
+            cancel,
+        ) {
+            Ok(session) => {
+                match session.memory_enforcement() {
+                    filament_plugin_host::MemoryEnforcement::Enforced => {},
+                    filament_plugin_host::MemoryEnforcement::NotEnforcedOnPlatform => emit_diagnostic(
+                        "ProviderMemoryLimit",
+                        &format!("process provider `{name}`: max_memory_bytes is not enforced on this platform"),
+                    ),
+                }
+                started.push(session);
+            }
             Err(error) => {
                 shut(started);
-                return Err(format!(
-                    "process provider `{name}` did not register: {error:?}"
-                ));
+                return Err(ProviderStartFailure::from_adapter(&name, error));
             }
         }
     }
@@ -1838,9 +1886,9 @@ fn start_providers(
     });
     if let Some(identity) = repeated {
         shut(started);
-        return Err(format!(
+        return Err(ProviderStartFailure::Registration(format!(
             "configured process providers repeat admitted identity `{identity}`"
-        ));
+        )));
     }
     let admissions = started.iter().map(|session| {
         (
@@ -1860,9 +1908,9 @@ fn start_providers(
         Ok(manifest) => std::sync::Arc::<[filament_driver::ProviderManifest]>::from(manifest),
         Err(error) => {
             shut(started);
-            return Err(format!(
+            return Err(ProviderStartFailure::Registration(format!(
                 "configured process providers did not register: {error}"
-            ));
+            )));
         }
     };
     let mut providers = StartedProviders {
@@ -1937,7 +1985,7 @@ fn start_providers(
     match refusal {
         Some(refusal) => {
             providers.close();
-            Err(refusal)
+            Err(ProviderStartFailure::Registration(refusal))
         }
         None => Ok(providers),
     }
@@ -1962,6 +2010,7 @@ fn manifest_tool(
 fn start_configured_provider(
     configured: &crate::provider_config::ProviderEntry,
     limits: &fsl_analyze::provider::ProviderLimits,
+    memory_limit_requested: bool,
     signals: &crate::signals::SignalContext,
     cancel: &Cancel,
 ) -> Result<CliProviderSession, CliProviderError> {
@@ -1987,6 +2036,7 @@ fn start_configured_provider(
         max_total_bytes: limits.max_total_bytes,
         max_stderr_bytes: limits.max_stderr_bytes,
         max_memory_bytes: limits.max_memory_bytes,
+        memory_limit_requested,
         max_cpu_ms: limits.max_cpu_ms,
         cancellation_grace: std::time::Duration::from_millis(limits.grace_ms),
     };
@@ -2008,7 +2058,7 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     let path = options.path.clone();
     let ran = with_started_providers(
         config,
-        options.providers.limits,
+        &options.providers,
         true,
         move |negotiation, engines, provider_options, cancel| {
             command::analyze_with_providers(&path, negotiation, engines, provider_options, cancel)
@@ -2016,7 +2066,7 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     );
     let written = match ran {
         Ok(Ok(written)) => written,
-        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Analyze, message),
+        Ok(Err(failure)) => return failure.into_result(Operation::Analyze),
         Err(error) => {
             return CommandResult::failure(
                 Category::InternalFailure,
@@ -2056,7 +2106,7 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
 /// cleanup (FR-006-AC-4).
 fn with_started_providers<T: Send + 'static>(
     config: crate::provider_config::ProviderConfig,
-    limits: fsl_analyze::provider::ProviderLimits,
+    arguments: &ProviderArguments,
     reporting: bool,
     entry: impl FnOnce(
             &filament_driver::AnalyzeNegotiation,
@@ -2066,7 +2116,9 @@ fn with_started_providers<T: Send + 'static>(
         ) -> T
         + Send
         + 'static,
-) -> io::Result<Result<T, String>> {
+) -> io::Result<Result<T, ProviderStartFailure>> {
+    let limits = arguments.limits;
+    let memory_limit_requested = arguments.memory_limit_requested();
     crate::signals::run(move |signals| {
         let cancel = Cancel::new();
         let _session = if reporting {
@@ -2074,20 +2126,21 @@ fn with_started_providers<T: Send + 'static>(
         } else {
             signals.activate(cancel.clone())
         };
-        let mut providers = start_providers(config, &limits, &signals, &cancel)?;
+        let mut providers =
+            start_providers(config, &limits, memory_limit_requested, &signals, &cancel)?;
         let negotiation =
             match filament_driver::AnalyzeNegotiation::with_providers(&providers.descriptors) {
                 Ok(negotiation) => negotiation,
                 Err(error) => {
                     providers.close();
-                    return Err(format!("{error:?}"));
+                    return Err(ProviderStartFailure::Registration(format!("{error:?}")));
                 }
             };
         let engines = match filament_driver::run_engines(std::mem::take(&mut providers.engines)) {
             Ok(engines) => engines,
             Err(error) => {
                 providers.close();
-                return Err(format!("{error:?}"));
+                return Err(ProviderStartFailure::Registration(format!("{error:?}")));
             }
         };
         let options = fsl_analyze::provider::ProviderOptions {
@@ -2106,12 +2159,12 @@ fn with_started_providers<T: Send + 'static>(
 fn run_with_providers(
     path: &Path,
     config: crate::provider_config::ProviderConfig,
-    limits: fsl_analyze::provider::ProviderLimits,
+    arguments: &ProviderArguments,
 ) -> CommandResult {
     let path = path.to_path_buf();
     let ran = with_started_providers(
         config,
-        limits,
+        arguments,
         false,
         move |negotiation, engines, options, cancel| {
             command::run_with_providers(&path, negotiation, engines, options, cancel)
@@ -2119,7 +2172,7 @@ fn run_with_providers(
     );
     let written = match ran {
         Ok(Ok(written)) => written,
-        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Execute, message),
+        Ok(Err(failure)) => return failure.into_result(Operation::Execute),
         Err(error) => {
             return CommandResult::failure(
                 Category::InternalFailure,
@@ -2143,7 +2196,7 @@ fn run_with_requirement_items(
     path: &Path,
     render_sources: fsl_inspect::RenderSources,
     config: crate::provider_config::ProviderConfig,
-    provider_limits: fsl_analyze::provider::ProviderLimits,
+    provider_arguments: &ProviderArguments,
     intake_limits: RunLimits,
     spine_limits: SpineLimits,
     clocks: Option<Box<serde_json::value::RawValue>>,
@@ -2151,7 +2204,7 @@ fn run_with_requirement_items(
     let path = path.to_path_buf();
     let ran = with_started_providers(
         config,
-        provider_limits,
+        provider_arguments,
         false,
         move |negotiation, engines, options, cancel| {
             let overrides = command::RequestOverrides {
@@ -2172,7 +2225,7 @@ fn run_with_requirement_items(
     );
     let written = match ran {
         Ok(Ok(written)) => written,
-        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Execute, message),
+        Ok(Err(failure)) => return failure.into_result(Operation::Execute),
         Err(error) => {
             return CommandResult::failure(
                 Category::InternalFailure,
@@ -2220,7 +2273,7 @@ fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     let path = options.path.clone();
     let ran = with_started_providers(
         config,
-        options.providers.limits,
+        &options.providers,
         false,
         move |negotiation, engines, provider_options, cancel| {
             command::run_with_providers(&path, negotiation, engines, provider_options, cancel)
@@ -2228,7 +2281,7 @@ fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     );
     let written = match ran {
         Ok(Ok(written)) => written,
-        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Replay, message),
+        Ok(Err(failure)) => return failure.into_result(Operation::Replay),
         Err(error) => {
             return CommandResult::failure(
                 Category::InternalFailure,
@@ -2569,7 +2622,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
     // `items` to them before the first record (FSL FR-644, FR-635).
     let ran = with_started_providers(
         config,
-        options.providers.limits,
+        &options.providers,
         true,
         move |negotiation, engines, provider_options, cancel| {
             let mut output = MonitorOutput {
@@ -2604,7 +2657,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
     );
     let (summary, mut output) = match ran {
         Ok(Ok(ran)) => ran,
-        Ok(Err(message)) => return CommandResult::input_refusal(Operation::Monitor, message),
+        Ok(Err(failure)) => return failure.into_result(Operation::Monitor),
         Err(error) => {
             return CommandResult::failure(
                 Category::InternalFailure,
@@ -2956,7 +3009,43 @@ mod outcome_tests {
     use filament_semantic_value::catalog::Category;
     use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 
-    use super::{process_exit_code, write_diagnostic, write_result_diagnostics, CommandResult};
+    use super::{
+        process_exit_code, write_diagnostic, write_result_diagnostics, CliProviderError,
+        CommandResult, ProviderStartFailure,
+    };
+
+    /// An unsupported host limit is not an invalid request.
+    #[ix_trace_rs::trace("FR-013-AC-18")]
+    #[test]
+    fn provider_platform_refusal_preserves_unsupported_without_a_fsl_document() {
+        for operation in [
+            Operation::Execute,
+            Operation::Analyze,
+            Operation::Replay,
+            Operation::Monitor,
+        ] {
+            let error: CliProviderError = crate::process_provider::AdapterError::Start(
+                filament_plugin_host::PluginError::UnsupportedPlatform {
+                    limit: "max_memory_bytes",
+                    platform: "macos",
+                },
+            );
+            let result =
+                ProviderStartFailure::from_adapter("/provider", error).into_result(operation);
+            assert_eq!(result.category, Category::Unsupported);
+            assert!(result.document.is_none());
+            assert!(result.analyze_document.is_none());
+            let mut stderr = Vec::new();
+            write_result_diagnostics(&result, super::OutputFormat::Json, &mut stderr)
+                .expect("diagnostic write");
+            let stderr = String::from_utf8(stderr).expect("UTF-8 diagnostic");
+            assert!(stderr.contains("unsupported-on-platform"), "{stderr}");
+            assert!(
+                stderr.contains("max_memory_bytes") && stderr.contains("macos"),
+                "{stderr}"
+            );
+        }
+    }
 
     /// Trace: FR-002-AC-2, FR-002-AC-4; one FSL exit result reaches process exit unchanged through the kit.
     #[test]

@@ -48,9 +48,13 @@ fn main() -> io::Result<()> {
             body: {
                 #[cfg(unix)]
                 {
+                    #[cfg(target_os = "linux")]
+                    let memory_bytes = Some(rlimit::Resource::AS.get_soft()?);
+                    #[cfg(not(target_os = "linux"))]
+                    let memory_bytes: Option<u64> = None;
                     serde_json::json!({
                         "completed": true,
-                        "memory_bytes": rlimit::Resource::AS.get_soft()?,
+                        "memory_bytes": memory_bytes,
                         "cpu_seconds": rlimit::Resource::CPU.get_soft()?,
                     })
                 }

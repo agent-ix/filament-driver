@@ -39,9 +39,13 @@ cargo install --path filament-plugin-host --locked
 
 Check the install with `fsl --version`.
 
-Keep both binaries in the same directory. On Unix, `fsl-plugin-launch` applies
-the provider's memory and CPU limits before executing it. CPU milliseconds round
-up to whole seconds, the unit supported by the operating system.
+Keep both binaries in the same directory. The launcher applies process memory
+limits on Linux and CPU limits on Unix before executing the provider. CPU
+milliseconds round up to whole seconds, the operating system's unit.
+
+On macOS, default provider runs enforce CPU time and report that memory is not
+enforced on this platform. An explicit `max_memory_bytes` setting is refused
+before the provider starts.
 
 ## Commands
 

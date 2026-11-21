@@ -41,11 +41,15 @@ specifies the driver-owned process-provider seam and settlement composition.
 - For each accepted request, the validated typed result or its original typed
   protocol, plugin, process, cancellation, or timeout failure.
 - Bounded opaque stderr bytes alongside success and failure diagnostics.
+- A typed `MemoryEnforcement` value in completed session diagnostics, stating
+  whether the host applied a process memory ceiling.
 
 ## Behavior
 
-- The host SHALL spawn only the executable named by the caller, with the
-  supplied arguments and no shell.
+- The host SHALL execute the provider at the exact path named by the caller,
+  with the supplied arguments and no shell. On Unix, its bundled resource
+  launcher applies the supported process limits before replacing itself with
+  that provider.
 - When the executable value is a bare name, the host SHALL refuse to spawn it
   instead of searching `PATH`.
 - The host SHALL read and validate one canonical JCS `hello` frame before
@@ -62,7 +66,21 @@ specifies the driver-owned process-provider seam and settlement composition.
   session byte limit across both directions and all requests. Stderr retention
   is also capped for the whole session. Truncated, non-canonical, malformed,
   oversized, unexpected, or wrongly correlated frames SHALL retain their
-  specific typed tool failure.
+  specific typed tool failure, except that an observed unsuccessful process
+  exit takes precedence when EOF truncates a frame.
+- When starting a provider on Linux, the host SHALL apply the caller's process memory ceiling to both
+  address space and the data segment before the provider executes.
+- When starting a provider on Unix, the host SHALL apply the caller's CPU-time ceiling before the
+  provider executes, rounding milliseconds up to whole seconds without
+  raising a stricter inherited hard limit.
+- Where memory enforcement is unavailable, the host SHALL refuse an explicitly selected memory
+  ceiling as typed `UnsupportedPlatform` before any child
+  is launched. Explicitly selecting the default numeric value remains an
+  explicit selection.
+- When starting a default provider on macOS, the host SHALL retain CPU enforcement, expose
+  `MemoryEnforcement::NotEnforcedOnPlatform` in its session diagnostics, and
+  cause the CLI to report that memory is not enforced on this platform on
+  stderr. The CLI SHALL preserve FSL's machine document unchanged.
 - The host SHALL make frame writes interruptible by caller cancellation and
   deadline. A deadline SHALL terminate the plugin process tree and settle as
   `TimedOut`; the host SHALL poll cancellation, deadlines and process exit at
@@ -130,6 +148,9 @@ specifies the driver-owned process-provider seam and settlement composition.
 | FR-013-AC-13 | The host test suite reports an actionable prerequisite failure naming the missing fixture runtime and its installation instructions. | Test (TC-027) |
 | FR-013-AC-14 | When the IR-674 follow-up selects and implements a supported Windows process-tree cleanup mechanism, the host assigns the plugin process tree to a kill-on-close Job Object before plugin code executes; closing the owning job handle terminates remaining job members. | Deferred to IR-674; not implemented or verified by this PR; native Windows evidence required |
 | FR-013-AC-15 | When Windows process-tree setup fails before plugin execution, the host returns a typed host-start failure, dispatches no provider request, and terminates any child already created. | Analysis/Inspection (review Windows host startup/error path in `filament-plugin-host`; runtime evidence requires a native Windows runner and an injectable or distinguishable setup-failure seam) |
+| FR-013-AC-16 | On Linux, a Rust provider whose allocation exceeds its configured process memory ceiling returns an observed typed process failure, including when it wrote a partial response before exiting; a provider below the ceiling completes and reports memory enforcement as `Enforced`. | Test |
+| FR-013-AC-17 | On Unix, a Rust provider consuming CPU until stopped is terminated by its configured CPU-time ceiling; when the inherited hard ceiling permits it, a setting of 1001 milliseconds applies a two-second OS ceiling, and a below-limit provider completes normally. | Test |
+| FR-013-AC-18 | On macOS, a default provider completes with CPU enforcement and typed `NotEnforcedOnPlatform` memory diagnostics, and the CLI reports the memory limitation on stderr without changing the machine document. An explicit memory setting, including the default numeric value, is refused as typed `UnsupportedPlatform` before launch and exits 21. | Test |
 
 ## Dependencies
 
