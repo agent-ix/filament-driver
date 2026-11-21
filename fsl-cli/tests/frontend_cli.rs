@@ -3195,7 +3195,7 @@ fn hybrid_unbounded_only_provider_does_not_authorize_a_bounded_claim() {
 #[test]
 fn composition_text_preserves_derived_outcomes_trust_basis_and_extents_from_json() {
     let program = br#"language "ix:native" edition "1-draft";
-profile model = "filament.model.complete/v1";
+profile audit = "filament.model.complete/v1";
 import "driver/counter-invariants" as Invariants;
 model M = "test/counter";
 compose CounterBoundaryAudit rule interface {
