@@ -33,3 +33,41 @@ FND-001 failure scenario: `cargo test -p fsl-cli --lib no_option_literal_appears
 FND-002 failure scenario: `fsl prove r.json --integer-division floor --format json` produces a plain refusal, while `fsl run r.json --integer-division floor --format json` writes an `invalid-request` document naming `--integer-division`. Fix: use the same `input_refusal(Operation, "unknown prove option ...")` path that `options::scan` produces, decide it for every unknown prove option (not one literal), and add a cli-contracts case.
 
 Observation outside this diff (FSL 8f71444d, not a finding of this PR): `fsl-command` `execute_prepared` maps `(None catalog, Some(law))` to plain `spine::run`, which drops the law on FSL's own command path. The driver's `execute` path does not share this, because it passes the law whenever one is present.
+
+## Dispositions
+
+Round 1 at `326e1fd45c6638eaa6d0fe07743105c3a2792869`. Original review text above is preserved unchanged.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Verified in fix commits; see evidence below. |
+| FND-002 | fixed | Verified in fix commits; see evidence below. |
+| FND-003 | deferred | Arch explicitly retains DefinitionCatalog for PR #213. Catalog-free law-bearing run API is remaining scope on QSL-2279 at the next ordered pin window: FSL adds the API, driver drops the empty catalog on that pin. See ruling comment 59d15553-e41a-4936-a56f-b5147c17b5fa. No hidden new behavior defect was identified in the unchanged call path. |
+
+### Round 1 evidence
+
+The option literal special case is removed. `unrouted_option_refusal` obtains the prove entry from `options::unrouted_entry` and invokes the same scanner and typed input-refusal builder as routed verbs. Both `--integer-division` and `--bogus` have JSON shape assertions in frontend_cli and cli-contracts. Clean unrouted prove remains unsupported.
+
+Focused semantic check of the added AC found no remaining contradiction with AC-25: the unknown-option refusal precedes unsupported while clean/help/version invocations retain exit 21. This is a disposition check of the changed criterion, not a new full repository specification review. No new findings.
+
+Round 1 verdict: **MERGEABLE subject to the delegated focused TEST-RUN returning green**. No Cargo, build or test was run by this reviewer. Plan completion: not assessed.
+
+FND-001 after excerpt:
+
+```rust
+let Some(entry) = options::entry(verb.name()) else {
+        return unrouted_option_refusal(verb, raw_arguments)
+            .unwrap_or_else(|| unrouted_verb(verb, format));
+    };
+```
+
+FND-002 after excerpt:
+
+```rust
+match options::scan(entry, &arguments) {
+        Err(options::Refusal::Usage(message)) => {
+            Some(CommandResult::input_refusal(verb.operation(), message))
+        }
+        Ok(_) | Err(options::Refusal::Repeated(_)) => None,
+    }
+```
