@@ -139,39 +139,19 @@ impl ExecutionFailure {
 /// AOT and JIT selections return Unsupported before compiling the source.
 pub fn execute(request: ExecutionRequest<'_>) -> Result<ExecutionResult, ExecutionFailure> {
     execute_using(request, |request, object_environment| {
-        if let Some(integer_division) = request.integer_division {
-            let catalog = fsl_semantics::library::bundle::DefinitionCatalog::default();
-            fsl_replay::spine::run_with_profile_catalog_and_integer_division(
-                request.source.clone(),
-                request.package_name.to_owned(),
-                request.path,
-                request.bytes,
-                request.packages,
-                request.dependencies,
-                request.limits,
-                &request.call,
-                object_environment,
-                fsl_replay::spine::ProfileCatalogInput {
-                    catalog: &catalog,
-                    limits: fsl_semantics::library::bundle::PackageLimits::default(),
-                },
-                integer_division,
-                &request.cancel,
-            )
-        } else {
-            fsl_replay::spine::run(
-                request.source.clone(),
-                request.package_name.to_owned(),
-                request.path,
-                request.bytes,
-                request.packages,
-                request.dependencies,
-                request.limits,
-                &request.call,
-                object_environment,
-                &request.cancel,
-            )
-        }
+        fsl_replay::spine::run_with_integer_division(
+            request.source.clone(),
+            request.package_name.to_owned(),
+            request.path,
+            request.bytes,
+            request.packages,
+            request.dependencies,
+            request.limits,
+            &request.call,
+            object_environment,
+            request.integer_division,
+            &request.cancel,
+        )
     })
 }
 

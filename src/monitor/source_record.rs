@@ -165,8 +165,10 @@ pub fn admit_source_records(
                     original_member_identity: member.original_member_identity.clone(),
                     admitted_name: member.admitted_name.clone(),
                     presence: member.presence,
-                    type_node: member.type_node.clone(),
-                    value_type: member.value_type.clone(),
+                    type_node: Some(member.type_node.clone()),
+                    value_type: Some(member.value_type.clone()),
+                    member_type: None,
+                    collections: Vec::new(),
                 })
                 .collect(),
         });

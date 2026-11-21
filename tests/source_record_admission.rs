@@ -98,8 +98,10 @@ fn assert_complete_producer_rows(admitted: &AdmittedSourceRecords, emission: &Em
             );
             assert_eq!(actual.admitted_name, original.admitted_name);
             assert_eq!(actual.presence, original.presence);
-            assert_eq!(actual.type_node, original.type_node);
-            assert_eq!(actual.value_type, original.value_type);
+            assert_eq!(actual.type_node.as_ref(), Some(&original.type_node));
+            assert_eq!(actual.value_type.as_ref(), Some(&original.value_type));
+            assert_eq!(actual.member_type, None);
+            assert!(actual.collections.is_empty());
         }
     }
 }
@@ -122,11 +124,11 @@ fn authentic_complete_rows_and_parameter_projections_preserve_opaque_types() {
         .find(|r| r.qualified_declaration == [Box::from("Tagged")])
         .unwrap();
     assert_eq!(row.members[1].presence, Presence::Optional);
-    assert_eq!(row.members[1].value_type, ValueType::Boolean);
+    assert_eq!(row.members[1].value_type, Some(ValueType::Boolean));
     assert_eq!(row.members[2].presence, Presence::Required);
     assert_eq!(
         row.members[2].value_type,
-        ValueType::Option(std::sync::Arc::new(ValueType::Integer))
+        Some(ValueType::Option(std::sync::Arc::new(ValueType::Integer)))
     );
     for (function, name) in [(tagged, "Tagged"), (tree, "Tree")] {
         let header = admitted
@@ -322,7 +324,7 @@ fn native_structural_controls_reject_corrupt_claims_without_granting_authority()
     row.members[0].presence = Presence::Optional;
     controls.push(row);
     let mut row = original.clone();
-    row.members[0].type_node = original.structural_node.clone();
+    row.members[0].type_node = Some(original.structural_node.clone());
     controls.push(row);
     let mut row = original.clone();
     row.members[0].original_member_identity = "".into();
@@ -419,7 +421,7 @@ fn native_opaque_claim_acceptance_does_not_replace_emission_authority() {
         .unwrap();
     let mut counterfactual = original.clone();
     counterfactual.record_key = point.record_key.clone();
-    counterfactual.members[0].value_type = ValueType::Boolean;
+    counterfactual.members[0].value_type = Some(ValueType::Boolean);
     counterfactual.members[0].original_member_identity = "producer-owned-original-name".into();
     let mut budget = NativeJoinBudget::new(JOIN_LIMITS.work, JOIN_LIMITS.storage);
     let structural_only = SelectedExactIdentities::empty()
@@ -594,7 +596,10 @@ temporal SelectedMonitor using timed over (candidate: Selected::ConfigVersion) c
     for row in admitted.rows() {
         assert!(admitted.package().node_kind(&row.structural_node).is_some());
         for member in &row.members {
-            assert!(admitted.package().node_kind(&member.type_node).is_some());
+            assert!(admitted
+                .package()
+                .node_kind(member.type_node.as_ref().unwrap())
+                .is_some());
         }
     }
     for (original_name, admitted_name) in [("origin_tick", "origin"), ("amount", "value")] {
@@ -622,12 +627,12 @@ temporal SelectedMonitor using timed over (candidate: Selected::ConfigVersion) c
         );
         assert_eq!(row.members[index].admitted_name.as_ref(), admitted_name);
         assert_eq!(
-            row.members[index].type_node,
-            producer.members[index].type_node
+            row.members[index].type_node.as_ref(),
+            Some(&producer.members[index].type_node)
         );
         assert_eq!(
-            row.members[index].value_type,
-            producer.members[index].value_type
+            row.members[index].value_type.as_ref(),
+            Some(&producer.members[index].value_type)
         );
     }
 }

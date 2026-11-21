@@ -33,7 +33,7 @@ pub fn prepare_monitor(
         collect_monitor_closure_rows(plan_root, selection, progress, caps, limits, cancel)?;
     rows.read_closure(cancel, |authority, closure, facts| {
         let package = authority.admitted_package();
-        let types = build_type_environment(closure, facts, limits, cancel)?;
+        let types = build_type_environment(package, closure, facts, limits, cancel)?;
         let bodies = lower_entries(package, closure, facts, limits, cancel)?;
         let layout = derive_layout(
             package,

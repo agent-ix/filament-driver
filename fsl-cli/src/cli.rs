@@ -1114,7 +1114,7 @@ fn run(options: RunOptions) -> CommandResult {
                 "FR-931 tl_lowering requests are not run by the driver yet",
             );
         }
-        PreparedRun::Package(_) => {
+        PreparedRun::Package(_) | PreparedRun::ModelBasedTest(_) => {
             let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
                 Ok(negotiation) => negotiation,
                 Err(error) => {

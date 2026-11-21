@@ -216,6 +216,13 @@ impl Material for TemporalBinding {
                 timestamp_unit.inspect_material(budget)
             }
             ClockConfiguration::Timed { unit } => unit.inspect_material(budget),
+        }?;
+        budget.charge(1)?; // optional declaring-source discriminator
+        if let Some(source) = &self.source_unit {
+            budget.charge(1)?;
+            source.authority.inspect_material(budget)?;
+            source.identity.inspect_material(budget)?;
         }
+        Ok(())
     }
 }
