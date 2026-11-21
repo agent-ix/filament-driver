@@ -285,6 +285,9 @@ where
                         max_total_bytes: limits.max_total_bytes,
                     },
                     max_stderr_bytes: limits.max_stderr_bytes,
+                    max_memory_bytes: limits.max_memory_bytes,
+                    memory_limit_requested: limits.memory_limit_requested,
+                    max_cpu_ms: limits.max_cpu_ms,
                     cancellation_grace: limits.cancellation_grace,
                 },
                 cancel,
@@ -376,6 +379,10 @@ where
         quire_canonical::to_vec(&result, quire_canonical::Limits::new(u64::MAX))
             .map_err(|_| HybridExchangeError::ToolFailure(ToolFailure::MalformedBody))
     }
+    /// The admitted host's actual process-memory enforcement status.
+    pub(crate) fn memory_enforcement(&self) -> filament_plugin_host::MemoryEnforcement {
+        self.host.memory_enforcement()
+    }
 }
 
 fn hybrid_transport_failure<A, V, F>(error: &PluginError<A, V, F>) -> fsl_replay::ToolFailure {
@@ -406,6 +413,7 @@ fn hybrid_transport_failure<A, V, F>(error: &PluginError<A, V, F>) -> fsl_replay
         PluginError::Fault(_) | PluginError::ResultValidation(_) => ToolFailure::MalformedBody,
         PluginError::WithDiagnostics { cause, .. } => hybrid_transport_failure(cause),
         PluginError::BareExecutableName(_)
+        | PluginError::UnsupportedPlatform { .. }
         | PluginError::ShellScriptExecutable(_)
         | PluginError::MissingManifest
         | PluginError::Spawn { .. }
@@ -572,6 +580,9 @@ mod tests {
             max_frame_bytes: 4096,
             max_total_bytes: 16_384,
             max_stderr_bytes: 1024,
+            max_memory_bytes: 4_294_967_296,
+            memory_limit_requested: false,
+            max_cpu_ms: 600_000,
             cancellation_grace: Duration::from_millis(500),
         }
     }

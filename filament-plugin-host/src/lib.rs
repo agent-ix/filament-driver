@@ -35,6 +35,46 @@ fn wrap_plugin_command(command: Command) -> CommandWrap {
     command
 }
 
+fn provider_command(executable: &Path, limits: RunLimits) -> io::Result<Command> {
+    #[cfg(unix)]
+    {
+        let host = std::env::current_exe()?;
+        let directory = host.parent().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, "host executable has no directory")
+        })?;
+        let mut command = Command::new(launcher_path(directory));
+        let memory_bytes = match MemoryEnforcement::current() {
+            MemoryEnforcement::Enforced => limits.max_memory_bytes,
+            MemoryEnforcement::NotEnforcedOnPlatform => 0,
+        };
+        command
+            .arg(memory_bytes.to_string())
+            .arg(limits.max_cpu_ms.to_string())
+            .arg(executable);
+        Ok(command)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = limits;
+        Ok(Command::new(executable))
+    }
+}
+
+#[cfg(unix)]
+fn launcher_path(directory: &Path) -> PathBuf {
+    let sibling = directory.join("fsl-plugin-launch");
+    // Installed siblings take precedence, including in a directory named deps.
+    // Cargo's integration tests instead share the profile directory's binary.
+    if sibling.exists() || directory.file_name() != Some(std::ffi::OsStr::new("deps")) {
+        sibling
+    } else {
+        directory
+            .parent()
+            .unwrap_or(directory)
+            .join("fsl-plugin-launch")
+    }
+}
+
 /// Caller-controlled per-frame and per-run byte ceilings from ADR-029 PL-3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FrameLimits {
@@ -312,8 +352,34 @@ pub struct RunLimits {
     pub frames: FrameLimits,
     /// Maximum standard-error bytes retained for display.
     pub max_stderr_bytes: u64,
+    /// Maximum provider address space and data segment, in bytes, on Linux.
+    pub max_memory_bytes: u64,
+    /// Whether the caller explicitly selected its memory ceiling. Unsupported
+    /// platforms refuse this choice rather than silently dropping it.
+    pub memory_limit_requested: bool,
+    /// Maximum provider CPU time, rounded up to whole seconds on Unix.
+    pub max_cpu_ms: u64,
     /// Grace period for a plugin to settle open items after cancellation.
     pub cancellation_grace: Duration,
+}
+
+/// Whether this host applies a provider process memory ceiling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryEnforcement {
+    /// The Linux address-space and data-segment limits are applied before exec.
+    Enforced,
+    /// This host has no verified memory-limit mechanism for the platform.
+    NotEnforcedOnPlatform,
+}
+
+impl MemoryEnforcement {
+    const fn current() -> Self {
+        if cfg!(target_os = "linux") {
+            Self::Enforced
+        } else {
+            Self::NotEnforcedOnPlatform
+        }
+    }
 }
 
 /// Inputs to a hello-first plugin session. No provider request is required to
@@ -339,6 +405,8 @@ pub struct SessionFinished<M> {
     pub stderr: Vec<u8>,
     /// Whether stderr exceeded the configured retention limit.
     pub stderr_truncated: bool,
+    /// Whether the host enforced the configured memory ceiling.
+    pub memory_enforcement: MemoryEnforcement,
 }
 
 /// A hello-admitted process session that accepts zero or more sequential
@@ -383,7 +451,16 @@ where
         if let Some(cause) = start.cancel.cause() {
             return Err(cancel_error(cause));
         }
-        let mut command = Command::new(start.executable);
+        if start.limits.memory_limit_requested
+            && MemoryEnforcement::current() == MemoryEnforcement::NotEnforcedOnPlatform
+        {
+            return Err(PluginError::UnsupportedPlatform {
+                limit: "max_memory_bytes",
+                platform: std::env::consts::OS,
+            });
+        }
+        let mut command = provider_command(start.executable, start.limits)
+            .map_err(|error| PluginError::from_spawn(start.executable, error))?;
         command
             .args(start.arguments)
             .stdin(Stdio::piped())
@@ -528,6 +605,12 @@ where
         self.manifest.as_ref()
     }
 
+    /// Whether this provider session is protected by a host memory ceiling.
+    #[must_use]
+    pub const fn memory_enforcement(&self) -> MemoryEnforcement {
+        MemoryEnforcement::current()
+    }
+
     /// Send one request on the admitted process session and return its
     /// validated result. The same session accepts subsequent requests.
     pub fn request<Q, R, V>(
@@ -572,6 +655,7 @@ where
                 },
                 cancel,
                 child.as_mut(),
+                self.limits.cancellation_grace,
             )?;
             let frame = match next_frame(
                 &self.receiver,
@@ -753,6 +837,7 @@ where
                 manifest: self.manifest.take().ok_or(PluginError::MissingManifest)?,
                 stderr,
                 stderr_truncated,
+                memory_enforcement: self.memory_enforcement(),
             })
         })();
         match result {
@@ -844,9 +929,13 @@ fn next_frame<A, V, F>(
                 frame.validate_protocol()?;
                 return Ok(frame);
             }
-            Ok(Ok(None)) => return Err(eof_error(child, eof_grace)?),
-            Ok(Err(error)) => return Err(PluginError::Frame(error)),
-            Err(RecvTimeoutError::Disconnected) => return Err(eof_error(child, eof_grace)?),
+            Ok(Ok(None)) => return Err(eof_error(child, eof_grace, Some(cancel))?),
+            Ok(Err(error)) => {
+                return Err(frame_or_exit_error(child, error, eof_grace, Some(cancel))?)
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(eof_error(child, eof_grace, Some(cancel))?)
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(PluginError::Wait)? {
                     return Err(PluginError::Exited(status));
@@ -876,7 +965,14 @@ fn next_frame_with_grace<A, V, F>(
             Ok(Ok(None)) | Err(RecvTimeoutError::Disconnected) => {
                 return Err(PluginError::MissingFrame);
             }
-            Ok(Err(error)) => return Err(PluginError::Frame(error)),
+            Ok(Err(error)) => {
+                return Err(frame_or_exit_error(
+                    child,
+                    error,
+                    until.saturating_duration_since(Instant::now()),
+                    None,
+                )?)
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(status) = child.try_wait().map_err(PluginError::Wait)? {
                     return Err(PluginError::Exited(status));
@@ -891,6 +987,7 @@ fn write_frame_cancellable<A, V, F>(
     frame: Envelope,
     cancel: &Cancel,
     child: &mut dyn ChildWrapper,
+    exit_grace: Duration,
 ) -> Result<(), PluginError<A, V, F>> {
     let (completion, receiver) = mpsc::channel();
     writer
@@ -899,7 +996,9 @@ fn write_frame_cancellable<A, V, F>(
     loop {
         match receiver.recv_timeout(Duration::from_millis(20)) {
             Ok(Ok(())) => return Ok(()),
-            Ok(Err(error)) => return Err(PluginError::Frame(error)),
+            Ok(Err(error)) => {
+                return Err(frame_or_exit_error(child, error, exit_grace, Some(cancel))?)
+            }
             Err(RecvTimeoutError::Disconnected) => return Err(PluginError::WriterThread),
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(result) = completed_write_wins_cancellation(&receiver, cancel) {
@@ -1075,6 +1174,7 @@ fn is_shell_script(path: &Path) -> bool {
 fn eof_error<A, V, F>(
     child: &mut dyn ChildWrapper,
     grace: Duration,
+    cancel: Option<&Cancel>,
 ) -> Result<PluginError<A, V, F>, PluginError<A, V, F>> {
     let Some(until) = Instant::now().checked_add(grace) else {
         return Ok(PluginError::MissingFrame);
@@ -1082,10 +1182,35 @@ fn eof_error<A, V, F>(
     loop {
         match child.try_wait().map_err(PluginError::Wait)? {
             Some(status) => return Ok(PluginError::Exited(status)),
-            None if Instant::now() < until => thread::sleep(Duration::from_millis(1)),
+            None if Instant::now() < until => {
+                if let Some(cause) = cancel.and_then(Cancel::cause) {
+                    return Err(cancel_error(cause));
+                }
+                thread::sleep(Duration::from_millis(1));
+            }
             None => return Ok(PluginError::MissingFrame),
         }
     }
+}
+
+fn frame_or_exit_error<A, V, F>(
+    child: &mut dyn ChildWrapper,
+    error: FrameError,
+    grace: Duration,
+    cancel: Option<&Cancel>,
+) -> Result<PluginError<A, V, F>, PluginError<A, V, F>> {
+    if matches!(
+        error,
+        FrameError::TruncatedLength | FrameError::TruncatedFrame
+    ) || matches!(&error, FrameError::Io(source) if source.kind() == io::ErrorKind::BrokenPipe)
+    {
+        if let PluginError::Exited(status) = eof_error(child, grace, cancel)? {
+            if !status.success() {
+                return Ok(PluginError::Exited(status));
+            }
+        }
+    }
+    Ok(PluginError::Frame(error))
 }
 
 struct ProcessTree {
@@ -1287,6 +1412,15 @@ fn cancel_error<A, V, F>(cause: CancelCause) -> PluginError<A, V, F> {
 /// typed FR-331 result validation errors in their original error types.
 #[derive(Debug, thiserror::Error)]
 pub enum PluginError<A, V, F> {
+    /// An explicitly requested resource ceiling has no supported enforcement
+    /// mechanism on this platform. No provider is launched.
+    #[error("{limit} is unsupported on platform {platform}")]
+    UnsupportedPlatform {
+        /// The resource setting the caller explicitly selected.
+        limit: &'static str,
+        /// The operating system without a supported mechanism.
+        platform: &'static str,
+    },
     /// The original typed failure plus bounded diagnostics captured while
     /// terminating and joining the plugin process workers.
     #[error("{cause}")]
@@ -1713,6 +1847,9 @@ mod tests {
         RunLimits {
             frames: LIMITS,
             max_stderr_bytes: 128,
+            max_memory_bytes: 4_294_967_296,
+            memory_limit_requested: false,
+            max_cpu_ms: 600_000,
             cancellation_grace: Duration::from_millis(250),
         }
     }

@@ -66,9 +66,11 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cargo build --locked --profile "$CARGO_PROFILE" -p "$CARGO_PACKAGE" --bin "$BINARY"
+        run: |
+          cargo build --locked --profile "$CARGO_PROFILE" -p "$CARGO_PACKAGE" --bin "$BINARY"
+          cargo build --locked --profile "$CARGO_PROFILE" -p filament-plugin-host --bin fsl-plugin-launch
 
-      - name: Package the one permitted archive member
+      - name: Package the CLI and resource-limit launcher
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -77,7 +79,7 @@ jobs:
           VERSION="$(cargo metadata --no-deps --format-version 1 | jq -r --arg p "$CARGO_PACKAGE" '.packages[] | select(.name == $p) | .version')"
           NAME="${BINARY}-v${VERSION}-${TARGET}.tar.gz"
           mkdir -p release
-          tar -C "target/${CARGO_PROFILE}" -czf "release/$NAME" "$BINARY"
+          tar -C "target/${CARGO_PROFILE}" -czf "release/$NAME" "$BINARY" fsl-plugin-launch
           test -f "release/$NAME"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "NAME=$NAME" >> "$GITHUB_ENV"
@@ -88,7 +90,9 @@ jobs:
           set -euo pipefail
           mkdir release-smoke
           tar -C release-smoke -xzf "release/$NAME"
-          test "$(find release-smoke -type f | wc -l | tr -d ' ')" = 1
+          test "$(find release-smoke -type f | wc -l | tr -d ' ')" = 2
+          test -x release-smoke/fsl-plugin-launch
+          ./release-smoke/fsl-plugin-launch 67108864 1000 /usr/bin/true
           OUTPUT="$("./release-smoke/$BINARY" --version)"
           echo "$OUTPUT"
           # Whole-word match against the Cargo version.

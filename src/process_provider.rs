@@ -28,6 +28,12 @@ pub struct ProcessProviderLimits {
     pub max_total_bytes: u64,
     /// Maximum stderr bytes retained for diagnostics.
     pub max_stderr_bytes: u64,
+    /// Maximum process memory in bytes on platforms with resource limits.
+    pub max_memory_bytes: u64,
+    /// Whether the caller explicitly supplied the process memory limit.
+    pub memory_limit_requested: bool,
+    /// Maximum process CPU time in milliseconds on supported platforms.
+    pub max_cpu_ms: u64,
     /// Grace period for cancellation and shutdown.
     pub cancellation_grace: Duration,
 }

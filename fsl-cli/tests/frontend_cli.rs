@@ -1496,6 +1496,184 @@ fn analyze_provider_without_a_verdict_is_inconclusive() {
     );
 }
 
+#[cfg(unix)]
+fn assert_provider_resource_breach(mode: &str, limit: &str, defect: &str) {
+    let items = serde_json::json!([
+        {"claim": "Even", "kind": "value-validity", "backend": PROVIDER_BACKEND},
+        {"claim": "Bounded"}]);
+    let request = AnalyzeRequest::new(mode, items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "even.fsl",
+        &even_program(),
+    );
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", mode]);
+    let child = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(&config)
+        .args(["--provider-limit", limit, "--format", "json"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start process provider under resource limits");
+    let pid = child.id();
+    let (finished, waiting) = std::sync::mpsc::channel();
+    let watchdog = std::thread::spawn(move || {
+        if waiting.recv_timeout(std::time::Duration::from_secs(20))
+            == Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        {
+            // The CLI handles TERM by cancelling and reaping its active
+            // provider. A missing limit must fail this test without leaving
+            // a spinning child behind.
+            let _ = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status();
+        }
+    });
+    let output = child.wait_with_output();
+    let _ = finished.send(());
+    watchdog.join().expect("resource test watchdog finishes");
+    let output = output.expect("run process provider under resource limits");
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|_| panic!("provider document; output {output:?}"));
+    assert_eq!(output.status.code(), Some(30), "{document}");
+    #[cfg(target_os = "macos")]
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("max_memory_bytes is not enforced on this platform"),
+        "the CPU breach must retain the default-memory notice: {output:?}"
+    );
+    let record = &document["items"][0]["record"];
+    assert_eq!(record["result"], "failed", "{document}");
+    assert_eq!(
+        record["cause"],
+        serde_json::json!({"kind": "tool-failure", "defect": defect}),
+        "{document}"
+    );
+    let (without, _) = request.json();
+    assert_eq!(
+        document["items"][1], without["items"][1],
+        "unrelated item changed"
+    );
+}
+
+#[trace("FR-006-AC-19", "FR-006-AC-23")]
+#[cfg(target_os = "linux")]
+#[test]
+fn provider_resource_limits_memory_breach_settles_failed() {
+    assert_provider_resource_breach("memory-breach", "max_memory_bytes=67108864", "nonzero-exit");
+}
+
+#[trace("FR-006-AC-19", "FR-006-AC-23")]
+#[cfg(unix)]
+#[test]
+fn provider_resource_limits_cpu_breach_settles_failed() {
+    assert_provider_resource_breach("cpu-breach", "max_cpu_ms=1", "crash");
+}
+
+#[trace("FR-006-AC-19", "FR-006-AC-23")]
+#[cfg(target_os = "linux")]
+#[test]
+fn provider_resource_limits_partial_response_breach_settles_failed() {
+    assert_provider_resource_breach(
+        "memory-breach-partial",
+        "max_memory_bytes=67108864",
+        "nonzero-exit",
+    );
+}
+
+#[trace("FR-013-AC-18")]
+#[cfg(target_os = "macos")]
+#[test]
+fn provider_resource_limits_explicit_memory_refuses_before_launch_on_macos() {
+    let request = AnalyzeRequest::new(
+        "memory-platform-refusal",
+        serde_json::json!([{"claim":"Bounded"}]),
+        serde_json::json!({}),
+    );
+    let marker = request.directory.0.join("provider-started");
+    let config = request.directory.0.join("providers.json");
+    std::fs::write(
+        &config,
+        serde_json::json!({"format":"filament.provider-config/v1","providers":[{
+            "path":"/usr/bin/touch", "arguments":[marker]
+        }]})
+        .to_string(),
+    )
+    .expect("provider launch marker configuration");
+    for memory in ["max_memory_bytes=4294967296", "max_memory_bytes=67108864"] {
+        for format in ["json", "text"] {
+            let output = Command::new(FSL)
+                .arg("analyze")
+                .arg(request.path())
+                .arg("--provider-config")
+                .arg(&config)
+                .args(["--provider-limit", memory, "--format", format])
+                .output()
+                .expect("run explicit unsupported memory limit");
+            assert_eq!(
+                output.status.code(),
+                Some(i32::from(Category::Unsupported.exit_code())),
+                "{output:?}"
+            );
+            assert!(
+                output.stdout.is_empty(),
+                "the pre-launch host refusal must not invent a FSL document"
+            );
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("unsupported-on-platform")
+                    && stderr.contains("max_memory_bytes")
+                    && stderr.contains("macos"),
+                "{stderr}"
+            );
+            assert!(
+                !stderr.contains("invalid-request"),
+                "a platform limit is not an invalid value: {stderr}"
+            );
+            assert!(
+                !marker.exists(),
+                "an unsupported explicit limit must refuse before launching a provider"
+            );
+        }
+    }
+}
+
+#[trace("FR-013-AC-18", "FR-022-AC-9")]
+#[cfg(target_os = "macos")]
+#[test]
+fn provider_resource_limits_default_memory_reports_a_notice_and_keeps_machine_output() {
+    let request = AnalyzeRequest::new(
+        "memory-platform-default",
+        serde_json::json!([
+            {"claim":"Even","kind":"value-validity","backend":PROVIDER_BACKEND}
+        ]),
+        serde_json::json!({}),
+    )
+    .with_file("/request/program/source/file", "even.fsl", &even_program());
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "proved"]);
+    let output = analyze_with_config(&request, &config);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the producer-owned machine outcome");
+    assert_eq!(document["format"], "filament-outcome/1");
+    assert_eq!(document["items"][0]["record"]["result"], "proved");
+    assert_eq!(document["items"][0]["record"]["certification"], "trusted");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr
+            .matches("max_memory_bytes is not enforced on this platform")
+            .count(),
+        1,
+        "{stderr}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("memory_enforcement"),
+        "platform diagnostics must stay outside the FSL document"
+    );
+}
+
 /// FSL FR-624: SIGTERM or SIGINT during `fsl analyze` cancels the run with
 /// cause `requested`: the open item settles `incomplete` with
 /// `{"kind": "cancelled", "source": "requested"}`, the document is written,

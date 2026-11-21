@@ -122,6 +122,20 @@ fn main() -> io::Result<()> {
         if let Some(log) = log {
             std::fs::write(log, body.to_string())?;
         }
+        if result == "memory-breach-partial" {
+            output.write_all(&64_u64.to_be_bytes())?;
+            output.write_all(b"{\"")?;
+            output.flush()?;
+        }
+        match result.as_str() {
+            "memory-breach" | "memory-breach-partial" => {
+                fsl_test_provider::consume_resource(fsl_test_provider::ResourceWorkload::Memory)
+            }
+            "cpu-breach" => {
+                fsl_test_provider::consume_resource(fsl_test_provider::ResourceWorkload::Cpu)
+            }
+            _ => {}
+        }
         // `term` and `int` send that signal to `fsl` while the request is
         // open, then wait for the host's `cancel` and stop answering.
         if let Some(signal) = match result.as_str() {

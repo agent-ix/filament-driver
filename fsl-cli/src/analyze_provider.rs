@@ -44,9 +44,9 @@ impl std::fmt::Debug for SessionProvider {
 
 impl ExternalProvider for SessionProvider {
     fn settle(&self, request: &ProviderRequest<'_>, cancel: &Cancel) -> Vec<ProviderVerdict> {
-        // A session that fails and a response FSL's request cannot be read
-        // from leave every item undecided: FSL settles them `inconclusive`,
-        // never `proved` (FSL FR-281). An exchange the run's cancellation
+        // An unreadable response leaves every item undecided, while an
+        // observed process death is retained as a typed tool failure.
+        // An exchange the run's cancellation
         // ended is charged to the handle, so FSL settles the items
         // `incomplete` with the cancellation's cause (FSL FR-635 "Budgets and
         // cancellation").
@@ -65,13 +65,16 @@ impl SessionProvider {
     ) -> Option<Vec<ProviderVerdict>> {
         let mut guard = self.session.lock().ok()?;
         let session = guard.as_mut()?;
-        let results = session
-            .invoke(ProcessProviderRequest {
-                request,
-                manifest: &self.manifest,
-                cancel,
-            })
-            .ok()?;
+        let results = match session.invoke(ProcessProviderRequest {
+            request,
+            manifest: &self.manifest,
+            cancel,
+        }) {
+            Ok(results) => results,
+            Err(error) => {
+                return process_failure(&error).map(|failure| vec![failure; request.items().len()])
+            }
+        };
         let backend = request.backend();
         Some(
             request
@@ -94,6 +97,29 @@ impl SessionProvider {
                 .collect(),
         )
     }
+}
+
+fn process_failure<A, V, F>(
+    error: &crate::process_provider::AdapterError<A, V, F>,
+) -> Option<ProviderVerdict> {
+    let crate::process_provider::AdapterError::Request(error) = error else {
+        return None;
+    };
+    let filament_plugin_host::PluginError::Exited(status) = error.primary_cause() else {
+        return None;
+    };
+    if status.success() {
+        return None;
+    }
+    // A signal or an ENOMEM exit observes the process failure, but does not
+    // establish which resource limit caused it. Preserve only that evidence.
+    Some(ProviderVerdict::ProcessFailed {
+        cause: if status.code().is_some() {
+            fsl_replay::ToolFailure::NonzeroExit
+        } else {
+            fsl_replay::ToolFailure::Crash
+        },
+    })
 }
 
 /// The verdict the response gives the item at `index`: `proved`, a

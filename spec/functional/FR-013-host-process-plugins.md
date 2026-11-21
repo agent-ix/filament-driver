@@ -41,11 +41,15 @@ specifies the driver-owned process-provider seam and settlement composition.
 - For each accepted request, the validated typed result or its original typed
   protocol, plugin, process, cancellation, or timeout failure.
 - Bounded opaque stderr bytes alongside success and failure diagnostics.
+- A typed `MemoryEnforcement` value in completed session diagnostics, stating
+  whether the host applied a process memory ceiling.
 
 ## Behavior
 
-- The host SHALL spawn only the executable named by the caller, with the
-  supplied arguments and no shell.
+- The host SHALL execute the provider at the exact path named by the caller,
+  with the supplied arguments and no shell. On Unix, its bundled resource
+  launcher applies the supported process limits before replacing itself with
+  that provider.
 - When the executable value is a bare name, the host SHALL refuse to spawn it
   instead of searching `PATH`.
 - The host SHALL read and validate one canonical JCS `hello` frame before
@@ -62,7 +66,21 @@ specifies the driver-owned process-provider seam and settlement composition.
   session byte limit across both directions and all requests. Stderr retention
   is also capped for the whole session. Truncated, non-canonical, malformed,
   oversized, unexpected, or wrongly correlated frames SHALL retain their
-  specific typed tool failure.
+  specific typed tool failure, except that an observed unsuccessful process
+  exit takes precedence when EOF truncates a frame.
+- When starting a provider on Linux, the host SHALL apply the caller's process memory ceiling to both
+  address space and the data segment before the provider executes.
+- When starting a provider on Unix, the host SHALL apply the caller's CPU-time ceiling before the
+  provider executes, rounding milliseconds up to whole seconds without
+  raising a stricter inherited hard limit.
+- Where memory enforcement is unavailable, the host SHALL refuse an explicitly selected memory
+  ceiling as typed `UnsupportedPlatform` before any child
+  is launched. Explicitly selecting the default numeric value remains an
+  explicit selection.
+- When starting a default provider on macOS, the host SHALL retain CPU enforcement, expose
+  `MemoryEnforcement::NotEnforcedOnPlatform` in its session diagnostics, and
+  cause the CLI to report that memory is not enforced on this platform on
+  stderr. The CLI SHALL preserve FSL's machine document unchanged.
 - The host SHALL make frame writes interruptible by caller cancellation and
   deadline. A deadline SHALL terminate the plugin process tree and settle as
   `TimedOut`; the host SHALL poll cancellation, deadlines and process exit at
@@ -116,13 +134,13 @@ specifies the driver-owned process-provider seam and settlement composition.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-013-AC-1 | Given a bare executable name, the host refuses to spawn it; given an explicit path, it launches only that executable with the supplied arguments and no shell. | Test |
+| FR-013-AC-1 | Given a bare executable name, the host refuses to spawn it; given an explicit path, it executes exactly that provider with the supplied arguments and no shell. On Unix, the bundled resource launcher applies supported limits before replacing itself with the provider. | Test |
 | FR-013-AC-2 | Before any request, the session returns a valid canonical `hello`; a rejected protocol identity or manifest ends the session and writes no request frame. | Test |
 | FR-013-AC-3 | After successful admission, a session accepts zero, one, or multiple requests over the same process, validates each response, and preserves each typed result and request identity. | Test |
 | FR-013-AC-4 | An invalid typed result, wrong request identity, plugin fault, or non-zero exit is returned as its specific failure and is not converted to cancellation or timeout. | Test |
 | FR-013-AC-5 | A plugin's valid typed cancellation settlement received within grace is returned unchanged; no settlement by grace expiry terminates the child and descendants and returns cancellation within the one-second cleanup bound. | Test |
 | FR-013-AC-6 | A deadline expiring while a plugin does not read a request frame returns `TimedOut` within the 20-millisecond polling interval plus the one-second cleanup bound. | Test |
-| FR-013-AC-7 | Truncated, malformed, non-canonical, oversized, unexpected, and wrongly correlated frames produce their specific typed failures without allocation above configured limits. | Test |
+| FR-013-AC-7 | Truncated, malformed, non-canonical, oversized, unexpected, and wrongly correlated frames produce their specific typed failures without allocation above configured limits; when EOF truncates a frame and an unsuccessful process exit is observed, that process failure takes precedence. | Test |
 | FR-013-AC-9 | Stderr beyond the session retention limit is drained but not retained; stderr is available on failures, and reader/writer workers are joined within one second after termination begins. | Test |
 | FR-013-AC-10 | After stdout closes while the child remains alive, process-exit waiting does not busy-wait; EOF before a response preserves an available child exit status. | Test |
 | FR-013-AC-11 | The host uses FSL ADR-029 PL-1 through PL-7 without defining a local wire or manifest-digest format; `filament-driver` excludes the host crate, and `fsl-cli` has a direct host dependency and composes it with the driver's seam. | Test (TC-005, TC-028) and analysis |
@@ -130,6 +148,9 @@ specifies the driver-owned process-provider seam and settlement composition.
 | FR-013-AC-13 | The host test suite reports an actionable prerequisite failure naming the missing fixture runtime and its installation instructions. | Test (TC-027) |
 | FR-013-AC-14 | When the IR-674 follow-up selects and implements a supported Windows process-tree cleanup mechanism, the host assigns the plugin process tree to a kill-on-close Job Object before plugin code executes; closing the owning job handle terminates remaining job members. | Deferred to IR-674; not implemented or verified by this PR; native Windows evidence required |
 | FR-013-AC-15 | When Windows process-tree setup fails before plugin execution, the host returns a typed host-start failure, dispatches no provider request, and terminates any child already created. | Analysis/Inspection (review Windows host startup/error path in `filament-plugin-host`; runtime evidence requires a native Windows runner and an injectable or distinguishable setup-failure seam) |
+| FR-013-AC-16 | On Linux, a Rust provider whose allocation exceeds its configured process memory ceiling returns an observed typed process failure, including when it wrote a partial response before exiting; a provider below the ceiling completes and reports memory enforcement as `Enforced`. | Test |
+| FR-013-AC-17 | On Unix, a Rust provider consuming CPU until stopped is terminated by its configured CPU-time ceiling; when the inherited hard ceiling permits it, a setting of 1001 milliseconds applies a two-second OS ceiling, and a below-limit provider completes normally. | Test |
+| FR-013-AC-18 | On macOS, a default provider completes with CPU enforcement and typed `NotEnforcedOnPlatform` memory diagnostics, and the CLI reports the memory limitation on stderr without changing the machine document. An explicit memory setting, including the default numeric value, is refused as typed `UnsupportedPlatform` before launch and exits 21. | Test |
 
 ## Dependencies
 
