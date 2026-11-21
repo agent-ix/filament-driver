@@ -86,9 +86,6 @@ fn main() -> io::Result<()> {
                 {"kind": "temporal-satisfaction", "mode": "unbounded"},
             ]),
         };
-        if let Some(members) = descriptor.as_object_mut() {
-            members.remove("domains");
-        }
         if mode != "hybrid-no-dynamics" {
             descriptor["dynamics"] = json!(["hybrid"]);
         }
