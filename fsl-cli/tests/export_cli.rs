@@ -114,6 +114,158 @@ fn export_output_writes_the_target_text_fsl_assembles() {
     assert_eq!(std::fs::read(member.path().join("m.tla")).unwrap(), written);
 }
 
+/// The handoff uses its declared package name; source export uses the authored
+/// identity. Their native references therefore differ in provenance comments,
+/// name-map nodes and byte offsets, while their executable TLA stays identical.
+fn assert_counter_export_correspondence(source: &Value, selected: &Value, package_bytes: &[u8]) {
+    let model = json!({"ordinal": 0, "package": "example/counter",
+        "path": ["model", "object_type", "ix://example/counter/Counter"]});
+    let anchor = |package, node| {
+        json!({"ordinal": 0, "package": package,
+        "path": ["state", "operation_anchor", {"node": node}, "inc"]})
+    };
+    let clause = |package, node| {
+        json!({"ordinal": 0, "package": package,
+        "path": ["state", "state_clause", "invariant", {"node": node}, {"node": 12}]})
+    };
+    let source_anchor = anchor("example/counter-unit", 0);
+    let selected_anchor = anchor("counter-unit", 5);
+    let source_clause = clause("example/counter-unit", 0);
+    let selected_clause = clause("counter-unit", 5);
+    let admitted: Value = serde_json::from_slice(package_bytes).unwrap();
+    let nodes = admitted["semantic_graph"]["nodes"]
+        .as_array()
+        .expect("emitted graph");
+    for expected in [&model, &selected_anchor, &selected_clause] {
+        assert!(
+            nodes.iter().any(|node| node["node_id"] == *expected),
+            "{expected}: {admitted}"
+        );
+    }
+    let comment =
+        |node: &Value, region: &str| format!("\\* fsl: {node} test/example/counter-unit:{region}");
+    let provenance = [
+        (comment(&model, "0-1"), comment(&model, "0-1")),
+        (
+            comment(&source_anchor, "205-219"),
+            comment(&selected_anchor, "205-219"),
+        ),
+        (
+            comment(&source_clause, "384-399"),
+            comment(&selected_clause, "384-399"),
+        ),
+    ];
+    let source_text = source["target_text"].as_str().unwrap();
+    let selected_text = selected["target_text"].as_str().unwrap();
+    let source_lines: Vec<_> = source_text.lines().collect();
+    let selected_lines: Vec<_> = selected_text.lines().collect();
+    assert_eq!(source_lines.len(), selected_lines.len());
+    let mut comment_counts = [0; 3];
+    for (source_line, selected_line) in source_lines.iter().zip(&selected_lines) {
+        if source_line.starts_with(r"\* fsl: ") {
+            let index = provenance
+                .iter()
+                .position(|(expected, _)| expected.as_str() == *source_line)
+                .expect(
+                    "each source provenance comment names its admitted native identity and region",
+                );
+            assert_eq!(*selected_line, provenance[index].1);
+            comment_counts[index] += 1;
+        } else {
+            assert_eq!(
+                source_line, selected_line,
+                "executable TLA and every other line must match exactly"
+            );
+        }
+    }
+    assert_eq!(comment_counts, [6, 1, 2]);
+
+    let source_records = source["records"].as_array().unwrap();
+    let selected_records = selected["records"].as_array().unwrap();
+    assert_eq!(source_records.len(), 1);
+    assert_eq!(selected_records.len(), 1);
+    for member in ["obligation", "disposition", "conditions", "causes"] {
+        assert_eq!(source_records[0][member], selected_records[0][member]);
+    }
+    // Regions are offsets into each complete, unmodified target, including its
+    // own provenance. Compare the represented definitions, not numeric offsets.
+    let represented = |record: &Value, text: &str| -> Vec<String> {
+        record["regions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|region| {
+                let start = usize::try_from(region[0].as_u64().unwrap()).unwrap();
+                let end = usize::try_from(region[1].as_u64().unwrap()).unwrap();
+                text.get(start..end)
+                    .expect("valid target byte region")
+                    .to_owned()
+            })
+            .collect()
+    };
+    let source_regions = represented(&source_records[0], source_text);
+    let selected_regions = represented(&selected_records[0], selected_text);
+    assert_eq!(source_regions, selected_regions);
+    assert_eq!(selected_regions.len(), 2);
+    assert!(selected_regions[0].starts_with("c_Bounded == "));
+    assert_eq!(
+        selected_regions[1],
+        "THEOREM Th_Bounded == Spec => []c_Bounded"
+    );
+
+    let source_names = source["name_map"].as_array().unwrap();
+    let selected_names = selected["name_map"].as_array().unwrap();
+    assert_eq!(source_names.len(), 5);
+    assert_eq!(selected_names.len(), 5);
+    for (index, (name, source_node, selected_node, region)) in [
+        (
+            "Th_Bounded",
+            &source_clause,
+            &selected_clause,
+            json!([384, 399]),
+        ),
+        (
+            "c_Bounded",
+            &source_clause,
+            &selected_clause,
+            json!([384, 399]),
+        ),
+        ("fld_value", &model, &model, json!([0, 1])),
+        (
+            "op_Counter_inc",
+            &source_anchor,
+            &selected_anchor,
+            json!([205, 219]),
+        ),
+        ("v_Counter", &model, &model, json!([0, 1])),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for (entry, expected) in [
+            (&source_names[index], source_node),
+            (&selected_names[index], selected_node),
+        ] {
+            assert_eq!(entry["name"], name);
+            assert_eq!(entry["region"], region);
+            let node: Value = serde_json::from_str(entry["node"].as_str().unwrap()).unwrap();
+            assert_eq!(
+                node, *expected,
+                "{name} must retain its own admitted native reference"
+            );
+        }
+        assert_eq!(
+            source_names[index]["binding"],
+            selected_names[index]["binding"]
+        );
+        if name == "fld_value" {
+            let binding: Value =
+                serde_json::from_str(selected_names[index]["binding"].as_str().unwrap()).unwrap();
+            assert_eq!(binding, model);
+        }
+    }
+}
+
 /// A selected checked package reaches FSL with its caller-supplied source
 /// identity and version after the source is removed, preserving the source
 /// export's counter semantics, obligation records and target bytes.
@@ -215,12 +367,7 @@ fn export_selected_package_preserves_counter_semantics_and_writes_target() {
         "{value}"
     );
     let source_export = &source_document["result"]["export"];
-    assert_eq!(
-        exported["target_text"], source_export["target_text"],
-        "{value}"
-    );
-    assert_eq!(exported["records"], source_export["records"], "{value}");
-    assert_eq!(exported["name_map"], source_export["name_map"], "{value}");
+    assert_counter_export_correspondence(source_export, exported, &package_bytes);
     let records = exported["records"].as_array().expect("obligation records");
     assert_eq!(records.len(), 1, "{value}");
     assert_eq!(records[0]["obligation"], "Bounded", "{value}");
