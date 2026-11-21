@@ -112,7 +112,8 @@ fn library_lines(request: &Path, lines: &[String]) -> (Vec<String>, u8) {
         &mut |event| encoded.push(canonical(event.as_value())),
         fsl_command::command::MonitorProviders {
             negotiate: &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
-            providers: Vec::new(),
+            providers: filament_driver::run_engines(Vec::new())
+                .expect("the hybrid engine registers"),
             options: &fsl_analyze::provider::ProviderOptions::default(),
         },
         RunLimits::default(),

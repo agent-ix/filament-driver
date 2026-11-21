@@ -909,9 +909,11 @@ fn timed_event_profile_cause_removed() {
             probability >= 0.9 [ eventually holds(c.value <= 3) ]\n\
           }\n",
     );
-    let frontend_error = fsl_command::command::analyze(
+    let frontend_error = fsl_command::command::analyze_with_providers(
         &request.path(),
         &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
+        filament_driver::run_engines(Vec::new()).expect("the hybrid engine registers"),
+        &fsl_analyze::provider::ProviderOptions::default(),
         &filament_exact::Cancel::new(),
     )
     .expect_err("the frontend refuses model time over an untimed model");
@@ -1391,9 +1393,11 @@ fn analyze_provider_limit_sets_the_request_deadline() {
 #[test]
 fn analyze_document_equals_the_library_document() {
     let request = AnalyzeRequest::new("parity", one_item("BelowThree"), serde_json::json!({}));
-    let library = fsl_command::command::analyze(
+    let library = fsl_command::command::analyze_with_providers(
         &request.path(),
         &filament_driver::AnalyzeNegotiation::fsl().expect("the engines register"),
+        filament_driver::run_engines(Vec::new()).expect("the hybrid engine registers"),
+        &fsl_analyze::provider::ProviderOptions::default(),
         &filament_exact::Cancel::new(),
     )
     .unwrap_or_else(|_| panic!("the request is accepted"));
