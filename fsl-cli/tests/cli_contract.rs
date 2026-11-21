@@ -2913,6 +2913,10 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
         Some(3),
         "the provider entry settles every default requirement item: {default_document}"
     );
+    assert!(
+        default_document.to_string().contains(r#"{"integer":"16"}"#),
+        "the call's value is 16: {default_document}"
+    );
     let default_nodes = SpineLimits::default()
         .bounds()
         .into_iter()
@@ -2964,5 +2968,21 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
     assert_eq!(accounting.status.code(), Some(20), "{accounting:?}");
     let refusal = String::from_utf8_lossy(&accounting.stdout);
     assert!(refusal.contains("accounting.work_units"), "{refusal}");
+    assert!(refusal.contains("requirements"), "{refusal}");
+
+    let observation = Command::new(FSL)
+        .arg("run")
+        .arg(&request_path)
+        .args([
+            "--limit",
+            "observation.input_bytes=1000000",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("run requirement request with an observation limit");
+    assert_eq!(observation.status.code(), Some(20), "{observation:?}");
+    let refusal = String::from_utf8_lossy(&observation.stdout);
+    assert!(refusal.contains("observation.input_bytes"), "{refusal}");
     assert!(refusal.contains("requirements"), "{refusal}");
 }

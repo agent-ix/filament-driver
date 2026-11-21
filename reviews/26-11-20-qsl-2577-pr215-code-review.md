@@ -40,3 +40,23 @@ FND-004: dead plumbing; remove the parameter or document it as a future override
 
 FND-005: efficiency and a small window where the file the driver inspected differs from the one FSL ran; the reader itself is correct.
 
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | `requirement_run_limits` now accepts `observation.*` settings on a requirements call, but FSL 8f71444's `prepare_complete_run` uses `observation_override` only for `tl_lowering` and `clause` requests, never for a `call`; the setting is silently ignored where the plain function run refuses it, and no test covers it | fsl-cli/src/cli.rs:1326-1333 |
+
+Detail FND-006: the route is taken only for `PreparedRun::Function`, and FSL rejects `call` together with `clause`, so the observation override can never apply. The plain function path (`apply_parts` with no observation limits) refuses the same setting `invalid-request`. Fix: treat observation settings like accounting in `requirement_run_limits` (refuse, naming the reason), drop the `observation_limits` parameter, and adjust FR-002-AC-27's "carries stage limits and observation overrides" wording.
+
+## Dispositions
+
+Round 1, fix commits 76863ce and e55077b796d34e6e5163bfcd66dd452efd019894, judged from code reading (no build this round).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Success and error paths attach `RenderSources::from_sources([prepared.into_input().source])`; text-mode test asserts `unit.native:3` |
+| FND-002 | fixed | `requirement_run_limits` refuses accounting naming `requirements`; FR-002-AC-27, FR-003-AC-10 and TC-046 state it; test asserts exit 20 |
+| FND-003 | fixed | Test asserts `stage_limit_exceeded` (JSON) and `limit 1 reached` (text) |
+| FND-004 | still-open | Not dead any more but still ineffective: FSL ignores `RequestOverrides.observation` for a call run, so wiring it accepts and drops observation settings; see FND-006 |
+| FND-005 | fixed | One `native_run_request` read; `carries_extraction` / `carries_call_requirements` borrow without cloning |

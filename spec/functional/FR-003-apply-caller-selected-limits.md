@@ -54,7 +54,8 @@ limit outcome and report no success.
   apply it with FSL's `CallerLimits::set_bound`.
 - When FSL resolves an accounting setting, the driver SHALL apply it with
   FSL's `AccountingLimits::set_bound` to the selected `Call.accounting` without
-  checking stage bounds.
+  checking stage bounds, except on a `fsl run` whose call carries
+  `requirements`, which refuses accounting settings (FR-002-AC-27).
 - The driver SHALL NOT reimplement FSL's setting-name grammar, duplicate
   detection, value parsing or overflow handling, or add aliases.
 - The driver SHALL use FSL FR-255's accounting setting names
@@ -63,7 +64,9 @@ limit outcome and report no success.
   `work_units` SHALL retain FSL's unknown-setting refusal.
 - When FSL resolves an accounting setting, the driver SHALL apply it with
   `AccountingLimits::set_bound` to `Call.accounting` without checking stage
-  bounds or adding a driver-defined namespace or aliases.
+  bounds or adding a driver-defined namespace or aliases, except on a
+  `fsl run` whose call carries `requirements`, which refuses accounting
+  settings (FR-002-AC-27).
 - If a resolved stage setting is absent from the selected operation's bounds,
   then the CLI SHALL refuse it before any stage with code `invalid-request`
   and a diagnostic that distinguishes an operation-unavailable setting from

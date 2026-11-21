@@ -1101,7 +1101,6 @@ fn run(options: RunOptions) -> CommandResult {
                     options.intake_limits,
                     spine_limits,
                     clocks,
-                    observation_limits,
                 );
             }
             prepared.into_input()
@@ -1319,20 +1318,13 @@ fn carries_call_requirements(request: &serde_json::Value) -> bool {
 }
 
 /// The run's spine limits for a call with `requirements`. FSL's provider run
-/// entry carries stage limits and observation overrides; it carries no
-/// accounting settings, so those are refused here rather than dropped.
+/// entry carries stage limits only: it reads no observation override for a
+/// call and carries no accounting settings, so those are refused here rather
+/// than dropped.
 fn requirement_run_limits(limits: &LimitOverrides) -> Result<SpineLimits, String> {
-    let observation = fsl_replay::ObservationLimits::default().bounds();
     let mut spine = SpineLimits::default();
     for (name, value) in limits.values() {
         let accepted = match name {
-            SettingName::Stage(setting)
-                if observation
-                    .iter()
-                    .any(|(candidate, _)| candidate == setting) =>
-            {
-                true
-            }
             SettingName::Stage(setting) => spine.set_bound(*setting, *value),
             SettingName::Accounting(_) => false,
         };
@@ -2193,7 +2185,6 @@ fn run_with_requirement_items(
     intake_limits: RunLimits,
     spine_limits: SpineLimits,
     clocks: Option<Box<serde_json::value::RawValue>>,
-    observation_limits: Option<fsl_semantics::model::observation::ObservationLimits>,
 ) -> CommandResult {
     let path = path.to_path_buf();
     let ran = with_started_providers(
@@ -2204,7 +2195,6 @@ fn run_with_requirement_items(
             let overrides = command::RequestOverrides {
                 clocks: clocks.as_deref(),
                 limits: Some(&spine_limits),
-                observation: observation_limits.as_ref(),
                 ..command::RequestOverrides::default()
             };
             command::run_with_providers_and_limits_and_overrides(
