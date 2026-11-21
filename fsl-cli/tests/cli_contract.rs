@@ -2081,15 +2081,15 @@ fn format_machine_mode_emits_fsl_format_outcome_document() {
     assert_fsl_document(&output.stdout, &format_outcome_bytes(SOURCE));
 }
 
-/// Trace: QSL-2192; the library owns formatted text and the CLI passes it through unchanged.
+/// Trace: FR-002-AC-3; the library owns formatted text and the CLI passes it through unchanged.
 #[test]
-#[ignore = "QSL-2192: language FR-286-AC-16 OutcomeDocument::from_format result not implemented"]
 fn format_json_result_carries_text() {
     let text = Command::new(FSL)
         .args(["format", "issuer", "document", SOURCE])
         .output()
         .expect("format source as text");
     assert_eq!(text.status.code(), Some(0));
+    assert!(!text.stdout.is_empty(), "formatter text must not be empty");
     assert!(text.stderr.is_empty());
 
     let json = Command::new(FSL)
