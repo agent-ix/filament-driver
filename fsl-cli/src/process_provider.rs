@@ -384,10 +384,10 @@ fn hybrid_transport_failure<A, V, F>(error: &PluginError<A, V, F>) -> fsl_replay
         PluginError::Frame(FrameError::WrongProtocol(_)) => ToolFailure::UnknownProtocol,
         PluginError::UnexpectedId { .. } => ToolFailure::UnknownRequestId,
         PluginError::UnexpectedKind { .. } => ToolFailure::UnknownFrameKind,
+        PluginError::Exited(status) if status.code().is_none() => ToolFailure::Crash,
         PluginError::Exited(status) if !status.success() => ToolFailure::NonzeroExit,
-        PluginError::MissingFrame | PluginError::SessionClosed | PluginError::Exited(_) => {
-            ToolFailure::Crash
-        }
+        PluginError::MissingFrame | PluginError::Exited(_) => ToolFailure::MissingTerminalRecord,
+        PluginError::SessionClosed => ToolFailure::Crash,
         PluginError::Fault(_) | PluginError::ResultValidation(_) => ToolFailure::MalformedBody,
         PluginError::WithDiagnostics { cause, .. } => hybrid_transport_failure(cause),
         PluginError::BareExecutableName(_)
