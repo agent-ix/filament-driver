@@ -19,6 +19,8 @@ const MISSING_SOURCE: &str = concat!(
     "/tests/fixtures/missing-source.fsl"
 );
 
+#[path = "../../tests/common/dependency_fixtures.rs"]
+mod dependency_fixtures;
 #[path = "common/test_provider_path.rs"]
 mod test_provider_path;
 #[path = "common/timed_analyze.rs"]
@@ -2779,28 +2781,20 @@ fn extension_definitions_are_validated_and_unselected_sets_change_nothing() {
 }
 
 fn hybrid_braking_request(name: &str, items: serde_json::Value) -> AnalyzeRequest {
-    let program = br#"language "ix:native" edition "1-draft";
-profile p = "filament.temporal.infinite-trace/v1";
-hybrid Braking using p {
-  mode Moving invariant { v >= 0 and v <= 20 and a >= 1 and a <= 2 }
-    flow { v' = -a; a' = 0; }
-    transition to Stopped when { v = 0 } reset { v = 0 };
-  mode Stopped invariant { v = 0 }
-    flow { v' = 0; a' = 0; }
-}
-temporal SlowEnough using p over (h: Braking) clock "model-time" on origin {
-  always [0, 10] holds(h.v < 30)
-}
-temporal TooSlow using p over (h: Braking) clock "model-time" on origin {
-  always [0, 10] holds(h.v > 5)
-}
-"#;
-    AnalyzeRequest::new(
+    let request = AnalyzeRequest::new(
         name,
         items,
         serde_json::json!({"models": [], "documents": []}),
-    )
-    .with_file("/request/program/source/file", "braking.fsl", program)
+    );
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
+    document["request"]["program"]["source"] = serde_json::json!({
+        "file": dependency_fixtures::fsl_example("hybrid-braking/braking.native"), "authority": "driver",
+        "identity": "driver:configured-hybrid", "document": "ConfiguredHybrid", "formal_revision": 1
+    });
+    std::fs::write(request.path(), document.to_string())
+        .expect("configured request referencing the owner source");
+    request
 }
 
 fn provider_document(output: &Output, code: i32) -> serde_json::Value {
@@ -2811,12 +2805,19 @@ fn provider_document(output: &Output, code: i32) -> serde_json::Value {
 #[trace("TC-047", "FR-022-AC-11")]
 #[test]
 fn hybrid_braking_default_proof_and_refutation_have_real_evidence() {
-    for (claim, code, result) in [("SlowEnough", 0, "proved"), ("TooSlow", 10, "refuted")] {
-        let request = hybrid_braking_request(
-            &format!("hybrid-default-{claim}"),
-            serde_json::json!([{"claim": claim}]),
-        );
-        let document = provider_document(&request.run("json"), code);
+    for (request, code, result) in [
+        ("slow-enough.analyze.json", 0, "proved"),
+        ("too-slow.analyze.json", 10, "refuted"),
+    ] {
+        let output = Command::new(FSL)
+            .arg("analyze")
+            .arg(dependency_fixtures::fsl_example(&format!(
+                "hybrid-braking/{request}"
+            )))
+            .args(["--format", "json"])
+            .output()
+            .expect("analyze the actual owner example request");
+        let document = provider_document(&output, code);
         let item = &document["items"][0];
         assert_eq!(item["record"]["result"], result, "{document}");
         assert_eq!(

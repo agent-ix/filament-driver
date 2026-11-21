@@ -19,6 +19,9 @@ use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, Spi
 use fsl_semantics::model::intake::package_input;
 use ix_trace_rs::trace;
 
+#[path = "common/dependency_fixtures.rs"]
+mod dependency_fixtures;
+
 const JOIN_LIMITS: MonitorPreparationLimits = MonitorPreparationLimits {
     work: 100_000,
     storage: 1_000_000,
@@ -459,34 +462,10 @@ fn final_real_plan_root_emission_retains_its_source_record_rows() {
     use fsl_replay::{MonitorTarget, TimingObligationSettings};
     use fsl_semantics::library::LibraryName;
 
-    let metadata = std::process::Command::new("cargo")
-        .args(["metadata", "--format-version", "1", "--locked"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    assert!(
-        metadata.status.success(),
-        "{}",
-        String::from_utf8_lossy(&metadata.stderr)
-    );
-    let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
-    let manifest = metadata["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|package| package["name"] == "fsl-replay")
-        .unwrap()["manifest_path"]
-        .as_str()
-        .unwrap();
-    let path = std::path::PathBuf::from(manifest);
-    let document = std::fs::read(
-        path.parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("examples/config-version/model.semantic-ir.json"),
-    )
-    .unwrap();
+    let document = std::fs::read(dependency_fixtures::fsl_example(
+        "config-version/model.semantic-ir.json",
+    ))
+    .expect("the owner model document");
     let parsed_document: serde_json::Value = serde_json::from_slice(&document).unwrap();
     let identity = parsed_document["package"]["identity"].as_str().unwrap();
     let packages = package_input([document.as_slice()]).unwrap();
