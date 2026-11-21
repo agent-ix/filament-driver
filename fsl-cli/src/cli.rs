@@ -1091,8 +1091,11 @@ fn run(options: RunOptions) -> CommandResult {
                         return CommandResult::input_refusal(Operation::Execute, message);
                     }
                 };
+                let render_sources =
+                    fsl_inspect::RenderSources::from_sources([prepared.into_input().source]);
                 return run_with_requirement_items(
                     &options.path,
+                    render_sources,
                     provider_config,
                     options.providers.limits,
                     options.intake_limits,
@@ -2184,6 +2187,7 @@ fn run_with_providers(
 /// carry the same run limits and request overrides as the ordinary run path.
 fn run_with_requirement_items(
     path: &Path,
+    render_sources: fsl_inspect::RenderSources,
     config: crate::provider_config::ProviderConfig,
     provider_limits: fsl_analyze::provider::ProviderLimits,
     intake_limits: RunLimits,
@@ -2225,14 +2229,12 @@ fn run_with_requirement_items(
         }
     };
     match written {
-        Ok(result) => {
-            let render_sources = fsl_command::render_sources(result.sources());
-            match result.outcome {
-                Some(document) => CommandResult::document(document).with_sources(render_sources),
-                None => native_result(result.value.as_value().clone(), result.exit_code),
-            }
-        }
-        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
+        Ok(result) => match result.outcome {
+            Some(document) => CommandResult::document(document).with_sources(render_sources),
+            None => native_result(result.value.as_value().clone(), result.exit_code),
+        },
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute))
+            .with_sources(render_sources),
     }
 }
 
