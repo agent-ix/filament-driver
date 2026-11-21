@@ -3087,7 +3087,7 @@ mod tests {
         ])
         .expect("valid export arguments");
         assert_eq!(parsed.output.as_deref(), Some(Path::new("model.tla")));
-        assert_eq!(parsed.request.as_deref(), Some(Path::new("request.json")));
+        assert_eq!(parsed.request, Path::new("request.json"));
         assert!(parsed.limits.values().is_empty());
         let request_only = parse_export(&[OsString::from("request.json")])
             .expect("the request may name its own output");

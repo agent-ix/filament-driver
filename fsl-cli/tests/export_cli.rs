@@ -148,13 +148,20 @@ fn export_selected_package_reports_model_type_gap_on_current_pin() {
     );
     assert_eq!(compiled.status.code(), Some(0), "{compiled:?}");
     assert!(directory.path().join("checked-package.json").is_file());
-    assert!(directory.path().join("handoff/equality.json").is_file());
+    let equality_path = directory.path().join("handoff/equality.json");
+    let equality_bytes = std::fs::read(&equality_path).expect("producer-emitted equality rows");
+    assert_eq!(
+        std::fs::read(directory.path().join("checked-package.json")).unwrap(),
+        std::fs::read(directory.path().join("handoff/checked-package.json")).unwrap(),
+        "the selected package and equality rows must share the same producer emission"
+    );
     std::fs::remove_file(directory.path().join("counter.fsl")).expect("remove source file");
 
     let source_package = json!({"identity": "example/counter-unit", "version": "7"});
     let export_request = json!({"format": "native-run/1", "request": {
         "models": models,
-        "package": {"file": "checked-package.json", "source_package": source_package},
+        "package": {"file": "checked-package.json", "equality": "handoff/equality.json",
+            "source_package": source_package},
         "export": export}});
     std::fs::write(
         directory.path().join("selected-export.json"),
@@ -198,6 +205,7 @@ fn export_selected_package_reports_model_type_gap_on_current_pin() {
         "{value}"
     );
     assert!(!directory.path().join("selected.tla").exists());
+    assert_eq!(std::fs::read(equality_path).unwrap(), equality_bytes);
 }
 
 /// A selected value-only package preserves the caller's source reference and
@@ -429,7 +437,7 @@ fn export_evidence_routes_to_the_intake_and_refuses_other_arguments() {
     assert_eq!(exported.status.code(), Some(0), "{exported:?}");
     let package = document(&exported)["result"]["export"]["package"].clone();
     assert!(package.is_object(), "{exported:?}");
-    let evidence = json!({"format": "native-run/1", "request": {
+    let evidence = json!({"format": "native-run/1", "request": {"models": [],
         "export_evidence": {"package": package, "obligation": "Bounded", "tool": "tlc",
             "artifact": "counter.cfg"}}});
     std::fs::write(directory.path().join("e.json"), evidence.to_string()).unwrap();
