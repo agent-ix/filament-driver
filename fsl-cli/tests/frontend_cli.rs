@@ -3194,52 +3194,34 @@ fn hybrid_unbounded_only_provider_does_not_authorize_a_bounded_claim() {
 #[trace("TC-036", "FR-022-AC-7")]
 #[test]
 fn composition_text_preserves_derived_outcomes_trust_basis_and_extents_from_json() {
-    let clause = |name: &str, bound: i32| {
-        format!(
-        "temporal {name} using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ always holds(c.value <= {bound}) }}\n")
-    };
-    let unit = |body: String| {
-        format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nprofile t0 = \"filament.temporal.infinite-trace/v1\";\nmodel M = \"test/counter\";\nfunction Noop using v(): Boolean pure {{ true }}\n{body}")
-    };
-    let components = "component PA from A using M; component PB from B using M; guarantee PA::Bounded; guarantee PB::Capped; ";
-    let compose = |name: &str, rule: &str, members: &str| {
-        format!("compose {name} rule {rule} {{ {components}{members} }}\n")
-    };
-    let program = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\nprofile m0 = \"filament.model.complete/v1\";\nprofile t0 = \"filament.temporal.infinite-trace/v1\";\nimport \"test/part-a\" as A;\nimport \"test/part-b\" as B;\nmodel M = \"test/counter\";\nfunction Noop using v(): Boolean pure {{ true }}\n{}{}{}{}{}{}{}",
-        clause("Local", 3), compose("Sys", "interface", ""),
-        compose("SysPR", "protocol-refinement", ""), compose("SysRT", "refinement-transfer", ""),
-        compose("SysAG", "assume-guarantee", ""),
-        compose("SysRely", "interface", "rely PB::Capped on PA::Bounded;"),
-        compose("SysCycle", "interface", "rely PB::Capped on PA::Bounded; rely PA::Bounded on PB::Capped;"));
+    let program = br#"language "ix:native" edition "1-draft";
+profile model = "filament.model.complete/v1";
+import "driver/counter-invariants" as Invariants;
+model M = "test/counter";
+compose CounterBoundaryAudit rule interface {
+  component Proven from Invariants using M;
+  component Violated from Invariants using M;
+  guarantee Proven::Bounded;
+  guarantee Violated::BelowThree;
+}
+"#;
     let request = AnalyzeRequest::new(
         "composition-text-trust",
-        serde_json::json!([
-            {"claim": "Sys", "kind": "composition"},
-        ]),
+        serde_json::json!([{"claim": "CounterBoundaryAudit", "kind": "composition"}]),
         serde_json::json!({}),
     )
-    .with_file(
-        "/request/program/source/file",
-        "program.fsl",
-        program.as_bytes(),
-    );
-    let libraries: Vec<_> = [
-        ("test/part-a", "part-a.fsl", unit(clause("Bounded", 3))),
-        ("test/part-b", "part-b.fsl", unit(clause("Capped", 2))),
-    ]
-    .into_iter()
-    .map(|(identity, file, source)| {
-        let path = request.directory.0.join(file);
-        std::fs::write(&path, source).expect("component source");
-        serde_json::json!({"identity": identity, "source": {"file": path, "authority": "test",
-                "identity": file, "document": "Component", "formal_revision": 1}})
-    })
-    .collect();
+    .with_file("/request/program/source/file", "counter-audit.fsl", program);
+    let source = std::path::Path::new(ANALYZE_REQUEST)
+        .parent()
+        .expect("driver fixture directory")
+        .join("analyze-counter.fsl");
     let mut input: serde_json::Value =
         serde_json::from_slice(&std::fs::read(request.path()).expect("request")).expect("JSON");
-    input["request"]["libraries"] = libraries.into();
-    std::fs::write(request.path(), input.to_string()).expect("component request");
+    input["request"]["libraries"] = serde_json::json!([{
+        "identity": "driver/counter-invariants", "source": {"file": source,
+            "authority": "driver", "identity": "counter-fixture", "document": "CounterInvariants", "formal_revision": 1}
+    }]);
+    std::fs::write(request.path(), input.to_string()).expect("composition request");
     let (document, exit) = request.json();
     assert_eq!(exit, Some(21), "{document}");
     let items = document["items"].as_array().expect("ordered items");
