@@ -3064,3 +3064,58 @@ fn hybrid_process_refutation_requires_exact_native_replay() {
         }
     }
 }
+
+// Mixed capability support needs a combined FSL engine under one identity.
+// This checks the current refusal and cleanup rather than claiming support.
+#[trace("TC-047")]
+#[test]
+fn hybrid_mixed_capability_refusal_names_both_groups_and_closes_every_session() {
+    let request = hybrid_braking_request(
+        "hybrid-mixed-refusal",
+        serde_json::json!([
+            {"claim": "SlowEnough", "backend": PROVIDER_BACKEND},
+        ]),
+    );
+    let first_shutdown = request.directory.0.join("first-shutdown");
+    let mixed_shutdown = request.directory.0.join("mixed-shutdown");
+    let final_shutdown = request.directory.0.join("final-shutdown");
+    let request_log = request.directory.0.join("should-not-run");
+    let config = request.directory.0.join("providers.json");
+    std::fs::write(
+        &config,
+        serde_json::json!({"format": "filament.provider-config/v1",
+        "providers": [
+            {"path": test_provider_path::executable(), "arguments": [
+                "first-value", "unbounded", "proved", "-", first_shutdown.to_str().expect("path")]},
+            {"path": test_provider_path::executable(), "arguments": [
+                PROVIDER_BACKEND, "hybrid-mixed", "unsat", request_log.to_str().expect("path"),
+                mixed_shutdown.to_str().expect("path")]},
+            {"path": test_provider_path::executable(), "arguments": [
+                "final-hybrid", "hybrid", "unsat", "-", final_shutdown.to_str().expect("path")]}
+        ]})
+        .to_string(),
+    )
+    .expect("configuration");
+    let output = analyze_with_config(&request, &config);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for member in [
+        PROVIDER_BACKEND,
+        "value-validity",
+        "temporal-satisfaction",
+        "hybrid",
+    ] {
+        assert!(diagnostic.contains(member), "{diagnostic}");
+    }
+    assert!(!request_log.exists(), "refusal precedes item dispatch");
+    for marker in [first_shutdown, mixed_shutdown, final_shutdown] {
+        assert_eq!(
+            std::fs::read(marker).expect("all admitted sessions close"),
+            b"shutdown"
+        );
+    }
+}

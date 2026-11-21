@@ -1962,17 +1962,25 @@ fn start_providers(
                 kind == fsl_semantics::check::Capability::TemporalSatisfaction
                     && mode == fsl_route::Mode::Unbounded
             });
-        let engine = if hybrid {
+        let value = descriptor.advertises().any(|(kind, mode)| {
+            kind == fsl_semantics::check::Capability::ValueValidity
+                && mode == fsl_route::Mode::Unbounded
+        });
+        let engine = if hybrid && value {
+            Err(format!(
+                "`{}` advertises both unbounded value-validity and unbounded \
+                 temporal-satisfaction with hybrid dynamics; one process engine \
+                 cannot currently dispatch both capability groups",
+                descriptor.id().as_str()
+            ))
+        } else if hybrid {
             fsl_analyze::analyze::Engine::hybrid_process(
                 descriptor.clone(),
                 tool,
                 Box::new(crate::analyze_provider::HybridSessionProvider { session: shared }),
             )
             .map_err(|error| error.to_string())
-        } else if descriptor.advertises().any(|(kind, mode)| {
-            kind == fsl_semantics::check::Capability::ValueValidity
-                && mode == fsl_route::Mode::Unbounded
-        }) {
+        } else if value {
             let provider = crate::analyze_provider::SessionProvider {
                 session: shared,
                 manifest: std::sync::Arc::clone(&manifest),
