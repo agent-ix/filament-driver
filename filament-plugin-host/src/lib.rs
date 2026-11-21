@@ -696,16 +696,14 @@ where
                 .join()
                 .map_err(|_| self.abort(PluginError::TimerThread))?;
             match (result, stopped) {
-                (Ok(_) | Err(PluginError::Cancelled | PluginError::TimedOut), Some(cause)) => {
-                    Err(self.abort(cause))
-                }
+                (Ok(_), Some(cause)) => Err(self.abort(cause)),
                 (Err(error), Some(cause))
                     if matches!(
                         error.primary_cause(),
                         PluginError::Cancelled | PluginError::TimedOut
                     ) =>
                 {
-                    Err(self.abort(cause))
+                    Err(error.replace_primary_cause(cause))
                 }
                 (result, _) => result,
             }
@@ -1431,6 +1429,29 @@ impl<A, V, F> PluginError<A, V, F> {
         Self::Spawn {
             path: path.to_path_buf(),
             source,
+        }
+    }
+
+    fn replace_primary_cause(self, replacement: Self) -> Self {
+        match self {
+            Self::WithDiagnostics {
+                stderr,
+                stderr_truncated,
+                capture_error,
+                process_tree_cleanup_failed,
+                reader_join_failed,
+                writer_join_failed,
+                ..
+            } => Self::WithDiagnostics {
+                cause: Box::new(replacement),
+                stderr,
+                stderr_truncated,
+                capture_error,
+                process_tree_cleanup_failed,
+                reader_join_failed,
+                writer_join_failed,
+            },
+            _ => replacement,
         }
     }
 
