@@ -86,3 +86,23 @@ let library = library_execute_with_law(
 | FND-003 | still-open | Current branch and origin/main both define FR-002-AC-27 with different behavior. Requires rebase and criterion/trace renumbering before merge. |
 
 Final round 1 verdict: **NOT MERGEABLE** until FND-003 is fixed and dispositioned, followed by green delegated focused checks on the final implementation head.
+
+### Round 2 disposition
+
+Head `79aecad9090fd6b41b5edf215470e295015c9c94`, rebased onto main `6dfc807318989dd297f698e76ed908c5c633cff0`. Only the latest still-open gap finding is rechecked.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | The prove criterion is FR-002-AC-28, and its contract trace and TC-049 references name AC-28. Main's requirements criterion remains FR-002-AC-27; the TC-049 coverage list is 24..26,28 and does not claim AC-27. |
+
+After excerpt:
+
+```rust
+/// Trace: FR-002-AC-28
+/// Provenance: FSL FR-767-AC-7; an unknown option on an unrouted verb refuses
+/// exit 20 as an invalid-request outcome before the verb answers unsupported.
+```
+
+The FR-002 criterion ids are unique. The production-code delta introduced by the rebase is the already-landed PR #215 requirements routing; this PR's option scanner and execute changes remain intact. No new findings from this disposition.
+
+Round 2 verdict: **MERGEABLE, subject to green delegated focused tests on the final implementation head**. Code-review FND-003 remains deferred under the existing arch ruling on QSL-2279. No Cargo, build, or test was run by this reviewer; plan completion not assessed.
