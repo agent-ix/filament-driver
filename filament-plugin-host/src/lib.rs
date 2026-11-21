@@ -685,16 +685,16 @@ where
                     source,
                 })?;
             let result = self.request(body, &exchange_cancel, validate_result);
-            // Read both conditions after the wait and before accepting bytes.
+            let _ = done.send(());
+            timer
+                .join()
+                .map_err(|_| self.abort(PluginError::TimerThread))?;
+            // Read both conditions after every wait and before accepting bytes.
             // A parent stop retains its actual source, ahead of this timeout.
             let stopped = cancel
                 .cause()
                 .map(cancel_error)
                 .or_else(|| (started.elapsed() >= timeout).then_some(PluginError::TimedOut));
-            let _ = done.send(());
-            timer
-                .join()
-                .map_err(|_| self.abort(PluginError::TimerThread))?;
             match (result, stopped) {
                 (Ok(_), Some(cause)) => Err(self.abort(cause)),
                 (Err(error), Some(cause))
