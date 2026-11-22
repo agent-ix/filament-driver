@@ -2331,6 +2331,17 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
         .to_string(),
     )
     .expect("the clause run request");
+    let run_json = fsl(&[
+        "run",
+        run_request_path.to_str().expect("UTF-8 request path"),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(run_json.status.code(), Some(0));
+    let run_document: serde_json::Value =
+        serde_json::from_slice(&run_json.stdout).expect("one clause-run outcome document");
+    assert_eq!(run_document["operation"], "monitor", "{run_document}");
+
     let run = fsl(&[
         "run",
         run_request_path.to_str().expect("UTF-8 request path"),
