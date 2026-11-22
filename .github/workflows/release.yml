@@ -43,11 +43,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux builds on 22.04 so the binary links glibc 2.35 and runs on
-          # Ubuntu 22.04+ and default WSL; a 24.04 build needs glibc 2.39.
-          - runner: ubuntu-22.04
+          # Linux builds on Ubuntu 26.04. The smoke job checks both packaged
+          # ELF binaries for a maximum required GLIBC version of 2.43.
+          - runner: ubuntu-26.04
             target: x86_64-unknown-linux-gnu
-          - runner: ubuntu-22.04-arm
+          - runner: ubuntu-26.04-arm
             target: aarch64-unknown-linux-gnu
           - runner: macos-15
             target: aarch64-apple-darwin
@@ -97,6 +97,63 @@ jobs:
           echo "$OUTPUT"
           # Whole-word match against the Cargo version.
           printf '%s' "$OUTPUT" | grep -qw -- "$VERSION"
+
+      - name: Check packaged Linux GLIBC requirements
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for binary in release-smoke/fsl release-smoke/fsl-plugin-launch; do
+            readelf --file-header "$binary" >/dev/null
+            readelf --version-info "$binary" |
+              awk -v binary="$binary" '
+                function version_greater(left, right, left_parts, right_parts,
+                                        left_count, right_count, count, i,
+                                        left_part, right_part) {
+                  left_count = split(left, left_parts, /[.]/)
+                  right_count = split(right, right_parts, /[.]/)
+                  count = left_count > right_count ? left_count : right_count
+                  for (i = 1; i <= count; i++) {
+                    left_part = i <= left_count ? left_parts[i] + 0 : 0
+                    right_part = i <= right_count ? right_parts[i] + 0 : 0
+                    if (left_part > right_part) return 1
+                    if (left_part < right_part) return 0
+                  }
+                  return 0
+                }
+                /^Version needs section/ { in_needs = 1; next }
+                /^Version .* section/ { in_needs = 0 }
+                in_needs {
+                  for (i = 1; i <= NF; i++) {
+                    if ($i == "GLIBC_PRIVATE") {
+                      private_required = 1
+                    } else if ($i ~ /^GLIBC_[0-9]+(\.[0-9]+)+$/) {
+                      version = $i
+                      sub(/^GLIBC_/, "", version)
+                      if (maximum == "" || version_greater(version, maximum)) {
+                        maximum = version
+                      }
+                    }
+                  }
+                }
+                END {
+                  if (private_required) {
+                    printf "ERROR: %s requires GLIBC_PRIVATE\n", binary
+                    exit 1
+                  }
+                  if (maximum == "") {
+                    printf "%s: no GLIBC versioned requirements\n", binary
+                    exit 0
+                  }
+                  printf "%s: maximum required GLIBC_%s\n", binary, maximum
+                  if (version_greater(maximum, "2.43")) {
+                    printf "ERROR: %s requires GLIBC_%s; release ceiling is GLIBC_2.43\n",
+                      binary, maximum
+                    exit 1
+                  }
+                }
+              '
+          done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
