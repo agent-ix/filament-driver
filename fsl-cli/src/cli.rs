@@ -2416,7 +2416,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => option_refusal(operation, &error),
         },
         Verb::Run => match RunOptions::from_scanned(&scanned) {
-            Ok(options) => with_format(run(options), format),
+            Ok(options) => with_format_as(run(options), format, Some("run")),
             Err(error) => option_refusal(operation, &error),
         },
         Verb::Export => match ExportOptions::from_scanned(&scanned) {
@@ -2494,7 +2494,17 @@ fn unrouted_operation(verb: Verb) -> Option<Operation> {
 /// In text mode, replace the result's outcome document with FSL's FR-865 text
 /// form of it, built from the same document and the sources the command read.
 /// Machine mode keeps the document untouched and the exit category never moves.
-fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult {
+fn with_format(result: CommandResult, format: OutputFormat) -> CommandResult {
+    with_format_as(result, format, None)
+}
+
+/// Render a result using the invoked CLI verb as its text header when one is
+/// supplied, while preserving the machine outcome document unchanged.
+fn with_format_as(
+    mut result: CommandResult,
+    format: OutputFormat,
+    command_name: Option<&'static str>,
+) -> CommandResult {
     if format != OutputFormat::Text {
         return result;
     }
@@ -2514,6 +2524,11 @@ fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult
     ) {
         Ok(staged) => {
             let mut rendered = staged.into_value().as_str().to_owned();
+            if let Some(command_name) = command_name {
+                if let Some((_, rest)) = rendered.split_once(": ") {
+                    rendered = format!("{command_name}: {rest}");
+                }
+            }
             if let Some(hint) = observation_input_limit_hint(document) {
                 if !rendered.is_empty() {
                     rendered.push('\n');

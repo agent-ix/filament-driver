@@ -2302,6 +2302,122 @@ fn unsupported_package_result_refuses_at_call() {
 
 #[trace("TC-2456", "FR-865-AC-3")]
 #[trace("TC-2456", "FR-865-AC-4")]
+#[trace("TC-036", "FR-621-AC-6")]
+#[trace("TC-039", "FR-025-AC-8")]
+#[test]
+fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-command-first-lines-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&directory.0);
+    std::fs::create_dir_all(&directory.0).expect("command fixture directory");
+
+    let observation_path = directory.0.join("current.json");
+    std::fs::write(
+        &observation_path,
+        r#"{"format":"filament.state.snapshot/v1","identity":{"authority":"issuer","identity":"current"},"observation":"current"}"#,
+    )
+    .expect("the run observation");
+    let run_request_path = directory.0.join("run.json");
+    std::fs::write(
+        &run_request_path,
+        serde_json::json!({"format":"native-run/1","request":{
+            "models":[],
+            "program":{"source":{"file":SOURCE,"authority":"issuer","identity":"document",
+                "document":"CommandFirstLines","formal_revision":1}},
+            "clause":{"selection":{"function":{"name":"yes","arguments":[],
+                "snapshot":"current"}},"observations":{"current":"current.json"}}
+        }})
+        .to_string(),
+    )
+    .expect("the clause run request");
+    let run = fsl(&[
+        "run",
+        run_request_path.to_str().expect("UTF-8 request path"),
+        "--format",
+        "text",
+    ]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout).lines().next(),
+        Some("run: success (exit 0) at S6a")
+    );
+
+    let check = fsl(&["check", SOURCE, "--format", "text"]);
+    assert_eq!(check.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&check.stdout).lines().next(),
+        Some("check: success (exit 0) at S4")
+    );
+
+    let analyze = AnalyzeRequest::new("first-lines", one_item("BelowThree"), serde_json::json!({}));
+    let analyze_output = analyze.run("text");
+    assert_eq!(analyze_output.status.code(), Some(10));
+    assert!(
+        String::from_utf8_lossy(&analyze_output.stdout)
+            .lines()
+            .next()
+            .is_some_and(|line| line.starts_with("0 BelowThree refuted")),
+        "{}",
+        String::from_utf8_lossy(&analyze_output.stdout)
+    );
+
+    let monitor_source_path = directory.0.join("monitor.native");
+    std::fs::write(
+        &monitor_source_path,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile i = \"filament.temporal.infinite-trace/v1\";\n\
+         record Reading { level: Int[0, 9]; }\n\
+         temporal Reaches using i over (r: Reading) clock \"steps\" on origin { eventually holds(r.level = 2) }\n",
+    )
+    .expect("the monitor source");
+    let monitor_request_path = directory.0.join("monitor.json");
+    std::fs::write(
+        &monitor_request_path,
+        serde_json::json!({"format":"native-monitor/1","request":{
+            "models":[],
+            "program":{"source":{"file":monitor_source_path,"authority":"issuer",
+                "identity":"document","document":"CommandFirstLines","formal_revision":1}},
+            "clauses":[{"name":"Reaches"}],"trace":{"kind":"finite"}
+        }})
+        .to_string(),
+    )
+    .expect("the monitor request");
+    let input_path = directory.0.join("records.jsonl");
+    std::fs::write(
+        &input_path,
+        concat!(
+            "{\"observation\":{\"sample\":{\"level\":{\"integer\":\"0\"}}}}\n",
+            "{\"end\":true}\n"
+        ),
+    )
+    .expect("the monitor records");
+    let monitor = fsl(&[
+        "monitor",
+        monitor_request_path.to_str().expect("UTF-8 request path"),
+        "--input",
+        input_path.to_str().expect("UTF-8 input path"),
+        "--format",
+        "text",
+    ]);
+    assert_eq!(
+        monitor.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&monitor.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&monitor.stdout).lines().next(),
+        Some("0 Reaches pending pending")
+    );
+}
+
+#[trace("TC-2456", "FR-865-AC-4")]
 #[test]
 fn check_compile_and_run_default_to_the_text_form_of_the_json_document() {
     let cases: [(&str, &[&str]); 6] = [
@@ -2410,7 +2526,7 @@ fn default_text_carries_the_fr_865_header_items_and_result() {
     let (code, run) = text(&["run", RUN_REQUEST]);
     assert_eq!(code, Some(0), "{run}");
     assert!(
-        run.starts_with("execute: success (exit 0) at S6a\n"),
+        run.starts_with("run: success (exit 0) at S6a\n"),
         "{run}"
     );
     assert!(
@@ -2420,7 +2536,7 @@ fn default_text_carries_the_fr_865_header_items_and_result() {
     let (code, run) = text(&["run", RUN_REFUSED]);
     assert_eq!(code, Some(20), "{run}");
     assert!(
-        run.starts_with("execute: refusal (exit 20) at S6a\n"),
+        run.starts_with("run: refusal (exit 20) at S6a\n"),
         "{run}"
     );
     assert!(run.contains("missing_declaration"), "{run}");
