@@ -1072,19 +1072,20 @@ fn root_argv_refusal_names_invalid_format_without_result_output() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("dot"));
 }
 
-/// Trace: FR-002-AC-1, FR-002-AC-8; run-only options are named when refused on another verb.
+/// Trace: FR-002-AC-1, FR-002-AC-8; an option the verb does not list is refused and named.
 #[test]
-fn non_run_verb_refuses_and_names_run_only_option() {
+fn unlisted_option_refuses_and_names_the_option() {
     for (verb, option) in [("check", "--engine"), ("analyze", "--limit")] {
         let output = Command::new(FSL)
             .args([verb, option, "gpu"])
             .output()
-            .expect("run fsl with a run-only option on check");
+            .expect("run fsl with an option the verb does not list");
         assert_eq!(output.status.code(), Some(20), "{option}");
         assert!(output.stdout.is_empty(), "{option}");
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains(option),
-            "{option}"
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("unknown {verb} option `{option}`\n"),
+            "{verb} {option}"
         );
     }
 }

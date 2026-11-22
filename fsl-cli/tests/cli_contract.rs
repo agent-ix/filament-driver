@@ -2429,7 +2429,7 @@ fn unknown_limit_setting_lists_accepted_settings() {
 
 /// Trace: FR-255-AC-2, a reached run limit names its CLI setting and the request's `stage_limits` entry.
 #[test]
-fn run_limit_message_only_offers_the_cli_setting() {
+fn run_limit_message_names_cli_setting_and_stage_limits_entry() {
     let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
         .args([
