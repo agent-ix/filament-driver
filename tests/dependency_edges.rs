@@ -37,6 +37,22 @@ struct Graph {
     workspace_default_members: BTreeSet<String>,
 }
 
+/// Whether a Cargo metadata dependency edge enables the checker fixture feature
+/// as a normal (non-development) dependency.
+fn is_normal_fsl_test_support_dependency(dependency: &Value) -> bool {
+    dependency["name"] == "fsl-semantics"
+        && dependency["kind"].is_null()
+        && dependency["features"]
+            .as_array()
+            .is_some_and(|features| features.iter().any(|feature| feature == "test-support"))
+}
+
+fn has_normal_fsl_test_support_dependency(dependencies: &[Value]) -> bool {
+    dependencies
+        .iter()
+        .any(is_normal_fsl_test_support_dependency)
+}
+
 impl Graph {
     fn load() -> Self {
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
@@ -51,9 +67,20 @@ impl Graph {
             String::from_utf8_lossy(&output.stderr)
         );
         let metadata: Value = serde_json::from_slice(&output.stdout).expect("metadata is JSON");
-        let packages = metadata["packages"]
+        let metadata_packages = metadata["packages"]
             .as_array()
-            .expect("packages")
+            .expect("packages");
+        for package in metadata_packages {
+            let package_name = package["name"].as_str().expect("package name");
+            let dependencies = package["dependencies"]
+                .as_array()
+                .expect("package dependencies");
+            assert!(
+                !has_normal_fsl_test_support_dependency(dependencies),
+                "package {package_name} enables fsl-semantics/test-support as a normal dependency"
+            );
+        }
+        let packages = metadata_packages
             .iter()
             .map(|p| {
                 (
@@ -150,6 +177,24 @@ impl Graph {
         }
         seen
     }
+}
+
+#[trace("FR-001-AC-1")]
+#[test]
+fn consumer_manifest_guard_rejects_normal_test_support_and_allows_dev_only() {
+    let normal_dependency = serde_json::json!({
+        "name": "fsl-semantics",
+        "kind": null,
+        "features": ["test-support"],
+    });
+    let dev_dependency = serde_json::json!({
+        "name": "fsl-semantics",
+        "kind": "dev",
+        "features": ["test-support"],
+    });
+
+    assert!(has_normal_fsl_test_support_dependency(&[normal_dependency]));
+    assert!(!has_normal_fsl_test_support_dependency(&[dev_dependency]));
 }
 
 #[trace(
