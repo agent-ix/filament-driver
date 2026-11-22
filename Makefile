@@ -163,14 +163,14 @@ examples-check: examples-fetch
 	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
 
 # Run the install page and checked command examples in tutorial pages in a
-# disposable Ubuntu container. Candidate binaries default to Ubuntu 24.04;
-# released-artifact checks always use Ubuntu 22.04. Pass exact checkouts under
-# review, or set FSL_RELEASE_BINARY to check the released binary on Ubuntu 22.04.
+# disposable Ubuntu 26.04 container by default. Override ALPHA_JOURNEY_BASE_IMAGE
+# for local candidates built against a different Ubuntu baseline. Released
+# artifacts are also checked for GLIBC <= 2.43 with no GLIBC_PRIVATE requirement.
 FILAMENT_DOCS_DIR ?= $(HOME)/dev/filament-docs
 FILAMENT_EXAMPLES_DIR ?= $(HOME)/dev/filament-examples
 FSL_BINARY ?=
 FSL_RELEASE_BINARY ?=
-ALPHA_JOURNEY_BASE_IMAGE ?= $(if $(FSL_BINARY),ubuntu:24.04,ubuntu:22.04)
+ALPHA_JOURNEY_BASE_IMAGE ?= ubuntu:26.04
 
 .PHONY: alpha-journey-gate
 alpha-journey-gate:

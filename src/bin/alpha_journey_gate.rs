@@ -93,7 +93,7 @@ fn main() {
     if env::args().any(|argument| argument == "--help" || argument == "-h") {
         println!(
             "alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH] [--released-binary PATH] [--base-image IMAGE]\n\
-             Local candidates default to ubuntu:24.04; released artifacts are checked on ubuntu:22.04.\n\
+             Acceptance defaults to ubuntu:26.04; pass --base-image ubuntu:24.04 for local candidates built on Ubuntu 24.04.\n\
              The install and tutorial routes are covered. The install page's source-build route is not covered."
         );
         return;
@@ -177,7 +177,7 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
             record_failure(
                 stats,
                 &install_page_path,
-                "released artifact startup on ubuntu:22.04",
+                "released artifact startup on ubuntu:26.04 and GLIBC <= 2.43 without GLIBC_PRIVATE",
                 &expected_version,
                 &error,
             );
@@ -768,9 +768,9 @@ fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>, St
         .transpose()?;
     let base_image = base_image.unwrap_or_else(|| {
         if candidate.is_some() {
-            "ubuntu:24.04".to_owned()
+            "ubuntu:26.04".to_owned()
         } else {
-            "ubuntu:22.04".to_owned()
+            "ubuntu:26.04".to_owned()
         }
     });
     Ok((docs, examples, candidate, released_binary, base_image))
@@ -1497,7 +1497,8 @@ fn check_released_binary(
     expected_version: &str,
     expected_output: Option<&[String]>,
 ) -> Result<(), String> {
-    let container = start_container(examples, Some(binary), "ubuntu:22.04")?;
+    check_glibc_requirements(binary)?;
+    let container = start_container(examples, Some(binary), "ubuntu:26.04")?;
     let setup = exec(
         &container,
         "bash",
@@ -1533,10 +1534,76 @@ fn check_released_binary(
         ));
     }
     println!(
-        "PASS {} | released artifact starts on ubuntu:22.04 | {expected_version}",
+        "PASS {} | released artifact starts on ubuntu:26.04 and needs GLIBC <= 2.43 without GLIBC_PRIVATE | {expected_version}",
         install_page.display()
     );
     Ok(())
+}
+
+fn check_glibc_requirements(binary: &Path) -> Result<(), String> {
+    let output = Command::new("readelf")
+        .args(["--version-info", "--wide"])
+        .arg(binary)
+        .output()
+        .map_err(|error| format!("could not run readelf for GLIBC check: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "readelf failed: {}",
+            one_line(&String::from_utf8_lossy(&output.stderr))
+        ));
+    }
+    validate_glibc_version_info(&String::from_utf8_lossy(&output.stdout))?;
+    Ok(())
+}
+
+fn validate_glibc_version_info(version_info: &str) -> Result<(u32, u32, u32), String> {
+    let mut maximum = None;
+    for token in glibc_tokens(version_info) {
+        if token == "GLIBC_PRIVATE" {
+            return Err("artifact requires rejected GLIBC_PRIVATE symbol version".to_owned());
+        }
+        if let Some(version) = parse_glibc_version(token) {
+            maximum = Some(maximum.map_or(version, |known: (u32, u32, u32)| known.max(version)));
+        }
+    }
+    let maximum = maximum.ok_or_else(|| "readelf reported no GLIBC symbol versions".to_owned())?;
+    if maximum > (2, 43, 0) {
+        return Err(format!(
+            "artifact requires GLIBC_{}.{}.{}, above GLIBC_2.43",
+            maximum.0, maximum.1, maximum.2
+        ));
+    }
+    Ok(maximum)
+}
+
+fn glibc_tokens(source: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut rest = source;
+    while let Some(index) = rest.find("GLIBC_") {
+        let candidate = &rest[index..];
+        let length = candidate
+            .chars()
+            .take_while(|character| {
+                character.is_ascii_alphanumeric() || *character == '_' || *character == '.'
+            })
+            .map(char::len_utf8)
+            .sum::<usize>();
+        if length > 6 {
+            tokens.push(&candidate[..length]);
+        }
+        rest = &candidate[length.max(6)..];
+    }
+    tokens
+}
+
+fn parse_glibc_version(token: &str) -> Option<(u32, u32, u32)> {
+    let version = token.strip_prefix("GLIBC_")?;
+    let mut parts = version.split('.');
+    Some((
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+        parts.next().map(str::parse).transpose().ok()?.unwrap_or(0),
+    ))
 }
 
 fn start_container(
@@ -1851,6 +1918,21 @@ expect_exit = 10
                 "check"
             ]
         );
+    }
+
+    #[test]
+    fn released_glibc_policy_accepts_up_to_243_and_rejects_private_or_newer() {
+        assert_eq!(
+            validate_glibc_version_info("Version needs: GLIBC_2.3 GLIBC_2.43"),
+            Ok((2, 43, 0))
+        );
+        assert!(validate_glibc_version_info("GLIBC_2.44").is_err());
+        assert!(
+            validate_glibc_version_info("GLIBC_2.40 GLIBC_PRIVATE")
+                .unwrap_err()
+                .contains("GLIBC_PRIVATE")
+        );
+        assert!(validate_glibc_version_info("no symbol versions").is_err());
     }
 
     #[test]
