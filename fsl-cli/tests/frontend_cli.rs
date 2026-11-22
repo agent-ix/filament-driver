@@ -2317,7 +2317,7 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     let observation_path = directory.0.join("current.json");
     std::fs::write(
         &observation_path,
-        r#"{"format":"filament.state.snapshot/v1","identity":{"authority":"issuer","identity":"current"},"observation":"current"}"#,
+        r#"{"format":"filament.state.snapshot/v1","identity":{"authority":"issuer","identity":"current"},"observation":"current","populations":[]}"#,
     )
     .expect("the run observation");
     let run_request_path = directory.0.join("run.json");
@@ -2371,13 +2371,13 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     let analyze = AnalyzeRequest::new("first-lines", one_item("BelowThree"), serde_json::json!({}));
     let analyze_output = analyze.run("text");
     assert_eq!(analyze_output.status.code(), Some(10));
-    assert!(
+    assert_eq!(
         String::from_utf8_lossy(&analyze_output.stdout)
             .lines()
-            .next()
-            .is_some_and(|line| line.starts_with("0 BelowThree refuted")),
-        "{}",
-        String::from_utf8_lossy(&analyze_output.stdout)
+            .next(),
+        Some(
+            "0 BelowThree refuted backend=en-1 extent={\"classification\":\"unbounded\",\"finite_bound_available\":false}"
+        )
     );
 
     let monitor_source_path = directory.0.join("monitor.native");
@@ -2538,20 +2538,14 @@ fn default_text_carries_the_fr_865_header_items_and_result() {
 
     let (code, run) = text(&["run", RUN_REQUEST]);
     assert_eq!(code, Some(0), "{run}");
-    assert!(
-        run.starts_with("run: success (exit 0) at S6a\n"),
-        "{run}"
-    );
+    assert!(run.starts_with("run: success (exit 0) at S6a\n"), "{run}");
     assert!(
         run.contains("result: completed {\"value\":{\"type\":\"boolean\",\"value\":true}}"),
         "{run}"
     );
     let (code, run) = text(&["run", RUN_REFUSED]);
     assert_eq!(code, Some(20), "{run}");
-    assert!(
-        run.starts_with("run: refusal (exit 20) at S6a\n"),
-        "{run}"
-    );
+    assert!(run.starts_with("run: refusal (exit 20) at S6a\n"), "{run}");
     assert!(run.contains("missing_declaration"), "{run}");
 }
 
