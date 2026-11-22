@@ -163,16 +163,18 @@ examples-check: examples-fetch
 	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
 
 # Run the install page and checked command examples in tutorial pages in a
-# disposable Ubuntu container. Pass the exact docs and examples checkouts under
-# review; FSL_BINARY selects a local release candidate instead of a download.
+# disposable Ubuntu container. Candidate binaries default to Ubuntu 24.04;
+# released-artifact checks always use Ubuntu 22.04. Pass exact checkouts under
+# review, or set FSL_RELEASE_BINARY to check the released binary on Ubuntu 22.04.
 FILAMENT_DOCS_DIR ?= $(HOME)/dev/filament-docs
 FILAMENT_EXAMPLES_DIR ?= $(HOME)/dev/filament-examples
 FSL_BINARY ?=
-ALPHA_JOURNEY_BASE_IMAGE ?= ubuntu:22.04
+FSL_RELEASE_BINARY ?=
+ALPHA_JOURNEY_BASE_IMAGE ?= $(if $(FSL_BINARY),ubuntu:24.04,ubuntu:22.04)
 
 .PHONY: alpha-journey-gate
 alpha-journey-gate:
-	$(CARGO) run --locked -p filament-driver --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)" --base-image "$(ALPHA_JOURNEY_BASE_IMAGE)" $(if $(FSL_BINARY),--fsl-binary "$(FSL_BINARY)")
+	$(CARGO) run --locked -p filament-driver --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)" --base-image "$(ALPHA_JOURNEY_BASE_IMAGE)" $(if $(FSL_BINARY),--fsl-binary "$(FSL_BINARY)") $(if $(FSL_RELEASE_BINARY),--released-binary "$(FSL_RELEASE_BINARY)")
 
 # =============================================================================
 # Composite
