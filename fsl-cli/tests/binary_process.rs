@@ -149,7 +149,7 @@ fn non_finite_rational_request(directory: &std::path::Path) -> std::path::PathBu
                 "document": "NonFinite", "formal_revision": 1
             }},
             "call": {"function": "as_rational", "arguments": [{
-                "parameter": "x", "value": {"kind": "float64", "bits": "7ff8000000000000"}
+                "parameter": "x", "value": {"type": "float64", "bits": "7ff8000000000000"}
             }]}
         }
     });
@@ -567,8 +567,17 @@ fn missing_source_emits_fsl_io_error_document_and_diagnostic() {
         .expect("run fsl with a missing source");
     assert_eq!(output.status.code(), Some(20));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("cannot read missing-request.json:"));
-    assert!(stderr.ends_with('\n'));
+    // Machine mode carries FSL's diagnostics in the document alone.
+    assert!(stderr.is_empty(), "{stderr}");
+    let written: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the refusal is an FSL document");
+    assert!(
+        written["diagnostics"][0]["message"]
+            .as_str()
+            .expect("a message")
+            .starts_with("cannot access missing-request.json:"),
+        "{written}"
+    );
     let error = fsl_command::command::prepare_run(
         std::path::Path::new("missing-request.json"),
         fsl_command::command::RunLimits::default(),
@@ -1066,9 +1075,9 @@ fn root_argv_refusal_names_invalid_format_without_result_output() {
 /// Trace: FR-002-AC-1, FR-002-AC-8; run-only options are named when refused on another verb.
 #[test]
 fn non_run_verb_refuses_and_names_run_only_option() {
-    for option in ["--engine", "--limit"] {
+    for (verb, option) in [("check", "--engine"), ("analyze", "--limit")] {
         let output = Command::new(FSL)
-            .args(["check", option, "gpu"])
+            .args([verb, option, "gpu"])
             .output()
             .expect("run fsl with a run-only option on check");
         assert_eq!(output.status.code(), Some(20), "{option}");
@@ -1100,12 +1109,15 @@ fn unavailable_engines_are_not_substituted() {
             Some(i32::from(Category::Unsupported.exit_code())),
             "{engine}"
         );
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains(engine),
-            "typed unsupported refusal names {engine}"
-        );
         let document: serde_json::Value =
             serde_json::from_slice(&output.stdout).expect("unsupported result is FSL JSON");
+        assert!(
+            document["diagnostics"][0]["message"]
+                .as_str()
+                .expect("a message")
+                .contains(engine),
+            "typed unsupported refusal names {engine}"
+        );
         assert_eq!(document["category"], "unsupported");
         assert_eq!(
             document["diagnostics"][0]["code"],
