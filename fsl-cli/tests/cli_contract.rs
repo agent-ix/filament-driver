@@ -2427,9 +2427,9 @@ fn unknown_limit_setting_lists_accepted_settings() {
     assert!(document.contains("format.output_bytes"), "{document}");
 }
 
-/// Trace: FR-255-AC-3, run limit diagnostics omit request-stage settings.
+/// Trace: FR-255-AC-2, a reached run limit names its CLI setting and the request's `stage_limits` entry.
 #[test]
-fn run_limit_message_only_offers_the_cli_setting() {
+fn run_limit_message_names_cli_setting_and_stage_limits_entry() {
     let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
         .args([
@@ -2445,7 +2445,12 @@ fn run_limit_message_only_offers_the_cli_setting() {
     assert_eq!(output.status.code(), Some(22));
     let document = String::from_utf8_lossy(&output.stdout);
     assert!(document.contains("s1.tokens"), "{document}");
-    assert!(!document.contains("stage_limits"), "{document}");
+    assert!(
+        document.contains(
+            "raise it with `--limit s1.tokens=<n>` or the request's `stage_limits` entry `s1.tokens`"
+        ),
+        "{document}"
+    );
 }
 
 #[test]
