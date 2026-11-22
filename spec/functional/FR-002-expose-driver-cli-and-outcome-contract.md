@@ -115,6 +115,10 @@ the fallback when that function returns reserved value `5`.
   `streams` module for stream discipline.
 - When the CLI writes machine-mode outcomes, it SHALL use ix-cli-kit's `json`
   module for canonical JSON encoding.
+- In `--format json` mode the diagnostics of a document result are carried in
+  the document and nothing is written to stderr; only the driver's own
+  refusals (such as an unknown option or a failed provider configuration)
+  write stderr.
 - When writing or flushing primary command output to stdout fails with
   `BrokenPipe`, the CLI SHALL retain the category of the completed operation and use that
   category's normal process exit conversion. The invocation SHALL write nothing

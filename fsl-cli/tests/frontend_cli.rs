@@ -743,10 +743,8 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     else {
         panic!("clause request must not become a function call");
     };
-    let (ClauseRunSelection::Function { ref name, .. }
-    | ClauseRunSelection::CanonicalFunction { ref name, .. }) = request.selection
-    else {
-        panic!("function claim");
+    let ClauseRunSelection::CanonicalFunction { ref name, .. } = request.selection else {
+        panic!("canonical function claim");
     };
     let name = name.clone();
     let report =
