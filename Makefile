@@ -21,6 +21,7 @@ help:
 	@echo "  make spec             - quire validate over spec/"
 	@echo "  make docs             - cargo doc, denying missing/broken doc links"
 	@echo "  make examples-check   - Build fsl here and run the filament-examples suite (running + staged)"
+	@echo "  make alpha-journey-gate - Install FSL and run the alpha tutorial journey in Docker"
 	@echo "  make ci               - All CI gates locally (fmt-check + lint + test + examples-check + deny + docs + spec)"
 
 # =============================================================================
@@ -160,6 +161,16 @@ examples-fetch: $(EXAMPLES_DIR)/.git
 .PHONY: examples-check
 examples-check: examples-fetch
 	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
+
+# Run the install page and each command rendered by the first-rule tutorial in
+# a disposable Ubuntu container. Pass the exact docs and examples checkouts
+# under review so the journey is tied to the release candidate revisions.
+FILAMENT_DOCS_DIR ?= $(CURDIR)/../filament-docs
+FILAMENT_EXAMPLES_DIR ?= $(CURDIR)/../filament-examples
+
+.PHONY: alpha-journey-gate
+alpha-journey-gate:
+	$(CARGO) run --locked --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)"
 
 # =============================================================================
 # Composite
