@@ -8,6 +8,7 @@ authors = ["Agent IX <agent@agent-ix.dev>"]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/agent-ix/filament-driver"
 publish = false
+autobins = false
 
 [workspace]
 members = [
@@ -38,6 +39,10 @@ undocumented_unsafe_blocks = "deny"
 [lib]
 name = "filament_driver"
 path = "src/lib.rs"
+
+[[bin]]
+name = "alpha-journey-gate"
+path = "src/bin/alpha_journey_gate.rs"
 
 # ADR-011 §6.1 driver row: the driver depends on the FSL layer crates, on CG
 # and on IR's model crate (the E5 v2 reader and `CheckedNodeId`), and no FSL,

@@ -6,8 +6,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 const INSTALL_PAGE: &str = "src/content/docs/fsl/guides/set-up-your-environment.md";
-const FIRST_RULE_PAGE: &str = "src/content/docs/fsl/learn/first-rule.md";
 const INSTALL_STEPS: &str = "install-test/steps.md";
+const TUTORIAL_DIR: &str = "src/content/docs/fsl/guides";
+
+#[derive(Debug)]
+enum OutputView {
+    Summary,
+    Fields(Vec<String>),
+}
 
 struct Container(String);
 
@@ -23,14 +29,24 @@ impl Drop for Container {
 
 #[derive(Debug)]
 struct Example {
+    page: PathBuf,
     id: String,
     system: String,
-    fields: Vec<String>,
+    view: OutputView,
 }
 
 #[derive(Debug)]
 struct Case {
     command: String,
+    expected_exit: i32,
+}
+
+#[derive(Debug)]
+struct LiteralCommand {
+    page: PathBuf,
+    system: String,
+    command: String,
+    expected: String,
     expected_exit: i32,
 }
 
@@ -42,14 +58,12 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let (docs, examples) = arguments()?;
+    let (docs, examples, candidate) = arguments()?;
     let install_page_path = docs.join(INSTALL_PAGE);
-    let tutorial_page_path = docs.join(FIRST_RULE_PAGE);
     let install_page = read(&install_page_path)?;
-    let tutorial_page = read(&tutorial_page_path)?;
     let install_source = read(&examples.join(INSTALL_STEPS))?;
     let install_steps = step_blocks(&install_source);
-    let selected_steps = install_step_ids(&install_page);
+    let selected_steps = install_step_ids(&install_page, candidate.is_some());
 
     if selected_steps.is_empty() {
         return Err(format!(
@@ -59,18 +73,43 @@ fn run() -> Result<(), String> {
     }
     let install_script =
         assemble_install_script(&selected_steps, &install_steps, &install_page_path)?;
-    let expected_version = expected_version(&install_page).ok_or_else(|| {
-        format!(
-            "{} does not state the expected fsl version",
-            install_page_path.display()
-        )
-    })?;
-
-    let examples_list = page_examples(&tutorial_page);
+    let tutorial_version_page = docs.join(TUTORIAL_DIR).join("tutorial-first-rule.md");
+    let expected_version_output = if candidate.is_some() {
+        expected_version_output(&read(&tutorial_version_page)?)
+    } else {
+        expected_version_output(&install_page)
+    };
+    let expected_version = expected_version_output
+        .as_ref()
+        .and_then(|lines| lines.first().cloned())
+        .or_else(|| expected_version(&install_page))
+        .ok_or_else(|| {
+            format!(
+                "{} does not state the expected fsl version",
+                install_page_path.display()
+            )
+        })?;
+    let tutorial_pages = tutorial_pages(&docs.join(TUTORIAL_DIR))?;
+    let mut examples_list = Vec::new();
+    let mut literal_commands = Vec::new();
+    for page in &tutorial_pages {
+        let content = read(&docs.join(page))?;
+        let page_examples = page_examples(page, &content);
+        if page_examples.is_empty() {
+            return Err(format!(
+                "{} has no checked command example blocks",
+                docs.join(page).display()
+            ));
+        }
+        if let Some(system) = page_examples.first().map(|example| example.system.clone()) {
+            literal_commands.extend(page_literal_commands(page, &system, &content));
+        }
+        examples_list.extend(page_examples);
+    }
     if examples_list.is_empty() {
         return Err(format!(
-            "{} has no rendered command examples",
-            tutorial_page_path.display()
+            "{} contains no tutorial command examples",
+            docs.join(TUTORIAL_DIR).display()
         ));
     }
     let mut cases_by_system = HashMap::new();
@@ -86,7 +125,7 @@ fn run() -> Result<(), String> {
         }
     }
 
-    let container = start_container(&examples)?;
+    let container = start_container(&examples, candidate.as_deref())?;
     let install = exec(&container, "bash", &["-e", "-c", &install_script]);
     if !install.status.success() {
         let output = output_text(&install);
@@ -99,18 +138,61 @@ fn run() -> Result<(), String> {
         );
         return Err("installation journey failed".to_owned());
     }
-    let version_output = output_text(&install);
-    if !version_output
-        .lines()
-        .any(|line| line.trim() == expected_version)
-    {
+    if let Some(candidate) = candidate.as_deref() {
+        let install_dir = exec(&container, "mkdir", &["-p", "/root/.local/bin"]);
+        if !install_dir.status.success() {
+            fail_line(
+                &install_page_path,
+                "install candidate binary",
+                "exit 0",
+                &one_line(&output_text(&install_dir)),
+            );
+            return Err("could not create fsl install directory".to_owned());
+        }
+        let install_binary = exec(
+            &container,
+            "install",
+            &["-m", "755", "/candidate-fsl", "/root/.local/bin/fsl"],
+        );
+        if !install_binary.status.success() {
+            fail_line(
+                &install_page_path,
+                &candidate.display().to_string(),
+                "install as fsl",
+                &one_line(&output_text(&install_binary)),
+            );
+            return Err("could not install candidate fsl binary".to_owned());
+        }
+    }
+    let version = exec(
+        &container,
+        "bash",
+        &["-lc", "export PATH=/root/.local/bin:$PATH && fsl --version"],
+    );
+    let version_output = output_text(&version);
+    let actual_version_lines = version_output.lines().map(str::trim).collect::<Vec<_>>();
+    let version_matches = match &expected_version_output {
+        Some(expected) => {
+            actual_version_lines == expected.iter().map(String::as_str).collect::<Vec<_>>()
+        }
+        None => actual_version_lines
+            .iter()
+            .any(|line| *line == expected_version),
+    };
+    if !version.status.success() || !version_matches {
         fail_line(
             &install_page_path,
             "fsl --version",
-            &format!("version {expected_version}"),
-            &one_line(&version_output),
+            &expected_version_output
+                .as_ref()
+                .map_or_else(|| expected_version.clone(), |lines| lines.join(" ")),
+            &format!(
+                "exit {}: {}",
+                status_code(&version),
+                one_line(&version_output)
+            ),
         );
-        return Err("installed version differs from the install page".to_owned());
+        return Err("installed fsl version differs from the install page".to_owned());
     }
     println!(
         "PASS {} | fsl --version | {expected_version}",
@@ -118,6 +200,37 @@ fn run() -> Result<(), String> {
     );
 
     let mut tutorial_failed = false;
+    for literal in literal_commands {
+        let shell_command = format!(
+            "cd /candidate-examples/examples/{} && export PATH=/root/.local/bin:$PATH && {}",
+            literal.system, literal.command
+        );
+        let actual = exec(&container, "bash", &["-lc", &shell_command]);
+        let actual_text = String::from_utf8_lossy(&actual.stdout).trim().to_owned();
+        if status_code(&actual) != literal.expected_exit || actual_text != literal.expected {
+            tutorial_failed = true;
+            fail_line(
+                &docs.join(&literal.page),
+                &literal.command,
+                &format!(
+                    "exit {} and {}",
+                    literal.expected_exit,
+                    one_line(&literal.expected)
+                ),
+                &format!(
+                    "exit {} and {}",
+                    status_code(&actual),
+                    one_line(&actual_text)
+                ),
+            );
+        } else {
+            println!(
+                "PASS {} | {}",
+                docs.join(&literal.page).display(),
+                literal.command
+            );
+        }
+    }
     for example in examples_list {
         let cases = cases_by_system
             .get(&example.system)
@@ -125,7 +238,7 @@ fn run() -> Result<(), String> {
         let case = cases.get(&example.id).ok_or_else(|| {
             format!(
                 "{} references {}/{} but its example.toml has no matching case",
-                tutorial_page_path.display(),
+                docs.join(&example.page).display(),
                 example.system,
                 example.id
             )
@@ -144,30 +257,47 @@ fn run() -> Result<(), String> {
         );
         let actual = exec(&container, "bash", &["-lc", &shell_command]);
         let actual_output = output_text(&actual);
-        let expected_output = projected_outcome(&expected, &example.fields);
+        let expected_output = render_output(&expected, case.expected_exit, &example.view)
+            .map_err(|error| format!("{}: {}: {error}", example.page.display(), command_text))?;
         let actual_json = serde_json::from_str::<Value>(actual_output.trim()).ok();
-        let actual_projection = actual_json
+        let actual_render = actual_json
             .as_ref()
-            .map(|value| projected_outcome(value, &example.fields));
+            .map(|value| render_output(value, status_code(&actual), &example.view));
 
         if status_code(&actual) != case.expected_exit
-            || actual_projection.as_ref() != Some(&expected_output)
+            || actual_render
+                .as_ref()
+                .and_then(|rendered| rendered.as_ref().ok())
+                != Some(&expected_output)
         {
             tutorial_failed = true;
             fail_line(
-                &tutorial_page_path,
+                &docs.join(&example.page),
                 &command_text,
-                &format!("exit {} and {}", case.expected_exit, expected_output),
+                &format!(
+                    "exit {} and {}",
+                    case.expected_exit,
+                    one_line(&expected_output)
+                ),
                 &format!(
                     "exit {} and {}",
                     status_code(&actual),
-                    actual_projection
-                        .map_or_else(|| one_line(&actual_output), |value| value.to_string())
+                    actual_render.map_or_else(
+                        || one_line(&actual_output),
+                        |rendered| rendered.map_or_else(
+                            |error| format!("invalid output: {error}"),
+                            |value| one_line(&value)
+                        ),
+                    )
                 ),
             );
             continue;
         }
-        println!("PASS {} | {}", tutorial_page_path.display(), command_text);
+        println!(
+            "PASS {} | {}",
+            docs.join(&example.page).display(),
+            command_text
+        );
     }
     if tutorial_failed {
         return Err(
@@ -177,10 +307,11 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn arguments() -> Result<(PathBuf, PathBuf), String> {
+fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>), String> {
     let mut args = env::args().skip(1);
     let mut docs = None;
     let mut examples = None;
+    let mut candidate = None;
     while let Some(arg) = args.next() {
         let value = args
             .next()
@@ -188,13 +319,16 @@ fn arguments() -> Result<(PathBuf, PathBuf), String> {
         match arg.as_str() {
             "--docs" => docs = Some(PathBuf::from(value)),
             "--examples" => examples = Some(PathBuf::from(value)),
+            "--fsl-binary" => candidate = Some(PathBuf::from(value)),
             _ => return Err(format!("unknown argument {arg}")),
         }
     }
-    let docs =
-        docs.ok_or_else(|| "usage: alpha-journey-gate --docs PATH --examples PATH".to_owned())?;
-    let examples = examples
-        .ok_or_else(|| "usage: alpha-journey-gate --docs PATH --examples PATH".to_owned())?;
+    let docs = docs.ok_or_else(|| {
+        "usage: alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH]".to_owned()
+    })?;
+    let examples = examples.ok_or_else(|| {
+        "usage: alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH]".to_owned()
+    })?;
     if !docs.is_dir() || !examples.is_dir() {
         return Err("--docs and --examples must name existing checkouts".to_owned());
     }
@@ -204,14 +338,23 @@ fn arguments() -> Result<(PathBuf, PathBuf), String> {
     let examples = examples
         .canonicalize()
         .map_err(|error| format!("{}: {error}", examples.display()))?;
-    Ok((docs, examples))
+    let candidate = candidate
+        .map(|path| {
+            if !path.is_file() {
+                return Err(format!("{} is not a file", path.display()));
+            }
+            path.canonicalize()
+                .map_err(|error| format!("{}: {error}", path.display()))
+        })
+        .transpose()?;
+    Ok((docs, examples, candidate))
 }
 
 fn read(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))
 }
 
-fn install_step_ids(page: &str) -> Vec<String> {
+fn install_step_ids(page: &str, candidate: bool) -> Vec<String> {
     let mut ids = Vec::new();
     for line in page.lines() {
         let Some(reference) = line.trim().strip_prefix("```steps ") else {
@@ -220,9 +363,22 @@ fn install_step_ids(page: &str) -> Vec<String> {
         for id in reference.split_whitespace() {
             if !matches!(
                 id,
-                "rust" | "driver-source" | "check-release" | "check-source"
+                "rust" | "driver-source" | "check" | "check-release" | "check-source"
             ) && !ids.iter().any(|existing| existing == id)
             {
+                if candidate
+                    && matches!(
+                        id,
+                        "node"
+                            | "build-tools"
+                            | "driver-target"
+                            | "driver-download"
+                            | "driver-verify"
+                            | "driver-install"
+                    )
+                {
+                    continue;
+                }
                 ids.push(id.to_owned());
             }
         }
@@ -288,9 +444,57 @@ fn expected_version(page: &str) -> Option<String> {
     None
 }
 
-fn page_examples(page: &str) -> Vec<Example> {
+fn expected_version_output(page: &str) -> Option<Vec<String>> {
+    let mut lines = page.lines();
+    while let Some(line) = lines.next() {
+        if !matches!(line.trim(), "$ fsl --version" | "fsl --version") {
+            continue;
+        }
+        let mut output = Vec::new();
+        for line in lines.by_ref() {
+            if line.trim() == "```" {
+                break;
+            }
+            if !line.trim().is_empty() {
+                output.push(line.trim().to_owned());
+            }
+        }
+        return (!output.is_empty()).then_some(output);
+    }
+    None
+}
+
+fn tutorial_pages(directory: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut pages = Vec::new();
+    for entry in
+        fs::read_dir(directory).map_err(|error| format!("{}: {error}", directory.display()))?
+    {
+        let entry = entry.map_err(|error| format!("{}: {error}", directory.display()))?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if entry
+            .file_type()
+            .map_err(|error| format!("{}: {error}", entry.path().display()))?
+            .is_file()
+            && file_name.starts_with("tutorial-")
+            && file_name.ends_with(".md")
+        {
+            pages.push(Path::new(TUTORIAL_DIR).join(file_name.as_ref()));
+        }
+    }
+    pages.sort();
+    if pages.is_empty() {
+        return Err(format!(
+            "{} has no tutorial-*.md pages",
+            directory.display()
+        ));
+    }
+    Ok(pages)
+}
+
+fn page_examples(page: &Path, source: &str) -> Vec<Example> {
     let mut examples = Vec::new();
-    for line in page.lines() {
+    for line in source.lines() {
         let Some(reference) = line.trim().strip_prefix("```example ") else {
             continue;
         };
@@ -302,20 +506,69 @@ fn page_examples(page: &str) -> Vec<Example> {
         let Some((system, id)) = key.split_once('/') else {
             continue;
         };
-        let fields = reference
+        let view = if reference.split_whitespace().any(|part| part == "summary") {
+            OutputView::Summary
+        } else if let Some(fields) = reference
             .split_once("fields=\"")
             .and_then(|(_, value)| value.split_once('"').map(|(fields, _)| fields))
-            .unwrap_or("clause result category")
-            .split_whitespace()
-            .map(str::to_owned)
-            .collect();
+        {
+            OutputView::Fields(fields.split_whitespace().map(str::to_owned).collect())
+        } else {
+            OutputView::Summary
+        };
         examples.push(Example {
+            page: page.to_path_buf(),
             id: id.to_owned(),
             system: system.to_owned(),
-            fields,
+            view,
         });
     }
     examples
+}
+
+fn page_literal_commands(page: &Path, system: &str, source: &str) -> Vec<LiteralCommand> {
+    let mut commands = Vec::new();
+    let mut in_text_block = false;
+    let mut lines = Vec::new();
+    for line in source.lines() {
+        if line.trim() == "```text" {
+            in_text_block = true;
+            lines.clear();
+        } else if line.trim() == "```" && in_text_block {
+            if let Some(command) = lines.first().map(|line| line.trim()).filter(|line| {
+                ["fsl ", "cat ", "sed "]
+                    .iter()
+                    .any(|prefix| line.starts_with(prefix))
+            }) {
+                let expected = lines
+                    .iter()
+                    .skip(1)
+                    .map(|line| line.trim())
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !expected.is_empty() {
+                    let expected_exit = expected
+                        .split("exit ")
+                        .nth(1)
+                        .and_then(|tail| tail.split(|ch: char| !ch.is_ascii_digit()).next())
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(0);
+                    commands.push(LiteralCommand {
+                        page: page.to_path_buf(),
+                        system: system.to_owned(),
+                        command: command.to_owned(),
+                        expected,
+                        expected_exit,
+                    });
+                }
+            }
+            in_text_block = false;
+        } else if in_text_block {
+            lines.push(line.to_owned());
+        }
+    }
+    commands
 }
 
 fn manifest_cases(source: &str) -> HashMap<String, Case> {
@@ -353,47 +606,113 @@ fn integer_field(section: &str, field: &str) -> Option<i32> {
     })
 }
 
-fn projected_outcome(value: &Value, fields: &[String]) -> Value {
-    let Some(item) = value
-        .get("items")
-        .and_then(Value::as_array)
-        .and_then(|items| items.first())
-    else {
-        return Value::Null;
-    };
-    let mut projected = serde_json::Map::new();
-    if let Some(axes) = item.get("axes") {
-        projected.insert("axes".to_owned(), axes.clone());
-    }
-    for field in fields {
-        let found = match field.as_str() {
-            "category" => value.get("category"),
-            "clause" | "result" => item.get(field),
-            _ => item.get("axes").and_then(|axes| axes.get(field)),
-        };
-        if let Some(found) = found {
-            projected.insert(field.clone(), found.clone());
+fn render_output(value: &Value, exit: i32, view: &OutputView) -> Result<String, String> {
+    match view {
+        OutputView::Summary => {
+            let items = value
+                .get("items")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if items.is_empty() {
+                let category = value
+                    .get("category")
+                    .ok_or_else(|| "summary has no category".to_owned())?;
+                return Ok(format!("{}, exit {exit}", show_value(category)));
+            }
+            items
+                .iter()
+                .map(|item| {
+                    let name = item
+                        .get("clause")
+                        .or_else(|| value.get("category"))
+                        .ok_or_else(|| "summary item has no clause or category".to_owned())?;
+                    let result = item
+                        .get("result")
+                        .ok_or_else(|| "summary item has no result".to_owned())?;
+                    Ok(format!(
+                        "{}: {}, exit {exit}",
+                        show_value(name),
+                        show_value(result)
+                    ))
+                })
+                .collect::<Result<Vec<_>, String>>()
+                .map(|lines| lines.join("\n"))
+        }
+        OutputView::Fields(fields) => {
+            let items = value.get("items").and_then(Value::as_array);
+            let diagnostics = value.get("diagnostics").and_then(Value::as_array);
+            let records = items
+                .filter(|records| !records.is_empty())
+                .or_else(|| diagnostics.filter(|records| !records.is_empty()))
+                .map(|records| records.iter().collect::<Vec<_>>())
+                .unwrap_or_else(|| vec![value]);
+            records
+                .iter()
+                .enumerate()
+                .map(|(index, record)| {
+                    let mut lines = Vec::new();
+                    for field in fields {
+                        let values = path_values(record, &field.split('.').collect::<Vec<_>>());
+                        if values.is_empty() {
+                            return Err(format!(
+                                "field {field} is absent from record {}",
+                                index + 1
+                            ));
+                        }
+                        for selected in values {
+                            lines.push(format!("{field}: {}", show_value(selected)));
+                        }
+                    }
+                    Ok(lines.join("\n"))
+                })
+                .collect::<Result<Vec<_>, String>>()
+                .map(|records| records.join("\n\n"))
         }
     }
-    Value::Object(projected)
 }
 
-fn start_container(examples: &Path) -> Result<Container, String> {
+fn path_values<'a>(value: &'a Value, path: &[&str]) -> Vec<&'a Value> {
+    let Some((segment, rest)) = path.split_first() else {
+        return vec![value];
+    };
+    if *segment == "*" {
+        return value
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|item| path_values(item, rest))
+            .collect();
+    }
+    value
+        .get(*segment)
+        .map(|next| path_values(next, rest))
+        .unwrap_or_default()
+}
+
+fn show_value(value: &Value) -> String {
+    match value {
+        Value::String(string) => string.clone(),
+        _ => value.to_string(),
+    }
+}
+
+fn start_container(examples: &Path, candidate: Option<&Path>) -> Result<Container, String> {
     let mount = format!(
         "type=bind,src={},dst=/candidate-examples,readonly",
         examples.display()
     );
-    let output = Command::new("docker")
-        .args([
-            "run",
-            "-d",
-            "--rm",
-            "--mount",
-            &mount,
-            "ubuntu:22.04",
-            "sleep",
-            "infinity",
-        ])
+    let mut command = Command::new("docker");
+    command.args(["run", "-d", "--rm", "--mount", &mount]);
+    if let Some(candidate) = candidate {
+        let candidate_mount = format!(
+            "type=bind,src={},dst=/candidate-fsl,readonly",
+            candidate.display()
+        );
+        command.arg("--mount").arg(candidate_mount);
+    }
+    let output = command
+        .args(["ubuntu:22.04", "sleep", "infinity"])
         .output()
         .map_err(|error| format!("could not start docker: {error}"))?;
     if !output.status.success() {

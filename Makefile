@@ -162,15 +162,16 @@ examples-fetch: $(EXAMPLES_DIR)/.git
 examples-check: examples-fetch
 	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
 
-# Run the install page and each command rendered by the first-rule tutorial in
-# a disposable Ubuntu container. Pass the exact docs and examples checkouts
-# under review so the journey is tied to the release candidate revisions.
+# Run the install page and checked command examples in tutorial pages in a
+# disposable Ubuntu container. Pass the exact docs and examples checkouts under
+# review; FSL_BINARY selects a local release candidate instead of a download.
 FILAMENT_DOCS_DIR ?= $(CURDIR)/../filament-docs
 FILAMENT_EXAMPLES_DIR ?= $(CURDIR)/../filament-examples
+FSL_BINARY ?=
 
 .PHONY: alpha-journey-gate
 alpha-journey-gate:
-	$(CARGO) run --locked --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)"
+	$(CARGO) run --locked -p filament-driver --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)" $(if $(FSL_BINARY),--fsl-binary "$(FSL_BINARY)")
 
 # =============================================================================
 # Composite
