@@ -5,7 +5,7 @@ type: SpecReview
 analysis: ears-conformance
 scope: "spec/functional/FR-002-expose-driver-cli-and-outcome-contract.md (FR-002-AC-11); spec/test-cases/TC-009-cli-outcome-and-exit-contract.md"
 review_set: subset
-profile_disposition: "No applicable AssuranceProfile exists in spec/assurance or active project configuration; no enforced workflow applies."
+profile_disposition: "Inspected spec/assurance/AD-001-driver-architecture.md; it is an architecture decision, not an AssuranceProfile or review policy. Quoin org config is unset (/home/peter/.config/ix/config.d/quoin.yaml), so no applicable profile exists and no enforced run is required."
 ---
 
 ## Summary
