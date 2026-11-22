@@ -144,7 +144,7 @@ fn canonical_run_overrides_reach_plan_stages_observations_accounting_and_clocks(
     .expect("initial fixture");
     let model_unit = include_str!("fixtures/analyze-counter.fsl")
         .replace("filament.value.complete/v1", "filament.model.complete/v1");
-    let unit = format!("{model_unit}\nverify Release using v {{ check bounded claim Bounded method model_check domain M::Counter bound 2; }}\n");
+    let unit = format!("{model_unit}\nverify Release using v {{ check safe claim Bounded method model_check domain M::Counter bound 2; }}\n");
     std::fs::write(directory.path().join("unit.fsl"), unit).expect("source fixture");
     let mut job = json!({"format":"native-run/1","request":{
         "models":[{"format":"semantic-ir/2.0.0","source":source("model.json")}],
