@@ -2300,6 +2300,230 @@ fn unsupported_package_result_refuses_at_call() {
     );
 }
 
+/// The FSL FR-865 text of the clause run the request at `request_path` makes,
+/// rendered by the core library from the same document the CLI writes, with
+/// the header operation replaced by the invoked command `run`.
+fn core_clause_text_as_run(request_path: &std::path::Path) -> String {
+    use fsl_command::command::{prepare_run, PreparedRun, RunLimits};
+    use fsl_replay::spine::ClauseRunSelection;
+    use fsl_replay::{OutcomeDocument, OutcomeStage};
+    let PreparedRun::Clause(request) =
+        prepare_run(request_path, RunLimits::default()).expect("prepare the clause request")
+    else {
+        panic!("a clause request is not a function call");
+    };
+    let ClauseRunSelection::CanonicalFunction { ref name, .. } = request.selection else {
+        panic!("canonical function claim");
+    };
+    let name = name.clone();
+    let report = fsl_replay::spine::run_clause(*request.into_request()).expect("the clause report");
+    let document =
+        OutcomeDocument::from_clause_runs(Some(OutcomeStage::S6a), [(name.as_str(), &report)])
+            .expect("the core producer's document");
+    let rendered = fsl_inspect::render_outcome(
+        &document,
+        fsl_inspect::RenderForm::Text,
+        &fsl_inspect::RenderSources::from_sources([]),
+        fsl_replay::RenderLimits::default(),
+        &filament_exact::Cancel::new(),
+    )
+    .expect("the FR-865 rendering")
+    .into_value()
+    .as_str()
+    .to_owned();
+    let (header, rest) = rendered
+        .split_once(": ")
+        .expect("the rendering has a header");
+    assert_eq!(header, "monitor", "FSL names the operation");
+    format!("run: {rest}")
+}
+
+/// The FSL FR-865 text of `fsl check` over `source_path`, rendered by the core
+/// library from the document it builds for the same source.
+fn core_check_text(source_path: &str) -> String {
+    use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+    use fsl_replay::OutcomeDocument;
+    let bytes = std::fs::read(source_path).expect("the check source");
+    let source = fsl_foundation::SourceIdentity::new("filament", source_path);
+    let limits = SpineLimits::default();
+    let cancel = filament_exact::Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &source,
+            path: source_path,
+            bytes: &bytes,
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("parse")
+    .into_value();
+    let packages =
+        fsl_semantics::model::intake::package_input(Vec::<&[u8]>::new()).expect("no models");
+    let selected = select(&parsed, &packages, limits.model, &cancel)
+        .expect("select")
+        .into_value();
+    let checked = check(
+        &parsed,
+        "filament".to_owned(),
+        &selected,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    );
+    let document = OutcomeDocument::from_check(&checked);
+    fsl_inspect::render_outcome(
+        &document,
+        fsl_inspect::RenderForm::Text,
+        &fsl_inspect::RenderSources::from_sources([]),
+        fsl_replay::RenderLimits::default(),
+        &cancel,
+    )
+    .expect("the FR-865 rendering")
+    .into_value()
+    .as_str()
+    .to_owned()
+}
+
+#[trace("TC-040", "FR-002-AC-13")]
+#[trace("TC-2456", "FR-865-AC-3")]
+#[trace("TC-2456", "FR-865-AC-4")]
+#[trace("TC-036", "FR-621-AC-6")]
+#[trace("TC-039", "FR-025-AC-8")]
+#[test]
+fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
+    let directory = TestDirectory(
+        std::env::temp_dir().join(format!("fsl-command-first-lines-{}", std::process::id())),
+    );
+    let _ = std::fs::remove_dir_all(&directory.0);
+    std::fs::create_dir_all(&directory.0).expect("command fixture directory");
+
+    let observation_path = directory.0.join("current.json");
+    std::fs::write(
+        &observation_path,
+        r#"{"format":"filament.state.snapshot/v1","identity":{"authority":"issuer","identity":"current"},"observation":"current","populations":[]}"#,
+    )
+    .expect("the run observation");
+    let run_request_path = directory.0.join("run.json");
+    std::fs::write(
+        &run_request_path,
+        serde_json::json!({"format":"native-run/1","request":{
+            "models":[],
+            "program":{"source":{"file":SOURCE,"authority":"issuer","identity":"document",
+                "document":"CommandFirstLines","formal_revision":1}},
+            "clause":{"selection":{"function":{"name":"yes","arguments":[],
+                "snapshot":"current"}},"observations":{"current":"current.json"}}
+        }})
+        .to_string(),
+    )
+    .expect("the clause run request");
+    let run_json = fsl(&[
+        "run",
+        run_request_path.to_str().expect("UTF-8 request path"),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(run_json.status.code(), Some(0));
+    let run_document: serde_json::Value =
+        serde_json::from_slice(&run_json.stdout).expect("one clause-run outcome document");
+    assert_eq!(run_document["operation"], "monitor", "{run_document}");
+
+    let run = fsl(&[
+        "run",
+        run_request_path.to_str().expect("UTF-8 request path"),
+        "--format",
+        "text",
+    ]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout).lines().next(),
+        Some("run: success (exit 0) at S6a")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        core_clause_text_as_run(&run_request_path),
+        "the rest of the text is the FR-865 rendering of the same document"
+    );
+
+    let check = fsl(&["check", SOURCE, "--format", "text"]);
+    assert_eq!(check.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&check.stdout).lines().next(),
+        Some("check: success (exit 0) at S4")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&check.stdout),
+        core_check_text(SOURCE),
+        "the whole check text is the FR-865 rendering of the same document"
+    );
+
+    let analyze = AnalyzeRequest::new("first-lines", one_item("BelowThree"), serde_json::json!({}));
+    let analyze_output = analyze.run("text");
+    assert_eq!(analyze_output.status.code(), Some(10));
+    assert_eq!(
+        String::from_utf8_lossy(&analyze_output.stdout)
+            .lines()
+            .next(),
+        Some(
+            "0 BelowThree refuted backend=en-1 extent={\"classification\":\"unbounded\",\"finite_bound_available\":false}"
+        )
+    );
+
+    let monitor_source_path = directory.0.join("monitor.native");
+    std::fs::write(
+        &monitor_source_path,
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile i = \"filament.temporal.infinite-trace/v1\";\n\
+         record Reading { level: Int[0, 9]; }\n\
+         temporal Reaches using i over (r: Reading) clock \"steps\" on origin { eventually holds(r.level = 2) }\n",
+    )
+    .expect("the monitor source");
+    let monitor_request_path = directory.0.join("monitor.json");
+    std::fs::write(
+        &monitor_request_path,
+        serde_json::json!({"format":"native-monitor/1","request":{
+            "models":[],
+            "program":{"source":{"file":monitor_source_path,"authority":"issuer",
+                "identity":"document","document":"CommandFirstLines","formal_revision":1}},
+            "clauses":[{"name":"Reaches"}],"trace":{"kind":"finite"}
+        }})
+        .to_string(),
+    )
+    .expect("the monitor request");
+    let input_path = directory.0.join("records.jsonl");
+    std::fs::write(
+        &input_path,
+        concat!(
+            "{\"observation\":{\"sample\":{\"level\":{\"integer\":\"0\"}}}}\n",
+            "{\"end\":true}\n"
+        ),
+    )
+    .expect("the monitor records");
+    let monitor = fsl(&[
+        "monitor",
+        monitor_request_path.to_str().expect("UTF-8 request path"),
+        "--input",
+        input_path.to_str().expect("UTF-8 input path"),
+        "--format",
+        "text",
+    ]);
+    assert_eq!(
+        monitor.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&monitor.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&monitor.stdout).lines().next(),
+        Some("0 Reaches pending pending")
+    );
+}
+
 #[trace("TC-2456", "FR-865-AC-3")]
 #[trace("TC-2456", "FR-865-AC-4")]
 #[test]
@@ -2409,20 +2633,14 @@ fn default_text_carries_the_fr_865_header_items_and_result() {
 
     let (code, run) = text(&["run", RUN_REQUEST]);
     assert_eq!(code, Some(0), "{run}");
-    assert!(
-        run.starts_with("execute: success (exit 0) at S6a\n"),
-        "{run}"
-    );
+    assert!(run.starts_with("run: success (exit 0) at S6a\n"), "{run}");
     assert!(
         run.contains("result: completed {\"value\":{\"type\":\"boolean\",\"value\":true}}"),
         "{run}"
     );
     let (code, run) = text(&["run", RUN_REFUSED]);
     assert_eq!(code, Some(20), "{run}");
-    assert!(
-        run.starts_with("execute: refusal (exit 20) at S6a\n"),
-        "{run}"
-    );
+    assert!(run.starts_with("run: refusal (exit 20) at S6a\n"), "{run}");
     assert!(run.contains("missing_declaration"), "{run}");
 }
 
