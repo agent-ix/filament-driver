@@ -788,7 +788,18 @@ fn configured_process_normal_exit_shuts_down_active_session() {
         .arg(&request)
         .arg("--provider-config")
         .arg(&config)
-        .args(["--provider-limit", "deadline_ms=4096", "--format", "json"])
+        .args([
+            "--provider-limit",
+            "deadline_ms=4096",
+            "--limit",
+            "accounting.work_units=1000000",
+            "--request-bytes",
+            "1000000",
+            "--dependent-bytes",
+            "1000000",
+            "--format",
+            "json",
+        ])
         .output()
         .expect("run production fsl binary");
     assert_eq!(output.status.code(), Some(0), "{output:?}");

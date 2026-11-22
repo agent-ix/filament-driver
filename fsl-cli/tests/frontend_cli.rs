@@ -1945,7 +1945,7 @@ fn sample() -> serde_json::Value {
             {"parameter":"ratio", "value":{"type":"rational", "numerator":"4", "denominator":"6"}},
             {"parameter":"price", "value":{"type":"decimal", "coefficient":"150", "scale":"2"}},
             {"parameter":"gain", "value":{"type":"float64", "bits":"3ff0000000000000"}},
-            {"parameter":"code", "value":{"type":"text", "value":"abc"}},
+            {"parameter":"code", "value":{"type":"string", "value":"abc"}},
             {"parameter":"label", "value":{"type":"text", "value":"e\u{0301}"}}
         ]),
     );
@@ -2084,7 +2084,7 @@ fn run_returns_float_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_string_result() {
-    let value = serde_json::json!({"type": "text", "value": "abc"});
+    let value = serde_json::json!({"type": "string", "value": "abc"});
     assert_run_value("codeOf", sample(), value);
 }
 
