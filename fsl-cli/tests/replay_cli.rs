@@ -180,7 +180,7 @@ fn replay_without_one_request_operand_is_a_usage_refusal() {
             .as_str()
             .expect("a message");
         assert!(
-            message.starts_with("usage: fsl replay <request-file>"),
+            message.starts_with("usage: fsl replay [options] <request-file>"),
             "{message}"
         );
     }
