@@ -2969,10 +2969,8 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
         ])
         .output()
         .expect("run requirement request with an accounting limit");
-    assert_eq!(accounting.status.code(), Some(20), "{accounting:?}");
-    let refusal = String::from_utf8_lossy(&accounting.stdout);
-    assert!(refusal.contains("accounting.work_units"), "{refusal}");
-    assert!(refusal.contains("requirements"), "{refusal}");
+    assert_eq!(accounting.status.code(), Some(0), "{accounting:?}");
+    assert_eq!(accounting.stdout, without_limit.stdout);
 
     let observation = Command::new(FSL)
         .arg("run")
@@ -2985,10 +2983,8 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
         ])
         .output()
         .expect("run requirement request with an observation limit");
-    assert_eq!(observation.status.code(), Some(20), "{observation:?}");
-    let refusal = String::from_utf8_lossy(&observation.stdout);
-    assert!(refusal.contains("observation.input_bytes"), "{refusal}");
-    assert!(refusal.contains("requirements"), "{refusal}");
+    assert_eq!(observation.status.code(), Some(0), "{observation:?}");
+    assert_eq!(observation.stdout, without_limit.stdout);
 }
 
 fn assert_requirement_reference_oracle(path: &Path, actual: &std::process::Output) {

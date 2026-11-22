@@ -9,13 +9,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use filament_driver::{
-    build_linked_providers, execute, ExecutionEngine, ExecutionFailure, ExecutionRequest,
-    LimitOverrides, ObjectEnvironment, ProcessProvider, ProcessProviderLimits,
-    ProcessProviderRequest, ProviderResults,
+    build_linked_providers, ExecutionEngine, ExecutionFailure, LimitOverrides, ProcessProvider,
+    ProcessProviderLimits, ProcessProviderRequest, ProviderResults,
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
-use fsl_command::command::{self, ExportSelection, PreparedRun, RunLimits};
+use fsl_command::command::{self, ExportSelection, RunLimits};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
@@ -26,8 +25,7 @@ use fsl_replay::spine::{
     check_native_fences, parse, parse_selecting_extensions, CheckLimits, CompileRefusal,
     DependencyInput, NativeFenceRequest, ParseRequest, ProfileCatalogInput, SpineLimits,
 };
-use fsl_replay::RunRefusal;
-use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument, OutcomeStage};
+use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 use fsl_semantics::library::bundle::PackageLimits;
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
@@ -443,9 +441,6 @@ struct RunOptions {
     clocks: Option<PathBuf>,
     /// `--provider-config` and `--provider-limit` (FSL FR-287; FR-006).
     providers: crate::provider_config::ProviderArguments,
-    /// The driver-side run options FSL's `run_with_providers` does not take,
-    /// in the order the caller gave them.
-    local_options: Vec<&'static str>,
 }
 
 type CliProviderError = crate::process_provider::AdapterError<
@@ -753,21 +748,6 @@ impl RunOptions {
         let clocks = scanned.value(options::CLOCKS).map(PathBuf::from);
         let mut providers = crate::provider_config::ProviderArguments::default();
         providers.take_all(scanned)?;
-        let local_options = scanned
-            .options
-            .iter()
-            .map(|(name, _)| *name)
-            .find(|name| {
-                [
-                    options::REQUEST_BYTES,
-                    options::DEPENDENT_BYTES,
-                    options::LIMIT,
-                    options::CLOCKS,
-                ]
-                .contains(name)
-            })
-            .into_iter()
-            .collect();
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(Verb::Run).into());
         };
@@ -778,7 +758,6 @@ impl RunOptions {
             engine,
             clocks,
             providers,
-            local_options,
         })
     }
 }
@@ -927,86 +906,15 @@ fn clocks_refusal(operation: Operation, refusal: crate::clocks::ClocksRefusal) -
     .with_diagnostic(message)
 }
 
-/// Convert accepted observation settings to FSL's typed request override.
-/// Other run settings continue through the selected run path.
-fn observation_limits_override(
-    limits: &LimitOverrides,
-) -> (Option<fsl_replay::ObservationLimits>, bool) {
-    let mut observation = fsl_replay::ObservationLimits::default();
-    let observation_bounds = observation
-        .bounds()
-        .into_iter()
-        .map(|(setting, _)| setting)
-        .collect::<Vec<_>>();
-    let mut supplied_observation = false;
-    let mut only_observation = true;
-
-    for (name, value) in limits.values() {
-        let SettingName::Stage(setting) = name else {
-            only_observation = false;
-            continue;
-        };
-        if !observation_bounds.contains(setting) {
-            only_observation = false;
-            continue;
-        }
-        let updated = observation.set_bound(*setting, *value);
-        debug_assert!(
-            updated,
-            "an observation bound listed by bounds() must be settable"
-        );
-        supplied_observation |= updated;
-    }
-
-    (
-        supplied_observation.then_some(observation),
-        only_observation,
-    )
-}
-
-/// Run one native-run/1 request. With `--provider-config` or
-/// `--provider-limit` the run goes through FSL's `run_with_providers` with
-/// the configured process providers registered beside FSL's engines and the
-/// run's one limit set (FSL FR-961, FR-964); otherwise the driver runs the
-/// request through FSL's interpreter with its own run options.
+/// Run the public coordinator with the caller's effective limits and providers.
 fn run(options: RunOptions) -> CommandResult {
-    let provider_config = match load_provider_config(&options.providers) {
+    let config = match load_provider_config(&options.providers) {
         Ok(config) => config,
         Err(refusal) => return *refusal,
     };
     if options.engine != ExecutionEngine::Interpreter {
         let failure = ExecutionFailure::UnsupportedEngine(options.engine);
         return CommandResult::document(failure.into_document());
-    }
-    if options.providers.given() {
-        if let Some(option) = options.local_options.first() {
-            return CommandResult::input_refusal(
-                Operation::Execute,
-                format!(
-                    "`{option}` cannot be combined with --provider-config or --provider-limit: \
-                     FSL's provider run entry takes no {option}"
-                ),
-            );
-        }
-        return run_with_providers(&options.path, provider_config, &options.providers);
-    }
-    // Reject a setting unavailable to every run family before request-file I/O.
-    // The selected function or clause still validates its exact bounds below.
-    let mut exposed = SpineLimits::default().bounds();
-    exposed.extend(fsl_replay::ObservationLimits::default().bounds());
-    for (setting, _) in options.limits.values() {
-        if let SettingName::Stage(stage) = setting {
-            if !exposed.iter().any(|(available, _)| available == stage) {
-                return CommandResult::input_refusal(
-                    Operation::Execute,
-                    filament_driver::LimitError::OperationUnavailable {
-                        setting: *setting,
-                        operation: "run",
-                    }
-                    .message_for("run"),
-                );
-            }
-        }
     }
     let clocks = match options
         .clocks
@@ -1023,172 +931,105 @@ fn run(options: RunOptions) -> CommandResult {
         Ok(clocks) => clocks,
         Err(refusal) => return clocks_refusal(Operation::Execute, refusal),
     };
-    let (observation_limits, only_observation_limits) =
-        observation_limits_override(&options.limits);
+    let mut limits = fsl_replay::CallerLimits::default();
+    let mut accounting = fsl_replay::AccountingLimits::default();
+    let mut supplied_accounting = false;
+    let mut supplied_observation = false;
+    for (name, value) in options.limits.values() {
+        let accepted = match name {
+            SettingName::Stage(setting) => {
+                supplied_observation |= limits
+                    .observation
+                    .bounds()
+                    .iter()
+                    .any(|(bound, _)| bound == setting);
+                let exposed = limits
+                    .spine
+                    .bounds()
+                    .iter()
+                    .any(|(bound, _)| bound == setting)
+                    || limits
+                        .observation
+                        .bounds()
+                        .iter()
+                        .any(|(bound, _)| bound == setting);
+                exposed && limits.set_bound(*setting, *value)
+            }
+            SettingName::Accounting(setting) => {
+                supplied_accounting = true;
+                accounting.set_bound(*setting, *value);
+                true
+            }
+        };
+        if !accepted {
+            let error = filament_driver::LimitError::OperationUnavailable {
+                setting: *name,
+                operation: "run",
+            };
+            return CommandResult::input_refusal(Operation::Execute, error.message_for("run"));
+        }
+    }
+    if options.providers.given() {
+        return run_with_providers(
+            options,
+            config,
+            clocks,
+            limits,
+            supplied_observation,
+            supplied_accounting.then_some(accounting.0),
+        );
+    }
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
-        observation: observation_limits.as_ref(),
-        ..command::RequestOverrides::default()
+        limits: Some(&limits.spine),
+        observation: supplied_observation.then_some(&limits.observation),
+        accounting: supplied_accounting.then_some(&accounting.0),
+        ..Default::default()
     };
-    let request = native_run_request(&options.path, options.intake_limits.request_bytes);
-    if request.as_ref().is_some_and(carries_extraction) {
-        if !only_observation_limits {
-            return CommandResult::input_refusal(
-                Operation::Execute,
-                "only observation limits are supported for an extracted Markdown clause run",
+    let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
+        Ok(negotiation) => negotiation,
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize FSL engine negotiation: {error:?}"),
             );
         }
-        let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
-            Ok(negotiation) => negotiation,
-            Err(error) => {
-                return CommandResult::failure(
-                    Category::InternalFailure,
-                    format!("could not initialize FSL engine negotiation: {error:?}"),
-                );
-            }
-        };
-        return match command::run_with_providers_and_limits_and_overrides(
-            &options.path,
-            options.intake_limits,
-            &overrides,
-            &negotiation,
-            match filament_driver::run_engines(Vec::new()) {
-                Ok(engines) => engines,
-                Err(error) => {
-                    return CommandResult::failure(
-                        Category::InternalFailure,
-                        format!("could not initialize FSL engines: {error:?}"),
-                    );
-                }
-            },
-            &fsl_analyze::provider::ProviderOptions::default(),
-            &Cancel::new(),
-        ) {
-            Ok(result) => {
-                let render_sources = fsl_command::render_sources(result.sources());
-                match result.outcome {
-                    Some(document) => {
-                        CommandResult::document(document).with_sources(render_sources)
-                    }
-                    None => native_result(result.value.as_value().clone(), result.exit_code),
-                }
-            }
-            Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
-        };
-    }
-    let prepared =
-        match command::prepare_run_with_overrides(&options.path, options.intake_limits, &overrides)
-        {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                return CommandResult::document(error.outcome_document(Operation::Execute));
-            }
-        };
-    let input = match prepared {
-        PreparedRun::Function(prepared) => {
-            if request.as_ref().is_some_and(carries_call_requirements) {
-                let spine_limits = match requirement_run_limits(&options.limits) {
-                    Ok(limits) => limits,
-                    Err(message) => {
-                        return CommandResult::input_refusal(Operation::Execute, message);
-                    }
-                };
-                let render_sources =
-                    fsl_inspect::RenderSources::from_sources([prepared.into_input().source]);
-                return run_with_requirement_items(
-                    &options.path,
-                    render_sources,
-                    provider_config,
-                    &options.providers,
-                    options.intake_limits,
-                    spine_limits,
-                    clocks,
-                );
-            }
-            prepared.into_input()
-        }
-        PreparedRun::Clause(request) => {
-            return run_clause_request(*request.into_request(), &options.limits);
-        }
-        PreparedRun::TlLowering(_) => {
-            return CommandResult::input_refusal(
-                Operation::Execute,
-                "FR-931 tl_lowering requests are not run by the driver yet",
+    };
+    let engines = match filament_driver::run_engines(Vec::new()) {
+        Ok(engines) => engines,
+        Err(error) => {
+            return CommandResult::failure(
+                Category::InternalFailure,
+                format!("could not initialize FSL engines: {error:?}"),
             );
         }
-        PreparedRun::Package(_)
-        | PreparedRun::ModelBasedTest(_)
-        | PreparedRun::RefinementTransfer(_) => {
-            let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
-                Ok(negotiation) => negotiation,
-                Err(error) => {
-                    return CommandResult::failure(
-                        Category::InternalFailure,
-                        format!("could not initialize FSL engine negotiation: {error:?}"),
-                    );
-                }
-            };
-            return match command::run_with_providers_and_limits_and_overrides(
-                &options.path,
-                options.intake_limits,
-                &overrides,
-                &negotiation,
-                match filament_driver::run_engines(Vec::new()) {
-                    Ok(engines) => engines,
-                    Err(error) => {
-                        return CommandResult::failure(
-                            Category::InternalFailure,
-                            format!("could not initialize FSL engines: {error:?}"),
-                        );
-                    }
-                },
-                &fsl_analyze::provider::ProviderOptions::default(),
-                &Cancel::new(),
-            ) {
-                Ok(result) => {
-                    let render_sources = fsl_command::render_sources(result.sources());
-                    match result.outcome {
-                        Some(document) => {
-                            CommandResult::document(document).with_sources(render_sources)
-                        }
-                        None => native_result(result.value.as_value().clone(), result.exit_code),
-                    }
-                }
-                Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
-            };
-        }
     };
-    let command::FunctionRunInput {
-        source,
-        package_name,
-        packages,
-        dependencies,
-        integer_division,
-        mut call,
-    } = input;
-    let mut limits = SpineLimits::default();
-    if let Err(error) = options.limits.apply_to(&mut limits, &mut call) {
-        return CommandResult::input_refusal(Operation::Execute, error.to_string());
-    }
-    let identity = source.identity().clone();
-    let render_sources = fsl_inspect::RenderSources::from_sources([source.clone()]);
-    match execute(ExecutionRequest {
-        source: identity,
-        package_name: &package_name,
-        path: source.path(),
-        bytes: source.text().as_bytes(),
-        packages: &packages,
-        dependencies: &dependencies,
-        limits,
-        call,
-        integer_division,
-        object_environment: &ObjectEnvironment::default(),
-        cancel: Cancel::new(),
-        engine: options.engine,
-    }) {
-        Ok(result) => CommandResult::document(result.document).with_sources(render_sources),
-        Err(failure) => {
-            CommandResult::document(failure.into_document()).with_sources(render_sources)
+    run_result(command::run_with_providers_and_limits_and_overrides(
+        &options.path,
+        options.intake_limits,
+        &overrides,
+        &negotiation,
+        engines,
+        &fsl_analyze::provider::ProviderOptions::default(),
+        &Cancel::new(),
+    ))
+}
+
+/// Retain the coordinator's outcome, native value, exit category and sources.
+fn run_result(result: Result<command::RunResult, Box<command::RunError>>) -> CommandResult {
+    match result {
+        Ok(result) => {
+            let sources = fsl_command::render_sources(result.sources());
+            match result.outcome {
+                Some(document) => CommandResult::document(document).with_sources(sources),
+                None => native_result(result.value.as_value().clone(), result.exit_code)
+                    .with_sources(sources),
+            }
+        }
+        Err(error) => {
+            let sources = fsl_command::render_sources(error.sources());
+            CommandResult::document(error.outcome_document(Operation::Execute))
+                .with_sources(sources)
         }
     }
 }
@@ -1223,124 +1064,6 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         );
     };
     with_format(CommandResult::document(document), format)
-}
-
-/// Select FSL's extraction-aware run entry for a native-run request carrying
-/// `program.extraction`. The bounded dispatch read does not open dependent
-/// observation or source files; FSL remains their sole reader.
-fn carries_extraction(request: &serde_json::Value) -> bool {
-    request
-        .get("program")
-        .and_then(|program| program.get("extraction"))
-        .is_some()
-}
-
-/// Whether the `native-run/1` request carries a call-level `requirements`
-/// member.
-fn carries_call_requirements(request: &serde_json::Value) -> bool {
-    request
-        .get("call")
-        .and_then(|call| call.get("requirements"))
-        .is_some()
-}
-
-/// The run's spine limits for a call with `requirements`. FSL's provider run
-/// entry carries stage limits only: it reads no observation override for a
-/// call and carries no accounting settings, so those are refused here rather
-/// than dropped.
-fn requirement_run_limits(limits: &LimitOverrides) -> Result<SpineLimits, String> {
-    let mut spine = SpineLimits::default();
-    for (name, value) in limits.values() {
-        let accepted = match name {
-            SettingName::Stage(setting) => spine.set_bound(*setting, *value),
-            SettingName::Accounting(_) => false,
-        };
-        if !accepted {
-            let error = filament_driver::LimitError::OperationUnavailable {
-                setting: *name,
-                operation: "run",
-            };
-            return Err(format!(
-                "{}: FSL's provider run entry does not carry this setting on a call with `requirements`",
-                error.message_for("run")
-            ));
-        }
-    }
-    Ok(spine)
-}
-
-/// The `request` member of the bounded `native-run/1` document at `path`.
-fn native_run_request(path: &Path, request_limit: usize) -> Option<serde_json::Value> {
-    let read_limit = u64::try_from(request_limit).ok()?;
-    let file = File::open(path).ok()?;
-    let mut bytes = Vec::new();
-    file.take(read_limit.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() > request_limit {
-        return None;
-    }
-    let mut document = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
-    if document.get("format")?.as_str() != Some("native-run/1") {
-        return None;
-    }
-    Some(document.get_mut("request")?.take())
-}
-
-/// Dispatch typed clause dispositions to FSL's existing document producers.
-fn run_clause_request(
-    mut request: fsl_replay::spine::ClauseRunRequest,
-    limits: &LimitOverrides,
-) -> CommandResult {
-    use fsl_replay::spine::{
-        ClauseDisposition, ClauseRunSelection, ClauseRunStage, TemporalTraceRefusal,
-    };
-    use fsl_semantics::model::observation::AdmissionFailure;
-    if let Err(error) = limits.apply_to_clause(&mut request) {
-        return CommandResult::input_refusal(Operation::Monitor, error.to_string());
-    }
-    let name = match &request.selection {
-        ClauseRunSelection::Clause(selection)
-        | ClauseRunSelection::ClauseWithPath { selection, .. } => selection.name.clone(),
-        ClauseRunSelection::Function { name, .. }
-        | ClauseRunSelection::Temporal { name, .. }
-        | ClauseRunSelection::SampledTemporal { name, .. } => name.clone(),
-        ClauseRunSelection::Frame { operation, .. } => operation.to_string(),
-    };
-    let report = match fsl_replay::spine::run_clause(request) {
-        Ok(report) => report,
-        Err(error) => return CommandResult::input_refusal(Operation::Monitor, error.to_string()),
-    };
-    let document = match &report.disposition {
-        ClauseDisposition::Compile(refusal) => OutcomeDocument::new(
-            Operation::Monitor,
-            Some(refusal.stage().into()),
-            refusal.code().category(),
-        )
-        .with_diagnostics(vec![OutcomeDiagnostic::from_compile_refusal(refusal)]),
-        ClauseDisposition::ArgumentRefusal(refusal) => {
-            OutcomeDocument::from_run_refusal(Operation::Monitor, refusal)
-        }
-        ClauseDisposition::EvaluateFault(fault)
-        | ClauseDisposition::Admit(AdmissionFailure::Fault(fault))
-        | ClauseDisposition::TemporalRefusal(TemporalTraceRefusal::Fault(fault)) => {
-            OutcomeDocument::from_run_refusal(Operation::Monitor, &RunRefusal::Fault(fault.clone()))
-        }
-        _ => {
-            let last_stage = match report.disposition.stage() {
-                ClauseRunStage::Compile => None,
-                ClauseRunStage::Select | ClauseRunStage::Admit => Some(OutcomeStage::S4),
-                ClauseRunStage::Evaluate => Some(OutcomeStage::S6a),
-            };
-            match OutcomeDocument::from_clause_runs(last_stage, [(name.as_str(), &report)]) {
-                Ok(document) => document,
-                Err(error) => {
-                    return CommandResult::failure(Category::InternalFailure, error.to_string());
-                }
-            }
-        }
-    };
-    CommandResult::document(document)
 }
 
 /// Compile a request through its owner and retain the actual package outcome.
@@ -2152,94 +1875,45 @@ fn with_started_providers<T: Send + 'static>(
     })
 }
 
-/// `fsl run` with configured providers: FSL's `run_with_providers` runs the
-/// request and settles its call's requirement items against FSL's engines
-/// and the started process providers (FSL FR-961, FR-963), under the run's
-/// one limit set (FSL FR-964).
+/// Start configured process providers around the public run coordinator.
 fn run_with_providers(
-    path: &Path,
+    options: RunOptions,
     config: crate::provider_config::ProviderConfig,
-    arguments: &ProviderArguments,
-) -> CommandResult {
-    let path = path.to_path_buf();
-    let ran = with_started_providers(
-        config,
-        arguments,
-        false,
-        move |negotiation, engines, options, cancel| {
-            command::run_with_providers(&path, negotiation, engines, options, cancel)
-        },
-    );
-    let written = match ran {
-        Ok(Ok(written)) => written,
-        Ok(Err(failure)) => return failure.into_result(Operation::Execute),
-        Err(error) => {
-            return CommandResult::failure(
-                Category::InternalFailure,
-                format!("could not initialize process signal handling: {error}"),
-            );
-        }
-    };
-    match written {
-        Ok(result) => match result.outcome {
-            Some(document) => CommandResult::document(document),
-            None => native_result(result.value.as_value().clone(), result.exit_code),
-        },
-        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute)),
-    }
-}
-
-/// `fsl run` with a call-level `requirements` member: use FSL FR-961's
-/// provider entry even when the caller supplied no process providers, and
-/// carry the same run limits and request overrides as the ordinary run path.
-fn run_with_requirement_items(
-    path: &Path,
-    render_sources: fsl_inspect::RenderSources,
-    config: crate::provider_config::ProviderConfig,
-    provider_arguments: &ProviderArguments,
-    intake_limits: RunLimits,
-    spine_limits: SpineLimits,
     clocks: Option<Box<serde_json::value::RawValue>>,
+    limits: fsl_replay::CallerLimits,
+    supplied_observation: bool,
+    accounting: Option<filament_exact::ScalarLimits>,
 ) -> CommandResult {
-    let path = path.to_path_buf();
     let ran = with_started_providers(
         config,
-        provider_arguments,
+        &options.providers,
         false,
-        move |negotiation, engines, options, cancel| {
+        move |negotiation, engines, provider_options, cancel| {
             let overrides = command::RequestOverrides {
                 clocks: clocks.as_deref(),
-                limits: Some(&spine_limits),
-                ..command::RequestOverrides::default()
+                limits: Some(&limits.spine),
+                observation: supplied_observation.then_some(&limits.observation),
+                accounting: accounting.as_ref(),
+                ..Default::default()
             };
             command::run_with_providers_and_limits_and_overrides(
-                &path,
-                intake_limits,
+                &options.path,
+                options.intake_limits,
                 &overrides,
                 negotiation,
                 engines,
-                options,
+                provider_options,
                 cancel,
             )
         },
     );
-    let written = match ran {
-        Ok(Ok(written)) => written,
-        Ok(Err(failure)) => return failure.into_result(Operation::Execute),
-        Err(error) => {
-            return CommandResult::failure(
-                Category::InternalFailure,
-                format!("could not initialize process signal handling: {error}"),
-            );
-        }
-    };
-    match written {
-        Ok(result) => match result.outcome {
-            Some(document) => CommandResult::document(document).with_sources(render_sources),
-            None => native_result(result.value.as_value().clone(), result.exit_code),
-        },
-        Err(error) => CommandResult::document(error.outcome_document(Operation::Execute))
-            .with_sources(render_sources),
+    match ran {
+        Ok(Ok(written)) => run_result(written),
+        Ok(Err(failure)) => failure.into_result(Operation::Execute),
+        Err(error) => CommandResult::failure(
+            Category::InternalFailure,
+            format!("could not initialize process signal handling: {error}"),
+        ),
     }
 }
 
