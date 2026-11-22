@@ -658,7 +658,13 @@ fn render_output(value: &Value, exit: i32, view: &OutputView) -> Result<String, 
                 .map(|(index, record)| {
                     let mut lines = Vec::new();
                     for field in fields {
-                        let values = path_values(record, &field.split('.').collect::<Vec<_>>());
+                        let path = field.split('.').collect::<Vec<_>>();
+                        let values = path_values(record, &path);
+                        let values = if values.is_empty() {
+                            path_values(value, &path)
+                        } else {
+                            values
+                        };
                         if values.is_empty() {
                             return Err(format!(
                                 "field {field} is absent from record {}",
