@@ -58,7 +58,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let (docs, examples, candidate) = arguments()?;
+    let (docs, examples, candidate, base_image) = arguments()?;
     let install_page_path = docs.join(INSTALL_PAGE);
     let install_page = read(&install_page_path)?;
     let install_source = read(&examples.join(INSTALL_STEPS))?;
@@ -120,7 +120,7 @@ fn run() -> Result<(), String> {
         }
     }
 
-    let container = start_container(&examples, candidate.as_deref())?;
+    let container = start_container(&examples, candidate.as_deref(), &base_image)?;
     let install = exec(&container, "bash", &["-e", "-c", &install_script]);
     if !install.status.success() {
         let output = output_text(&install);
@@ -302,11 +302,12 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>), String> {
+fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>, String), String> {
     let mut args = env::args().skip(1);
     let mut docs = None;
     let mut examples = None;
     let mut candidate = None;
+    let mut base_image = "ubuntu:22.04".to_owned();
     while let Some(arg) = args.next() {
         let value = args
             .next()
@@ -315,14 +316,15 @@ fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>), String> {
             "--docs" => docs = Some(PathBuf::from(value)),
             "--examples" => examples = Some(PathBuf::from(value)),
             "--fsl-binary" => candidate = Some(PathBuf::from(value)),
+            "--base-image" => base_image = value,
             _ => return Err(format!("unknown argument {arg}")),
         }
     }
     let docs = docs.ok_or_else(|| {
-        "usage: alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH]".to_owned()
+        "usage: alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH] [--base-image IMAGE]".to_owned()
     })?;
     let examples = examples.ok_or_else(|| {
-        "usage: alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH]".to_owned()
+        "usage: alpha-journey-gate --docs PATH --examples PATH [--fsl-binary PATH] [--base-image IMAGE]".to_owned()
     })?;
     if !docs.is_dir() || !examples.is_dir() {
         return Err("--docs and --examples must name existing checkouts".to_owned());
@@ -342,7 +344,7 @@ fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>), String> {
                 .map_err(|error| format!("{}: {error}", path.display()))
         })
         .transpose()?;
-    Ok((docs, examples, candidate))
+    Ok((docs, examples, candidate, base_image))
 }
 
 fn read(path: &Path) -> Result<String, String> {
@@ -696,7 +698,11 @@ fn show_value(value: &Value) -> String {
     }
 }
 
-fn start_container(examples: &Path, candidate: Option<&Path>) -> Result<Container, String> {
+fn start_container(
+    examples: &Path,
+    candidate: Option<&Path>,
+    base_image: &str,
+) -> Result<Container, String> {
     let mount = format!(
         "type=bind,src={},dst=/candidate-examples,readonly",
         examples.display()
@@ -711,7 +717,7 @@ fn start_container(examples: &Path, candidate: Option<&Path>) -> Result<Containe
         command.arg("--mount").arg(candidate_mount);
     }
     let output = command
-        .args(["ubuntu:22.04", "sleep", "infinity"])
+        .args([base_image, "sleep", "infinity"])
         .output()
         .map_err(|error| format!("could not start docker: {error}"))?;
     if !output.status.success() {

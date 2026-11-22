@@ -168,10 +168,11 @@ examples-check: examples-fetch
 FILAMENT_DOCS_DIR ?= $(CURDIR)/../filament-docs
 FILAMENT_EXAMPLES_DIR ?= $(CURDIR)/../filament-examples
 FSL_BINARY ?=
+ALPHA_JOURNEY_BASE_IMAGE ?= ubuntu:22.04
 
 .PHONY: alpha-journey-gate
 alpha-journey-gate:
-	$(CARGO) run --locked -p filament-driver --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)" $(if $(FSL_BINARY),--fsl-binary "$(FSL_BINARY)")
+	$(CARGO) run --locked -p filament-driver --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)" --base-image "$(ALPHA_JOURNEY_BASE_IMAGE)" $(if $(FSL_BINARY),--fsl-binary "$(FSL_BINARY)")
 
 # =============================================================================
 # Composite
