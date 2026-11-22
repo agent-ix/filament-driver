@@ -73,12 +73,7 @@ fn run() -> Result<(), String> {
     }
     let install_script =
         assemble_install_script(&selected_steps, &install_steps, &install_page_path)?;
-    let tutorial_version_page = docs.join(TUTORIAL_DIR).join("tutorial-first-rule.md");
-    let expected_version_output = if candidate.is_some() {
-        expected_version_output(&read(&tutorial_version_page)?)
-    } else {
-        expected_version_output(&install_page)
-    };
+    let expected_version_output = expected_version_output(&install_page);
     let expected_version = expected_version_output
         .as_ref()
         .and_then(|lines| lines.first().cloned())
