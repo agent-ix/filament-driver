@@ -2152,6 +2152,7 @@ fn format_refusal_emits_fsl_diagnostic_cause_and_locus() {
 }
 
 /// Trace: FR-002-AC-11, --version reports the Cargo version and locked FSL revision.
+#[trace("FR-002-AC-11")]
 #[test]
 fn version_command_reports_the_package_version_and_pinned_fsl_revision() {
     let output = Command::new(FSL)
