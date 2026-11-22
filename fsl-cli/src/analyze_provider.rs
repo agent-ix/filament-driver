@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex};
 
 use filament_driver::{ProcessProviderRequest, ProcessProviderSession as _, ProviderManifest};
-use filament_exact::{Cancel, Integer, Value};
+use filament_exact::{Cancel, Integer, NodeKey, Value};
 use fsl_analyze::provider::{ExternalProvider, ProviderRequest, ProviderTarget, ProviderVerdict};
 use fsl_foundation::{BackendId, RequestIndex};
 use fsl_replay::value_check::ValueTarget;
@@ -186,7 +186,9 @@ fn composition_verdict(
 
 /// The provider's reported assignment, in the claim's parameter order, from
 /// the `counterexamples` entry of the item's request index and backend.
-/// A refutation with no readable integer assignment is not a verdict.
+/// A provider that reports no entry has no refutation to read; an entry the
+/// driver cannot map to the claim's parameters is reported on stderr and
+/// leaves the item undecided, never silently dropped.
 fn counterexample(
     index: RequestIndex,
     backend: &BackendId,
@@ -194,7 +196,7 @@ fn counterexample(
     response: &serde_json::Value,
     package: &[u8],
 ) -> Option<ProviderVerdict> {
-    let index = u64::try_from(index.get()).ok()?;
+    let wanted = u64::try_from(index.get()).ok()?;
     let entry = response
         .get("counterexamples")?
         .as_array()?
@@ -203,31 +205,79 @@ fn counterexample(
             entry
                 .get("request_index")
                 .and_then(serde_json::Value::as_u64)
-                == Some(index)
+                == Some(wanted)
                 && entry.get("backend").and_then(serde_json::Value::as_str)
                     == Some(backend.as_str())
         })?;
-    // FSL writes node ids in the document-held form (`{"node": i}` index
-    // segments into the package graph, FSpec FR-322), and the provider
-    // answers in that form. The reader and the target parameters compare
-    // structural keys, so the ids are resolved against the package graph
-    // first.
-    let entry = structural_entry(entry, package)?;
-    let assignments = fsl_replay::read_plugin_assignments(&entry).ok()?;
-    let values = target
+    let parameters: Vec<NodeKey> = target
         .parameters()
         .iter()
+        .map(fsl_replay::value_check::TargetParameter::wire)
+        .collect();
+    match assignment_values(entry, package, &parameters) {
+        Ok(values) => Some(ProviderVerdict::Refuted {
+            counterexample: values,
+        }),
+        // A malformed witness is no refutation and says nothing more (FSL FR-281).
+        Err(Unreadable::Malformed) => None,
+        Err(Unreadable::Unusable(reason)) => {
+            crate::cli::emit_diagnostic(
+                "ProviderDiagnostic",
+                &format!(
+                    "provider {backend} refuted request item {wanted} but its counterexample is not usable: {reason}",
+                    backend = backend.as_str()
+                ),
+            );
+            None
+        }
+    }
+}
+
+/// Why a provider's counterexample entry gives no refutation.
+#[derive(Debug)]
+enum Unreadable {
+    /// The provider's own data is malformed: not a refutation, and nothing more is said.
+    Malformed,
+    /// Well-formed data the driver cannot map to the claim; the reason is reported.
+    Unusable(String),
+}
+
+/// The runtime values of the provider's assignments, one per claim
+/// `parameters` entry in order.
+///
+/// FSL writes node ids in the document-held form (`{"node": i}` index
+/// segments into the package graph, FSpec FR-322) and the provider answers in
+/// that form, while the assignment reader and the target parameters compare
+/// structural keys, so each id is resolved against the package graph first.
+///
+/// # Errors
+///
+/// The reason the entry cannot be read: an unreadable package graph, an id
+/// that does not resolve, an unreadable assignment, a claim parameter the
+/// provider assigns no value, or a value that is not an `Integer` or `Boolean`.
+fn assignment_values(
+    entry: &serde_json::Value,
+    package: &[u8],
+    parameters: &[NodeKey],
+) -> Result<Vec<Value>, Unreadable> {
+    let entry = structural_entry(entry, package)?;
+    let assignments =
+        fsl_replay::read_plugin_assignments(&entry).map_err(|_| Unreadable::Malformed)?;
+    parameters
+        .iter()
         .map(|parameter| {
-            let wire = parameter.wire();
             let assignment = assignments
                 .iter()
-                .find(|assignment| assignment.parameter == wire)?;
-            value(&assignment.value)
+                .find(|assignment| &assignment.parameter == parameter)
+                .ok_or_else(|| {
+                    Unreadable::Unusable(
+                        "no assignment names a parameter of the claim (a reported node is not one of its parameters)"
+                            .to_owned(),
+                    )
+                })?;
+            value(&assignment.value).ok_or(Unreadable::Malformed)
         })
-        .collect::<Option<Vec<_>>>()?;
-    Some(ProviderVerdict::Refuted {
-        counterexample: values,
-    })
+        .collect()
 }
 
 /// The runtime value of an assignment over the provider arm's `Integer`
@@ -270,10 +320,15 @@ impl std::fmt::Debug for HybridSessionProvider {
 }
 
 /// `entry` with each assignment's `parameter` resolved from its document-held
-/// form to the structural node key of the package graph. `None` when the
-/// package has no readable graph or an id does not resolve.
-fn structural_entry(entry: &serde_json::Value, package: &[u8]) -> Option<serde_json::Value> {
-    let graph = fsl_semantics::check::wire_id::WireGraph::of_package_bytes(package).ok()?;
+/// form to the structural node key of the package graph.
+fn structural_entry(
+    entry: &serde_json::Value,
+    package: &[u8],
+) -> Result<serde_json::Value, Unreadable> {
+    let graph =
+        fsl_semantics::check::wire_id::WireGraph::of_package_bytes(package).map_err(|error| {
+            Unreadable::Unusable(format!("the package graph is unreadable ({error})"))
+        })?;
     let mut entry = entry.clone();
     if let Some(values) = entry
         .get_mut("counterexample")
@@ -281,10 +336,133 @@ fn structural_entry(entry: &serde_json::Value, package: &[u8]) -> Option<serde_j
         .and_then(serde_json::Value::as_array_mut)
     {
         for assignment in values {
-            if let Some(parameter) = assignment.get_mut("parameter") {
-                *parameter = graph.structural_value(parameter).ok()?;
+            // A parameter that is no node id is the reader's to refuse as malformed.
+            if let Some(parameter) = assignment.get_mut("parameter").filter(|p| p.is_object()) {
+                *parameter = graph.structural_value(parameter).map_err(|error| {
+                    Unreadable::Unusable(format!(
+                        "a node id does not resolve in the package ({error})"
+                    ))
+                })?;
             }
         }
     }
-    Some(entry)
+    Ok(entry)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a failed assertion is the test failure report"
+)]
+mod tests {
+    use super::assignment_values;
+    use filament_exact::{Cancel, Integer, NodeKey, Value};
+    use fsl_foundation::SourceIdentity;
+    use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+    use ix_trace_rs::trace;
+
+    /// The emitted package of one function over two `Integer` parameters, with
+    /// the package JSON's node ids of those parameters.
+    fn package() -> (Vec<u8>, Vec<serde_json::Value>) {
+        let source = "language \"ix:native\" edition \"1-draft\";\n\
+            profile v = \"filament.value.complete/v1\";\n\
+            function odd using v(n: Integer, m: Integer): Boolean pure { n = m }\n";
+        let limits = SpineLimits::default();
+        let cancel = Cancel::new();
+        let identity = SourceIdentity::new("test", "held");
+        let parsed = parse(
+            &ParseRequest {
+                source: &identity,
+                path: "held.fsl",
+                bytes: source.as_bytes(),
+            },
+            limits.source,
+            &cancel,
+        )
+        .expect("parse")
+        .into_value();
+        let packages =
+            fsl_semantics::model::intake::package_input(Vec::<&[u8]>::new()).expect("no models");
+        let selected = select(&parsed, &packages, limits.model, &cancel)
+            .expect("select")
+            .into_value();
+        let checked = check(
+            &parsed,
+            "held".to_owned(),
+            &selected,
+            &DependencyInput::default(),
+            limits,
+            &cancel,
+        )
+        .expect("check")
+        .into_value();
+        let emission =
+            fsl_package::emit_checked(checked.package(), limits.package.emit()).expect("emit");
+        let bytes = emission.package().bytes().to_vec();
+        let wire: serde_json::Value = serde_json::from_slice(&bytes).expect("package JSON");
+        let parameters: Vec<serde_json::Value> = wire["semantic_graph"]["nodes"]
+            .as_array()
+            .expect("nodes")
+            .iter()
+            .filter(|node| node["semantic_form"] == "parameter")
+            .map(|node| node["node_id"].clone())
+            .collect();
+        assert_eq!(parameters.len(), 2, "two parameter nodes");
+        (bytes, parameters)
+    }
+
+    fn entry(parameter: &serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"request_index": 0, "backend": "p", "counterexample": {
+            "type": "assignments",
+            "values": [{"parameter": parameter, "value": {"type": "integer", "value": "0"}}]}})
+    }
+
+    fn key_of(bytes: &[u8], id: &serde_json::Value) -> NodeKey {
+        let graph = fsl_semantics::check::wire_id::WireGraph::of_package_bytes(bytes)
+            .expect("package graph");
+        let structural = graph.structural_value(id).expect("structural id");
+        fsl_foundation::node_wire::node_key_from_json(&structural).expect("node key")
+    }
+
+    /// Trace: FR-022-AC-9; a provider assignment naming the parameter by its
+    /// document-held id is read as the refutation's value.
+    #[trace("TC-036", "FR-022-AC-9")]
+    #[test]
+    fn a_held_form_parameter_is_read_as_a_refutation() {
+        let (bytes, parameters) = package();
+        let claim = [key_of(&bytes, &parameters[0])];
+        let values = assignment_values(&entry(&parameters[0]), &bytes, &claim)
+            .expect("the assignment is read");
+        assert!(
+            matches!(values.as_slice(), [Value::Integer(value)] if *value == Integer::from(0_i64)),
+            "{values:?}"
+        );
+    }
+
+    /// Trace: FR-022-AC-9; an assignment that names a node which is not a
+    /// parameter of the claim, or no node of the package, is refused with its
+    /// reason, never dropped.
+    #[trace("TC-036", "FR-022-AC-9")]
+    #[test]
+    fn an_assignment_naming_another_node_is_refused_with_a_reason() {
+        let (bytes, parameters) = package();
+        let claim = [key_of(&bytes, &parameters[0])];
+        let reason = assignment_values(&entry(&parameters[1]), &bytes, &claim)
+            .expect_err("another parameter is no assignment of the claim");
+        let super::Unreadable::Unusable(reason) = reason else {
+            panic!("{reason:?}")
+        };
+        assert!(reason.contains("not one of its parameters"), "{reason}");
+        let reason = assignment_values(
+            &entry(&serde_json::json!({"ordinal": 0, "package": "held", "path": ["value", {"node": 999_999}]})),
+            &bytes,
+            &claim,
+        )
+        .expect_err("an id outside the graph does not resolve");
+        let super::Unreadable::Unusable(reason) = reason else {
+            panic!("{reason:?}")
+        };
+        assert!(reason.contains("does not resolve"), "{reason}");
+    }
 }

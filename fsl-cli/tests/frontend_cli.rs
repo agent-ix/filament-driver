@@ -2800,8 +2800,25 @@ fn analyze_external_provider_refutes_with_evidence() {
         "odd.fsl",
         &program,
     );
-    // The provider names the parameter by the node of its request item's
-    // unbounded domain; the driver resolves that document-held id.
+    // The provider names the parameter by the node FSL sent as its request
+    // item's first unbounded domain, which a first run logs.
+    let log = request.directory.0.join("provider-request.json");
+    let log_argument = log.to_str().expect("UTF-8 log path");
+    let proved = provider_config(
+        &request,
+        &[PROVIDER_BACKEND, "unbounded", "proved", log_argument],
+    );
+    analyze_with_config(&request, &proved);
+    let sent: serde_json::Value = serde_json::from_str(
+        std::fs::read_to_string(&log)
+            .expect("the provider request log")
+            .lines()
+            .next()
+            .expect("one logged request"),
+    )
+    .expect("the logged request is JSON");
+    let parameter =
+        sent["request"]["items"][0]["extent"]["domains"][0]["domain"]["node"].to_string();
     let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "refuted"]);
     let output = Command::new(FSL)
         .arg("analyze")
@@ -2809,6 +2826,7 @@ fn analyze_external_provider_refutes_with_evidence() {
         .arg("--provider-config")
         .arg(&config)
         .args(["--format", "json"])
+        .env("FSL_TEST_PROVIDER_PARAMETER", parameter)
         .output()
         .expect("run fsl analyze --provider-config");
     assert_eq!(output.status.code(), Some(10), "{output:?}");

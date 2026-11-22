@@ -3,8 +3,10 @@
 //! --provider-config` tests (FSL FR-635): it sends one `hello` whose FR-331
 //! manifest advertises (`value-validity`, `<mode>`) over `integer`, then
 //! answers every request item with `<result>` until `shutdown`. The result
-//! `refuted` also reports the integer 0 for the parameter named by the node of the
-//! request item's first unbounded domain.
+//! `refuted` also reports the integer 0 for the parameter whose node identity
+//! is in `FSL_TEST_PROVIDER_PARAMETER`: the node FSL sent as the request item's
+//! first unbounded domain (`request.items[0].extent.domains[0].domain.node` in the
+//! request log). Unset, the parameter is null, a malformed witness.
 //!
 //! Usage: `fsl-test-provider <backend> <mode> <result> [<request-log>|-]
 //! [<shutdown-marker>|-] [<descendant-ready> <descendant-leaked>]`.
@@ -218,21 +220,18 @@ fn main() -> io::Result<()> {
                 })
             })
             .collect();
-        // `refuted` reports the integer 0 for the one parameter: the node in
-        // `FSL_TEST_PROVIDER_PARAMETER` when set, else the node of the request
-        // item's first unbounded domain (document-held form, as FSL sends it).
-        let configured: Option<Value> = std::env::var("FSL_TEST_PROVIDER_PARAMETER")
+        // `refuted` reports the integer 0 for the one parameter whose expanded
+        // node identity the test passes in `FSL_TEST_PROVIDER_PARAMETER`.
+        let parameter: Value = std::env::var("FSL_TEST_PROVIDER_PARAMETER")
             .ok()
-            .and_then(|text| serde_json::from_str(&text).ok());
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or(Value::Null);
         let counterexamples: Vec<Value> = if result == "refuted" {
             body["request"]["items"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .map(|item| {
-                    let parameter = configured
-                        .clone()
-                        .unwrap_or_else(|| item["extent"]["domains"][0]["domain"]["node"].clone());
                     let values = vec![json!({"parameter": parameter,
                         "value": {"type": "integer", "value": "0"}})];
                     json!({

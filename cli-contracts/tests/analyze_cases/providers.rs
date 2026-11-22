@@ -182,8 +182,10 @@ fn native_replay_accepts_a_real_external_witness_and_rejects_a_false_one(
     let (case, _) = provider_case("proved", "unbounded")?;
     let control = document(&analyze_provider(&case)?, 0, "success");
     assert_eq!(control["items"][0]["record"]["certification"], "trusted");
-    // Read the parameter from FSL's actual public request, not a synthesized package/node.
-    let parameter = &control["items"][0]["request"]["claim"]["node"]["path"][3];
+    // Read the parameter from FSL's actual public request to the provider, not a
+    // synthesized package/node: the node of the item's first unbounded domain.
+    let sent_request = sent(&case);
+    let parameter = &sent_request["request"]["items"][0]["extent"]["domains"][0]["domain"]["node"];
     assert_eq!(parameter["path"][0], "value");
     assert_eq!(parameter["path"][1], "parameter");
     let config_path = case.directory().join("providers.json");
