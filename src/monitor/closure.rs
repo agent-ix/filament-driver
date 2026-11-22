@@ -180,6 +180,7 @@ impl MonitorClosureRows {
                     declarations: self.identities.declarations(),
                     fields: self.identities.fields(),
                     model_tuples: emission.selected_tuple_declaration_rows(),
+                    model_unions: emission.selected_model_union_rows(),
                     source_units: emission.selected_source_unit_rows(),
                     model_enum_declarations: emission.selected_model_enum_declaration_rows(),
                     model_enum_members: emission.selected_model_enum_member_rows(),
