@@ -41,7 +41,9 @@ FR-002-AC-17, plus FR-014-AC-4. TC-040 verifies FR-002-AC-13 and FR-002-AC-18.
 6. Run from a directory containing an unnamed configuration file and verify
    that the CLI does not read it.
 7. Invoke `fsl --version` and verify that it reports the semantic version
-   declared by the `fsl-cli` Cargo package. Run
+   declared by the `fsl-cli` Cargo package followed by the 40-character commit
+   SHA of the FSL source revision pinned for that build, on a separate line
+   formatted as `FSL revision: <sha>`. Run
    `ix_cli_kit::version::Agreement::command` on the built `fsl` executable
    with `--version`, paired with the `CARGO_PKG_VERSION` surface. Require the
    agreement check to pass.
@@ -90,7 +92,8 @@ under test are owned by `fsl-cli/src/cli.rs`.
   outcome's code.
 - An unnamed configuration file is not read.
 - Format writes FSL-formatted source in text mode.
-- The version output reports the `fsl-cli` package semver; the kit's
+- The version output reports the `fsl-cli` package semver and the pinned FSL
+  source revision on a separate `FSL revision: <sha>` line; the kit's
   built-binary agreement check compares it with `CARGO_PKG_VERSION` and
   passes.
 - Every root help invocation writes informative help to stdout, exits with

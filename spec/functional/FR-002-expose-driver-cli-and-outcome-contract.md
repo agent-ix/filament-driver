@@ -311,7 +311,9 @@ the fallback when that function returns reserved value `5`.
   output, with an option to select it, is a later requirement with its own
   specification, not part of this contract.
 - When the user invokes `fsl --version`, the CLI SHALL report the semantic
-  version declared by the `fsl-cli` Cargo package.
+  version declared by the `fsl-cli` Cargo package and the 40-character commit
+  SHA of the FSL source revision pinned for that build. It SHALL print the
+  revision on a separate line in the form `FSL revision: <sha>`.
 - When `fsl-cli` runs its built-binary version-agreement check, it SHALL
   compare `CARGO_PKG_VERSION` with the version reported by the built
   `fsl --version` command through
@@ -334,7 +336,7 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-8 | When the CLI writes results and diagnostics, it uses ix-cli-kit's `streams` module for stream discipline. | Test (TC-009, TC-018) |
 | FR-002-AC-9 | When the CLI writes machine-mode outcomes, it uses ix-cli-kit's `json` module for canonical JSON encoding. | Test (TC-009, TC-018) |
 | FR-002-AC-10 | When the CLI resolves configuration values, it uses ix-cli-kit's `config` module. | Test (TC-009) |
-| FR-002-AC-11 | When invoked with `--version`, the CLI reports the semantic version declared by the `fsl-cli` Cargo package. | Test (TC-009) |
+| FR-002-AC-11 | When invoked with `--version`, the CLI reports the semantic version declared by the `fsl-cli` Cargo package and the 40-character commit SHA of the FSL source revision pinned for that build. The SHA appears on a separate line as `FSL revision: <sha>`. | Test (TC-009) |
 | FR-002-AC-12 | The `fsl-cli` built-binary version-agreement check uses `ix_cli_kit::version::Agreement::command` to compare `CARGO_PKG_VERSION` with the output of the built `fsl --version` command and requires agreement. | Test (TC-009) |
 | FR-002-AC-13 | `fsl check <file>`, `fsl parse <authority> <identity> <file>`, `fsl compile <request>` and `fsl run <request>` without `--format`, and with `--format text`, each over a succeeding and a refused input, write to stdout the FSL FR-865 text form of the document `--format json` writes for the same invocation (header `<operation>: <category> (exit <code>)`, diagnostic lines with cause and locus, item lines, result line) and exit with the same status as under `--format json`; none returns `UnimplementedCapability` or exit 21. | Test (TC-040) |
 | FR-002-AC-14 | For a `BrokenPipe` while writing or flushing primary stdout, the process status equals the completed operation's FSL category exit result and stderr is empty, including for a refused operation with nonempty diagnostics when stdout is writable. No output-failure category is selected and no `OutputFailure` diagnostic is emitted. | Test |
