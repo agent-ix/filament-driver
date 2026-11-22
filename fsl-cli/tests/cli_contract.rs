@@ -2151,9 +2151,9 @@ fn format_refusal_emits_fsl_diagnostic_cause_and_locus() {
     assert_fsl_document(&output.stdout, &format_outcome_bytes(INVALID_SOURCE));
 }
 
-/// Trace: FR-002-AC-11, --version reports the Cargo package semantic version.
+/// Trace: FR-002-AC-11, --version reports the Cargo version and locked FSL revision.
 #[test]
-fn version_command_reports_the_fsl_cli_package_version() {
+fn version_command_reports_the_package_version_and_pinned_fsl_revision() {
     let output = Command::new(FSL)
         .arg("--version")
         .output()
@@ -2164,7 +2164,12 @@ fn version_command_reports_the_fsl_cli_package_version() {
     );
     assert_eq!(
         output.stdout,
-        format!("{}\n", env!("CARGO_PKG_VERSION")).as_bytes()
+        format!(
+            "{}\nFSL revision: {}\n",
+            env!("CARGO_PKG_VERSION"),
+            env!("FSL_PINNED_REVISION")
+        )
+        .as_bytes()
     );
     assert!(output.stderr.is_empty());
 }

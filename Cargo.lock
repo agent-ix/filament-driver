@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "filament-driver"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "filament-checked",
  "filament-contract-codegen",
@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "fsl-cli"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "filament-cache",
