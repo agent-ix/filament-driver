@@ -26,3 +26,10 @@ Reviewed the frozen manifest and lockfile changes for QSL-2855 and QSL-2835. The
 
 - `rust-review` was applied to the manifest and lockfile diff. Rust compile, lint, and test gates were not run because the release owner requires compilation and tests on titan; no compile/test was run on luna.
 - `gap-analysis` was not applicable because this diff contains no production Rust code or spec/plan changes. Acceptance criteria were checked directly against the manifest and lockfile diff.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The driver now pins codegen at c6fc722e, and Cargo.lock resolves the codegen dependency graph to FSL 3a81f1e8 and Contract IR 14c06b04. |
+| FND-002 | fixed | Graph::load now rejects normal fsl-semantics/test-support edges from Cargo metadata; the new focused test covers both normal and dev-only edges. |
