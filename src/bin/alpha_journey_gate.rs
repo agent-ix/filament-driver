@@ -89,7 +89,7 @@ fn run() -> Result<(), String> {
                 install_page_path.display()
             )
         })?;
-    let tutorial_pages = tutorial_pages(&docs.join(TUTORIAL_DIR))?;
+    let tutorial_pages = tutorial_pages(&docs, &docs.join(TUTORIAL_DIR))?;
     let mut examples_list = Vec::new();
     let mut literal_commands = Vec::new();
     for page in &tutorial_pages {
@@ -464,7 +464,7 @@ fn expected_version_output(page: &str) -> Option<Vec<String>> {
     None
 }
 
-fn tutorial_pages(directory: &Path) -> Result<Vec<PathBuf>, String> {
+fn tutorial_pages(docs: &Path, directory: &Path) -> Result<Vec<PathBuf>, String> {
     let mut pages = Vec::new();
     for entry in
         fs::read_dir(directory).map_err(|error| format!("{}: {error}", directory.display()))?
@@ -481,6 +481,10 @@ fn tutorial_pages(directory: &Path) -> Result<Vec<PathBuf>, String> {
         {
             pages.push(Path::new(TUTORIAL_DIR).join(file_name.as_ref()));
         }
+    }
+    let protocols = docs.join("src/content/docs/fsl/learn/protocols.md");
+    if protocols.is_file() {
+        pages.push(Path::new("src/content/docs/fsl/learn/protocols.md").to_path_buf());
     }
     pages.sort();
     if pages.is_empty() {
@@ -529,7 +533,7 @@ fn page_examples(page: &Path, source: &str) -> Vec<Example> {
 fn page_literal_commands(page: &Path, system: &str, source: &str) -> Vec<LiteralCommand> {
     let mut commands = Vec::new();
     let mut in_text_block = false;
-    let mut lines = Vec::new();
+    let mut lines: Vec<&str> = Vec::new();
     for line in source.lines() {
         if line.trim() == "```text" {
             in_text_block = true;
