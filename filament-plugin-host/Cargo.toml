@@ -16,7 +16,7 @@ quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.20"
-filament-exact = { version = "0.3.0", git = "https://github.com/agent-ix/filament-exact", rev = "b26a8e4c592503fccdc4a0e3d2cce23dd8487616" }
+filament-exact = { version = "0.3.0", git = "https://github.com/agent-ix/filament-exact", rev = "a58474cc105a86f3307a11def3fc001e2459679f" }
 process-wrap = { version = "=10.0.1", default-features = false, features = ["std", "process-group", "job-object"] }
 fsl-test-provider = { path = "../fsl-test-provider", optional = true }
 
