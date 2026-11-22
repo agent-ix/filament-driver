@@ -750,7 +750,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     let report =
         fsl_replay::spine::run_clause(*request.into_request()).expect("actual clause report");
     let document =
-        OutcomeDocument::from_clause_runs(Some(OutcomeStage::S4), [(name.as_str(), &report)])
+        OutcomeDocument::from_clause_runs(Some(OutcomeStage::S6a), [(name.as_str(), &report)])
             .expect("core producer");
     let output = Command::new(FSL)
         .arg("run")
