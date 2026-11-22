@@ -165,8 +165,8 @@ examples-check: examples-fetch
 # Run the install page and checked command examples in tutorial pages in a
 # disposable Ubuntu container. Pass the exact docs and examples checkouts under
 # review; FSL_BINARY selects a local release candidate instead of a download.
-FILAMENT_DOCS_DIR ?= $(CURDIR)/../filament-docs
-FILAMENT_EXAMPLES_DIR ?= $(CURDIR)/../filament-examples
+FILAMENT_DOCS_DIR ?= $(HOME)/dev/filament-docs
+FILAMENT_EXAMPLES_DIR ?= $(HOME)/dev/filament-examples
 FSL_BINARY ?=
 ALPHA_JOURNEY_BASE_IMAGE ?= ubuntu:22.04
 
