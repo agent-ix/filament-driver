@@ -125,7 +125,9 @@ jobs:
                 /^Version .* section/ { in_needs = 0 }
                 in_needs {
                   for (i = 1; i <= NF; i++) {
-                    if ($i ~ /^GLIBC_[0-9]+(\.[0-9]+)+$/) {
+                    if ($i == "GLIBC_PRIVATE") {
+                      private_required = 1
+                    } else if ($i ~ /^GLIBC_[0-9]+(\.[0-9]+)+$/) {
                       version = $i
                       sub(/^GLIBC_/, "", version)
                       if (maximum == "" || version_greater(version, maximum)) {
@@ -135,6 +137,10 @@ jobs:
                   }
                 }
                 END {
+                  if (private_required) {
+                    printf "ERROR: %s requires GLIBC_PRIVATE\n", binary
+                    exit 1
+                  }
                   if (maximum == "") {
                     printf "%s: no GLIBC versioned requirements\n", binary
                     exit 0
