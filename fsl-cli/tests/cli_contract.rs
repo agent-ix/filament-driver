@@ -2885,7 +2885,7 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
             }},
             "call": {
                 "function": "sq",
-                "arguments": [{"parameter": "x", "value": 3}],
+                "arguments": [{"parameter": "x", "value": {"type":"integer","value":"3"}}],
                 "requirements": {}
             }
         }
@@ -2914,7 +2914,9 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
         "the provider entry settles every default requirement item: {default_document}"
     );
     assert!(
-        default_document.to_string().contains(r#"{"integer":"16"}"#),
+        default_document
+            .to_string()
+            .contains(r#"{"type":"integer","value":"16"}"#),
         "the call's value is 16: {default_document}"
     );
     assert_requirement_reference_oracle(&request_path, &without_limit);
@@ -3036,7 +3038,7 @@ function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }
     std::fs::write(&request, serde_json::json!({"format": "native-run/1", "request": {
         "models": [], "program": {"source": {"file": source, "authority": "agent-ix",
             "identity": "test:reserved-reference", "document": "Requirements", "formal_revision": 1}},
-        "call": {"function": "sq", "arguments": [{"parameter": "x", "value": 3}], "requirements": {}}
+        "call": {"function": "sq", "arguments": [{"parameter": "x", "value": {"type":"integer","value":"3"}}], "requirements": {}}
     }}).to_string()).expect("requirement request");
     let config = directory.0.join("providers.json");
     let shutdown = directory.0.join("shutdown");

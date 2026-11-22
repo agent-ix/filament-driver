@@ -1892,20 +1892,16 @@ fn analyze_text_mode_prints_item_lines() {
 }
 
 /// Run a function of the driver’s sample-reading program through the CLI.
-fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde_json::Value) {
-    let directory = TestDirectory(
-        std::env::temp_dir().join(format!("fsl-run-value-{function}-{}", std::process::id())),
-    );
-    let _ = std::fs::remove_dir_all(&directory.0);
-    std::fs::create_dir_all(&directory.0).expect("a request folder");
+fn run_value(function: &str, arguments: serde_json::Value) -> serde_json::Value {
+    let directory = tempfile::tempdir().expect("a request folder");
     let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/run-sample.fsl");
     let request = serde_json::json!({"format": "native-run/1", "request": {
         "models": [],
         "program": {"source": {"file": source, "authority": "issuer",
             "identity": "document", "document": "Sample", "formal_revision": 1}},
-        "call": {"function": function, "arguments": [{"parameter": "input", "value": argument}]},
+        "call": {"function": function, "arguments": arguments},
     }});
-    let path = directory.0.join("run.json");
+    let path = directory.path().join("run.json");
     std::fs::write(&path, request.to_string()).expect("the request file");
     let output = fsl(&[
         "run",
@@ -1916,46 +1912,79 @@ fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("one outcome document");
     assert_eq!(output.status.code(), Some(0), "{function}: {document}");
-    assert_eq!(document["category"], "success", "{document}");
+    assert_eq!(document["category"], "success", "{function}: {document}");
+    document["result"].clone()
+}
+
+fn assert_run_value(function: &str, argument: serde_json::Value, expected: serde_json::Value) {
     assert_eq!(
-        document["result"],
+        run_value(
+            function,
+            serde_json::json!([{"parameter": "input", "value": argument}])
+        ),
         serde_json::json!({"kind": "completed", "value": expected}),
-        "{function}: {document}"
+        "{function}"
     );
 }
 
-/// Each accessor extracts a different type from this one native record.
-fn sample() -> serde_json::Value {
-    serde_json::json!({"record": {"type": "Sample", "fields": {
-        "ratio": {"kind": "rational", "numerator": "4", "denominator": "6"},
-        "price": {"kind": "decimal", "coefficient": "150", "scale": "2"},
-        "gain": {"kind": "float64", "bits": "3ff0000000000000"},
-        "code": {"kind": "string", "text": "abc"},
-        "label": {"kind": "text", "text": "e\u{0301}"},
-        "light": {"variant": {"type": "Light", "case": "Green"}},
-        "point": {"record": {"type": "Point", "fields": {
-            "x": {"integer": "1"}, "y": {"integer": "2"}}}},
-        "pair": {"tuple": {"type": "Pair", "components": [{"integer": "2"}, {"integer": "1"}]}},
-        "readings": {"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]},
-        "channels": {"set": [{"integer": "3"}, {"integer": "1"}]},
-        "opening": {"present": {"integer": "3"}},
-        "last": {"absent": {}}
-    }}})
+fn sample_field(sample: &serde_json::Value, name: &str) -> serde_json::Value {
+    sample["fields"]
+        .as_array()
+        .expect("canonical record fields")
+        .iter()
+        .find(|field| field["name"] == name)
+        .expect("the sample field")["value"]
+        .clone()
 }
 
-/// FSL FR-650-AC-1: Boolean arguments in either spelling produce a Boolean result.
+/// Use the public writer's declaration names, as the owner's run-value spelling tests do.
+fn sample() -> serde_json::Value {
+    let result = run_value(
+        "fixtureSample",
+        serde_json::json!([
+            {"parameter":"ratio", "value":{"type":"rational", "numerator":"4", "denominator":"6"}},
+            {"parameter":"price", "value":{"type":"decimal", "coefficient":"150", "scale":"2"}},
+            {"parameter":"gain", "value":{"type":"float64", "bits":"3ff0000000000000"}},
+            {"parameter":"code", "value":{"type":"string", "value":"abc"}},
+            {"parameter":"label", "value":{"type":"text", "value":"e\u{0301}"}}
+        ]),
+    );
+    assert_eq!(result["kind"], "completed", "{result}");
+    let mut sample = result["value"].clone();
+    assert_eq!(sample["type"], "record", "{sample}");
+    for field in sample["fields"]
+        .as_array_mut()
+        .expect("canonical record fields")
+    {
+        match field["name"].as_str().expect("a field name") {
+            "ratio" => {
+                field["value"]["numerator"] = serde_json::json!("4");
+                field["value"]["denominator"] = serde_json::json!("6");
+            }
+            "label" => field["value"]["value"] = serde_json::json!("e\u{0301}"),
+            "channels" => field["value"]["elements"]
+                .as_array_mut()
+                .expect("set elements")
+                .reverse(),
+            _ => {}
+        }
+    }
+    sample
+}
+
+/// FSL FR-650-AC-1: Canonical Boolean arguments produce a Boolean result.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_boolean_result() {
     assert_run_value(
         "negate",
-        serde_json::json!({"boolean": false}),
-        serde_json::json!({"boolean": true}),
+        serde_json::json!({"type":"boolean","value":false}),
+        serde_json::json!({"type":"boolean","value":true}),
     );
     assert_run_value(
         "negate",
-        serde_json::json!(1),
-        serde_json::json!({"boolean": false}),
+        serde_json::json!({"type":"boolean","value":true}),
+        serde_json::json!({"type":"boolean","value":false}),
     );
 }
 
@@ -1966,13 +1995,61 @@ fn run_returns_boolean_result() {
 fn run_returns_integer_result() {
     assert_run_value(
         "successor",
-        serde_json::json!(6),
-        serde_json::json!({"integer": "7"}),
+        serde_json::json!({"type":"integer","value":"6"}),
+        serde_json::json!({"type":"integer","value":"7"}),
     );
     assert_run_value(
         "successor",
-        serde_json::json!({"integer": "1267650600228229401496703205375"}),
-        serde_json::json!({"integer": "1267650600228229401496703205376"}),
+        serde_json::json!({"type":"integer","value":"1267650600228229401496703205375"}),
+        serde_json::json!({"type":"integer","value":"1267650600228229401496703205376"}),
+    );
+}
+
+/// The canonical command boundary refuses legacy argument spellings before execution.
+#[trace("FR-650-AC-18")]
+#[test]
+fn run_refuses_a_bare_integer_argument_with_the_owner_refusal() {
+    let directory = tempfile::tempdir().expect("a request folder");
+    let source = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/run-sample.fsl");
+    let value = serde_json::json!(3);
+    let path = directory.path().join("run.json");
+    std::fs::write(
+        &path,
+        serde_json::json!({"format":"native-run/1", "request":{
+            "models":[], "program":{"source":{"file":source,"authority":"issuer",
+                "identity":"document","document":"Sample","formal_revision":1}},
+            "call":{"function":"successor","arguments":[{"parameter":"input","value":value}]}
+        }})
+        .to_string(),
+    )
+    .expect("the untagged request");
+    let error = fsl_command::command::prepare_run_with_overrides(
+        &path,
+        fsl_command::command::RunLimits::default(),
+        &fsl_command::command::RequestOverrides::default(),
+    )
+    .err()
+    .expect("the owner refuses a bare argument before preparing a call");
+    let expected = error.outcome_document(fsl_replay::Operation::Execute);
+    let output = fsl(&[
+        "run",
+        path.to_str().expect("UTF-8 path"),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert_eq!(
+        output.status.code(),
+        Some(i32::from(expected.category().exit_code()))
+    );
+    assert_eq!(
+        output.stdout,
+        format!(
+            "{}\n",
+            ix_cli_kit::json::encode_canonical(&expected, false)
+                .expect("the owner refusal document")
+        )
+        .as_bytes()
     );
 }
 
@@ -1983,7 +2060,7 @@ fn run_returns_rational_result() {
     assert_run_value(
         "ratioOf",
         sample(),
-        serde_json::json!({"kind": "rational", "numerator": "2", "denominator": "3"}),
+        serde_json::json!({"type": "rational", "numerator": "2", "denominator": "3"}),
     );
 }
 
@@ -1991,7 +2068,7 @@ fn run_returns_rational_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_decimal_result() {
-    let value = serde_json::json!({"kind": "decimal", "coefficient": "150", "scale": "2"});
+    let value = serde_json::json!({"type": "decimal", "coefficient": "150", "scale": "2"});
     assert_run_value("priceOf", sample(), value);
 }
 
@@ -1999,7 +2076,7 @@ fn run_returns_decimal_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_float_result() {
-    let value = serde_json::json!({"kind": "float64", "bits": "3ff0000000000000"});
+    let value = serde_json::json!({"type": "float64", "bits": "3ff0000000000000"});
     assert_run_value("gainOf", sample(), value);
 }
 
@@ -2007,7 +2084,7 @@ fn run_returns_float_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_string_result() {
-    let value = serde_json::json!({"kind": "string", "text": "abc"});
+    let value = serde_json::json!({"type": "string", "value": "abc"});
     assert_run_value("codeOf", sample(), value);
 }
 
@@ -2018,15 +2095,17 @@ fn run_returns_text_result() {
     assert_run_value(
         "labelOf",
         sample(),
-        serde_json::json!({"kind": "text", "text": "\u{00e9}"}),
+        serde_json::json!({"type": "text", "value": "\u{00e9}"}),
     );
 }
 
-/// FSL FR-650-AC-1: an enumeration result is the variant form.
+/// FSL FR-650-AC-1: an enumeration result uses its producer-issued declaration name.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_enum_result() {
-    let value = serde_json::json!({"variant": {"type": "Light", "case": "Green"}});
+    let value = sample_field(&sample(), "light");
+    assert_eq!(value["type"], "enum");
+    assert_eq!(value["member"], "Green");
     assert_run_value("lightOf", sample(), value);
 }
 
@@ -2034,8 +2113,11 @@ fn run_returns_enum_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_record_result() {
-    let value = serde_json::json!({"record": {"type": "Point", "fields": {
-        "x": {"integer": "1"}, "y": {"integer": "2"}}}});
+    let mut value = sample_field(&sample(), "point");
+    value["fields"] = serde_json::json!([
+        {"name":"x","value":{"type":"integer","value":"1"}},
+        {"name":"y","value":{"type":"integer","value":"2"}}
+    ]);
     assert_run_value("pointOf", sample(), value);
 }
 
@@ -2043,9 +2125,10 @@ fn run_returns_record_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_tuple_result() {
-    let value = serde_json::json!({"tuple": {"type": "Pair", "components": [
-        {"integer": "2"}, {"integer": "1"}
-    ]}});
+    let mut value = sample_field(&sample(), "pair");
+    value["components"] = serde_json::json!([
+        {"type":"integer","value":"2"}, {"type":"integer","value":"1"}
+    ]);
     assert_run_value("pairOf", sample(), value);
 }
 
@@ -2053,8 +2136,7 @@ fn run_returns_tuple_result() {
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_sequence_result() {
-    let value =
-        serde_json::json!({"sequence": [{"integer": "2"}, {"integer": "1"}, {"integer": "2"}]});
+    let value = serde_json::json!({"type":"sequence","elements":[{"type":"integer","value":"2"},{"type":"integer","value":"1"},{"type":"integer","value":"2"}]});
     assert_run_value("readingsOf", sample(), value);
 }
 
@@ -2065,17 +2147,17 @@ fn run_returns_set_result() {
     assert_run_value(
         "channelsOf",
         sample(),
-        serde_json::json!({"set": [{"integer": "1"}, {"integer": "3"}]}),
+        serde_json::json!({"type":"set","elements":[{"type":"integer","value":"1"},{"type":"integer","value":"3"}]}),
     );
 }
 
-/// FSL FR-650-AC-1: an Option result is `present` or `absent`.
+/// FSL FR-650-AC-1: an Option result carries its value or null.
 #[trace("TC-1700", "FR-650-AC-1")]
 #[test]
 fn run_returns_option_result() {
-    let present = serde_json::json!({"present": {"integer": "3"}});
+    let present = serde_json::json!({"type":"option","value":{"type":"integer","value":"3"}});
     assert_run_value("firstOf", sample(), present);
-    let absent = serde_json::json!({"absent": {}});
+    let absent = serde_json::json!({"type":"option","value":null});
     assert_run_value("lastOf", sample(), absent);
 }
 
@@ -2539,7 +2621,7 @@ fn run_takes_the_integer_division_law_from_its_request() {
             "program": {"source": {"file": unit, "authority": "test", "identity": "division",
                 "document": "Division", "formal_revision": 1}},
             "call": {"function": "q", "arguments": [
-                {"parameter": "a", "value": -7}, {"parameter": "b", "value": 3}]}}})
+                {"parameter": "a", "value": {"type":"integer","value":"-7"}}, {"parameter": "b", "value": {"type":"integer","value":"3"}}]}}})
         .to_string(),
     )
     .expect("the run request");
@@ -2550,10 +2632,13 @@ fn run_takes_the_integer_division_law_from_its_request() {
         .output()
         .expect("run fsl");
     assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains("\"-3\""),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one division outcome");
+    assert_eq!(
+        document["result"],
+        serde_json::json!({
+            "kind":"completed", "value":{"type":"integer","value":"-3"}
+        })
     );
 }
 
