@@ -30,3 +30,9 @@ function readingsOf using v(input: Sample): Sequence<Channel>[0, 3] pure { input
 function channelsOf using v(input: Sample): Set<Channel>[0, 3] pure { input.channels }
 function firstOf using v(input: Sample): Option<Channel> pure { input.opening }
 function lastOf using v(input: Sample): Option<Channel> pure { input.last }
+
+function fixtureSample using v(ratio: Ratio, price: Price, gain: Gain, code: String, label: Label): Sample pure {
+    Sample { ratio: ratio, price: price, gain: gain, code: code, label: label,
+        light: Light::Green, point: Point { x: 1, y: 2 }, pair: Pair(2, 1),
+        readings: sequence[2, 1, 2], channels: set[3, 1], opening: Some(3), last: absent }
+}

@@ -513,6 +513,7 @@ fn machine_run_writes_the_canonical_fsl_outcome() {
             clocks: Default::default(),
             live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             wire_arguments: Vec::new(),
+            canonical_values: true,
             snapshot: None,
         },
         integer_division: None,
@@ -739,7 +740,7 @@ fn provider_run(
             "program": {"source": {"file": source, "authority": "agent-ix",
                 "identity": "test:provider-run", "document": "ProviderRun",
                 "formal_revision": 1}},
-            "call": {"function": "Even", "arguments": [{"parameter": "n", "value": 3}],
+            "call": {"function": "Even", "arguments": [{"parameter": "n", "value": {"type":"integer","value":"3"}}],
                 "requirements": {"backend": PROVIDER_BACKEND}}}})
         .to_string(),
     )

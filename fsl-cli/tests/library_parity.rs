@@ -172,6 +172,7 @@ fn library_execute_with_law(
             clocks: Default::default(),
             live_occurrences: fsl_replay::spine::DEFAULT_LIVE_OCCURRENCES,
             wire_arguments: Vec::new(),
+            canonical_values: true,
             snapshot: None,
         },
         integer_division,
@@ -230,11 +231,17 @@ fn binary_outcomes_equal_the_library_outcomes_for_one_value_source() {
     let compile_request = requests::request(&path, None);
     let p_request = requests::request(
         &path,
-        Some(("p", serde_json::json!([{"parameter":"x","value":3}]))),
+        Some((
+            "p",
+            serde_json::json!([{"parameter":"x","value":{"type":"integer","value":"3"}}]),
+        )),
     );
     let q_request = requests::request(
         &path,
-        Some(("q", serde_json::json!([{"parameter":"x","value":7}]))),
+        Some((
+            "q",
+            serde_json::json!([{"parameter":"x","value":{"type":"integer","value":"7"}}]),
+        )),
     );
     let packaged = library_package(&path, bytes);
     assert_eq!(i32::from(packaged.category().exit_code()), success);
@@ -253,7 +260,7 @@ fn binary_outcomes_equal_the_library_outcomes_for_one_value_source() {
         serde_json::from_slice(&output.stdout).expect("run prints one JSON document");
     assert_eq!(
         document["result"]["value"],
-        serde_json::json!({"boolean": true})
+        serde_json::json!({"type":"boolean","value":true})
     );
     assert_eq!(output.stdout, fsl(&["run", p_request.as_str()]).stdout);
 
@@ -354,7 +361,7 @@ fn binary_run_equals_the_library_run_under_each_integer_division_law() {
                 "program": {"source": {"authority": "filament", "identity": path,
                     "file": source_path, "document": "Division", "formal_revision": 1}},
                 "call": {"function": "q", "arguments": [
-                    {"parameter": "a", "value": -7}, {"parameter": "b", "value": 3}]}}})
+                    {"parameter": "a", "value": {"type":"integer","value":"-7"}}, {"parameter": "b", "value": {"type":"integer","value":"3"}}]}}})
             .to_string(),
         );
         let admitted = fsl_replay::admit_integer_division(&[role.reference()], None)
@@ -373,7 +380,7 @@ fn binary_run_equals_the_library_run_under_each_integer_division_law() {
             serde_json::from_slice(&output.stdout).expect("run prints one JSON document");
         assert_eq!(
             document["result"],
-            serde_json::json!({"kind": "completed", "value": {"integer": expected_value}}),
+            serde_json::json!({"kind": "completed", "value": {"type":"integer","value": expected_value}}),
             "{law}: {document}"
         );
     }
