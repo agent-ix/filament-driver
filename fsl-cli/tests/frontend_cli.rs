@@ -2338,6 +2338,53 @@ fn core_clause_text_as_run(request_path: &std::path::Path) -> String {
     format!("run: {rest}")
 }
 
+/// The FSL FR-865 text of `fsl check` over `source_path`, rendered by the core
+/// library from the document it builds for the same source.
+fn core_check_text(source_path: &str) -> String {
+    use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
+    use fsl_replay::OutcomeDocument;
+    let bytes = std::fs::read(source_path).expect("the check source");
+    let source = fsl_foundation::SourceIdentity::new("filament", source_path);
+    let limits = SpineLimits::default();
+    let cancel = filament_exact::Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &source,
+            path: source_path,
+            bytes: &bytes,
+        },
+        limits.source,
+        &cancel,
+    )
+    .expect("parse")
+    .into_value();
+    let packages =
+        fsl_semantics::model::intake::package_input(Vec::<&[u8]>::new()).expect("no models");
+    let selected = select(&parsed, &packages, limits.model, &cancel)
+        .expect("select")
+        .into_value();
+    let checked = check(
+        &parsed,
+        "filament".to_owned(),
+        &selected,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    );
+    let document = OutcomeDocument::from_check(&checked);
+    fsl_inspect::render_outcome(
+        &document,
+        fsl_inspect::RenderForm::Text,
+        &fsl_inspect::RenderSources::from_sources([]),
+        fsl_replay::RenderLimits::default(),
+        &cancel,
+    )
+    .expect("the FR-865 rendering")
+    .into_value()
+    .as_str()
+    .to_owned()
+}
+
 #[trace("TC-040", "FR-002-AC-13")]
 #[trace("TC-2456", "FR-865-AC-3")]
 #[trace("TC-2456", "FR-865-AC-4")]
@@ -2408,6 +2455,11 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     assert_eq!(
         String::from_utf8_lossy(&check.stdout).lines().next(),
         Some("check: success (exit 0) at S4")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&check.stdout),
+        core_check_text(SOURCE),
+        "the whole check text is the FR-865 rendering of the same document"
     );
 
     let analyze = AnalyzeRequest::new("first-lines", one_item("BelowThree"), serde_json::json!({}));
