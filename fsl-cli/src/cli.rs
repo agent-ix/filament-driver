@@ -100,7 +100,12 @@ fn version_exit_code() -> ExitCode {
         return process_exit_code(Category::Success);
     }
 
-    let version = concat!(env!("CARGO_PKG_VERSION"), "\n");
+    let version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        "\nFSL revision: ",
+        env!("FSL_PINNED_REVISION"),
+        "\n"
+    );
     process_exit_code(write_primary_output(
         version.as_bytes(),
         "package version",
