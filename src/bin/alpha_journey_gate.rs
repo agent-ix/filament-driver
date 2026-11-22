@@ -569,7 +569,7 @@ fn page_literal_commands(page: &Path, system: &str, source: &str) -> Vec<Literal
             }
             in_text_block = false;
         } else if in_text_block {
-            lines.push(line.to_owned());
+            lines.push(line);
         }
     }
     commands
