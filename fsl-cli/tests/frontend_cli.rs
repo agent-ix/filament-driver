@@ -2300,6 +2300,45 @@ fn unsupported_package_result_refuses_at_call() {
     );
 }
 
+/// The FSL FR-865 text of the clause run the request at `request_path` makes,
+/// rendered by the core library from the same document the CLI writes, with
+/// the header operation replaced by the invoked command `run`.
+fn core_clause_text_as_run(request_path: &std::path::Path) -> String {
+    use fsl_command::command::{prepare_run, PreparedRun, RunLimits};
+    use fsl_replay::spine::ClauseRunSelection;
+    use fsl_replay::{OutcomeDocument, OutcomeStage};
+    let PreparedRun::Clause(request) =
+        prepare_run(request_path, RunLimits::default()).expect("prepare the clause request")
+    else {
+        panic!("a clause request is not a function call");
+    };
+    let ClauseRunSelection::CanonicalFunction { ref name, .. } = request.selection else {
+        panic!("canonical function claim");
+    };
+    let name = name.clone();
+    let report = fsl_replay::spine::run_clause(*request.into_request()).expect("the clause report");
+    let document =
+        OutcomeDocument::from_clause_runs(Some(OutcomeStage::S6a), [(name.as_str(), &report)])
+            .expect("the core producer's document");
+    let rendered = fsl_inspect::render_outcome(
+        &document,
+        fsl_inspect::RenderForm::Text,
+        &fsl_inspect::RenderSources::from_sources([]),
+        fsl_replay::RenderLimits::default(),
+        &filament_exact::Cancel::new(),
+    )
+    .expect("the FR-865 rendering")
+    .into_value()
+    .as_str()
+    .to_owned();
+    let (header, rest) = rendered
+        .split_once(": ")
+        .expect("the rendering has a header");
+    assert_eq!(header, "monitor", "FSL names the operation");
+    format!("run: {rest}")
+}
+
+#[trace("TC-040", "FR-002-AC-13")]
 #[trace("TC-2456", "FR-865-AC-3")]
 #[trace("TC-2456", "FR-865-AC-4")]
 #[trace("TC-036", "FR-621-AC-6")]
@@ -2357,6 +2396,11 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     assert_eq!(
         String::from_utf8_lossy(&run.stdout).lines().next(),
         Some("run: success (exit 0) at S6a")
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        core_clause_text_as_run(&run_request_path),
+        "the rest of the text is the FR-865 rendering of the same document"
     );
 
     let check = fsl(&["check", SOURCE, "--format", "text"]);
@@ -2428,6 +2472,7 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     );
 }
 
+#[trace("TC-2456", "FR-865-AC-3")]
 #[trace("TC-2456", "FR-865-AC-4")]
 #[test]
 fn check_compile_and_run_default_to_the_text_form_of_the_json_document() {

@@ -71,8 +71,10 @@ the fallback when that function returns reserved value `5`.
   failure or signal-terminated active plugin invocation writes no outcome
   document or text result. Text is the default output format: without
   `--format`, parse, check, compile and run write the FSL FR-865 text form
-  of the same `filament-outcome/1` document that `--format json` writes, and
-  analyze and monitor write the text forms FR-022 and FR-025 give them.
+  of the same `filament-outcome/1` document that `--format json` writes, with the header naming the invoked command, and
+  analyze and monitor write the text forms FR-022 and FR-025 give them. The
+  header departs from FSL FR-865, whose header names the operation
+  (`execute` for `fsl run`); the JSON `operation` is unchanged.
 - Root help text for a help invocation, as specified by AC-17 and AC-24, and
   one verb's section of that help for `fsl <verb> --help`, as specified by
   AC-25; help does not produce a lifecycle outcome document.
