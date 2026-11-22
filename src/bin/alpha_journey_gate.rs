@@ -1,3 +1,5 @@
+//! Execute the alpha install and tutorial journeys in a clean container.
+
 use serde_json::Value;
 use std::collections::{hash_map::Entry, HashMap};
 use std::env;
@@ -626,10 +628,12 @@ fn render_output(value: &Value, exit: i32, view: &OutputView) -> Result<String, 
                 .map(|item| {
                     let name = item
                         .get("clause")
+                        .or_else(|| item.get("claim_name"))
                         .or_else(|| value.get("category"))
                         .ok_or_else(|| "summary item has no clause or category".to_owned())?;
                     let result = item
                         .get("result")
+                        .or_else(|| item.get("record").and_then(|record| record.get("result")))
                         .ok_or_else(|| "summary item has no result".to_owned())?;
                     Ok(format!(
                         "{}: {}, exit {exit}",
