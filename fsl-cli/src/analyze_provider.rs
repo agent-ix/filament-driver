@@ -82,10 +82,14 @@ impl SessionProvider {
                 .iter()
                 .zip(request.targets())
                 .map(|(item, target)| match target {
-                    ProviderTarget::Value(target) => {
-                        verdict(&results.items, item.index(), backend, target)
-                            .unwrap_or(ProviderVerdict::Unknown)
-                    }
+                    ProviderTarget::Value(target) => verdict(
+                        &results.items,
+                        item.index(),
+                        backend,
+                        target,
+                        request.package().bytes(),
+                    )
+                    .unwrap_or(ProviderVerdict::Unknown),
                     // This adapter admits only value-validity verdicts; a
                     // contract target has no value-parameter assignment here.
                     ProviderTarget::Contract(_) => ProviderVerdict::Unknown,
@@ -129,6 +133,7 @@ fn verdict(
     index: RequestIndex,
     backend: &BackendId,
     target: &ValueTarget<'_>,
+    package: &[u8],
 ) -> Option<ProviderVerdict> {
     let outcome = results
         .iter()
@@ -147,7 +152,7 @@ fn verdict(
             capability_kind,
             kind: Fr331ResultKind::Refuted,
         } if capability_kind == VALUE_VALIDITY => {
-            counterexample(index, backend, target, &outcome.response)
+            counterexample(index, backend, target, &outcome.response, package)
         }
         _ => None,
     }
@@ -187,6 +192,7 @@ fn counterexample(
     backend: &BackendId,
     target: &ValueTarget<'_>,
     response: &serde_json::Value,
+    package: &[u8],
 ) -> Option<ProviderVerdict> {
     let index = u64::try_from(index.get()).ok()?;
     let entry = response
@@ -201,7 +207,13 @@ fn counterexample(
                 && entry.get("backend").and_then(serde_json::Value::as_str)
                     == Some(backend.as_str())
         })?;
-    let assignments = fsl_replay::read_plugin_assignments(entry).ok()?;
+    // FSL writes node ids in the document-held form (`{"node": i}` index
+    // segments into the package graph, FSpec FR-322), and the provider
+    // answers in that form. The reader and the target parameters compare
+    // structural keys, so the ids are resolved against the package graph
+    // first.
+    let entry = structural_entry(entry, package)?;
+    let assignments = fsl_replay::read_plugin_assignments(&entry).ok()?;
     let values = target
         .parameters()
         .iter()
@@ -255,4 +267,24 @@ impl std::fmt::Debug for HybridSessionProvider {
             .debug_struct("HybridSessionProvider")
             .finish_non_exhaustive()
     }
+}
+
+/// `entry` with each assignment's `parameter` resolved from its document-held
+/// form to the structural node key of the package graph. `None` when the
+/// package has no readable graph or an id does not resolve.
+fn structural_entry(entry: &serde_json::Value, package: &[u8]) -> Option<serde_json::Value> {
+    let graph = fsl_semantics::check::wire_id::WireGraph::of_package_bytes(package).ok()?;
+    let mut entry = entry.clone();
+    if let Some(values) = entry
+        .get_mut("counterexample")
+        .and_then(|counterexample| counterexample.get_mut("values"))
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for assignment in values {
+            if let Some(parameter) = assignment.get_mut("parameter") {
+                *parameter = graph.structural_value(parameter).ok()?;
+            }
+        }
+    }
+    Some(entry)
 }

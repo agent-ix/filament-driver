@@ -2800,12 +2800,8 @@ fn analyze_external_provider_refutes_with_evidence() {
         "odd.fsl",
         &program,
     );
-    // The provider spells the parameter as an expanded node identity, which the
-    // document's own claim node holds as its third path segment.
-    let proved = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "proved"]);
-    let first: serde_json::Value =
-        serde_json::from_slice(&analyze_with_config(&request, &proved).stdout).expect("a document");
-    let parameter = first["items"][0]["request"]["claim"]["node"]["path"][2].to_string();
+    // The provider names the parameter by the node of its request item's
+    // unbounded domain; the driver resolves that document-held id.
     let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "refuted"]);
     let output = Command::new(FSL)
         .arg("analyze")
@@ -2813,7 +2809,6 @@ fn analyze_external_provider_refutes_with_evidence() {
         .arg("--provider-config")
         .arg(&config)
         .args(["--format", "json"])
-        .env("FSL_TEST_PROVIDER_PARAMETER", parameter)
         .output()
         .expect("run fsl analyze --provider-config");
     assert_eq!(output.status.code(), Some(10), "{output:?}");
