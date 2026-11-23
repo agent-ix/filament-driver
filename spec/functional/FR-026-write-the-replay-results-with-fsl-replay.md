@@ -29,7 +29,8 @@ relationships:
 reader through `fsl_command::command::run_with_providers`, and write the one
 FR-286 outcome document FSL returns for it: unchanged in machine mode, and in
 text mode as `fsl_inspect::render_outcome` renders that same document (FSL
-FR-865). The process exits with the outcome's FR-285 exit code. FR-023 states
+FR-865). Both success and refusal outcomes go to stdout, with nothing to
+stderr (FR-002). The process exits with the outcome's FR-285 exit code. FR-023 states
 the request's `clocks` refusal; this requirement states the verb's output.
 
 ### Decision: one document in both modes, rendered by FSL
@@ -47,6 +48,8 @@ from the JSON, and a change to the result's text is made once, in FSL.
 
 - One request-file operand; files the request names resolve against its
   folder (FSL FR-862).
+- Zero or more `--limit name=value` options, resolved and applied as FR-003
+  specifies.
 - `--format json` (machine mode) or `--format text` (the default),
   `--provider-config` and `--provider-limit` as FR-006 states.
 
@@ -56,7 +59,7 @@ from the JSON, and a change to the result's text is made once, in FSL.
   ix-cli-kit's canonical JSON followed by one newline, on stdout; for a replay
   that runs its `result` is FSL's `replayed` result, for a refused replay its
   `result` is `null` and it carries the refusal's diagnostic.
-- Text mode: `render_outcome`'s text of that same document, on stdout.
+- Text mode: `render_outcome`'s text of that same document on stdout.
 - The FR-285 exit code of the outcome's category, in both modes.
 
 ## Behavior
@@ -74,8 +77,12 @@ from the JSON, and a change to the result's text is made once, in FSL.
 - The driver SHALL refuse a request file whose `format` is not
   `native-replay/1` before FSL runs, as FR-023 states, with an outcome
   document written the same way.
-- No `fsl replay` invocation SHALL exit without writing a document or a
-  line to stdout.
+- The driver SHALL apply each accepted `--limit` override to the matching
+  exposed replay bound before calling FSL. A caller value overrides the
+  request value for that bound; other request values remain unchanged.
+- Every `fsl replay` invocation SHALL write either a document to stdout in
+  JSON mode or the selected text rendering of its outcome to stdout in text
+  mode; it SHALL write nothing to stderr for an outcome refusal.
 
 ## Acceptance Criteria
 
@@ -87,8 +94,8 @@ its input arm.
 | --- | --- | --- |
 | FR-026-AC-1 | `fsl replay <request> --format json` over the fixture writes stdout byte-equal to the canonical encoding of the outcome document `fsl_command::command::run` returns in process for the same request, followed by one newline: operation `replay`, category `success`, and `result` `{"kind": "replayed", "results": [R]}` with `R`'s `arm` `input` and `settlement` `reproduced-without-witness`; exit 0. | Test (TC-042) |
 | FR-026-AC-2 | The same request without `--format` writes stdout byte-equal to `render_outcome`'s text of AC-1's document, whose lines are `replay: success (exit 0) at S8` and `result 0: input reproduced-without-witness`; exit 0. | Test (TC-042) |
-| FR-026-AC-3 | The fixture request with `clocks` added writes in machine mode an outcome document with operation `replay`, category `refusal`, `result` `null` and an `invalid-request` diagnostic, and in text mode `render_outcome`'s text of that document, which holds no `result` line; both exit 20. | Test (TC-042) |
-| FR-026-AC-4 | A `native-run/1` request handed to `fsl replay` writes in text mode `render_outcome`'s text of the refusal document, a `replay: refusal (exit 20)` header and no `result` line, and exits 20, with no replay run. | Test (TC-042) |
+| FR-026-AC-3 | The fixture request with `clocks` added writes in machine mode one outcome document on stdout with operation `replay`, category `refusal`, `result` `null` and an `invalid-request` diagnostic, and nothing to stderr; in text mode it writes the selected text rendering of that refusal outcome to stdout and nothing to stderr. Both exit 20. | Test (TC-042) |
+| FR-026-AC-4 | A `native-run/1` request handed to `fsl replay` writes the selected text rendering of the refusal outcome to stdout in text mode and one refusal document to stdout in JSON mode, with no stderr in either mode; it exits 20 with no replay run. | Test (TC-042) |
 
 ## Dependencies
 

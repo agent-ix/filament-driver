@@ -35,14 +35,16 @@ Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28.
 3. For each verb that executes operations, take the union of all other
    verbs' entries plus `--version`, `-V`, `--color` and `--bogus`, drop the
    names in this verb's entry, and run `fsl <verb> p` with each remaining
-   name `p`.
+   name `p` in text and JSON mode; check stdout and stderr.
 4. Mutation probe, in the `fsl-cli` unit tests: for each verb, build a copy
    of the table with one option removed, run the verb's parser over an
    argument list using that option and run the help generator over the
    copy.
 5. Scan `fsl-cli`'s parsing source for string literals that start with `-`
    outside the table definition.
-6. Check that the `check` entry holds `--integer-division` and `--markdown`,
+6. Check that the `check` entry holds `--integer-division`, `--markdown` and
+   `--limit name=value`; the `analyze`, `monitor` and `replay` entries also
+   hold repeatable `--limit name=value`; check that
    the `parse` and `check` entries hold `--extensions <file>`, the `run`
    entry holds `--provider-limit name=value`, the `inspect` entry holds
    `--handoff <directory>`, and the `analyze`, `monitor`, `replay` and
@@ -72,8 +74,9 @@ unit test `removing_a_table_option_removes_it_from_parser_and_help`.
   no per-verb sections and omits `check --integer-division`,
   `check --markdown`, `run --provider-limit` and every `analyze`, `monitor`
   and `export` option.
-- Step 3: each `p` refuses `invalid-request`, exit 20, naming `p`. Fails
-  today: `run` accepts `--color`.
+- Step 3: each `p` refuses `invalid-request`, exit 20, naming `p`; in both
+  modes the refusal outcome is written to stdout in the selected format and
+  stderr is empty. Fails today: `run` accepts `--color`.
 - Step 4: the parser refuses the removed option, exit 20 naming it, and the
   generated help omits it.
 - Step 5: no such literal.

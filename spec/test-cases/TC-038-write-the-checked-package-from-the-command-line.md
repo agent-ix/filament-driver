@@ -26,12 +26,15 @@ FR-810-AC-4 (FSL TC-2297 step 4).
    documents (AC-1).
 3. Run with an existing target (AC-2), then with the member request and
    `--output` (AC-3).
-4. Run `fsl run`, `fsl check` and `fsl analyze` with `--output` (AC-4).
-5. Run `fsl compile` with `--output` twice and with no path (AC-5).
+4. Run `fsl run`, `fsl check` and `fsl analyze` with `--output` in text and
+   JSON mode (AC-4).
+5. Run `fsl compile` with `--output` twice and with no path, with no format
+   and with `--format json` (AC-5).
 6. Run `fsl compile --output` over a unit the checker refuses (AC-6).
 
 ## Expected Results
 
 - The `--output` file, the member's file and the library bytes are equal.
 - Each refusal exits 20 with its code and writes no file; an existing target
-  keeps its bytes.
+  keeps its bytes. Every refusal outcome is written to stdout in the selected
+  format and nothing is written to stderr.

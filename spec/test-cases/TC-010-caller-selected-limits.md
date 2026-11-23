@@ -20,7 +20,7 @@ accounting settings do not pass through stage bounds. The driver adds no
 namespace or aliases. The driver supports 64-bit hosts; it adds no platform
 overflow rule, and FSL owns bound application behavior on 32-bit hosts.
 
-Scope: FR-003-AC-1 through FR-003-AC-10.
+Scope: FR-003-AC-1 through FR-003-AC-11.
 
 ## Test Procedure
 
@@ -56,6 +56,10 @@ Scope: FR-003-AC-1 through FR-003-AC-10.
    input that exceeds a chosen stage limit. Through the driver's
    typed execution wrapper, inspect the returned `LimitExceeded` configured
    bound and `setting()`; then repeat with the limit raised to fit the input.
+5. Run the CLI fixtures for `analyze`, `monitor` and `replay` with a matching
+   `--limit` override and without it. Verify that the caller's value reaches
+   the matching operation bound, the request's other values are preserved,
+   and a setting unavailable to that operation refuses before work begins.
 
 Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 `fsl-cli/tests/binary_process.rs`.
@@ -81,3 +85,6 @@ Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
   `Incomplete`. The process status is selected by FSL's category exit
   function. Raising the source-byte bound to the fixture's byte length allows
   the operation to complete.
+- `run`, `check`, `analyze`, `monitor` and `replay` accept the repeatable
+  option; each forwards only accepted matching overrides and preserves other
+  request values.
