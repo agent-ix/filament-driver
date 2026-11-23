@@ -1,0 +1,53 @@
+{
+  "data": {
+    "verb_parse": {"from":"regex","path":"fsl-cli/src/cli.rs","pattern":"Self::Parse => \"(\\w+)\""},
+    "verb_check": {"from":"regex","path":"fsl-cli/src/cli.rs","pattern":"Self::Check => \"(\\w+)\""},
+    "verb_compile": {"from":"regex","path":"fsl-cli/src/cli.rs","pattern":"Self::Compile => \"(\\w+)\""},
+    "verb_run": {"from":"regex","path":"fsl-cli/src/cli.rs","pattern":"Self::Run => \"(\\w+)\""}
+  },
+  "figures": [
+    {
+      "id": "hero",
+      "width": 980, "height": 470,
+      "label": "The fsl command takes FSL source through parse, check and compile to a checked package, and its run verb evaluates a function to an outcome with an exit code. The driver library also reads the package back, routes it, negotiates with backends and generates code. The prove and generate commands and their verdict are planned.",
+      "items": [
+        {"k":"text","at":[0,12],"text":"FSL COMMAND · WORKS TODAY","role":"muted","size":12},
+        {"k":"box","at":[0,24,140,56],"role":"code","title":"FSL source","subs":[".native file"]},
+        {"k":"box","at":[180,24,110,56],"role":"logic","title":"{verb_parse}","subs":["fsl {verb_parse}"]},
+        {"k":"box","at":[330,24,110,56],"role":"logic","title":"{verb_check}","subs":["fsl {verb_check}"]},
+        {"k":"box","at":[480,24,130,56],"role":"logic","title":"{verb_compile}","subs":["fsl {verb_compile}"]},
+        {"k":"box","at":[650,24,190,56],"role":"model","title":"checked package","subs":["checked-package/v2"]},
+        {"k":"line","points":[[140,52],[177,52]],"role":"logic"},
+        {"k":"line","points":[[290,52],[327,52]],"role":"logic"},
+        {"k":"line","points":[[440,52],[477,52]],"role":"logic"},
+        {"k":"line","points":[[610,52],[647,52]],"role":"logic"},
+        {"k":"box","at":[180,140,130,56],"role":"logic","title":"{verb_run}","subs":["interpreter"]},
+        {"k":"box","at":[360,140,220,56],"role":"evidence","title":"outcome","subs":["result · exit code"]},
+        {"k":"line","points":[[70,80],[70,168],[177,168]],"role":"code"},
+        {"k":"line","points":[[310,168],[357,168]],"role":"logic"},
+        {"k":"text","at":[0,250],"text":"DRIVER LIBRARY · TESTED, NO COMMAND YET","role":"muted","size":12},
+        {"k":"line","points":[[745,80],[745,242]],"role":"model","arrow":false},
+        {"k":"line","points":[[370,242],[915,242]],"role":"model","arrow":false},
+        {"k":"line","points":[[435,242],[435,259]],"role":"model"},
+        {"k":"box","at":[370,262,130,56],"role":"logic","title":"read back","subs":["IR admission"]},
+        {"k":"line","points":[[595,242],[595,259]],"role":"model"},
+        {"k":"box","at":[530,262,130,56],"role":"logic","title":"route","subs":["candidates"]},
+        {"k":"line","points":[[755,242],[755,259]],"role":"model"},
+        {"k":"box","at":[690,262,130,56],"role":"logic","title":"negotiate","subs":["backends"]},
+        {"k":"line","points":[[915,242],[915,259]],"role":"model"},
+        {"k":"box","at":[850,262,130,56],"role":"logic","title":"generate","subs":["code · claims"]},
+        {"k":"line","points":[[500,290],[530,290]],"role":"logic"},
+        {"k":"line","points":[[660,290],[690,290]],"role":"logic"},
+        {"k":"line","points":[[820,290],[850,290]],"role":"logic"},
+        {"k":"text","at":[0,368],"text":"PLANNED","role":"muted","size":12},
+        {"k":"box","at":[780,380,200,56],"role":"logic","title":"fsl prove · generate","subs":["command verbs"],"dashed":true},
+        {"k":"line","points":[[915,318],[915,377]],"role":"logic","dashed":true},
+        {"k":"box","at":[480,380,240,56],"role":"evidence","title":"verdict","subs":["evidence from a backend"],"dashed":true},
+        {"k":"line","points":[[780,408],[723,408]],"role":"evidence","dashed":true},
+        {"k":"legend","at":[0,464],"entries":[["logic","works today","box"],["logic","planned","dash"]]}
+      ]
+    },
+    {"id":"ecosystem","construct":{"name":"ecosystem","here":"filament-driver"}}
+  ]
+}
+
