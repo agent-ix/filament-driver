@@ -61,6 +61,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/filament-driver/FR-027
     type: contains
+  - target: ix://agent-ix/filament-driver/FR-028
+    type: contains
   - target: ix://agent-ix/filament-driver/TC-033
     type: contains
   - target: ix://agent-ix/filament-driver/TC-034
@@ -78,6 +80,8 @@ relationships:
   - target: ix://agent-ix/filament-driver/TC-042
     type: contains
   - target: ix://agent-ix/filament-driver/TC-045
+    type: contains
+  - target: ix://agent-ix/filament-driver/TC-050
     type: contains
   - target: ix://agent-ix/filament-driver/TC-001
     type: contains
@@ -256,6 +260,7 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 | [FR-025](functional/FR-025-stream-observations-with-fsl-monitor.md) | Stream observations through fsl monitor |
 | [FR-026](functional/FR-026-write-the-replay-results-with-fsl-replay.md) | Write the replay outcome document and its text with fsl replay |
 | [FR-027](functional/FR-027-write-a-tla-or-lean-export-with-fsl-export.md) | Write a TLA+ or Lean export with fsl export --output and take in target evidence with --evidence |
+| [FR-028](functional/FR-028-print-a-minimal-request-with-example.md) | Print a minimal valid request with --example and make request refusals name every defect |
 | [TC-033](test-cases/TC-033-prepare-monitor-under-one-budget.md) | Prepare a monitor program from a plan root under one budget |
 | [TC-034](test-cases/TC-034-project-requirement-records-into-codegen.md) | Project FSL requirement records into CG's typed input |
 | [TC-035](test-cases/TC-035-examples-suite-gate.md) | Run the examples suite against the workspace-built fsl |
@@ -265,6 +270,7 @@ implementation; FR-013 specifies the in-repository plugin host; FR-014 specifies
 | [TC-039](test-cases/TC-039-stream-observations-with-fsl-monitor.md) | Stream observations with the fsl monitor verb |
 | [TC-042](test-cases/TC-042-write-the-replay-results-from-the-command-line.md) | Write the replay outcome document and its text with fsl replay |
 | [TC-045](test-cases/TC-045-write-a-tla-or-lean-export-from-the-command-line.md) | Write a TLA+ or Lean export with fsl export |
+| [TC-050](test-cases/TC-050-print-a-request-example-and-name-request-defects.md) | Print a request example and name every request defect |
 | [TC-001](test-cases/TC-001-steps-run-in-order.md) | The steps run in ADR-011 T-13 order |
 | [TC-002](test-cases/TC-002-unknown-backend-refusal.md) | An unknown `BackendId` refuses the run before negotiation |
 | [TC-003](test-cases/TC-003-route-after-negotiation.md) | `route` runs after negotiation, for `supported` items only |

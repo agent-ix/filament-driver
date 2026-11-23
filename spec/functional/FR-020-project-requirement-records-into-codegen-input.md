@@ -36,15 +36,15 @@ main) and the driver implements this requirement against them.
 
 - The FSL `RequirementItem` at each request index
   (`fsl_route::request::RequirementItem`): `occurrence()`, `result_bound()`
-  (a FSL `NodeKey`), `conversion_context()` and `path_condition()`
-  (ordered `PathGuard`s, each an `OccurrenceKey` and `holds`).
+  (a FSL `NodeKey`), `conversion_context()` and the terminal
+  `path_condition_frame()` id (or none for an empty path).
 - The compiled package's checked requirement records
   (`CheckedGraph::requirements()`, a `RequirementMap` keyed by
   `OccurrenceKey` and `Capability`: one record per occurrence and
   capability, and different capabilities may share one occurrence, for
   example a temporal-satisfaction and an operation-contract record, FSL
   `RequirementMap`). Each record has a `ResultBound::node()`, a
-  `conversion_context` and a `path_condition`. CG's `RequirementRecords`
+  `conversion_context` and a terminal `path_condition_frame` id. CG's `RequirementRecords`
   is keyed by occurrence alone, so only one capability projects: the
   `value-validity` records, which are the scalar claims a `value-validity`
   Kani item makes. CG's `V2ScalarClaim` preflight requires an
@@ -52,6 +52,8 @@ main) and the driver implements this requirement against them.
   `operation-contract` and `temporal-satisfaction` records at `Claim`-role
   occurrences, so an item of those capabilities settles `InvalidRequest` at
   negotiation as it does today and is not routed to generation.
+- The same `RequirementMap::path_condition_frames()` table and each FSL
+  item's `path_condition_frame()` terminal id (FSL FR-062 and FR-075).
 - The E5-admitted `CheckedPackageV2`, whose source frame is the one every
   projected node id is expressed in.
 - FR-010's partition: which items the export bound and which it refused.
@@ -61,13 +63,14 @@ main) and the driver implements this requirement against them.
 - For each export-bound `value-validity` item that has a record, selected
   with `OwnResult`, a CG
   `RoutedRequirement { occurrence, result_bound, conversion_context,
-  path_condition }` is projected, and attached with
+  path_condition_frame }` is projected, and attached with
   `RoutedGenerationItem::with_requirement` to the generation item of each
   such item that negotiation routes to Kani.
 - On `KaniGenerationContext.requirement_records`, one CG `RequirementRecords`
   holding one `RequirementRecordInput { result_bound, conversion_context,
-  path_condition }` for every `value-validity` record of the package, keyed
-  by `RequirementOccurrence { node_id, role, ordinal }`.
+  path_condition_frame }` for every `value-validity` record of the package,
+  keyed by `RequirementOccurrence { node_id, role, ordinal }`, and the one
+  admitted `path_condition_frames` table shared by all of those entries.
 - The requirements and the records come from one driver projection function, run in
   `lower_driver_request` over the export-bound items before negotiation,
   because the guard `ContextRoot` positions are lowering roots that bind
@@ -104,13 +107,16 @@ main) and the driver implements this requirement against them.
   `RequirementItem` that produced that request index: `occurrence` from the
   item's occurrence; `result_bound` from the item's result-bound `NodeKey`;
   `conversion_context` from the item's conversion occurrence (`None` only
-  when the item has none); and `path_condition` from the item's guards, one
-  `RequirementGuard { occurrence, holds }` per `PathGuard`, in FSL's
-  outermost-first order with each `holds` value unchanged.
+  when the item has none); and `path_condition_frame` from its terminal frame
+  id, with no per-item guard vector. The shared table is taken from the same
+  admitted package that supplies the node mapping.
 - The driver SHALL build `RequirementRecords` from every `value-validity`
   record of the compiled package's own `requirements()`, projecting each
-  record's `ResultBound::node()`, conversion occurrence and path condition
-  exactly as for an item. It SHALL NOT project a record of another
+  record's `ResultBound::node()`, conversion occurrence and terminal frame id
+  exactly as for an item, and SHALL pass the package's frame table once. A
+  consumer may walk parent links to obtain the outermost-first guards; the
+  driver SHALL NOT expand a frame chain into a per-record vector. It SHALL NOT
+  project a record of another
   capability, because two capabilities can share one occurrence and CG's map
   holds one record per occurrence. It SHALL NOT build a record from an
   item, from the checked graph, or from any source other than FSL's record.
@@ -177,26 +183,27 @@ main) and the driver implements this requirement against them.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-020-AC-1 | For a routed item whose FSL record has a conversion context and a two-guard path condition (one guard requiring `holds = true`, one `holds = false`), the `RoutedRequirement` passed to CG carries that item's occurrence (node, role and ordinal), the V2 node of its result bound, the conversion occurrence, and the two guards in FSL's order with the same `holds` values. For an item with no conversion context it carries `None`. | Test (TC-034) |
-| FR-020-AC-2 | `RequirementRecords` on the Kani context holds one entry per `value-validity` record of the package's `requirements()`, including a record whose item the export refused, each with its own result bound, conversion occurrence and ordered path condition, and holds no entry for a record of another capability. | Test (TC-034) |
-| FR-020-AC-3 | For a built unit in which one `x + 1` node's then and else occurrences are guarded by `p` and `not p` and converted to `Int[0, 10]` and `Int[0, 20]` (`function f using v(p: Boolean, x: Int[0, 9]): Boolean pure { if p then g(x + 1) else h(x + 1) }` with `g` over `Int[0, 10]` and `h` over `Int[0, 20]`, built on the RR16_UNIT shape), the two occurrences differ in ordinal, result bound and path condition. The two routed items carry different `RoutedRequirement` values, `RequirementRecords` holds two entries with different result bounds and path conditions, and each item's requirement equals the entry at its own key. If FSL emits two nodes for the two `x + 1`, the test fails and the unit is adjusted until one node carries both occurrences. | Test (TC-034) |
+| FR-020-AC-1 | For a routed item whose FSL record has a conversion context and a two-frame path condition (one frame requiring `holds = true`, one `holds = false`), the `RoutedRequirement` passed to CG carries that item's occurrence (node, role and ordinal), the V2 node of its result bound, the conversion occurrence and the terminal frame id. Walking the one shared table from that id yields the two guards in FSL's order with the same `holds` values. For an item with no conversion context or path condition it carries `None` for the corresponding id. | Test (TC-034) |
+| FR-020-AC-2 | `RequirementRecords` on the Kani context holds one entry per `value-validity` record of the package's `requirements()`, including a record whose item the export refused, each with its own result bound, conversion occurrence and terminal frame id, and holds no entry for a record of another capability. The package's shared frame table is passed once, and no record owns an expanded guard vector. | Test (TC-034) |
+| FR-020-AC-3 | For a built unit in which one `x + 1` node's then and else occurrences are guarded by `p` and `not p` and converted to `Int[0, 10]` and `Int[0, 20]` (`function f using v(p: Boolean, x: Int[0, 9]): Boolean pure { if p then g(x + 1) else h(x + 1) }` with `g` over `Int[0, 10]` and `h` over `Int[0, 20]`, built on the RR16_UNIT shape), the two occurrences differ in ordinal, result bound and terminal frame id. Their `RoutedRequirement`s and record-map entries carry distinct result bounds and ids; walking each id yields its own condition; and each item equals the record at its key. If FSL emits two nodes for the two `x + 1`, the test fails and the unit is adjusted until one node carries both occurrences. | Test (TC-034) |
 | FR-020-AC-4 | With a `RequirementMap` that holds no `value-validity` record for the occurrence of an item negotiation routes to Kani, the run completes the lowering and negotiation steps and then refuses, when the generation items are built, with `DriverFault::RequirementRecordAbsent`, naming the request index and occurrence, with stage Generation, wire code `runtime_invariant` and outcome kind internal fault; CG generation is not called and the result carries no settlement built from a substitute record. | Test (TC-034) |
 | FR-020-AC-5 | Given a `RequirementMap` built with `FromIterator` that holds, at one occurrence, both a `value-validity` record and an `operation-contract` record with a different result bound, `RequirementRecords` holds exactly the `value-validity` record's fields at that key, the `value-validity` item's requirement equals them, and no fault is raised. A lookup by occurrence alone finds the key ambiguous and returns no record, so that lookup raises `RequirementRecordAbsent` here. | Test (TC-034) |
 | FR-020-AC-6 | For the FR-010-AC-4 vector, the projection returns a requirement for A (index 0) and C (index 2) and `None` at B's index 1, B's position is excluded, `RequirementRecords` still holds B's record, the run completes without a `DriverRefusal`, and the same holds with B's record removed from the map. FR-001-AC-17 keeps its own evidence in TC-017; this criterion asserts only the projection and the absence of a fault. | Test (TC-034) |
-| FR-020-AC-7 | For an item with two path guards and a conversion context, the request positions hold the conversion `ContextRoot`, then one `ContextRoot` per guard in outermost-first order, all inside the item's context span, and the next item's driver index is unchanged by them. | Test (TC-034) |
+| FR-020-AC-7 | For an item with two path-condition frames and a conversion context, the request positions hold the conversion `ContextRoot`, then one `ContextRoot` per guard obtained by walking the shared frame table from the item's terminal id, outermost first, all inside the item's context span; the driver retains no expanded guard vector and the next item's driver index is unchanged by them. | Test (TC-034) |
 | FR-020-AC-8 | Given a record whose FSL result-bound node differs from the type the IR result context selects, the driver passes the FSL node unchanged; CG refuses with `RequirementRecord` and `ResultBoundMismatch`, and the driver returns it unchanged in `DriverRefusal::Generation` with stage Generation, wire code `runtime_invariant` and kind internal fault. | Test (TC-034) |
 | FR-020-AC-9 | For each of the eight `RequirementRecordMismatch` variants CG defines (`RequirementMissing`, `OccurrenceNotSelected`, `RecordMissing`, `ApplicationMismatch`, `ResultBoundMismatch`, `ConversionContextMismatch`, `PathConditionMismatch`, `GuardContextMissing`), a CG refusal carrying it is returned as `DriverRefusal::Generation` with the request index, occurrence and mismatch unchanged, stage Generation, wire code `runtime_invariant` and outcome kind internal fault. | Test (TC-034) |
 | FR-020-AC-10 | ~~Retired by IR-304 slice (b): the interim `guard_lowering_not_implemented` settlement of slice (a) no longer exists. Its replacement outcomes are FR-020-AC-11.~~ | Inspection |
 | FR-020-AC-11 | Over the IR-304 guarded package, each item with a lowerable guard (`if y > 5 then y + 1 else y + 1`: a then item and an else item) generates a harness with one guard `kani::assume` that follows the symbolic inputs, precedes the oracle call, and is negated for the else item, and its identity's `requirement_occurrence` equals the item's occurrence; an item whose guard CG cannot lower (`if z + 1 > 5 then z + 1 else z + 1`) settles `unsupported` with `path_guard_not_lowered` and reason `unsupported_guard_form`, and no harness omits a guard. | Test (TC-034) |
-| FR-020-AC-12 | For `if p then x + 1 else x + 1`, whose then and else items are both guarded by the node of `p`, the positions hold a `ContextRoot` for `p` in the then item's span and another in the else item's span, and the root is not emitted once for both. | Test (TC-034) |
+| FR-020-AC-12 | For `if p then x + 1 else x + 1`, whose then and else items both reference the node of `p` through frames with opposite `holds`, the positions hold a `ContextRoot` for `p` in the then item's span and another in the else item's span, and the root is not emitted once for both. | Test (TC-034) |
 | FR-020-AC-13 | When CG finds a path guard of a routed item without a `ContextRoot` in that item's context span, its refusal `RequirementRecord` with `GuardContextMissing` is returned as `DriverRefusal::Generation` with its request index, occurrence and guard unchanged, stage Generation, wire code `runtime_invariant` and outcome kind internal fault; end to end, real CG given an item whose requirement and record name a guard rooted only in another item's span refuses the whole call with it. | Test (TC-034) |
-| FR-020-AC-14 | When a `value-validity` record of the package has a guard occurrence whose node the admitted package does not hold, the run refuses with `DriverFault::RequirementRecordUnresolved` naming the record's FSL occurrence key with cause `UnknownNode`; when a record's key has a role outside IR's occurrence vocabulary, the cause is `UnknownOccurrenceRole`. Each has stage Generation, wire code `runtime_invariant` and outcome kind internal fault, is raised even when no item routes to that record, and CG generation is not called. The `AmbiguousNode` cause is produced by the same node lookup FR-001 uses and cannot be built through IR admission, so no criterion constructs it. The guard-node case gives a record a guard (built with FSL's `test-support` `PathGuard::new` and `RequirementRecord::with_path_condition`) whose node is absent; the record-key node and role cases rekey a record. | Test (TC-034) |
+| FR-020-AC-14 | When a `value-validity` record's frame references a guard node the admitted package does not hold, the run refuses with `DriverFault::RequirementRecordUnresolved` naming the record's FSL occurrence key with cause `UnknownNode`; when a record's key has a role outside IR's occurrence vocabulary, the cause is `UnknownOccurrenceRole`. Each has stage Generation, wire code `runtime_invariant` and outcome kind internal fault, is raised even when no item routes to that record, and CG generation is not called. The `AmbiguousNode` cause is produced by the same node lookup FR-001 uses and cannot be built through IR admission, so no criterion constructs it. The guard-node case gives a frame a missing guard node; the record-key node and role cases rekey a record. | Test (TC-034) |
 | FR-020-AC-15 | For a bound item of another capability (a model-reading `operation-contract` item) whose occurrence has no `value-validity` record in the map, negotiation settles it `InvalidRequest` as before, it is absent from the generation items, the projection returns `None` at its index and adds no guard root for it, no `RequirementRecordAbsent` fault is raised at any step, and a `value-validity` item in the same request still receives its requirement. | Test (TC-034) |
 
 ## Dependencies
 
 - [CG FR-022](ix://agent-ix/filament-contract-codegen/FR-022) owns
-  `RequirementOccurrence`, `RequirementGuard`, `RequirementRecordInput`,
+  `RequirementOccurrence`, `PathConditionFrame`, `PathConditionFrameId`,
+  `RequirementRecordInput`,
   `RequirementRecords`, `RoutedRequirement`, `RoutedGenerationItem::with_requirement`,
   `KaniGenerationContext.requirement_records` and
   `RoutedGenerationError::RequirementRecord`. The spec and code, including IR-304
