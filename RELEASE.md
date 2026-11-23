@@ -47,15 +47,23 @@ For this release, keep these authoritative values aligned with `0.2.0` where app
 | Driver | Release workflow | Tag matches package version |
 | Examples | Dockerfile and image workflow | Defaults use `0.2.0` |
 | Examples | Image README | Keep examples aligned with defaults |
+| Examples | Toolchain npm version sources | `image/package.json` and its lockfile |
+| Examples | Quire CLI and Quoin versions | `0.52.1` and `0.36.10` |
+| Examples | Image installation command | Docker uses `npm ci` |
+| Examples | Image license records and notices | Generated from installed tools and Cargo metadata |
 | Docs | [release notes](https://github.com/agent-ix/filament-docs/blob/main/src/content/docs/fsl/releases/v0.2.0.md) | Release page for this identity |
 | Docs | [setup guide](https://github.com/agent-ix/filament-docs/blob/main/src/content/docs/fsl/guides/set-up-your-environment.md) | Show CLI version and full FSL SHA |
 | Template | No package version field | Tag the reviewed template commit |
 
 `filament-spec-language` has package version `0.3.0`; repository tag `v0.3.0` matches it. The standard uses dynamic package versioning. Contract IR and codegen repository tags are independent repository tags; do not change their Cargo package versions solely to make them equal the driver version. Before a later alpha, search these files and the image configuration for the selected version, update only the authoritative values, then regenerate Cargo.lock for manifest changes.
 
+The toolchain image's pinned npm tools are separate from the driver's `fsl` version. Examples PR [#104](https://github.com/agent-ix/filament-examples/pull/104), head `971b698d3ccc514297539fa394ee99da80b781aa`, sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. During the image build, `cargo metadata --locked` runs against `/tmp/driver-source` at the exact release revision, `/tmp/licences/tools/fsl-examples` at the image revision, `/tmp/quire-cli-source` from `agent-ix/quire-cli` tag `v0.52.1`, and `/tmp/quoin-source` from `agent-ix/quoin` tag `v0.36.10`. The npm inventory comes from installed `/opt/npm/node_modules` and `/opt/npm/package-lock.json`. The generated notices ship in the image under `/usr/share/licenses/filament-toolchain`; generated license records and notices are not checked into the repository. These npm versions describe the toolchain image, not the driver's version.
+
 ## Driver release workflow
 
 Only `.github/workflows/release.yml` builds the versioned driver archives. It builds `fsl` and `fsl-plugin-launch` for Linux x86_64 and aarch64 on Ubuntu 26.04, plus macOS arm64 and x86_64. It packages each pair as `fsl-v<VERSION>-<TARGET>.tar.gz`, checks the packaged CLI version, and uploads workflow artifacts. Linux checks inspect both packaged ELF files, reject `GLIBC_PRIVATE`, and require the maximum numeric GLIBC symbol version to be at most 2.43. A tag push runs the publish job, which checks tag/version agreement, writes `SHA256SUMS.txt`, and creates the GitHub Release.
+
+On macOS, `fsl` defaults provider memory limits to zero, enforces CPU time only, and writes a memory-not-enforced notice to stderr. With a configured provider, explicitly setting `--provider-limit max_memory_bytes=<bytes>` is refused before provider start for `run`, `analyze`, `monitor`, and `replay` (exit 21, unsupported on this platform). The launcher itself refuses a nonzero memory argument on macOS; zero allows provider execution without a memory cap. The release workflow therefore keeps archive, executable, and version checks on all targets but runs its nonzero-memory launcher probe only on Linux.
 
 The manual release workflow is a non-publishing build when dispatched from `main` with `publish=false`. The release owner coordinates this dry run with this command; do not dispatch it from this runbook or use it as a substitute for checking the final tag's artifacts:
 
@@ -71,7 +79,26 @@ gh release download v0.2.0 --repo agent-ix/filament-driver --dir release
 (cd release && sha256sum -c SHA256SUMS.txt)
 ```
 
-The examples image workflow is different: its manual dispatch builds and pushes the multi-platform `ghcr.io/agent-ix/filament-toolchain` image. It has no non-publishing dry-run. It builds the Ubuntu 26.04 image for Linux/amd64 and Linux/arm64, runs `image/smoke.sh`, then publishes the requested image tags. After the driver tag, refresh `image/licenses/data/filament-driver.json` from that exact driver release before the owner dispatches the image workflow with `fsl_source=release` and `fsl_version=0.2.0`.
+The examples image workflow is different: its manual dispatch builds and pushes the multi-platform `ghcr.io/agent-ix/filament-toolchain` image. It has no non-publishing dry-run. It builds the Ubuntu 26.04 image for Linux/amd64 and Linux/arm64, generates notices from the exact tools and source metadata included in the image, runs `image/smoke.sh`, then publishes the requested image tags. After the driver release tag and examples tag `v0.2.0` are ready, hand off to Titan to dispatch from the tagged examples source:
+
+```sh
+gh workflow run image.yml --repo agent-ix/filament-examples --ref v0.2.0 \
+  -f tags=0.2.0 -f fsl_version=0.2.0 -f fsl_source=release
+```
+
+After publication, verify the built image on Titan:
+
+```sh
+IMAGE=ghcr.io/agent-ix/filament-toolchain:0.2.0
+docker pull "$IMAGE"
+docker run --rm "$IMAGE" smoke.sh
+docker run --rm --entrypoint sh "$IMAGE" -ec '
+  test -s /usr/share/licenses/filament-toolchain/THIRD-PARTY.md
+  test -s /usr/share/licenses/filament-toolchain/THIRD-PARTY-LICENSES.txt
+'
+```
+
+Inspect the generated notices under `/usr/share/licenses/filament-toolchain`. Confirm they identify the tagged driver and runner sources and the npm tools at `0.52.1` and `0.36.10`.
 
 ## Released-mode journey gate
 

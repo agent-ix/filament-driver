@@ -92,11 +92,15 @@ jobs:
           tar -C release-smoke -xzf "release/$NAME"
           test "$(find release-smoke -type f | wc -l | tr -d ' ')" = 2
           test -x release-smoke/fsl-plugin-launch
-          ./release-smoke/fsl-plugin-launch 67108864 1000 /usr/bin/true
           OUTPUT="$("./release-smoke/$BINARY" --version)"
           echo "$OUTPUT"
           # Whole-word match against the Cargo version.
           printf '%s' "$OUTPUT" | grep -qw -- "$VERSION"
+
+      - name: Probe launcher memory limit
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ./release-smoke/fsl-plugin-launch 67108864 1000 /usr/bin/true
 
       - name: Check packaged Linux GLIBC requirements
         if: runner.os == 'Linux'
