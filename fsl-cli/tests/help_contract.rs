@@ -263,12 +263,15 @@ fn verb_help_writes_its_section() {
 fn help_precedence() {
     for verb in NOT_ROUTED {
         let output = fsl(&[verb, "--help"]);
-        assert_eq!(output.status.code(), Some(21), "{verb}");
-        assert!(text(&output).contains(verb), "{verb}");
+        assert_eq!(output.status.code(), Some(0), "{verb}");
+        assert!(output.stderr.is_empty(), "{verb}");
         assert!(
-            text(&output).contains("operation-not-routed")
-                || text(&output).contains("does not route")
+            text(&output).starts_with(&format!(
+                "fsl {verb} is not available in this build; running it exits 21 (unsupported_operation).\n"
+            )),
+            "{verb}"
         );
+        assert_eq!(fsl(&[verb]).status.code(), Some(21), "{verb}");
     }
     let bad_format = fsl(&["run", "--format", "bogus", "--help"]);
     assert_eq!(bad_format.status.code(), Some(20));

@@ -16,7 +16,8 @@ under mutation of the table; that the root-help layout keeps the sections
 the docs generator reads; that `fsl <verb> --help` writes the verb's usage
 lines and options section with the specified precedence; that `--version`
 is a root option only; and that `--color` is refused everywhere.
-Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29.
+Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29,
+FR-002-AC-30, FR-002-AC-31, FR-002-AC-32.
 
 ## Test Procedure
 
@@ -64,6 +65,23 @@ Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29.
 12. Run steps 1, 2, 7 and 10 once with `NO_COLOR=1` and once without, over
     fixtures that contain no `0x1B` byte, and scan stdout and stderr for the
     byte `0x1B`.
+13. Run `fsl run` with the single argument byte `0xFF`, then `fsl` with that
+    byte as its first argument; check the first writes the I/O refusal to
+    stdout with empty stderr and exit 20, the second one stderr line (AC-30).
+14. Run `fsl bogus`, `fsl chek`, `fsl check --modle x`, `fsl run --engine
+    fast` and `fsl check --limit foo=1`, `--limit foo=1` on `run`, `export`, `analyze`,
+    `monitor` and `replay`, `fsl help --format json` and `fsl help run extra`;
+    check the exact messages of AC-31.
+15. Run `fsl help <verb>` and `fsl <verb> --help` for every verb that
+    executes operations, and `fsl --help`; check the bytes agree and root
+    help ends with the Operands and Exit codes sections (AC-32).
+    Include `fsl help prove`, `fsl help generate` and `fsl help render`.
+16. Run `fsl inspect`, `fsl inspect --format dot` and `fsl inspect --handoff
+    missing --format dot`; check the first two write the not-routed refusal
+    ending in the `--handoff` form, exit 21, and the third refuses exit 20
+    (AC-23).
+
+Test: `cli-contracts/tests/messages.rs` for steps 8, 13, 14, 15 and 16 (AC-25, AC-30..AC-32, AC-23).
 
 Test: `fsl-cli/tests/help_contract.rs` `help_lists_every_accepted_option`,
 `parser_refuses_options_outside_its_entry`, `verb_help_writes_its_section`,
@@ -89,11 +107,20 @@ unit test `removing_a_table_option_removes_it_from_parser_and_help`.
   exit 0, empty stderr, no file opened; each other verb writes its usage
   lines, a blank line and its section byte-equal to root help's, exit 0.
   Fails today: `--help` after a verb falls into the verb's option parser.
-- Step 8: the three unrouted verbs give `unsupported`/`operation-not-routed`
-  naming the verb, exit 21; `--format bogus` refuses `invalid-request`,
+- Step 8: each of the three unrouted verbs writes its not-available help
+  (first line `fsl <verb> is not available in this build; running it exits 21
+  (unsupported_operation).`), exit 0, no stderr; `--format bogus` refuses `invalid-request`,
   exit 20, naming `--format` and `bogus`; `--bogus` refuses
   `invalid-request`, exit 20, naming `--bogus`.
 - Step 9: `invalid-request`, exit 20, naming the option; no file read.
 - Step 10: `invalid-request`, exit 20, naming `--color`, before any named
   file is read; no help section contains `--color`.
 - Step 11: no `0x1B` byte in any stream under either setting.
+- Step 13: the argument form writes the text I/O refusal to stdout, exit 20,
+  nothing to stderr; the first-argument form writes one stderr line, exit 20.
+- Step 14: every message equals the text AC-31 gives; `help --format json`
+  suggests no verb; no `--limit` list names a setting the verb does not accept.
+- Step 15: `help <verb>` and `<verb> --help` agree byte for byte, exit status
+  included, for all thirteen verbs; root help ends with the two sections.
+- Step 16: the not-routed refusals end ``; use `fsl inspect --handoff
+  <directory>` ``, exit 21; the dot-with-handoff form refuses, exit 20.

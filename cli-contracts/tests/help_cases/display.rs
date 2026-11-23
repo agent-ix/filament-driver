@@ -209,11 +209,22 @@ fn every_executable_help_alias_has_exactly_its_production_option_metadata(
 /// Trace: FR-002-AC-25
 /// Provenance: QSL-2478
 #[test]
-fn unrouted_help_and_version_flags_never_impersonate_supported_help_or_version(
+fn unrouted_help_says_it_is_unavailable_and_version_flags_never_impersonate_version(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = CliCase::from_environment()?;
     for verb in ["prove", "generate", "render"] {
-        for flag in ["--help", "-h", "--version", "-V"] {
+        for flag in ["--help", "-h"] {
+            let output = case.run(&[verb, flag, "--format", "json"])?;
+            assert_eq!(output.0.status.code(), Some(0), "{verb} {flag}: {output:?}");
+            assert!(output.0.stderr.is_empty(), "{verb} {flag}: {output:?}");
+            assert!(
+                output.stdout_text()?.starts_with(&format!(
+                    "fsl {verb} is not available in this build; running it exits 21 (unsupported_operation).\n"
+                )),
+                "{verb} {flag}: {output:?}"
+            );
+        }
+        for flag in ["--version", "-V"] {
             let output = case.run(&[verb, flag, "--format", "json"])?;
             assert_eq!(
                 output.0.status.code(),
