@@ -35,10 +35,11 @@ standard output as the record that caused it is read, then the
 code. It no longer exits 21 with no output. Ticket: QSL-2313, the driver half of QSL-1977.
 
 The verb is the command-line encoding of FSL's in-process entry
-`fsl_command::command::monitor`. The request document carries every monitoring
-setting. The driver also accepts `--limit name=value` as a caller override for
-a matching FSL-exposed bound; the request's value remains effective where the
-caller does not supply an override.
+`fsl_command::command::monitor`. The request document carries its
+request-scoped monitoring settings. The driver also accepts
+`--limit name=value` as a caller override for a matching FSL-exposed bound;
+the request's value remains effective where the caller does not supply an
+override.
 
 For FSL FR-644's optional `target`, `--limit monitor.max_activations=N`
 supplies the required activation capacity separately from the target object.
