@@ -21,6 +21,7 @@ help:
 	@echo "  make spec             - quire validate over spec/"
 	@echo "  make docs             - cargo doc, denying missing/broken doc links"
 	@echo "  make examples-check   - Build fsl here and run the filament-examples suite (running + staged)"
+	@echo "  make alpha-journey-gate - Install FSL and run the alpha tutorial journey in Docker"
 	@echo "  make ci               - All CI gates locally (fmt-check + lint + test + examples-check + deny + docs + spec)"
 
 # =============================================================================
@@ -160,6 +161,20 @@ examples-fetch: $(EXAMPLES_DIR)/.git
 .PHONY: examples-check
 examples-check: examples-fetch
 	FSL_EXAMPLES_DIR=$(EXAMPLES_DIR) $(CARGO) test --locked --test examples_gate
+
+# Run the install page and checked command examples in tutorial pages in a
+# disposable Ubuntu 26.04 container by default. Override ALPHA_JOURNEY_BASE_IMAGE
+# for local candidates built against a different Ubuntu baseline. Released
+# artifacts are also checked for GLIBC <= 2.43 with no GLIBC_PRIVATE requirement.
+FILAMENT_DOCS_DIR ?= $(HOME)/dev/filament-docs
+FILAMENT_EXAMPLES_DIR ?= $(HOME)/dev/filament-examples
+FSL_BINARY ?=
+FSL_RELEASE_BINARY ?=
+ALPHA_JOURNEY_BASE_IMAGE ?= ubuntu:26.04
+
+.PHONY: alpha-journey-gate
+alpha-journey-gate:
+	$(CARGO) run --locked -p filament-driver --bin alpha-journey-gate -- --docs "$(FILAMENT_DOCS_DIR)" --examples "$(FILAMENT_EXAMPLES_DIR)" --base-image "$(ALPHA_JOURNEY_BASE_IMAGE)" $(if $(FSL_BINARY),--fsl-binary "$(FSL_BINARY)") $(if $(FSL_RELEASE_BINARY),--released-binary "$(FSL_RELEASE_BINARY)")
 
 # =============================================================================
 # Composite
