@@ -199,6 +199,8 @@ make ci          # every gate above plus doc checks
 Contributions are welcome under the contributor license agreement. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [CLA.md](CLA.md).
 
+Maintainers: see the [FSL alpha release runbook](RELEASE.md).
+
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
