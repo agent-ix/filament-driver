@@ -108,6 +108,22 @@ fn unknown_function_missing_extra_duplicate_and_wrong_typed_arguments_refuse(
         .push(json!({"parameter":"n","value":{"type":"integer","value":"5"}}));
     let mut wrong = base.clone();
     wrong["request"]["call"]["arguments"][0]["value"] = json!({"type":"boolean","value":true});
+    let mut untyped = base.clone();
+    untyped["request"]["call"]["arguments"][0]["value"] = json!({"integer":"4"});
+    {
+        // FR-100-AC-4, FR-650: a value without the `type` form is of another kind.
+        write_json(&case, "bad.json", &untyped)?;
+        let value = outcome(&run(&case, "bad.json", &[])?, 20, "refusal");
+        assert_eq!(value["last_stage"], "S6a", "{value}");
+        assert_eq!(
+            value["diagnostics"][0]["code"], "invalid_runtime_input",
+            "{value}"
+        );
+        assert_eq!(
+            value["diagnostics"][0]["cause"], "wrong-value-kind",
+            "{value}"
+        );
+    }
     let mut out_of_domain = base;
     out_of_domain["request"]["call"]["arguments"][0]["value"] =
         json!({"type":"integer","value":"11"});
