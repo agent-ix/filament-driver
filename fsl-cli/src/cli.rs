@@ -20,7 +20,10 @@ use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
 use fsl_foundation::source::{SourceReadCause, SourceReadError, SourceReadRefusal};
 use fsl_foundation::wire_format::WireFormat;
-use fsl_foundation::{Setting, SettingLimits, SettingName, Source, SourceIdentity};
+use fsl_foundation::{
+    AccountingSetting, Setting, SettingLimits, SettingName, Source, SourceIdentity, UsageCause,
+    UsageRefusal,
+};
 use fsl_replay::spine::{
     check_native_fences, parse, parse_selecting_extensions, CheckLimits, CompileRefusal,
     DependencyInput, NativeFenceRequest, ParseRequest, ProfileCatalogInput, SpineLimits,
@@ -228,10 +231,19 @@ impl Verb {
 
     fn help_description(self) -> &'static str {
         match self {
-            Self::Check | Self::Parse | Self::Compile | Self::Run => {
-                "Executes and writes its outcome document as text by default; --format json selects JSON."
+            Self::Parse => {
+                "Parses a source file and reports its outcome; needs <authority> <identity> <source-path>. Output is text by default; --format json selects JSON."
             }
-            Self::Format => "Executes source formatting; text output is the default.",
+            Self::Format => {
+                "Writes a source file reformatted; needs <authority> <identity> <source-path>."
+            }
+            Self::Check => {
+                "Checks a source file and reports its diagnostics; needs <source-path>, and --model for each import. Output is text by default; --format json selects JSON."
+            }
+            Self::Compile => {
+                "Checks a native-compile/1 request file and builds its package; needs <request-file>, --output writes the package. Output is text by default; --format json selects JSON."
+            }
+            Self::Run => "Runs a native-run/1 request file; needs <request-file>. Output is text by default; --format json selects JSON.",
             Self::Analyze => "Executes a native-analyze/1 request; --format json or text.",
             Self::Monitor => {
                 "Executes a native-monitor/1 request over a record stream; --format json or text."
@@ -297,7 +309,8 @@ impl ExportOptions {
             ));
         }
         let (request, selection) = request;
-        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
+        let limits = LimitOverrides::parse(&limit_operands)
+            .map_err(|error| limit_usage_message(&error, "export", &export_setting_names()))?;
         Ok(Self {
             output,
             request,
@@ -365,6 +378,46 @@ fn resolve_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     }
 }
 
+/// The refusal for a first argument that names no verb: the nearest verb when
+/// it looks like a typo, every verb, and where the full help is.
+fn unknown_verb(command: &str) -> String {
+    let mut message = format!("unknown verb `{command}`");
+    let near = (!command.starts_with('-'))
+        .then(|| options::nearest(command, Verb::ALL.into_iter().map(Verb::name)))
+        .flatten();
+    if let Some(near) = near {
+        message.push_str(&format!("; did you mean `{near}`"));
+    }
+    let names: Vec<&str> = Verb::ALL.into_iter().map(Verb::name).collect();
+    message.push_str(&format!(
+        "; verbs are {}; run `fsl --help` for usage",
+        names.join(", ")
+    ));
+    message
+}
+
+/// `fsl help <verb>`: the verb's help, as `fsl <verb> --help` writes it.
+fn help_word_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
+    let Some(argument) = arguments.get(1) else {
+        return Ok(Invocation::Help);
+    };
+    let text = argument
+        .to_str()
+        .ok_or_else(|| "command must be valid UTF-8".to_owned())?;
+    if options::HELP_OPTIONS.contains(&text) {
+        return Ok(Invocation::Help);
+    }
+    match Verb::parse(text) {
+        Some(verb) if arguments.len() == 2 => Ok(Invocation::Operation {
+            verb,
+            format: OutputFormat::Text,
+            raw_arguments: vec![OsString::from(options::HELP_OPTIONS[0])],
+        }),
+        Some(_) => Err("help takes at most one verb".to_owned()),
+        None => Err(unknown_verb(text)),
+    }
+}
+
 fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let Some(command) = arguments.first() else {
         return Ok(Invocation::Help);
@@ -372,13 +425,16 @@ fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let command = command
         .to_str()
         .ok_or_else(|| "command must be valid UTF-8".to_owned())?;
-    if options::HELP_OPTIONS.contains(&command) || command == options::HELP_WORD {
+    if options::HELP_OPTIONS.contains(&command) {
         return Ok(Invocation::Help);
+    }
+    if command == options::HELP_WORD {
+        return help_word_invocation(arguments);
     }
     if options::VERSION_OPTIONS.contains(&command) {
         return Ok(Invocation::Version);
     }
-    let verb = Verb::parse(command).ok_or_else(|| format!("unknown verb `{command}`"))?;
+    let verb = Verb::parse(command).ok_or_else(|| unknown_verb(command))?;
     let mut format = OutputFormat::Text;
     let mut format_given = false;
     let mut index = 1;
@@ -595,7 +651,11 @@ impl SourceOptions {
         if verb == Verb::Format {
             accepted_bounds.extend(FormatLimits::default().bounds());
         }
-        let limits = parse_frontend_limit_operands_with_bounds(&limit_operands, accepted_bounds)?;
+        let limits = parse_frontend_limit_operands_with_bounds(
+            &limit_operands,
+            verb.name(),
+            accepted_bounds,
+        )?;
         match verb {
             Verb::Parse => {
                 let mut cst_limits = cst_limits;
@@ -629,7 +689,8 @@ impl CompileOptions {
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(Verb::Compile));
         };
-        let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
+        let limits =
+            parse_frontend_limit_operands(&limit_operands, "compile", &SpineLimits::default())?;
         Ok(Self {
             path: PathBuf::from(path),
             clocks,
@@ -686,7 +747,8 @@ impl CheckOptions {
         if markdown && source_identity.is_none() {
             return Err(entry_usage(Verb::Check).into());
         }
-        let limits = parse_frontend_limit_operands(&limit_operands, &SpineLimits::default())?;
+        let limits =
+            parse_frontend_limit_operands(&limit_operands, "check", &SpineLimits::default())?;
         Ok(Self {
             path,
             source_identity,
@@ -703,33 +765,113 @@ impl CheckOptions {
 
 fn parse_frontend_limit_operands(
     operands: &[String],
+    verb: &str,
     bounds: &impl SettingLimits,
 ) -> Result<LimitOverrides, String> {
-    parse_frontend_limit_operands_with_bounds(operands, bounds.bounds())
+    parse_frontend_limit_operands_with_bounds(operands, verb, bounds.bounds())
 }
 
 fn parse_frontend_limit_operands_with_bounds(
     operands: &[String],
+    verb: &str,
     bounds: Vec<(Setting, u64)>,
 ) -> Result<LimitOverrides, String> {
     LimitOverrides::parse(operands).map_err(|error| {
-        let accepted = bounds
-            .into_iter()
-            .map(|(setting, _)| setting.name())
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("{error}; settings accepted by this command: {accepted}")
+        let accepted: Vec<&str> = bounds.iter().map(|(setting, _)| setting.name()).collect();
+        limit_usage_message(&error, verb, &accepted)
     })
 }
 
 fn accepted_frontend_limit_settings(bounds: &impl SettingLimits) -> String {
-    bounds
+    let names: Vec<&str> = bounds
         .bounds()
         .into_iter()
         .map(|(setting, _)| setting.name())
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect();
+    grouped_settings(&names)
 }
+
+/// Setting names grouped by stage, `s1 (input_bytes, tokens); s3 (nodes)`, so a
+/// long list reads as a few short ones.
+fn grouped_settings(names: &[&str]) -> String {
+    let mut groups: Vec<(&str, Vec<&str>)> = Vec::new();
+    for name in names {
+        let (stage, setting) = name.split_once('.').unwrap_or(("", name));
+        match groups.iter_mut().find(|(group, _)| *group == stage) {
+            Some((_, members)) => members.push(setting),
+            None => groups.push((stage, vec![setting])),
+        }
+    }
+    groups
+        .iter()
+        .map(|(stage, members)| format!("{stage} ({})", members.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The refusal text of a `--limit` operand FSL refused. An unknown setting
+/// names the stage-grouped settings `verb` accepts once, not FSL's flat list of
+/// every setting; a verb that accepts none says so.
+fn limit_usage_message(error: &UsageRefusal, verb: &str, accepted: &[&str]) -> String {
+    if error.cause != UsageCause::UnknownSetting {
+        return error.to_string();
+    }
+    if accepted.is_empty() {
+        return format!(
+            "`--limit {}` names no setting, and {verb} accepts no --limit settings",
+            error.operand
+        );
+    }
+    format!(
+        "`--limit {}` names no setting; a setting is <stage>.<name>, and the settings are {}",
+        error.operand,
+        grouped_settings(accepted)
+    )
+}
+
+/// The names of the settings `limits` carries.
+fn setting_names(limits: &impl SettingLimits) -> Vec<&'static str> {
+    limits
+        .bounds()
+        .into_iter()
+        .map(|(setting, _)| setting.name())
+        .collect()
+}
+
+/// The settings `fsl export` takes: the spine bounds and the `export.*` settings.
+fn export_setting_names() -> Vec<&'static str> {
+    let mut names = setting_names(&SpineLimits::default());
+    names.extend(
+        Setting::ALL
+            .iter()
+            .map(|setting| setting.name())
+            .filter(|name| name.starts_with("export.")),
+    );
+    names
+}
+
+/// The settings `fsl run` takes: the spine and observation bounds and the
+/// accounting settings.
+fn run_setting_names() -> Vec<&'static str> {
+    let limits = fsl_replay::CallerLimits::default();
+    let mut names = setting_names(&limits.spine);
+    names.extend(setting_names(&limits.observation));
+    names.extend(AccountingSetting::ALL.iter().map(|setting| setting.name()));
+    names
+}
+
+/// The settings `analyze` and `replay` take: `analyze` reads one, `replay`
+/// none (FR-003-AC-5).
+fn request_setting_names(verb: Verb) -> Vec<&'static str> {
+    match verb {
+        Verb::Analyze => vec![ANALYZE_SETTING.name()],
+        _ => Vec::new(),
+    }
+}
+
+/// The one setting `fsl analyze` takes from a caller; the refusal lists and
+/// `analyze_run_limits` both read it.
+const ANALYZE_SETTING: Setting = Setting::ReplayInputBytes;
 
 fn apply_frontend_limits(
     overrides: &LimitOverrides,
@@ -741,7 +883,7 @@ fn apply_frontend_limits(
         .map_err(|error| {
             let accepted = accepted_frontend_limit_settings(bounds);
             format!(
-                "{}; settings accepted by this command: {accepted}",
+                "{}; settings this command accepts, by stage: {accepted}",
                 error.message_for(operation)
             )
         })
@@ -749,9 +891,9 @@ fn apply_frontend_limits(
 
 fn apply_export_limits(overrides: &LimitOverrides, limits: &mut SpineLimits) -> Result<(), String> {
     overrides.apply_to_export(limits).map_err(|error| {
-        let accepted = accepted_frontend_limit_settings(limits);
+        let accepted = grouped_settings(&export_setting_names());
         format!(
-            "{}; settings accepted by this command: {accepted}",
+            "{}; settings this command accepts, by stage: {accepted}",
             error.message_for("export")
         )
     })
@@ -790,7 +932,8 @@ impl RunOptions {
         Ok(Self {
             path: PathBuf::from(path),
             intake_limits,
-            limits: LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?,
+            limits: LimitOverrides::parse(&limit_operands)
+                .map_err(|error| limit_usage_message(&error, "run", &run_setting_names()))?,
             engine,
             clocks,
             providers,
@@ -1484,7 +1627,9 @@ impl RequestOptions {
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
-        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
+        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| {
+            limit_usage_message(&error, verb.name(), &request_setting_names(verb))
+        })?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(verb).into());
         };
@@ -1814,7 +1959,9 @@ fn analyze_run_limits(
     let mut limits = RunLimits::default();
     for (name, value) in overrides.values() {
         match name {
-            SettingName::Stage(Setting::ReplayInputBytes) => limits.replay_input_bytes = *value,
+            SettingName::Stage(setting) if *setting == ANALYZE_SETTING => {
+                limits.replay_input_bytes = *value;
+            }
             _ => {
                 return Err(filament_driver::LimitError::OperationUnavailable {
                     setting: *name,
@@ -2219,7 +2366,8 @@ impl MonitorOptions {
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
-        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
+        let limits = LimitOverrides::parse(&limit_operands)
+            .map_err(|error| limit_usage_message(&error, "monitor", &[]))?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(Verb::Monitor).into());
         };
@@ -2472,6 +2620,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
 fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> CommandResult {
     let Some(entry) = options::entry(verb.name()) else {
         return unrouted_option_refusal(verb, raw_arguments)
+            .or_else(|| unrouted_help_request(verb, raw_arguments))
             .unwrap_or_else(|| unrouted_verb(verb, format));
     };
     let operation = verb.operation();
@@ -2549,6 +2698,20 @@ fn unrouted_option_refusal(verb: Verb, raw_arguments: &[OsString]) -> Option<Com
         }
         Ok(_) | Err(options::Refusal::Repeated(_)) => None,
     }
+}
+
+/// `fsl <verb> --help` for a verb this build does not route: its usage, led by
+/// the line saying it is not available, exit 0 (FR-002-AC-25).
+fn unrouted_help_request(verb: Verb, raw_arguments: &[OsString]) -> Option<CommandResult> {
+    let entry = options::unrouted_entry(verb.name())?;
+    raw_arguments
+        .iter()
+        .any(|argument| {
+            argument
+                .to_str()
+                .is_some_and(|text| options::HELP_OPTIONS.contains(&text))
+        })
+        .then(|| CommandResult::plain(entry.unrouted_help()))
 }
 
 /// The library operation an accepted but unrouted verb names, `None` for a
@@ -2674,7 +2837,10 @@ fn unrouted_verb(verb: Verb, format: OutputFormat) -> CommandResult {
         );
     };
     let name = verb.name();
-    let line = format!("fsl {name}: this build does not route the {name} operation ({CODE})");
+    let mut line = format!("fsl {name}: this build does not route the {name} operation ({CODE})");
+    if verb == Verb::Inspect {
+        line.push_str("; use `fsl inspect --handoff <directory>`");
+    }
     let document = OutcomeDocument::new(operation, None, Category::Unsupported)
         .with_diagnostics(vec![OutcomeDiagnostic::new(Some(CAUSE), CODE, None, line)]);
     let mut result = CommandResult::document(document.clone());

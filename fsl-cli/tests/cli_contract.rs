@@ -1212,8 +1212,8 @@ fn observation_document_bytes_is_not_a_cli_limit_setting() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(refusal.contains("UnknownSetting"), "{refusal}");
-    assert!(refusal.contains("observation.input_bytes"), "{refusal}");
+    assert!(refusal.contains("names no setting"), "{refusal}");
+    assert!(refusal.contains("observation (input_bytes, "), "{refusal}");
 }
 
 /// Trace: FR-002-AC-5; the CLI reads only the input path supplied on argv.
@@ -1296,7 +1296,8 @@ fn check_bad_option_json_refuses_on_stdout_only() {
         serde_json::from_slice(&output.stdout).expect("one outcome document on stdout");
     assert_eq!(document["operation"], "check", "{document}");
     assert_eq!(
-        document["diagnostics"][0]["message"], "unknown check option `--bogus`",
+        document["diagnostics"][0]["message"],
+        "unknown check option `--bogus`; check accepts --markdown, --model, --library, --dependent-bytes, --limit, --integer-division, --extensions, --format",
         "{document}"
     );
 }
@@ -1724,22 +1725,22 @@ fn implemented_verb_argument_refusals_use_the_selected_operation() {
         (
             "parse",
             Operation::Parse,
-            "unknown parse option `--unknown`",
+            "unknown parse option `--unknown`; parse accepts --limit, --extensions, --format",
         ),
         (
             "check",
             Operation::Check,
-            "unknown check option `--unknown`",
+            "unknown check option `--unknown`; check accepts --markdown, --model, --library, --dependent-bytes, --limit, --integer-division, --extensions, --format",
         ),
         (
             "compile",
             Operation::Package,
-            "unknown compile option `--unknown`",
+            "unknown compile option `--unknown`; compile accepts --clocks, --output, --limit, --format",
         ),
         (
             "format",
             Operation::Format,
-            "unknown format option `--unknown`",
+            "unknown format option `--unknown`; format accepts --limit, --format",
         ),
     ];
 
@@ -1995,8 +1996,11 @@ fn compile_accepts_limit_settings() {
         .as_str()
         .expect("limit refusal has a message");
     assert!(message.contains("unknown.limit"), "{message}");
-    assert!(message.contains("s1.nodes"), "{message}");
-    assert!(message.contains("s3.nodes"), "{message}");
+    assert!(
+        message.contains("s1 (input_bytes, tokens, nodes, work_units)"),
+        "{message}"
+    );
+    assert!(message.contains("s3 (nodes, "), "{message}");
 }
 
 /// Trace: QSL-2190, FR-003-AC-5; compile refuses recognized settings it cannot apply.
@@ -2027,12 +2031,15 @@ fn compile_refuses_recognized_unavailable_limit_setting() {
         "{message}"
     );
     let accepted = message
-        .split_once("settings accepted by this command: ")
+        .split_once("settings this command accepts, by stage: ")
         .map(|(_, accepted)| accepted)
         .expect("refusal lists the command's accepted settings");
-    assert!(accepted.contains("s1.nodes"), "{accepted}");
-    assert!(accepted.contains("s3.nodes"), "{accepted}");
-    assert!(!accepted.contains("admission.work_units"), "{accepted}");
+    assert!(
+        accepted.contains("s1 (input_bytes, tokens, nodes, work_units)"),
+        "{accepted}"
+    );
+    assert!(accepted.contains("s3 (nodes, "), "{accepted}");
+    assert!(!accepted.contains("admission"), "{accepted}");
 }
 
 /// Trace: QSL-2190; unknown settings identify the valid settings for the verb.
@@ -2059,7 +2066,10 @@ fn frontend_limit_unknown_setting_names_accepted_settings() {
         .as_str()
         .expect("limit refusal has a message");
     assert!(message.contains("unknown.limit"), "{message}");
-    assert!(message.contains("s1.nodes"), "{message}");
+    assert!(
+        message.contains("s1 (input_bytes, tokens, nodes, work_units)"),
+        "{message}"
+    );
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-3; text mode writes FSL's formatted UTF-8 value.
@@ -2240,16 +2250,16 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
             .find(|line| line.split_whitespace().next() == Some(command))
             .expect("every recognized lifecycle command has its own help row")
     };
-    // FR-865: text is the default for check, compile, parse and run.
-    for command in ["check", "compile", "parse", "run"] {
+    for (command, description) in [
+        ("check", "Checks a source file and reports its diagnostics; needs <source-path>, and --model for each import. Output is text by default; --format json selects JSON."),
+        ("compile", "Checks a native-compile/1 request file and builds its package; needs <request-file>, --output writes the package. Output is text by default; --format json selects JSON."),
+        ("parse", "Parses a source file and reports its outcome; needs <authority> <identity> <source-path>. Output is text by default; --format json selects JSON."),
+        ("run", "Runs a native-run/1 request file; needs <request-file>. Output is text by default; --format json selects JSON."),
+        ("format", "Writes a source file reformatted; needs <authority> <identity> <source-path>."),
+    ] {
         let line = command_line(command);
-        assert!(line.contains("text by default"), "{line}");
-        assert!(line.contains("--format json selects JSON"), "{line}");
-        assert!(!line.contains("unavailable"), "{line}");
+        assert_eq!(line.trim(), format!("{command:<10} {description}"), "{line}");
     }
-    let format_line = command_line("format");
-    assert!(format_line.contains("Executes source formatting"));
-    assert!(format_line.contains("text output is the default"));
     let analyze_line = command_line("analyze");
     assert!(analyze_line.contains("native-analyze/1"), "{analyze_line}");
     // FSL FR-624 owes each unrouted verb a named outcome document, so this
@@ -2456,8 +2466,10 @@ fn unknown_limit_setting_lists_accepted_settings() {
     assert_eq!(output.status.code(), Some(20));
     let document = String::from_utf8_lossy(&output.stdout);
     assert!(document.contains("not.a.setting"), "{document}");
-    assert!(document.contains("s1.nodes"), "{document}");
-    assert!(document.contains("format.output_bytes"), "{document}");
+    assert!(
+        document.contains("s1 (input_bytes, tokens, nodes, work_units)"),
+        "{document}"
+    );
 }
 
 /// Trace: FR-255-AC-2, a reached run limit names its CLI setting and the request's `stage_limits` entry.

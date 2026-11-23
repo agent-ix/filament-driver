@@ -28,7 +28,9 @@ impl ExecutionEngine {
             "interpreter" => Ok(Self::Interpreter),
             "aot" => Ok(Self::Aot),
             "jit" => Ok(Self::Jit),
-            _ => Err(format!("unknown engine `{value}`")),
+            _ => Err(format!(
+                "unknown engine `{value}`; engines are interpreter, aot, jit"
+            )),
         }
     }
 

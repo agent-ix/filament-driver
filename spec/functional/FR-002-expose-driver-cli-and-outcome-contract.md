@@ -87,9 +87,15 @@ the fallback when that function returns reserved value `5`.
 - For `fsl inspect --handoff <directory>`, the `filament-outcome/1` document
   with operation `inspect` that FSL's `inspect_handoff` returns, or its text
   form (AC-23).
-- When the command line names no recognized verb, or is not valid UTF-8, there
+- When the command line names no recognized verb, or its first argument is not valid UTF-8, there
   is no operation to name in an outcome: the driver writes one diagnostic line
   to standard error, nothing to standard output, and exits 20.
+- A verb that is recognized but whose arguments are not valid UTF-8 is not the
+  no-verb case: its non-UTF-8 argument is refused as the verb's own
+  `invalid-request` or I/O refusal on stdout in the selected mode
+  (FR-002-AC-30). The refusals for an unknown verb, option, engine or limit
+  setting and the `Operands:` and `Exit codes:` help sections are specified
+  under Behavior (AC-31, AC-32).
 - The exit status returned by FSL's category exit function, except that a
   reserved-code mapping invariant failure returns code `30`, and a
   signal-terminated active plugin invocation re-raises the signal after
@@ -229,7 +235,9 @@ the fallback when that function returns reserved value `5`.
 - An `inspect` invocation without `--handoff` stays a verb form this build
   does not route: `unsupported` with cause `operation-not-routed` naming
   `inspect` (FSpec FR-522), exit 21, under every accepted `--format` value
-  including `dot`, whatever positional operands it carries.
+  including `dot`, whatever positional operands it carries. The diagnostic
+  message is FSpec FR-522's line followed by ``; use `fsl inspect --handoff
+  <directory>` ``, so the reader learns the routed form.
 - The CLI SHALL decide an `inspect` invocation in this order, and the first
   step that refuses decides the result: (1) the root `--format` checks of
   AC-18 (exit 20); (2) an option the `inspect` entry of the option table does
@@ -270,9 +278,32 @@ the fallback when that function returns reserved value `5`.
   (FSL FR-960 routes run items by analyze's rule).
 - When the CLI resolves configuration values, it SHALL use ix-cli-kit's
   `config` module.
-- When invoked with no arguments or with `--help`, `-h` or `help` as its sole
-  argument, the CLI SHALL write root help to stdout without starting a
-  lifecycle operation.
+- When invoked with no arguments or with `--help`, `-h` or `help` alone, the
+  CLI SHALL write root help to stdout without starting a lifecycle operation.
+- When `help` is followed by exactly one word that names a verb root help
+  lists, the CLI SHALL answer exactly as `fsl <verb> --help` does, with the
+  same bytes and exit status. When `help` is followed by a word that names no
+  verb, the CLI SHALL refuse as an unknown verb (AC-31) on stderr, exit 20,
+  and when `help` is followed by a verb and any further word the CLI SHALL
+  refuse with the one stderr line `help takes at most one verb`, exit 20.
+- When the command line names no recognized verb, the CLI SHALL refuse on
+  stderr with the verb it was given, the nearest recognized verb when one is
+  within two edits and the given word does not start with `-`, every
+  recognized verb, and a pointer to `fsl --help`.
+- When an option-shaped argument is not listed in the verb's table entry, the
+  CLI SHALL refuse naming it, the nearest listed option when one is within two
+  edits, and every option the entry lists. When `--engine` names none of
+  `interpreter`, `aot` and `jit`, the CLI SHALL refuse naming the three. When
+  a `--limit` setting names no setting, the CLI SHALL refuse naming the
+  operand once and the settings that verb accepts, grouped by stage, and for a
+  verb that accepts no `--limit` setting (`monitor`, `replay`) saying so.
+- Root help SHALL end, after the verb option sections, with an `Operands:`
+  section explaining `<authority> <identity>`, the `--model` identity and
+  `<request-file>`, then an `Exit codes:` section listing 0, 10, 11, 20, 21,
+  22 and 30. Each `Commands:` line for a verb that executes operations SHALL
+  state what the verb does and what it needs, and for `parse`, `check`,
+  `compile` and `run` that output is text by default with `--format json`
+  selecting JSON.
 - The root help SHALL include the `fsl` invocation syntax, the recognized
   lifecycle verb names, the `--format text|json|dot` option with the `inspect`
   restriction on `dot`, and the `--version`/`-V` version options.
@@ -321,10 +352,17 @@ the fallback when that function returns reserved value `5`.
   when `--help` is present; (2) an option-shaped argument the verb's table
   entry does not list (`invalid-request`, exit 20); (3) `--help` or `-h` in
   option position (help, exit 0); (4) the verb's operand and value checks;
-  (5) the operation. Help applies only to verbs that execute operations: for
-  `prove`, `generate` and `render`, `--help` is not a help request and the
-  invocation gives FSpec FR-522's `unsupported`/`operation-not-routed`
-  result, exit 21.
+  (5) the operation. Help applies to every verb root help lists: for
+  `prove`, `generate` and `render`, `--help` and `-h` write the not-available
+  help of the next bullet and running the verb gives FSpec FR-522's
+  `unsupported`/`operation-not-routed` result, exit 21 (FSpec FR-522 says
+  nothing about a help request).
+- When `fsl prove`, `fsl generate` or `fsl render` is invoked with `--help` or
+  `-h` in option position, the CLI SHALL write to stdout, in this order, the
+  line `fsl <verb> is not available in this build; running it exits 21
+  (unsupported_operation).`, one blank line, the verb's usage line starting
+  `Usage: fsl <verb> `, one blank line and its `<verb> options:` section, exit
+  0, with no stderr, no file read and no lifecycle operation started.
 - When help is written in step 3, the CLI SHALL return FSL's success exit
   result, write no stderr, read no file and start no lifecycle operation.
 - `--version` and `-V` are root options only. No verb's table entry lists
@@ -332,7 +370,7 @@ the fallback when that function returns reserved value `5`.
   naming the option.
 - The request verbs take `--example` (and `export` also `--example-evidence`), and the text of their request refusals is
   specified by [FR-028](FR-028-print-a-minimal-request-with-example.md); the CLI
-  writes those refusals unchanged under AC-3.
+  writes those refusals unchanged under AC-3, except the text-mode export hint line of FR-028-AC-7.
 - The CLI SHALL accept no `--color` option on any verb.
 - The CLI SHALL emit no ANSI escape sequence of its own on stdout or
   stderr: its text output
@@ -384,11 +422,14 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-22 | `fsl run Q --format json`, `Q` FSL FR-960-AC-1's request calling `sq` with `x = 3` and `call.requirements` `{}`, with no `--provider-config`, writes stdout byte-equal to the canonical encoding of the document `run_with_providers_and_limits_and_overrides` returns for `Q` with the providers `[Engine::hybrid_reference()]` and default limits, plus a newline: value `{"integer": "16"}` and three settled requirement entries, exit 0. With `--provider-config` starting a fixture provider whose admitted backend is `fsl-hybrid-reference`, the run refuses `invalid-request` naming `providers`, exit 20, because that backend is already registered. | Test (TC-046) |
 | FR-002-AC-23 | Over a handoff directory `H` written by `fsl compile` from a `native-compile/1` request carrying FSL FR-665-AC-1's `handoff` member, `fsl inspect --handoff H --format json` writes stdout byte-equal to the canonical encoding of the document `fsl_command::command::inspect_handoff(H)` returns, plus a newline: operation `inspect`, category success, exit 0; without `--format` it writes that document's FSL FR-865 text form, exit 0. Over a copy of `H` whose `selection.json` names one node count more, and over a copy whose `checked-package.json` has one changed byte, each run refuses with the `SelectionRefusal` or strict-reader refusal `inspect_handoff` returns, byte-equal to it, exit 20. A path that does not exist, an empty directory, a regular file, and a directory named `-odd` given as `./-odd` each yield the document `inspect_handoff` returns for that path exactly as given (refusal, exit 20, for the first three). `fsl inspect --handoff` with no further argument, `fsl inspect --handoff --format json`, `fsl inspect --handoff H extra` and `fsl inspect --handoff H --handoff H` each refuse `invalid-request`, operation `inspect`, exit 20, naming the missing operand, the missing operand, `extra` and `--handoff`; `fsl inspect --handoff H --format dot` refuses `invalid-request`, exit 20, naming `--format` and `dot`; `fsl inspect --handoff H --bogus` and `fsl inspect H --bogus` each refuse `invalid-request`, exit 20, naming `--bogus`; none of these reads a file under `H`. `fsl inspect H --format json` without `--handoff` writes `unsupported`/`operation-not-routed` naming `inspect`, exit 21. | Test (TC-048) |
 | FR-002-AC-24 | For every verb that executes operations and every option `o` in its `fsl-cli` option table entry, `o` appears on its own line in the verb's `<verb> options:` section of root help and the built parser accepts `o` with a well-formed value (no `invalid-request` naming `o`). For every verb that executes operations and every option name `p` that is listed in another verb's entry or is one of `--version`, `-V`, `--color` and `--bogus`, but is not in this verb's entry, `fsl <verb> p` refuses `invalid-request`, exit 20, naming `p`; in both output modes its refusal outcome is the only command result written to stdout and nothing is written to stderr. Removing one option from a copy of the table and running the parser and the help generator over that copy makes the parser refuse that option, exit 20 naming it, and makes the help omit it; a parser that accepts an option outside its table entry, or a help line that names one, fails this criterion. No option name (a string literal starting `-`) appears in `fsl-cli`'s parsing code outside the table. The entries include `--integer-division` and `--markdown` on `check`, `--extensions <file>` on `parse` and `check` (FSpec FR-562), repeatable `--limit name=value` on `analyze`, `monitor` and `replay` (FR-003), every option of `analyze`, `monitor`, `replay` and `export`, `--provider-limit name=value` on `run`, and `--handoff <directory>` on `inspect`. Root help keeps the `Commands:`, `Source operands:` and `Options:` sections and the `Recognized;` description of each verb this build does not route. | Test (TC-049) |
-| FR-002-AC-25 | `fsl check --help`, `fsl check -h` and `fsl check nosuch.fsl --help`, from an empty working directory, each write exactly the following to stdout, exit 0, write no stderr and read no file: `Usage: fsl check [options] <source-path>` / `       fsl check [options] <authority> <identity> <source-path>` / (blank) / `check options:` / `  --markdown` / `  --model <identity>=<file> (repeatable)` / `  --library <identity>=<file> (repeatable)` / `  --dependent-bytes <bytes>` / `  --limit name=value (repeatable)` / `  --integer-division euclidean\|floor\|truncating` / `  --extensions <file>` / `  --format text\|json`, each line ending in a newline; the same `check options:` section appears in root help. The `--model` and `--library` operands are FSL FR-866's `<identity>=<file>`, each repeatable, and `fsl check` refuses a bare file, an empty identity or file, and a repeated identity as `invalid-request`, exit 20, before any file is read; an identity no `model` declaration or `import` selects refuses after the source parses and before its file is read. An option the table does not mark repeatable, given twice, refuses exit 20 with the verb's usage in the selected output format on stdout and no stderr (FSL FR-767). For every other verb that executes operations, `fsl <verb> --help` writes that verb's usage lines, a blank line and its `<verb> options:` section byte-equal to root help's, exit 0. `fsl prove --help` writes FSpec FR-522's `unsupported`/`operation-not-routed` result naming `prove`, exit 21, and so do `generate` and `render`. `fsl run --format bogus --help` refuses `invalid-request`, exit 20, naming `--format` and `bogus`, and `fsl run --bogus --help` refuses `invalid-request`, exit 20, naming `--bogus`. `fsl <verb> --version` and `fsl <verb> -V` for each verb that executes operations refuse `invalid-request`, exit 20, naming the option, before any file is read. | Test (TC-049) |
+| FR-002-AC-25 | `fsl check --help`, `fsl check -h` and `fsl check nosuch.fsl --help`, from an empty working directory, each write exactly the following to stdout, exit 0, write no stderr and read no file: `Usage: fsl check [options] <source-path>` / `       fsl check [options] <authority> <identity> <source-path>` / (blank) / `check options:` / `  --markdown` / `  --model <identity>=<file> (repeatable)` / `  --library <identity>=<file> (repeatable)` / `  --dependent-bytes <bytes>` / `  --limit name=value (repeatable)` / `  --integer-division euclidean\|floor\|truncating` / `  --extensions <file>` / `  --format text\|json`, each line ending in a newline; the same `check options:` section appears in root help. The `--model` and `--library` operands are FSL FR-866's `<identity>=<file>`, each repeatable, and `fsl check` refuses a bare file, an empty identity or file, and a repeated identity as `invalid-request`, exit 20, before any file is read; an identity no `model` declaration or `import` selects refuses after the source parses and before its file is read. An option the table does not mark repeatable, given twice, refuses exit 20 with the verb's usage in the selected output format on stdout and no stderr (FSL FR-767). For every other verb that executes operations, `fsl <verb> --help` writes that verb's usage lines, a blank line and its `<verb> options:` section byte-equal to root help's, exit 0. `fsl prove --help`, `fsl prove -h` and `fsl help prove`, and the same for `generate` and `render`, each write exactly ``fsl <verb> is not available in this build; running it exits 21 (unsupported_operation).`` / (blank) / ``Usage: fsl <verb> [options]`` (``Usage: fsl prove [options] <request-file>`` for `prove`) / (blank) / ``<verb> options:`` / ``  --format text|json`` to stdout, exit 0, no stderr; running the verb itself still answers FSpec FR-522's `unsupported`/`operation-not-routed` result, exit 21. `fsl run --format bogus --help` refuses `invalid-request`, exit 20, naming `--format` and `bogus`, and `fsl run --bogus --help` refuses `invalid-request`, exit 20, naming `--bogus`. `fsl <verb> --version` and `fsl <verb> -V` for each verb that executes operations refuse `invalid-request`, exit 20, naming the option, before any file is read. | Test (TC-049) |
 | FR-002-AC-26 | `fsl run R --color always`, `fsl run R --color never` and `--color` on every other verb that executes operations refuse `invalid-request`, exit 20, naming `--color`, before `R` or any other named file is read, and no help section contains `--color`. Over inputs that contain no `0x1B` byte, no `fsl` invocation of TC-049 writes the byte `0x1B` to stdout or stderr, with or without `NO_COLOR` set. | Test (TC-049) |
 | FR-002-AC-27 | For FSL FR-960-AC-1's native-run request `Q` whose call carries `requirements`, `fsl run Q --format json` writes FR-002-AC-22's document (value `{"integer": "16"}`, three settled requirement entries), exit 0. `fsl run Q --limit s1.nodes=50000 --format json` writes the same document. FSL's provider run entry carries stage limits only, so `fsl run Q --limit accounting.work_units=1000000` and `fsl run Q --limit observation.input_bytes=1000000` each refuse `invalid-request`, exit 20, naming the setting and `requirements`, and run nothing. `fsl run Q --limit s1.nodes=1 --format json` writes FSL's typed `incomplete` outcome naming `s1.nodes` and configured value 1, exits 22, and settles no requirement item, and in text mode its diagnostic names the authored source locus, not FSL's internal identity; a driver that runs the provider call under default spine limits fails this criterion. | Test (TC-046) |
-| FR-002-AC-28 | `fsl prove R --integer-division floor --format json` and `fsl prove R --bogus --format json` refuse `invalid-request`, exit 20, as the only command result written to stdout: one `invalid-request` outcome document with operation `prove` naming the option, and no stderr output, before the verb answers unsupported; in text mode the same refusals write only their selected text outcome to stdout. `fsl prove R --format json`, `fsl prove --help` and `fsl prove --version` answer unsupported, exit 21 (AC-25 governs help and version on a verb the build does not route). | Test (TC-049) |
+| FR-002-AC-28 | `fsl prove R --integer-division floor --format json` and `fsl prove R --bogus --format json` refuse `invalid-request`, exit 20, as the only command result written to stdout: one `invalid-request` outcome document with operation `prove` naming the option, and no stderr output, before the verb answers unsupported; in text mode the same refusals write only their selected text outcome to stdout. `fsl prove R --format json` and `fsl prove --version` answer unsupported, exit 21; `fsl generate --bogus` and `fsl render --bogus` refuse as `prove` does; `fsl prove --help` is AC-25's. | Test (TC-049) |
 | FR-002-AC-29 | `fsl not-a-verb`, `fsl not-a-verb --format json` and a first argument that is not valid UTF-8 each write one diagnostic line to stderr, nothing to stdout, and exit 20; no outcome document is written. | Test (TC-049) |
+| FR-002-AC-30 | `fsl run <argument>` where `<argument>` is the single byte `0xFF` writes the text refusal `run: refusal (exit 20)` with the I/O diagnostic naming the argument to stdout, nothing to stderr, and exits 20; a first argument of that byte still writes only the AC-29 diagnostic line to stderr. | Test (TC-049) |
+| FR-002-AC-31 | ``fsl bogus`` writes to stderr ``unknown verb `bogus`; verbs are parse, format, check, compile, run, export, analyze, monitor, prove, replay, generate, inspect, render; run `fsl --help` for usage``, ``fsl chek`` adds ``; did you mean `check` `` before ``; verbs are``, ``fsl help --format json`` names `--format` as the unknown verb with no suggestion, and ``fsl help run extra`` writes ``help takes at most one verb``, each exit 20. ``check --modle x`` refuses naming `--model` as the nearest option and listing the options `check` accepts, ``run --engine fast`` refuses with ``unknown engine `fast`; engines are interpreter, aot, jit``, and ``--limit foo=1`` refuses once, listing the stage-grouped settings of that verb: the spine settings for `check`, `compile` and `parse`, those plus `observation` and `accounting` for `run`, those plus `export` for `export`, `replay (input_bytes)` for `analyze`, and for `monitor` and `replay` the text ``names no setting, and <verb> accepts no --limit settings``. | Test (TC-049) |
+| FR-002-AC-32 | ``fsl help <verb>`` writes the same bytes and exit status as ``fsl <verb> --help`` for every verb root help lists, `prove`, `generate` and `render` included; root help gives each verb its one-line description and ends with the `Operands:` and `Exit codes:` sections. | Test (TC-049) |
 
 ## Dependencies
 

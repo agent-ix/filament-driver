@@ -151,6 +151,32 @@ impl VerbEntry {
         format!("usage: fsl {}", self.usage.join(" | fsl "))
     }
 
+    /// The refusal for an option the entry does not list: the nearest listed
+    /// option when the typed one looks like a typo, and every option the verb
+    /// accepts.
+    #[must_use]
+    pub fn unknown_option(&self, typed: &str) -> String {
+        let mut message = format!("unknown {} option `{typed}`", self.verb);
+        if let Some(near) = nearest(typed, self.options.iter().map(|option| option.name)) {
+            message.push_str(&format!("; did you mean `{near}`"));
+        }
+        let names: Vec<&str> = self.options.iter().map(|option| option.name).collect();
+        message.push_str(&format!("; {} accepts {}", self.verb, names.join(", ")));
+        message
+    }
+
+    /// The text `fsl <verb> --help` writes for a verb this build does not
+    /// route: a first line saying so, then the usage and options as for a
+    /// routed verb.
+    #[must_use]
+    pub fn unrouted_help(&self) -> String {
+        format!(
+            "fsl {} is not available in this build; running it exits 21 (unsupported_operation).\n\n{}",
+            self.verb,
+            self.help()
+        )
+    }
+
     /// The `<verb> options:` section, each line ending in a newline.
     #[must_use]
     pub fn options_section(&self) -> String {
@@ -313,17 +339,29 @@ fn build() -> Vec<VerbEntry> {
 
 /// The entry of a recognized verb this build does not route. Its options
 /// refuse as unknown like a routed verb's, so an unknown option exits 20
-/// before the verb answers unsupported; it has no help section.
+/// before the verb answers unsupported; its help starts by saying so.
 #[must_use]
 pub fn unrouted_entry(verb: &str) -> Option<&'static VerbEntry> {
     static ENTRIES: OnceLock<Vec<VerbEntry>> = OnceLock::new();
     ENTRIES
         .get_or_init(|| {
-            vec![VerbEntry {
-                verb: "prove",
-                usage: vec!["prove [options] <request-file>"],
-                options: vec![format()],
-            }]
+            vec![
+                VerbEntry {
+                    verb: "prove",
+                    usage: vec!["prove [options] <request-file>"],
+                    options: vec![format()],
+                },
+                VerbEntry {
+                    verb: "generate",
+                    usage: vec!["generate [options]"],
+                    options: vec![format()],
+                },
+                VerbEntry {
+                    verb: "render",
+                    usage: vec!["render [options]"],
+                    options: vec![format()],
+                },
+            ]
         })
         .iter()
         .find(|entry| entry.verb == verb)
@@ -404,10 +442,7 @@ pub fn scan(entry: &VerbEntry, arguments: &[OsString]) -> Result<Scan, Refusal> 
             continue;
         }
         let Some(spec) = entry.option(text) else {
-            return Err(Refusal::Usage(format!(
-                "unknown {} option `{text}`",
-                entry.verb
-            )));
+            return Err(Refusal::Usage(entry.unknown_option(text)));
         };
         if !spec.repeatable
             && spec.name != FORMAT
@@ -514,5 +549,61 @@ pub fn root_help(entries: &[VerbEntry], commands: &[(&str, &str)]) -> String {
         help.push('\n');
         help.push_str(&entry.options_section());
     }
+    help.push_str(ROOT_HELP_NOTES);
     help
+}
+
+/// The operand and exit-code explanations that close root help.
+pub const ROOT_HELP_NOTES: &str = concat!(
+    "\nOperands:\n",
+    "  <authority> <identity>  Labels that name the source in diagnostics and outcome documents,\n",
+    "                         for example `example example:shop/orders`. `check <source-path>`\n",
+    "                         labels the source with authority `filament` and the path as identity.\n",
+    "  --model <identity>=<file>\n",
+    "                         Supplies an imported model. <identity> is the string in the\n",
+    "                         source's model line, such as `example/shop`; <file> is its source.\n",
+    "  <request-file>          A JSON request; its `format` member names the request kind,\n",
+    "                         such as native-run/1.\n",
+    "\nExit codes:\n",
+    "  0   success\n",
+    "  10  the result is a violation or undefined\n",
+    "  11  a finite observation window did not decide the result\n",
+    "  20  refused: the command line, a file or the request was not accepted\n",
+    "  21  unsupported: this build does not route that operation\n",
+    "  22  incomplete or inconclusive: a limit, timeout or cancellation stopped it,\n",
+    "      or it was neither proved nor refuted\n",
+    "  30  internal failure\n",
+);
+
+/// The candidate nearest to `typed`, when one is close enough to be a likely
+/// typo: within two edits, and fewer edits than the typed text has letters.
+#[must_use]
+pub fn nearest<'a>(typed: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let typed_letters = typed.trim_start_matches('-').chars().count();
+    candidates
+        .into_iter()
+        .map(|candidate| (edit_distance(typed, candidate), candidate))
+        .filter(|(distance, _)| *distance <= 2 && *distance < typed_letters)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate)
+}
+
+/// The Levenshtein distance between two texts, counted in characters.
+fn edit_distance(left: &str, right: &str) -> usize {
+    let right: Vec<char> = right.chars().collect();
+    let mut row: Vec<usize> = (0..=right.len()).collect();
+    for (row_index, left_char) in left.chars().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = row_index + 1;
+        for (column, right_char) in right.iter().enumerate() {
+            let above = row[column + 1];
+            row[column + 1] = if left_char == *right_char {
+                diagonal
+            } else {
+                1 + diagonal.min(above).min(row[column])
+            };
+            diagonal = above;
+        }
+    }
+    row[right.len()]
 }

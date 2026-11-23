@@ -17,6 +17,7 @@ use serde_json::Value;
 
 const FSL: &str = env!("CARGO_BIN_EXE_fsl");
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
+const CHECK_UNKNOWN_BOGUS: &str = "unknown check option `--bogus`; check accepts --markdown, --model, --library, --dependent-bytes, --limit, --integer-division, --extensions, --format";
 
 fn fsl_in(directory: &Path, arguments: &[&str]) -> Output {
     Command::new(FSL)
@@ -446,17 +447,14 @@ fn output_mode_is_resolved_before_options_are_validated() {
     assert!(json.stderr.is_empty(), "{:?}", json.stderr);
     let json = document(&json);
     assert_eq!(json["operation"], "check", "{json}");
-    assert_eq!(message(&json), "unknown check option `--bogus`");
+    assert_eq!(message(&json), CHECK_UNKNOWN_BOGUS);
 
     // The mode is selected whether `--format` comes before or after the bad option.
     let before = fsl_in(directory.path(), &["check", "--format", "json", "--bogus"]);
     assert_eq!(before.status.code(), Some(20), "{before:?}");
     assert!(before.stderr.is_empty(), "{:?}", before.stderr);
     assert_eq!(document(&before)["operation"], "check");
-    assert_eq!(
-        message(&document(&before)),
-        "unknown check option `--bogus`"
-    );
+    assert_eq!(message(&document(&before)), CHECK_UNKNOWN_BOGUS);
 
     let text = fsl_in(directory.path(), &["check", "--bogus", "--format", "text"]);
     assert!(text.stderr.is_empty(), "{:?}", text.stderr);
