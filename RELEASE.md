@@ -50,14 +50,16 @@ For this release, keep these authoritative values aligned with `0.2.0` where app
 | Examples | Toolchain npm version sources | `image/package.json` and its lockfile |
 | Examples | Quire CLI and Quoin versions | `0.52.1` and `0.36.10` |
 | Examples | Image installation command | Docker uses `npm ci` |
-| Examples | Image license records | Generated from the installed tree at build time |
+| Examples | npm package inventory | Generated from installed `node_modules` at build time |
+| Examples | Driver and runner license records | Checked-in JSON source records |
+| Examples | Rendered third-party notices | Checked-in generated notices |
 | Docs | [release notes](https://github.com/agent-ix/filament-docs/blob/main/src/content/docs/fsl/releases/v0.2.0.md) | Release page for this identity |
 | Docs | [setup guide](https://github.com/agent-ix/filament-docs/blob/main/src/content/docs/fsl/guides/set-up-your-environment.md) | Show CLI version and full FSL SHA |
 | Template | No package version field | Tag the reviewed template commit |
 
 `filament-spec-language` has package version `0.3.0`; repository tag `v0.3.0` matches it. The standard uses dynamic package versioning. Contract IR and codegen repository tags are independent repository tags; do not change their Cargo package versions solely to make them equal the driver version. Before a later alpha, search these files and the image configuration for the selected version, update only the authoritative values, then regenerate Cargo.lock for manifest changes.
 
-The toolchain image's pinned npm tools are separate from the driver's `fsl` version. Examples PR [#102](https://github.com/agent-ix/filament-examples/pull/102), head `2b6921690682cb1ebbfa664191c4a2e26a0776bd`, sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. The image license records are generated from the installed tree during the build. These are toolchain image versions, not the driver version; there are no checked-in per-version JSON records or `THIRD-PARTY` files to update.
+The toolchain image's pinned npm tools are separate from the driver's `fsl` version. Examples PR [#102](https://github.com/agent-ix/filament-examples/pull/102), head `2b6921690682cb1ebbfa664191c4a2e26a0776bd`, sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. The image build generates the npm package inventory from installed `node_modules`; that inventory is not a checked-in per-version JSON record. The checked-in driver and runner records are `image/licenses/data/filament-driver.json` and `image/licenses/data/fsl-examples.json`. The rendered `image/licenses/THIRD-PARTY.md` and `image/licenses/THIRD-PARTY-LICENSES.txt` are checked in too. After tagging the driver, refresh its license record from that exact driver release, then use the repository's collection/render workflow to update the records and notices. These npm versions describe the toolchain image, not the driver's version.
 
 ## Driver release workflow
 
