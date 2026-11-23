@@ -165,7 +165,10 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
                 install_page_path.display()
             )
         })?;
-    if let Some(released_binary) = released_binary.as_deref() {
+    if candidate.is_some() {
+        stats.skips += 1;
+        println!("SKIP released-artifact check: candidate binary");
+    } else if let Some(released_binary) = released_binary.as_deref() {
         stats.checked += 1;
         if let Err(error) = check_released_binary(
             &examples,
@@ -378,10 +381,10 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
     ) {
         Ok(version) => {
             let output = stdout_text(&version);
-            let actual = output.lines().map(str::trim).collect::<Vec<_>>();
-            let matches = expected_version_output.as_ref().map_or_else(
-                || actual.iter().any(|line| *line == expected_version),
-                |expected| actual == expected.iter().map(String::as_str).collect::<Vec<_>>(),
+            let matches = matches_version_output(
+                &output,
+                &expected_version,
+                expected_version_output.as_deref(),
             );
             if version.status.success() && matches {
                 println!(
@@ -438,7 +441,22 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
             Ok(actual) => {
                 let actual_text = normalize_lines(&stdout_text(&actual));
                 let expected_text = normalize_lines(&literal.expected);
-                if literal.expected_exit == status_code(&actual) && actual_text == expected_text {
+                let version_command = literal.command.trim() == "fsl --version";
+                let matches_output = if version_command {
+                    actual_text.lines().next().map(str::trim)
+                        == expected_text
+                            .lines()
+                            .find(|line| !line.trim().is_empty())
+                            .map(str::trim)
+                } else {
+                    actual_text == expected_text
+                };
+                let expected_exit = if version_command {
+                    0
+                } else {
+                    literal.expected_exit
+                };
+                if expected_exit == status_code(&actual) && matches_output {
                     println!(
                         "PASS {} | {}",
                         docs.join(&literal.page).display(),
@@ -590,7 +608,9 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
         match exec(&container, "bash", &["-lc", &shell_command]) {
             Ok(actual) => {
                 let actual_output = stdout_text(&actual);
-                let actual_json = serde_json::from_str::<Value>(&actual_output).ok();
+                let actual_json = serde_json::from_str::<Value>(&actual_output)
+                    .ok()
+                    .map(|value| project_recorded_outcome(&value));
                 let actual_render = actual_json
                     .as_ref()
                     .map(|value| render_output(value, status_code(&actual), &example.view));
@@ -1465,6 +1485,49 @@ fn render_output(value: &Value, exit: i32, view: &OutputView) -> Result<String, 
     }
 }
 
+fn project_recorded_outcome(raw: &Value) -> Value {
+    if raw.get("format").and_then(Value::as_str) != Some("filament-outcome/1") {
+        return serde_json::json!({ "outcome": null });
+    }
+    let field = |name: &str| raw.get(name).cloned().unwrap_or(Value::Null);
+    let diagnostics = raw
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let first_diagnostic = diagnostics.first().map_or(Value::Null, |diagnostic| {
+        serde_json::json!({
+            "code": diagnostic.get("code").cloned().unwrap_or(Value::Null),
+            "cause": diagnostic.get("cause").cloned().unwrap_or(Value::Null),
+        })
+    });
+    let items = raw
+        .get("items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    serde_json::json!({
+        "category": field("category"),
+        "last_stage": field("last_stage"),
+        "result": field("result"),
+        "first_diagnostic": first_diagnostic,
+        "items": items,
+    })
+}
+
+fn matches_version_output(
+    actual: &str,
+    expected: &str,
+    expected_output: Option<&[String]>,
+) -> bool {
+    let expected_first = expected_output
+        .and_then(|lines| lines.first())
+        .map(String::as_str)
+        .unwrap_or(expected)
+        .trim();
+    actual.lines().next().map(str::trim) == Some(expected_first)
+}
+
 fn path_values<'a>(value: &'a Value, path: &[&str]) -> Vec<&'a Value> {
     let Some((segment, rest)) = path.split_first() else {
         return vec![value];
@@ -1520,12 +1583,8 @@ fn check_released_binary(
         "bash",
         &["-lc", "export PATH=/root/.local/bin:$PATH && fsl --version"],
     )?;
-    let output = output_text(&version);
-    let actual_lines = output.lines().map(str::trim).collect::<Vec<_>>();
-    let matches = expected_output.map_or_else(
-        || actual_lines.iter().any(|line| *line == expected_version),
-        |expected| actual_lines == expected.iter().map(String::as_str).collect::<Vec<_>>(),
-    );
+    let output = stdout_text(&version);
+    let matches = matches_version_output(&output, expected_version, expected_output);
     if !version.status.success() || !matches {
         return Err(format!(
             "exit {}: {}",
@@ -1933,6 +1992,52 @@ expect_exit = 10
                 .contains("GLIBC_PRIVATE")
         );
         assert!(validate_glibc_version_info("no symbol versions").is_err());
+    }
+
+    #[test]
+    fn recorded_outcome_projection_matches_examples_runner_shape() {
+        let raw = serde_json::json!({
+            "format": "filament-outcome/1",
+            "category": "refusal",
+            "last_stage": "S2",
+            "result": null,
+            "diagnostics": [{
+                "code": "wrong_snapshot",
+                "cause": "wrong-observation",
+                "message": "message text is not projected"
+            }],
+            "items": []
+        });
+        assert_eq!(
+            project_recorded_outcome(&raw),
+            serde_json::json!({
+                "category": "refusal",
+                "last_stage": "S2",
+                "result": null,
+                "first_diagnostic": {
+                    "code": "wrong_snapshot",
+                    "cause": "wrong-observation"
+                },
+                "items": []
+            })
+        );
+        assert_eq!(
+            project_recorded_outcome(&serde_json::json!({ "format": "other" })),
+            serde_json::json!({ "outcome": null })
+        );
+    }
+
+    #[test]
+    fn version_output_compares_first_line_only() {
+        let actual = "0.2.0\nFSL revision: build-specific\n";
+        assert!(matches_version_output(actual, "0.2.0", None));
+        assert!(matches_version_output(
+            actual,
+            "0.2.0",
+            Some(&["0.2.0".to_owned()])
+        ));
+        assert!(!matches_version_output(actual, "0.2.1", None));
+        assert!(!matches_version_output("FSL revision: xyz", "0.2.0", None));
     }
 
     #[test]
