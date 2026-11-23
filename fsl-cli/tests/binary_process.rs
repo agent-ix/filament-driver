@@ -1093,9 +1093,20 @@ fn root_argv_refusal_names_invalid_format_without_result_output() {
 /// Trace: FR-002-AC-1, FR-002-AC-8; an option the verb does not list is refused and named.
 #[test]
 fn unlisted_option_refuses_and_names_the_option() {
-    for verb in ["check", "analyze", "monitor", "replay"] {
+    for (verb, accepted) in [
+        (
+            "check",
+            "--markdown, --model, --library, --dependent-bytes, --limit, --integer-division, --extensions, --format",
+        ),
+        ("analyze", "--limit, --provider-config, --provider-limit, --format"),
+        (
+            "monitor",
+            "--input, --limit, --provider-config, --provider-limit, --format",
+        ),
+        ("replay", "--limit, --provider-config, --provider-limit, --format"),
+    ] {
         let option = "--engine";
-        let message = format!("unknown {verb} option `{option}`");
+        let message = format!("unknown {verb} option `{option}`; {verb} accepts {accepted}");
         let text = Command::new(FSL)
             .args([verb, option, "gpu"])
             .output()
@@ -1172,7 +1183,7 @@ fn an_unknown_engine_is_a_refusal() {
     assert!(output.stderr.is_empty(), "{:?}", output.stderr);
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "run: refusal (exit 20)\n<no-source>: invalid-request: unknown engine `gpu`\n"
+        "run: refusal (exit 20)\n<no-source>: invalid-request: unknown engine `gpu`; engines are interpreter, aot, jit\n"
     );
 }
 
@@ -1295,7 +1306,7 @@ fn fsl_rejects_unknown_malformed_and_duplicate_limits_before_source_read() {
         let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(stderr.contains(operand), "{operand}: {stderr}");
         if operand == "work_units=0" {
-            assert!(stderr.contains("UnknownSetting"), "{stderr}");
+            assert!(stderr.contains("names no setting"), "{stderr}");
         }
         assert!(
             !stderr.contains("could not read source"),

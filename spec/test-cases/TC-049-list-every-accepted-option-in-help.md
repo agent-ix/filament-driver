@@ -16,7 +16,8 @@ under mutation of the table; that the root-help layout keeps the sections
 the docs generator reads; that `fsl <verb> --help` writes the verb's usage
 lines and options section with the specified precedence; that `--version`
 is a root option only; and that `--color` is refused everywhere.
-Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29.
+Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29,
+FR-002-AC-30, FR-002-AC-31, FR-002-AC-32.
 
 ## Test Procedure
 
@@ -64,6 +65,16 @@ Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29.
 12. Run steps 1, 2, 7 and 10 once with `NO_COLOR=1` and once without, over
     fixtures that contain no `0x1B` byte, and scan stdout and stderr for the
     byte `0x1B`.
+    13. Run `fsl run` with the single argument byte `0xFF`, then `fsl` with that
+    byte as its first argument; check the first writes the I/O refusal to
+    stdout with empty stderr and exit 20, the second one stderr line (AC-30).
+14. Run `fsl bogus`, `fsl chek`, `fsl check --modle x`, `fsl run --engine
+    fast` and `fsl check --limit foo=1`; check the exact messages of AC-31.
+15. Run `fsl help <verb>` and `fsl <verb> --help` for every verb that
+    executes operations, and `fsl --help`; check the bytes agree and root
+    help ends with the Operands and Exit codes sections (AC-32).
+
+Test: `cli-contracts/tests/messages.rs` for steps 11 to 15 (AC-30..AC-32).
 
 Test: `fsl-cli/tests/help_contract.rs` `help_lists_every_accepted_option`,
 `parser_refuses_options_outside_its_entry`, `verb_help_writes_its_section`,

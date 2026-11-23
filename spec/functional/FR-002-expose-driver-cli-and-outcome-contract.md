@@ -87,9 +87,28 @@ the fallback when that function returns reserved value `5`.
 - For `fsl inspect --handoff <directory>`, the `filament-outcome/1` document
   with operation `inspect` that FSL's `inspect_handoff` returns, or its text
   form (AC-23).
-- When the command line names no recognized verb, or is not valid UTF-8, there
+- When the command line names no recognized verb, or its first argument is not valid UTF-8, there
   is no operation to name in an outcome: the driver writes one diagnostic line
   to standard error, nothing to standard output, and exits 20.
+- When the command line names no recognized verb, the driver's one diagnostic
+  line names the verb it was given, the nearest recognized verb when one is
+  within two edits, every recognized verb, and `fsl --help`. A verb that is
+  recognized but whose arguments are not valid UTF-8 is not this case: its
+  non-UTF-8 argument is refused as the verb's own `invalid-request` or I/O
+  refusal on stdout in the selected mode (FR-002-AC-30).
+- An option the verb's table entry does not list refuses with the option, the
+  nearest listed option when one is within two edits, and every option the
+  entry lists. An `--engine` value other than `interpreter`, `aot` or `jit`
+  refuses naming the three. An unknown `--limit` setting refuses naming the
+  operand once and the settings the command accepts, grouped by stage.
+- `fsl help <verb>` for a verb that executes operations writes that verb's
+  help exactly as `fsl <verb> --help` does. Each `Commands:` line for a verb
+  that executes operations states what the verb does and what it needs, and
+  for `parse`, `check`, `compile` and `run` that text is the default output
+  and `--format json` selects JSON. Root help ends with an `Operands:`
+  section that explains `<authority> <identity>`, the `--model` identity and
+  `<request-file>`, then an `Exit codes:` section listing 0, 10, 11, 20, 21,
+  22 and 30.
 - The exit status returned by FSL's category exit function, except that a
   reserved-code mapping invariant failure returns code `30`, and a
   signal-terminated active plugin invocation re-raises the signal after
@@ -385,6 +404,9 @@ the fallback when that function returns reserved value `5`.
 | FR-002-AC-27 | For FSL FR-960-AC-1's native-run request `Q` whose call carries `requirements`, `fsl run Q --format json` writes FR-002-AC-22's document (value `{"integer": "16"}`, three settled requirement entries), exit 0. `fsl run Q --limit s1.nodes=50000 --format json` writes the same document. FSL's provider run entry carries stage limits only, so `fsl run Q --limit accounting.work_units=1000000` and `fsl run Q --limit observation.input_bytes=1000000` each refuse `invalid-request`, exit 20, naming the setting and `requirements`, and run nothing. `fsl run Q --limit s1.nodes=1 --format json` writes FSL's typed `incomplete` outcome naming `s1.nodes` and configured value 1, exits 22, and settles no requirement item, and in text mode its diagnostic names the authored source locus, not FSL's internal identity; a driver that runs the provider call under default spine limits fails this criterion. | Test (TC-046) |
 | FR-002-AC-28 | `fsl prove R --integer-division floor --format json` and `fsl prove R --bogus --format json` refuse `invalid-request`, exit 20, as the only command result written to stdout: one `invalid-request` outcome document with operation `prove` naming the option, and no stderr output, before the verb answers unsupported; in text mode the same refusals write only their selected text outcome to stdout. `fsl prove R --format json`, `fsl prove --help` and `fsl prove --version` answer unsupported, exit 21 (AC-25 governs help and version on a verb the build does not route). | Test (TC-049) |
 | FR-002-AC-29 | `fsl not-a-verb`, `fsl not-a-verb --format json` and a first argument that is not valid UTF-8 each write one diagnostic line to stderr, nothing to stdout, and exit 20; no outcome document is written. | Test (TC-049) |
+| FR-002-AC-30 | `fsl run <argument>` where `<argument>` is the single byte `0xFF` writes the text refusal `run: refusal (exit 20)` with the I/O diagnostic naming the argument to stdout, nothing to stderr, and exits 20; a first argument of that byte still writes only the AC-29 diagnostic line to stderr. | Test (TC-049) |
+| FR-002-AC-31 | `fsl bogus` writes to stderr `unknown verb `bogus`; verbs are parse, format, check, compile, run, export, analyze, monitor, prove, replay, generate, inspect, render; run `fsl --help` for usage`, `fsl chek` adds `; did you mean `check``, `check --modle x` refuses naming `--model` as the nearest option and listing the options `check` accepts, `run --engine fast` refuses with `unknown engine `fast`; engines are interpreter, aot, jit`, and `check --limit foo=1` refuses once with the settings grouped by stage. | Test (TC-049) |
+| FR-002-AC-32 | `fsl help <verb>` writes the same bytes as `fsl <verb> --help` for every verb that executes operations; root help gives each verb its one-line description and ends with the `Operands:` and `Exit codes:` sections. | Test (TC-049) |
 
 ## Dependencies
 
