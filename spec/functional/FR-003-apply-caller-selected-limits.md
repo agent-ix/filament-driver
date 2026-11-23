@@ -82,6 +82,28 @@ limit outcome and report no success.
 - The driver SHALL pass the computed limits values to the selected operation.
 - The driver SHALL preserve each explicit caller value when building the
   computed limits values.
+- For `analyze`, `monitor` and `replay`, the operation's caller-configurable
+  bound set SHALL be the operation-specific set in FSL FR-255's “Lifecycle
+  caller-limit coverage”. The driver SHALL pass each accepted override to
+  that matching FSL bound and SHALL refuse a recognized setting absent from
+  the operation's set before doing work. In particular, `monitor` SHALL
+  expose `monitor.preparation_work_units` and
+  `monitor.preparation_storage` for plan preparation; the latter configures
+  `MonitorPreparationLimits.storage`.
+- The `fsl monitor` default for `monitor.preparation_work_units` SHALL be
+  16777216 work units, and a caller MAY replace it with
+  `--limit monitor.preparation_work_units=<n>`. A reached work bound SHALL
+  name `monitor.preparation_work_units` in its refusal.
+- For real inputs, `fsl monitor` SHALL use a default read-storage allowance
+  of 268435456 bytes (256 MiB) for `monitor.preparation_storage`. This fixed
+  default is derived from the measured upper charge of 126 MB for a 2.9–3.2
+  MB plan (IR-1584), with approximately 2.1 times headroom, and gives the same
+  allowance independent of package size. A caller MAY replace it with the
+  repeatable CLI operand `--limit monitor.preparation_storage=<n>`; the
+  explicit value is the effective allowance. When this bound is reached, the
+  refusal SHALL name `monitor.preparation_storage` and state that the caller
+  can raise it with `--limit monitor.preparation_storage=<n>`. This storage
+  bound is separate from `monitor.preparation_work_units`.
 - A reached limit SHALL retain FSL's typed cause, limit kind, configured
   value and field identity in the machine outcome.
 - A limit outcome SHALL retain FSL's incomplete category and use FSL's
@@ -102,6 +124,9 @@ limit outcome and report no success.
 | FR-003-AC-9 | The driver accepts FSL FR-255's `accounting.<counter>` setting names through FSL's operand APIs and retains FSL's unknown-setting refusal for a bare counter such as `work_units`, without adding a driver-defined namespace or aliases. | Test (TC-010) |
 | FR-003-AC-10 | When FSL resolves an `accounting.<counter>` setting name, the driver applies its value through FSL `AccountingLimits::set_bound` to `Call.accounting`; the stage `SpineLimits` remain unchanged and the accounting value reaches `spine::run`, except on a `fsl run` whose call carries `requirements`, which refuses accounting settings (FR-002-AC-27). | Test (TC-010) |
 | FR-003-AC-11 | The `run`, `check`, `analyze`, `monitor` and `replay` option-table entries accept repeatable `--limit name=value`; each operation receives accepted overrides to its exposed limits, retains request-supplied bounds and defaults for omitted settings, and refuses an operation-unavailable setting before work begins. | Test |
+| FR-003-AC-12 | `analyze`, `monitor` and `replay` expose the exact caller-limit sets assigned by FSL FR-255's “Lifecycle caller-limit coverage”; each accepted CLI operand reaches only its matching bound, and each recognized but operation-unavailable setting is refused before work. | Test (TC-010) |
+| FR-003-AC-13 | With no override, `fsl monitor` passes 268435456 bytes as `MonitorPreparationLimits.storage` under `monitor.preparation_storage`. A real 2.9–3.2 MB monitor plan with a measured preparation read charge no greater than 126 MB completes under that default. With a lower explicit `--limit monitor.preparation_storage=<n>` that the plan exceeds, the typed refusal names `monitor.preparation_storage` and says it can be raised with `--limit monitor.preparation_storage=<n>`. | Test (TC-010) |
+| FR-003-AC-14 | With no override, `fsl monitor` passes 16777216 as `MonitorPreparationLimits.work` under `monitor.preparation_work_units`; an explicit matching `--limit` changes only that work bound, and a reached bound names `monitor.preparation_work_units`. | Test (TC-010) |
 
 ## Dependencies
 

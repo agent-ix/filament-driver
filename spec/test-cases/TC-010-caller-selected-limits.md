@@ -20,7 +20,7 @@ accounting settings do not pass through stage bounds. The driver adds no
 namespace or aliases. The driver supports 64-bit hosts; it adds no platform
 overflow rule, and FSL owns bound application behavior on 32-bit hosts.
 
-Scope: FR-003-AC-1 through FR-003-AC-11.
+Scope: FR-003-AC-1 through FR-003-AC-14.
 
 ## Test Procedure
 
@@ -60,6 +60,21 @@ Scope: FR-003-AC-1 through FR-003-AC-11.
    `--limit` override and without it. Verify that the caller's value reaches
    the matching operation bound, the request's other values are preserved,
    and a setting unavailable to that operation refuses before work begins.
+6. For `analyze`, `monitor` and `replay`, exercise each operation-specific
+   setting listed in FSL FR-255's “Lifecycle caller-limit coverage”; inspect
+   that each accepted spelling changes its matching bound and that an
+   unavailable recognized spelling is refused before work. For monitor,
+   prepare a real tutorial-sized 2.9–3.2 MB plan whose measured read-storage
+   charge is at most 126 MB. With no override, verify that
+   `MonitorPreparationLimits.storage` is 268435456 bytes and the plan
+   completes. Repeat with `--limit monitor.preparation_storage=1` (or another
+   measured lower value the plan exceeds); verify the typed refusal names
+   `monitor.preparation_storage` and says to raise it with
+   `--limit monitor.preparation_storage=<n>`. Also set
+   `--limit monitor.preparation_work_units=<n>` and verify only the preparation
+   work bound changes; with no override, verify its default is 16777216 units.
+   Repeat with a work value below the plan's measured preparation charge and
+   verify the refusal names `monitor.preparation_work_units`.
 
 Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 `fsl-cli/tests/binary_process.rs`.
@@ -88,3 +103,9 @@ Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 - `run`, `check`, `analyze`, `monitor` and `replay` accept the repeatable
   option; each forwards only accepted matching overrides and preserves other
   request values.
+- `analyze`, `monitor` and `replay` accept exactly their operation-specific
+  caller limits in FSL FR-255; recognized unsupported operation limits are
+  refused before work.
+- The monitor plan is admitted under the 256 MiB default storage allowance;
+  a reached storage allowance names `monitor.preparation_storage` and the
+  matching `--limit` spelling.
