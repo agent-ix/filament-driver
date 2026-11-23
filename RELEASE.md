@@ -8,7 +8,7 @@ Tag in dependency order. The proposed tags below are the 2026-11-22 snapshot; st
 
 | Order | Repository | Proposed tag | Consumer role |
 | --- | --- | --- | --- |
-| 1 | `filament-standards` | `v0.1.2` | FSL standard |
+| 1 | `filament-specification` | `v0.1.2` | FSL standard |
 | 2 | `filament-contract-ir` | `v0.1.6` | FSL and codegen model |
 | 3 | `filament-spec-language` | `v0.3.0` | Language crates |
 | 4 | `filament-contract-codegen` | `v0.1.1` | Driver backend |
