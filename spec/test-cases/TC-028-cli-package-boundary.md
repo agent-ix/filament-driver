@@ -89,8 +89,10 @@ kill-on-close in this PR.
    no or a blank `path`; `arguments` that are not strings; and unknown members
    at the top level and in an entry, including `deadline_ms` and `limits`,
    which the plugins-only document does not hold. Verify each refusal is the
-   one FR-006-AC-24 states, exit 20. `--provider-limit` parsing and its
-   boundary values are verified by TC-041.
+   one FR-006-AC-24 states, exit 20, writes its refusal outcome to stdout in
+   the selected format and writes nothing to stderr. Repeat with no
+   `--format` to verify the default text rendering. `--provider-limit` parsing
+   and its boundary values are verified by TC-041.
 9. Configure two distinct executables whose admitted hellos advertise the same
    identity. Verify FSL admission is invoked normally and its typed registration
    refusal, if any, is preserved. If FSL treats identical repeated admission as
@@ -203,9 +205,11 @@ Linux/macOS runners provide the signal evidence in step 13.
   and omitting the option (or providing an empty `providers` array) registers
   and starts no process providers. The selected-provider
   route is exercised by the configured composition test; production binary
-  regressions cover duplicate refusal and active-request signal cleanup. Invalid config refuses as FR-006-AC-24
-  states (`invalid-request`, or `unknown_wire` for another `format`), exit 20. A `deadline_ms` or `limits` entry member is unknown
-  and rejected before spawn.
+  regressions cover duplicate refusal and active-request signal cleanup. Invalid
+  config refuses as FR-006-AC-24 states (`invalid-request`, or `unknown_wire`
+  for another `format`), exit 20; its outcome goes to stdout in the selected
+  mode and stderr remains empty. A `deadline_ms` or `limits` entry member is
+  unknown and rejected before spawn.
 - With two configured providers, both hellos are admitted before negotiation;
   the second provider can be selected and receives only its routed request,
   with its exact path and arguments and the run's limits and `deadline_ms`. The hello

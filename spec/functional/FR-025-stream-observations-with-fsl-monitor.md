@@ -34,7 +34,9 @@ code. It no longer exits 21 with no output. Ticket: QSL-2313, the driver half of
 
 The verb is the command-line encoding of FSL's in-process entry
 `fsl_command::command::monitor`. The request document carries every monitoring
-setting, so the driver reads none from options.
+setting. The driver also accepts `--limit name=value` as a caller override for
+a matching FSL-exposed bound; the request's value remains effective where the
+caller does not supply an override.
 
 ### Decision: `monitor` routes its request items to the configured providers
 
@@ -71,6 +73,8 @@ written. The signal is consumed, not re-raised.
 - `--format json` or `--format text`.
 - `--provider-config <file>` and `--provider-limit <name>=<value>`, as FR-006
   states for every provider-routing verb.
+- Zero or more `--limit name=value` options, resolved and applied as FR-003
+  specifies.
 
 ## Outputs
 
@@ -81,11 +85,13 @@ written. The signal is consumed, not re-raised.
   `records <n> refused <m>`.
 - The exit code of the summary (FR-285). A request refused before any record is
   read writes the command-error outcome document (machine mode) or its
-  diagnostics on stderr (text mode), and exits 20.
+  selected text rendering (text mode) to stdout, and exits 20; neither mode
+  writes refusal diagnostics to stderr.
 - If `command::monitor` fails after events were written, the driver appends the
-  `filament-outcome/1` document for that failure (machine mode) or its
-  diagnostics on stderr (text mode) and exits with the failure's FR-285 code,
-  20 for a refusal; the events already written stay.
+  `filament-outcome/1` document for that failure (machine mode) or its text
+  rendering (text mode) to stdout and exits with the failure's FR-285 code,
+  20 for a refusal; the events already written stay, and nothing is written
+  to stderr.
 
 ## Behavior
 
@@ -102,6 +108,9 @@ written. The signal is consumed, not re-raised.
   `monitor`, start the configured plugins as FR-006 states, and pass the started providers, the resolved limit set and its production
   negotiator to `command::monitor`, so the request's `items` settle on them
   (FSL FR-644 "Provider-routed items").
+- The driver SHALL apply each accepted `--limit` override to the matching
+  exposed monitor bound before calling FSL. A caller value overrides the
+  request value for that bound; other request values remain unchanged.
 - A request that carries a `records` member is refused by FSL: `run` reads that
   batch form, `monitor` reads the stream it is given.
 
@@ -119,7 +128,7 @@ clauses `Reaches` (`eventually holds(r.level = 2)`) and `Never`
 | FR-025-AC-4 | `fsl monitor monitor.json --provider-config providers.json --input records.jsonl --format json`, over FSL FR-644-AC-8's request (the fixture unit adding `function Even using v(n: Integer): Boolean pure { n * 2 - n = n }`, `clauses` `Reaches` and `Never`, `items` `[{"claim": "Even", "kind": "value-validity", "backend": "fsl.test-recording-provider"}]`) with levels 0, 1, 2, 1, 0 and a configuration that starts `fsl-test-provider` (advertising `value-validity` `unbounded`, answering `proved`), starts the plugin, which receives a request; writes the event lines of the same command over the request without `items` and no `--provider-config`, then a summary whose `items` are each `proved` on that backend with certification `trusted` and whose `registry` names it; and exits 10. The same command with `--provider-limit deadline_ms=4096` sends the plugin a request whose `deadline_ms` is 4096; the request without `items` under `--provider-config` sends the plugin no request and writes the lines of the run without the option; no output names QSL-2132 and neither option is refused. | Test (TC-044) |
 | FR-025-AC-5 | A record with an unknown member between good records gives one `refusal` event naming that record, the summary counts it, the stream continues and the output equals `command::monitor`'s. | Test (TC-039) |
 | FR-025-AC-6 | With standard input held open, the event that settles `Never` is on standard output before the next record is sent or the input is closed. | Test (TC-039) |
-| FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and in machine mode stdout holds the `monitor` command-error document, in text mode stdout is empty. | Test (TC-039) |
+| FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and stdout holds the command-error document in machine mode or its selected text rendering in text mode, with no stderr output. | Test (TC-039) |
 | FR-025-AC-8 | In text mode, over AC-1's fixture and records, stdout holds one event line `<record> <clause> <category> settled\|pending` per event, then one `<clause> <category> settled\|pending` line per clause and the line `records <n> refused <m>`, and the exit is 10. | Test (TC-039) |
 | FR-025-AC-9 | SIGTERM or SIGINT while standard input is still open ends the run with no further record read: the last line written is an outcome document with category `incomplete`, and the process exits 22. | Test (TC-039) |
 

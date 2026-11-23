@@ -81,7 +81,7 @@ settlement path used for first-party providers.
   `analyze`, `replay` and `monitor` meet this requirement now; `monitor`
   passes the started providers to FSL, which routes the request's `items`
   to them (FR-025). A verb that routes no items SHALL refuse both options as
-  unknown, exit 20 (FSpec FR-301).
+  unknown, exit 20 (FSpec FR-301), using FR-002's selected refusal format.
 - The configuration file SHALL be FSpec FR-561's
   `filament.provider-config/v1` document: a JSON object with exactly
   `format` (the string `filament.provider-config/v1`) and `providers` (an
@@ -99,8 +99,9 @@ settlement path used for first-party providers.
   object level, an entry with no or a blank `path`, or `arguments` that are
   not an array of strings refuses `invalid-request` naming the file and the
   member; another `format` refuses `unknown_wire`/`unsupported-wire`. Each
-  refusal exits 20 with empty stdout in text and machine mode alike (FSpec
-  FR-561), with the diagnostic on stderr, and starts no provider.
+  refusal exits 20 and writes its refusal outcome to stdout in FR-002's
+  selected format, without stderr, and starts no provider. The CLI resolves
+  that format before reading this document.
 - `--provider-limit` SHALL set one limit of the run's limit set by FSL
   FR-287's names, units and defaults, may be given once per name, and is
   accepted with or without `--provider-config`. The composition SHALL read
@@ -108,9 +109,9 @@ settlement path used for first-party providers.
   starts. An argument with no `=`, an unknown name, a name given twice, or a
   value that is empty, zero, signed, has a leading zero, a non-digit or a
   unit suffix, or exceeds 9,007,199,254,740,991 SHALL refuse
-  `invalid-request` naming `--provider-limit` and the argument, exit 20 with
-  empty stdout in text and machine mode alike (FSL FR-287), and start no
-  plugin.
+  `invalid-request` naming `--provider-limit` and the argument, exit 20, and
+  write its refusal outcome to stdout in FR-002's selected format without
+  stderr (FSL FR-287); it starts no plugin.
 - The limit set is one per run (FSpec FR-777): every provider of the run,
   linked or process, works under the same set. The composition SHALL read no
   provider limit from the configuration document, a provider's registration,
@@ -249,12 +250,12 @@ settlement path used for first-party providers.
 | FR-006-AC-21 | For a preserved non-canonical-package response, the driver's shared settlement path maps each failed routed item to FSL `TerminalValue::Failed`. | Planned (TC-013; IR-677 and FSL settlement API) |
 | FR-006-AC-22 | For package-mismatch and non-canonical-package responses, the driver's shared settlement path carries each typed FR-272 diagnostic separately in FSL `OutcomeDiagnostic`. | Planned (TC-013; IR-677 and FSL settlement API) |
 | FR-006-AC-23 | Settling a failed process-provider response leaves unrelated provider results unchanged. | Planned (TC-013; IR-677 and FSL settlement API) |
-| FR-006-AC-24 | The `--provider-config` file accepts only FSpec FR-561's `filament.provider-config/v1` shape (`format`, `providers`, entries with `path` and optional `arguments`); a missing or unreadable file refuses naming the path; a non-JSON document, a missing `format` or `providers`, an unknown member at any object level (including an entry member `deadline_ms` or `limits`), an entry with no or a blank `path`, and `arguments` that are not strings refuse `invalid-request` naming the file and the member; `format` `filament.provider-config/v2` refuses `unknown_wire`/`unsupported-wire`; each exits 20 with empty stdout under both `--format text` and `--format json` and starts no provider. A relative `path` resolves against the document's directory. | Test (TC-028) |
+| FR-006-AC-24 | The `--provider-config` file accepts only FSpec FR-561's `filament.provider-config/v1` shape (`format`, `providers`, entries with `path` and optional `arguments`); a missing or unreadable file refuses naming the path; a non-JSON document, a missing `format` or `providers`, an unknown member at any object level (including an entry member `deadline_ms` or `limits`), an entry with no or a blank `path`, and `arguments` that are not strings refuse `invalid-request` naming the file and the member; `format` `filament.provider-config/v2` refuses `unknown_wire`/`unsupported-wire`; each exits 20, writes its refusal outcome to stdout in FR-002's selected format and nothing to stderr, and starts no provider. If no valid output mode is selected, the text refusal rendering is used. A relative `path` resolves against the document's directory. | Test (TC-028) |
 | FR-006-AC-25 | The `fsl-cli` composition starts and admits every configured provider before negotiation, and uses each admitted hello descriptor as the sole provider identity for subsequent selection and dispatch. | Partial (TC-028; selected-provider production dispatch is tested; later-start/hello failure cleanup remains untested) |
 | FR-006-AC-26 | If distinct configured sessions return the same admitted identity, the composition begins no negotiation and closes all sessions; it preserves a FSL registration refusal, or returns the existing CLI `InvalidRequest` input refusal when FSL treats repeated identical admission as idempotent. | Test (TC-028; idempotent duplicate admission path) |
 | FR-006-AC-27 | If a configured provider fails to start or admit its hello, the composition begins no negotiation, closes all earlier active sessions, and preserves the original typed host failure. | Planned (TC-028) |
 | FR-006-AC-28 | `fsl run --provider-config providers.json` with no `--provider-limit` sends the fixture plugin a request whose `deadline_ms` is 600000 and holds it to a 67108864-byte frame limit; with `--provider-limit deadline_ms=250 --provider-limit max_frame_bytes=1048576` the request carries `deadline_ms` 250 and a 1048577-byte result frame settles the item `failed` with the frame-length tool failure naming limit 1048576; `--provider-limit` is accepted without `--provider-config`. | Test (TC-041) |
-| FR-006-AC-29 | `fsl run` with `--provider-limit max_frames=4`, `deadline_ms`, `deadline_ms=0`, `deadline_ms=10s`, `deadline_ms=010`, `max_total_bytes=9007199254740992`, or `deadline_ms=5` given twice each refuses `invalid-request` naming `--provider-limit` and the argument, exits 20 with empty stdout under both `--format text` and `--format json`, and starts no plugin; `fsl parse --provider-limit deadline_ms=5` and `fsl parse --provider-config providers.json` refuse the option as unknown, exit 20. | Test (TC-041) |
+| FR-006-AC-29 | `fsl run` with `--provider-limit max_frames=4`, `deadline_ms`, `deadline_ms=0`, `deadline_ms=10s`, `deadline_ms=010`, `max_total_bytes=9007199254740992`, or `deadline_ms=5` given twice each refuses `invalid-request` naming `--provider-limit` and the argument, exits 20, writes its refusal outcome to stdout in the selected format and nothing to stderr, and starts no plugin; `fsl parse --provider-limit deadline_ms=5` and `fsl parse --provider-config providers.json` refuse the option as unknown, exit 20, with the same selected-format routing. | Test (TC-041) |
 
 ## Dependencies
 

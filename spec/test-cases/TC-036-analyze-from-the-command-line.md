@@ -30,7 +30,9 @@ Scope: FR-022-AC-1 through FR-022-AC-10, and FR-022-AC-12 through FR-022-AC-13.
    the replay target and `reproduced`, and exit 10 (AC-2).
 4. Run `Bounded` with `temporal.limits.max_states` 1, and with
    `deadline_ms` 0; assert `incomplete`, the cause, no counterexample and
-   exit 22 (AC-3).
+   exit 22 (AC-3). Repeat with `--limit temporal.limits.max_states=1` and
+   assert the caller value overrides that request bound; confirm a different
+   request setting is unchanged.
 5. Run an item naming `no-such-backend`, and an item naming backend `en-6`,
    which serves no temporal-satisfaction form; assert the per-item
    settlement and diagnostic, and the `registry` member (AC-4, AC-8).
@@ -68,3 +70,5 @@ Scope: FR-022-AC-1 through FR-022-AC-10, and FR-022-AC-12 through FR-022-AC-13.
   text prints the fixed `provider counterexample unusable [<reason>]: ...`
   line immediately after that item's line. Provider text is absent. A
   replayable mapped assignment continues to yield `refuted`.
+- A refusal outcome is written only to stdout in the selected output format;
+  stderr is empty.

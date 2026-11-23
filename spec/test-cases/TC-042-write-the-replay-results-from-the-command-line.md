@@ -21,6 +21,9 @@ that runs and for a refusal. Scope: FR-026-AC-1 to FR-026-AC-4.
 2. Run the same request with no `--format`.
 3. Run the request with `clocks` added in text and machine mode.
 4. Hand a `native-run/1` request to `fsl replay` in text mode.
+5. Run the replay fixture with a matching `--limit` override, then without
+   it, and confirm the override reaches the exposed replay bound while other
+   request values remain unchanged.
 
 Test: `fsl-cli/tests/replay_cli.rs`.
 
@@ -30,6 +33,8 @@ Test: `fsl-cli/tests/replay_cli.rs`.
   `replayed` with one `input` row, `reproduced-without-witness`; exit 0.
 - Step 2: `replay: success (exit 0) at S8`, then
   `result 0: input reproduced-without-witness`; exit 0.
-- Step 3: `result` `null` and an `invalid-request` diagnostic; text has no
-  result line; exit 20.
+- Step 3: `result` `null` and an `invalid-request` diagnostic; text is the
+  selected refusal rendering on stdout, with no stderr; exit 20.
 - Step 4: refusal header, no result line, exit 20.
+- Every refusal is written to stdout in the selected output format and never
+  to stderr.

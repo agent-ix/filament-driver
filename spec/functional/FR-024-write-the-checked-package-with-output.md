@@ -58,8 +58,8 @@ leaves no partial file, and writes nothing when the compile refuses.
 | FR-024-AC-1 | `fsl compile <request> --output <file>` over a request without `output` exits 0, writes a file whose bytes equal those `fsl_command::command::compile` returns and those the request carrying the same path as its `output` member writes, resolves a relative path against the working directory, and gives an outcome with `artifacts` `[]` equal to the member's. | Test (TC-038) |
 | FR-024-AC-2 | `--output` naming an existing file refuses `invalid-request`, exit 20, `last_stage` null, naming the path, and the file's bytes are unchanged. | Test (TC-038) |
 | FR-024-AC-3 | A request carrying `output` with `--output` refuses `invalid-request` (FSL's refusal, FR-810), exit 20, naming `output` and `--output`, `last_stage` null, and neither file is written. | Test (TC-038) |
-| FR-024-AC-4 | `--output` on `run`, `check` and `analyze` is refused as an unknown option, exit 20, with nothing on stdout and no file written. | Test (TC-038) |
-| FR-024-AC-5 | `--output` given twice, or without a path, refuses the command line naming `--output`, exit 20, and writes no file. | Test (TC-038) |
+| FR-024-AC-4 | `--output` on `run`, `check` and `analyze` is refused as an unknown option, exit 20, with the refusal outcome on stdout in the mode selected by FR-002 and no stderr; no file is written. | Test (TC-038) |
+| FR-024-AC-5 | `--output` given twice, or without a path, refuses the command line naming `--output`, exit 20, writes the refusal outcome to stdout in the mode selected by FR-002 with no stderr, and writes no file. | Test (TC-038) |
 | FR-024-AC-6 | A compile that the checker refuses with `--output` exits 20 with the checker's code and writes no file. | Test (TC-038) |
 
 ## Dependencies
