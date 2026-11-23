@@ -14,7 +14,7 @@ Verify that `fsl monitor` writes FSL's events as records arrive, then the
 summary, exits with the summary's code, and refuses a bad request, a bad
 option and a bad record as FR-025 states.
 
-Scope: FR-025-AC-1 through FR-025-AC-9 except FR-025-AC-4 (TC-044). Ticket: QSL-2313, the driver half of QSL-1977.
+Scope: FR-025-AC-1 through FR-025-AC-10 except FR-025-AC-4 (TC-044). Ticket: QSL-2313, the driver half of QSL-1977.
 
 ## Test Procedure
 
@@ -34,6 +34,16 @@ Scope: FR-025-AC-1 through FR-025-AC-9 except FR-025-AC-4 (TC-044). Ticket: QSL-
 10. Run the monitor request with a matching `--limit` override and assert the
     caller value reaches the operation while other request limits remain
     unchanged.
+11. Use FR-644-AC-16's timed target request with `max_event_rate: null` and
+    `--limit monitor.max_activations=8`; verify the target omits
+    `max_activations`, the effective activation capacity is 8, the plan is
+    prepared before the first record, and the default event rate is used.
+    Measure preparation work W and storage S, run at W/S and at W-1 and S-1
+    separately, and confirm each one-short refusal is returned unchanged
+    before any record is read. Run the same fixture without `target` and with
+    both preparation limits 0; confirm no preparation is charged. Then give
+    `target` an unknown member and verify the invalid-target request refusal
+    in JSON and text mode against FSL's `monitor` result (AC-10; TC-050).
 
 ## Expected Results
 
@@ -41,3 +51,9 @@ Scope: FR-025-AC-1 through FR-025-AC-9 except FR-025-AC-4 (TC-044). Ticket: QSL-
   before the stream ends.
 - A refusal outcome is appended to stdout in the selected format, including
   after already-written events, and no refusal writes to stderr.
+- Step 11: target preparation uses the caller's `monitor.max_activations` and
+  enforces `monitor.preparation_work_units` and `monitor.preparation_storage`
+  before records; each one-short refusal retains FSL's outcome fields and exit
+  22. Without `target`, there is no preparation. The invalid-target refusal
+  exits 20 and is byte-equal to FSL's document in JSON mode and to FSL's text
+  rendering in text mode, with stdout only.

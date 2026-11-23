@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-644
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-255
+    type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-643
     type: depends_on
   - target: ix://agent-ix/filament-spec-language/FR-285
@@ -37,6 +39,12 @@ The verb is the command-line encoding of FSL's in-process entry
 setting. The driver also accepts `--limit name=value` as a caller override for
 a matching FSL-exposed bound; the request's value remains effective where the
 caller does not supply an override.
+
+For FSL FR-644's optional `target`, `--limit monitor.max_activations=N`
+supplies the required activation capacity separately from the target object.
+When `target` is absent, no monitor-plan preparation occurs; when it is
+present, the driver passes the preparation limits and activation capacity to
+FSL, which enforces them before reading records.
 
 ### Decision: `monitor` routes its request items to the configured providers
 
@@ -75,6 +83,11 @@ written. The signal is consumed, not re-raised.
   states for every provider-routing verb.
 - Zero or more `--limit name=value` options, resolved and applied as FR-003
   specifies.
+- When the request has FSL FR-644's optional `target`, the caller SHALL provide
+  `monitor.max_activations` through `--limit`; that caller setting is separate
+  from the target object. `monitor.preparation_work_units` and
+  `monitor.preparation_storage` are passed through as caller bounds for FSL's
+  target-plan preparation.
 
 ## Outputs
 
@@ -111,6 +124,16 @@ written. The signal is consumed, not re-raised.
 - The driver SHALL apply each accepted `--limit` override to the matching
   exposed monitor bound before calling FSL. A caller value overrides the
   request value for that bound; other request values remain unchanged.
+- The driver SHALL pass the resolved caller bounds
+  `monitor.preparation_work_units` and `monitor.preparation_storage` bounds to
+  FSL. When the request has `target`, it SHALL pass the required caller-supplied
+  `monitor.max_activations` value separately from the target. Without
+  `target`, `monitor.max_activations` is operation-unavailable and its
+  explicit use is refused before work; no preparation setting charges work or
+  storage. With `target`, FSL prepares the plan before reading records and
+  enforces both preparation bounds. A reached bound is rendered unchanged as
+  FSL's `stage_limit_exceeded` outcome and exits 22. A malformed target is
+  rendered unchanged as FSL's `invalid-request` outcome and exits 20.
 - A request that carries a `records` member is refused by FSL: `run` reads that
   batch form, `monitor` reads the stream it is given.
 
@@ -131,6 +154,7 @@ clauses `Reaches` (`eventually holds(r.level = 2)`) and `Never`
 | FR-025-AC-7 | `--input <file>` gives the same bytes and exit code as the same records on standard input; an unopenable `--input` file refuses with exit 20, and stdout holds the command-error document in machine mode or its selected text rendering in text mode, with no stderr output. | Test (TC-039) |
 | FR-025-AC-8 | In text mode, over AC-1's fixture and records, stdout holds one event line `<record> <clause> <category> settled\|pending` per event, then one `<clause> <category> settled\|pending` line per clause and the line `records <n> refused <m>`, and the exit is 10. | Test (TC-039) |
 | FR-025-AC-9 | SIGTERM or SIGINT while standard input is still open ends the run with no further record read: the last line written is an outcome document with category `incomplete`, and the process exits 22. | Test (TC-039) |
+| FR-025-AC-10 | With an AC-1 request and no `target`, monitor preparation is not run, even when both preparation bounds are zero, and the stream matches AC-1. With a valid FR-644 target whose `max_event_rate` is `null`, `--limit monitor.max_activations=8` supplies activation capacity 8 separately; preparation precedes record reading and uses the default event rate. If measured preparation work is W and storage is S, limits W and S permit the stream, while work W-1 or storage S-1 independently returns FSL's unchanged `stage_limit_exceeded` outcome with the matching kind, bound, actual and setting, exit 22, before records are read. An invalid target returns FSL's unchanged `invalid-request` document, naming `target`, exit 20, before records are read. | Test (TC-039, TC-050) |
 
 ## Dependencies
 
