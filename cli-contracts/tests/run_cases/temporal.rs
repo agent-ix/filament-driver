@@ -28,11 +28,14 @@ fn external_clock_configuration_matches_inline_and_rejects_both(
     write_json(&case, "external.json", &input)?;
     let external = completed(
         &run(&case, "external.json", &["--clocks", "clocks.json"])?,
-        json!({"integer":"19"}),
+        json!({"type":"integer","value":"19"}),
     );
     input["request"]["clocks"] = clocks();
     write_json(&case, "inline.json", &input)?;
-    let inline = completed(&run(&case, "inline.json", &[])?, json!({"integer":"19"}));
+    let inline = completed(
+        &run(&case, "inline.json", &[])?,
+        json!({"type":"integer","value":"19"}),
+    );
     assert_eq!(external, inline);
     let refused = outcome(
         &run(&case, "inline.json", &["--clocks", "clocks.json"])?,

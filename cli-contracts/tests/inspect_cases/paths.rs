@@ -7,8 +7,18 @@ fn missing_empty_directory_and_regular_file_paths_are_real_refusals() -> Result<
     let case = CliCase::from_environment()?;
     case.write("regular.json", b"{}")?;
     case.write("empty/anchor", b"")?;
-    for directory in ["missing", "empty", "regular.json"] {
+    // The reader names the first member it could not read: none for a path that is
+    // not a directory, `selection.json` for a directory without one.
+    for (directory, member) in [
+        ("missing", Value::Null),
+        ("empty", json!("selection.json")),
+        ("regular.json", Value::Null),
+    ] {
         let value = refusal(&inspect(&case, directory)?, "handoff-read");
+        assert_eq!(
+            value["diagnostics"][0]["locus"],
+            json!({"kind":"input","member":member,"operand":directory,"pointer":null})
+        );
         assert!(
             value["diagnostics"][0]["message"]
                 .as_str()

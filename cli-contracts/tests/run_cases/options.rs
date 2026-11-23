@@ -16,13 +16,13 @@ fn default_and_explicit_text_match_json_status_and_preserve_value_and_refusal(
         assert!(default.0.stderr.is_empty());
         let text = default.stdout_text()?;
         assert!(
-            text.starts_with(&format!("execute: {category} (exit {exit})")),
+            text.starts_with(&format!("run: {category} (exit {exit})")),
             "{text}"
         );
         if exit == 0 {
             assert_eq!(
                 machine["result"],
-                json!({"kind":"completed","value":{"integer":"12"}})
+                json!({"kind":"completed","value":{"type":"integer","value":"12"}})
             );
             for rendered in [default.stdout_text()?, explicit.stdout_text()?] {
                 let results = rendered
@@ -257,7 +257,7 @@ fn front_end_limits_cut_the_actual_run_and_distinct_sufficient_limits_compose(
                 "s1.tokens=100000",
             ],
         )?,
-        json!({"integer":"12"}),
+        json!({"type":"integer","value":"12"}),
     );
     Ok(())
 }
@@ -275,7 +275,7 @@ fn empty_provider_configuration_runs_the_function_without_a_process_plugin(
     )?;
     completed(
         &run(&case, "run.json", &["--provider-config", "providers.json"])?,
-        json!({"integer":"12"}),
+        json!({"type":"integer","value":"12"}),
     );
     Ok(())
 }
@@ -307,7 +307,7 @@ fn provider_limits_accept_distinct_names_and_refuse_bad_counts_before_request_io
                 "max_cpu_ms=1000",
             ],
         )?,
-        json!({"integer":"12"}),
+        json!({"type":"integer","value":"12"}),
     );
     for operand in [
         "deadline_ms",

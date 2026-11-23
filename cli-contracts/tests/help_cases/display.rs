@@ -97,9 +97,14 @@ fn root_version_aliases_equal_the_cli_package_version_and_have_no_lifecycle_outp
         .expect("declared package version");
     let version: String = serde_json::from_str(version)?;
     assert!(!version.is_empty());
+    let revision = pinned_revision();
+    assert_eq!(revision.len(), 40);
     for flag in options::VERSION_OPTIONS {
         let output = case.run(&[flag])?;
-        assert_eq!(successful_text(&output)?, format!("{version}\n"));
+        assert_eq!(
+            successful_text(&output)?,
+            format!("{version}\nFSL revision: {revision}\n")
+        );
         assert!(
             output.json().is_err(),
             "version is plain text, not an outcome document"
@@ -233,4 +238,25 @@ fn unrouted_help_and_version_flags_never_impersonate_supported_help_or_version(
         }
     }
     Ok(())
+}
+
+/// The pinned FSL revision, read as `fsl-cli/build.rs` reads it: the resolved
+/// commit after `#` in the `fsl-analyze` package source of Cargo.lock.
+fn pinned_revision() -> String {
+    let mut in_package = false;
+    for line in include_str!("../../../Cargo.lock").lines().map(str::trim) {
+        if line == "[[package]]" {
+            in_package = false;
+        } else if line == "name = \"fsl-analyze\"" {
+            in_package = true;
+        } else if in_package && line.starts_with("source = ") {
+            let commit = line
+                .trim_end_matches('"')
+                .rsplit_once('#')
+                .expect("a resolved commit")
+                .1;
+            return commit.to_owned();
+        }
+    }
+    panic!("Cargo.lock holds no fsl-analyze source");
 }

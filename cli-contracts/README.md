@@ -10,6 +10,8 @@ make cli-contracts FSL=/absolute/path/to/fsl
 
 `FSL` is mandatory. Select the binary from the build under test; the harness does not find a different binary or build one.
 
+The build under test is one directory holding `fsl`, `fsl-plugin-launch` (the process-provider launcher, which `fsl` finds beside itself) and `fsl-test-provider`. `make cli-contracts` passes `FSL_TEST_PROVIDER` as `fsl-test-provider` beside `FSL` unless the variable is set, so the analyze, monitor and exit-code provider cases run.
+
 Each `CliCase` owns a temporary working directory. Write original inputs with `write`, then use `run` or `run_stdin` to execute the public command. `Captured` preserves the actual process status and raw stdout/stderr; `json` requires one JSON value and `json_lines` decodes a streaming command. Assert the command's semantic fields independently of the helper.
 
 The examples cover a valid source and a result-type refusal, text versus machine output, raw argument-error diagnostics, and holding/violating observation streams over both files and stdin. A larger stream also exercises an early request refusal without losing its output to a closed stdin pipe.

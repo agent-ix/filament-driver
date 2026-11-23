@@ -37,7 +37,7 @@ function Double using v(n: Integer): Integer pure {
                 let mut request = json!({"format":wire,"request":{"models":[],"program":program}});
                 if verb == "run" {
                     request["request"]["call"] = json!({"function":"Double","arguments":[
-                        {"parameter":"n","value":{"integer":"6"}}]});
+                        {"parameter":"n","value":{"type":"integer","value":"6"}}]});
                 }
                 case.write(
                     format!("{verb}-{file}.json"),
@@ -75,8 +75,8 @@ function Double using v(n: Integer): Integer pure {
                 "refusal",
                 20,
             ),
-            (vec!["run", "run-valid.json"], "execute", "success", 0),
-            (vec!["run", "run-refused.json"], "execute", "refusal", 20),
+            (vec!["run", "run-valid.json"], "run", "success", 0),
+            (vec!["run", "run-refused.json"], "run", "refusal", 20),
         ] {
             let mut arguments = arguments;
             arguments.extend(["--format", "text"]);

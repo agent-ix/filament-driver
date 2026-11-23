@@ -34,7 +34,7 @@ fn a_reachable_full_queue_refutes_never_full_but_proves_capacity() -> Result<(),
     assert_eq!(steps.len(), 2);
     for (step, expected) in steps.iter().zip(["1", "2"]) {
         assert_eq!(
-            step["transition"]["operation"]["node"],
+            step["transition"]["operation"],
             "ix://test/counter/Counter/inc"
         );
         assert_eq!(step["transition"]["receiver"]["identity"], "queue-east");

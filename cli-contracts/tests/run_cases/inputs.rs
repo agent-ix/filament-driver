@@ -22,14 +22,14 @@ fn request_relative_absolute_and_parent_paths_keep_the_request_base(
                 &path,
                 "Remaining",
                 &[
-                    ("total", json!({"integer":"20"})),
-                    ("held", json!({"integer":"7"})),
+                    ("total", json!({"type":"integer","value":"20"})),
+                    ("held", json!({"type":"integer","value":"7"})),
                 ],
             ),
         )?;
         completed(
             &run(&case, "requests/nested/run.json", &[])?,
-            json!({"integer":"13"}),
+            json!({"type":"integer","value":"13"}),
         );
     }
     Ok(())
@@ -43,13 +43,13 @@ fn named_request_ignores_stdin_and_dash_is_an_ordinary_path(
     let case = fixture()?;
     completed(
         &case.run_stdin(&["run", "run.json", "--format", "json"], b"bad JSON\0")?,
-        json!({"integer":"12"}),
+        json!({"type":"integer","value":"12"}),
     );
     let bytes = std::fs::read(case.directory().join("run.json"))?;
     case.write("-", &bytes)?;
     completed(
         &case.run_stdin(&["run", "./-", "--format", "json"], b"not the request")?,
-        json!({"integer":"12"}),
+        json!({"type":"integer","value":"12"}),
     );
     Ok(())
 }
@@ -147,7 +147,7 @@ fn exact_request_and_dependency_budgets_are_inclusive_and_reset(
                 &source_len,
             ],
         )?,
-        json!({"integer":"12"}),
+        json!({"type":"integer","value":"12"}),
     );
     for (flag, field, size) in [
         ("--request-bytes", "request_bytes", bytes.len()),
@@ -163,7 +163,10 @@ fn exact_request_and_dependency_budgets_are_inclusive_and_reset(
         );
         assert!(value["result"].is_null(), "{value}");
     }
-    completed(&run(&case, "run.json", &[])?, json!({"integer":"12"}));
+    completed(
+        &run(&case, "run.json", &[])?,
+        json!({"type":"integer","value":"12"}),
+    );
     Ok(())
 }
 
