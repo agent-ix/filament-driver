@@ -52,6 +52,8 @@ main) and the driver implements this requirement against them.
   `operation-contract` and `temporal-satisfaction` records at `Claim`-role
   occurrences, so an item of those capabilities settles `InvalidRequest` at
   negotiation as it does today and is not routed to generation.
+- The same `RequirementMap::path_condition_frames()` table and each FSL
+  item's `path_condition_frame()` terminal id (FSL FR-062 and FR-075).
 - The E5-admitted `CheckedPackageV2`, whose source frame is the one every
   projected node id is expressed in.
 - FR-010's partition: which items the export bound and which it refused.
