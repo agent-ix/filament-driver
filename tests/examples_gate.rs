@@ -633,7 +633,8 @@ fn the_gate_runs_the_fsl_of_this_workspace() {
         .output()
         .unwrap_or_else(|e| panic!("cannot start {}: {e}", fsl.display()));
     assert!(reported.status.success(), "{}", text(&reported.stderr));
-    assert_eq!(text(&reported.stdout).trim_end(), version);
+    // The first line is the package version; the second names the FSL revision (FR-002-AC-11).
+    assert_eq!(text(&reported.stdout).lines().next(), Some(version.as_str()));
     let target_dir = metadata["target_directory"]
         .as_str()
         .unwrap_or_else(|| panic!("metadata has no target_directory"));
