@@ -1,46 +1,51 @@
+//! Reports the FSL revision of this build as `FSL_PINNED_REVISION` (FR-002-AC-11).
 use std::{env, fs, path::PathBuf};
 
+#[path = "build/revision.rs"]
+mod revision;
+
+use revision::{local_path_revision, lock_entry, pinned_commit, LockEntry};
+
+/// The variable naming the FSL checkout a local path build patches in; the
+/// examples gate sets it (driver FR-021).
+const LANGUAGE_VAR: &str = "FSL_LANGUAGE_DIR";
+const UNKNOWN: &str = "unknown (local path)";
+
 fn main() {
-    let manifest_dir = PathBuf::from(
-        env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR for build scripts"),
-    );
-    let lock_path = manifest_dir.join("../Cargo.lock");
+    let lock_path = env::var_os("CARGO_MANIFEST_DIR")
+        .map(|dir| PathBuf::from(dir).join("../Cargo.lock"))
+        .unwrap_or_else(|| PathBuf::from("../Cargo.lock"));
     println!("cargo:rerun-if-changed={}", lock_path.display());
+    println!("cargo:rerun-if-env-changed={LANGUAGE_VAR}");
 
-    let lock = fs::read_to_string(&lock_path)
-        .unwrap_or_else(|error| panic!("could not read {}: {error}", lock_path.display()));
-    let mut current_package_is_fsl_analyze = false;
-    let mut revision = None;
-    for line in lock.lines() {
-        let line = line.trim();
-        if line == "[[package]]" {
-            current_package_is_fsl_analyze = false;
-        } else if line == "name = \"fsl-analyze\"" {
-            current_package_is_fsl_analyze = true;
-        } else if current_package_is_fsl_analyze && line.starts_with("source = ") {
-            let source = line
-                .strip_prefix("source = \"")
-                .and_then(|source| source.strip_suffix('\"'))
-                .expect("fsl-analyze has a quoted Cargo.lock source");
-            let (repository, commit) = source
-                .rsplit_once('#')
-                .expect("fsl-analyze git source has a resolved commit");
-            let pinned_revision = repository
-                .strip_prefix("git+https://github.com/agent-ix/filament-spec-language?rev=")
-                .expect("fsl-analyze must resolve from the pinned FSL git repository");
-            assert_eq!(
-                pinned_revision, commit,
-                "fsl-analyze Cargo.lock revision query and resolved commit differ"
-            );
-            assert!(
-                commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
-                "fsl-analyze source has an invalid resolved commit: {commit}"
-            );
-            revision = Some(commit);
-            break;
+    let revision = match fs::read_to_string(&lock_path) {
+        Err(error) => {
+            warn(&format!("could not read {}: {error}", lock_path.display()));
+            UNKNOWN.to_owned()
         }
-    }
-
-    let revision = revision.expect("Cargo.lock contains the pinned fsl-analyze package");
+        Ok(lock) => match lock_entry(&lock) {
+            LockEntry::Source(source) => pinned_commit(&source).unwrap_or_else(|message| {
+                warn(&message);
+                UNKNOWN.to_owned()
+            }),
+            LockEntry::NoSource => match env::var_os(LANGUAGE_VAR).filter(|v| !v.is_empty()) {
+                Some(dir) => local_path_revision(&PathBuf::from(dir)),
+                None => {
+                    warn(&format!(
+                        "fsl-analyze is a path dependency and {LANGUAGE_VAR} is not set"
+                    ));
+                    UNKNOWN.to_owned()
+                }
+            },
+            LockEntry::Missing => {
+                warn("Cargo.lock has no fsl-analyze package");
+                UNKNOWN.to_owned()
+            }
+        },
+    };
     println!("cargo:rustc-env=FSL_PINNED_REVISION={revision}");
+}
+
+fn warn(message: &str) {
+    println!("cargo:warning={message}");
 }
