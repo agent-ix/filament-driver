@@ -633,7 +633,35 @@ fn the_gate_runs_the_fsl_of_this_workspace() {
         .output()
         .unwrap_or_else(|e| panic!("cannot start {}: {e}", fsl.display()));
     assert!(reported.status.success(), "{}", text(&reported.stderr));
-    assert_eq!(text(&reported.stdout).trim_end(), version);
+    // The first line is the package version; the second names the FSL revision (FR-002-AC-11).
+    assert_eq!(
+        text(&reported.stdout).lines().next(),
+        Some(version.as_str())
+    );
+    let second = text(&reported.stdout).lines().nth(1).map(str::to_owned);
+    match language_checkout() {
+        Some(dir) => {
+            let head = Command::new("git")
+                .args(["-C"])
+                .arg(&dir)
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .unwrap_or_else(|e| panic!("cannot start git: {e}"));
+            assert!(
+                head.status.success(),
+                "git rev-parse HEAD in {}",
+                dir.display()
+            );
+            assert_eq!(
+                second,
+                Some(format!(
+                    "FSL revision: {} (local path)",
+                    text(&head.stdout).trim()
+                ))
+            );
+        }
+        None => assert!(second.is_some_and(|line| line.starts_with("FSL revision: "))),
+    }
     let target_dir = metadata["target_directory"]
         .as_str()
         .unwrap_or_else(|| panic!("metadata has no target_directory"));
