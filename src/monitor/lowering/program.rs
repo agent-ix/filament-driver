@@ -289,7 +289,10 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         let (mut parameters, mut body) = (None, None);
         for member in members {
             match binding_kind(member) {
-                Some((CheckedBindingNameKind::Parameters, CheckedTerm::Aggregate { members, .. })) => {
+                Some((
+                    CheckedBindingNameKind::Parameters,
+                    CheckedTerm::Aggregate { members, .. },
+                )) => {
                     let mut list = Vec::with_capacity(members.len());
                     for member in members {
                         let CheckedTerm::Reference { target } = member else {
@@ -712,7 +715,9 @@ impl<'a, 'b> Lowerer<'a, 'b> {
             };
             let Some((
                 CheckedBindingNameKind::Other(case),
-                CheckedTerm::Aggregate { members: payload, .. },
+                CheckedTerm::Aggregate {
+                    members: payload, ..
+                },
             )) = binding_kind(member)
             else {
                 return Err(self.invalid(node));

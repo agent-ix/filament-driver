@@ -236,8 +236,9 @@ fn replay_input_bytes_is_accepted_by_analyze_and_replay_not_monitor() {
     );
     assert!(output.stderr.is_empty(), "{output:?}");
     assert!(
-        message(&document(&output))
-            .starts_with("limit setting `replay.input_bytes` is unavailable for the `monitor` operation"),
+        message(&document(&output)).starts_with(
+            "limit setting `replay.input_bytes` is unavailable for the `monitor` operation"
+        ),
         "{output:?}"
     );
 }
@@ -253,7 +254,10 @@ fn each_operation_accepts_its_exact_command_limit_set() {
     use fsl_foundation::{AccountingSetting, Setting, SettingName};
 
     let directory = empty_directory();
-    let monitor = CommandLimits::monitor(MonitorPreparationLimits { work: 1, storage: 1 });
+    let monitor = CommandLimits::monitor(MonitorPreparationLimits {
+        work: 1,
+        storage: 1,
+    });
     let operations = [
         ("analyze", CommandLimits::analyze()),
         ("monitor", monitor),
@@ -272,7 +276,14 @@ fn each_operation_accepts_its_exact_command_limit_set() {
             let operand = format!("{}=7", name.name());
             let output = fsl_in(
                 directory.path(),
-                &[verb, "nosuch-request.json", "--limit", &operand, "--format", "json"],
+                &[
+                    verb,
+                    "nosuch-request.json",
+                    "--limit",
+                    &operand,
+                    "--format",
+                    "json",
+                ],
             );
             let shown = message(&document(&output));
             let accepted = match name {
@@ -281,7 +292,10 @@ fn each_operation_accepts_its_exact_command_limit_set() {
             };
             assert_eq!(output.status.code(), Some(20), "{verb} {operand}: {shown}");
             if accepted {
-                assert!(shown.contains("nosuch-request.json"), "{verb} {operand}: {shown}");
+                assert!(
+                    shown.contains("nosuch-request.json"),
+                    "{verb} {operand}: {shown}"
+                );
             } else {
                 assert!(
                     shown.starts_with(&format!(

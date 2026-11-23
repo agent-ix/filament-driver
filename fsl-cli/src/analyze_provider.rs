@@ -407,9 +407,10 @@ fn structural_entry(
         for assignment in values {
             // A parameter that is no node id is the reader's to refuse as malformed.
             if let Some(parameter) = assignment.get_mut("parameter").filter(|p| p.is_object()) {
-                *parameter = package.get()?.structural_value(parameter).map_err(|_| {
-                    Unreadable::Unusable(UnusableCounterexample::NodeIdUnresolved)
-                })?;
+                *parameter = package
+                    .get()?
+                    .structural_value(parameter)
+                    .map_err(|_| Unreadable::Unusable(UnusableCounterexample::NodeIdUnresolved))?;
             }
         }
     }
@@ -576,15 +577,13 @@ mod tests {
             key_of(&bytes, &parameters[0]),
             key_of(&bytes, &parameters[1]),
         ];
-        let boolean = |parameter: &serde_json::Value| {
-            serde_json::json!({"parameter": parameter, "value": {"type": "boolean", "value": true}})
-        };
+        let boolean = |parameter: &serde_json::Value| serde_json::json!({"parameter": parameter, "value": {"type": "boolean", "value": true}});
         let entry = serde_json::json!({"request_index": 0, "backend": "p", "counterexample": {
-            "type": "assignments", "values": [
-                boolean(&parameters[0]),
-                serde_json::json!({"parameter": parameters[1],
-                    "value": {"type": "integer", "value": "0"}}),
-            ]}});
+        "type": "assignments", "values": [
+            boolean(&parameters[0]),
+            serde_json::json!({"parameter": parameters[1],
+                "value": {"type": "integer", "value": "0"}}),
+        ]}});
         let reason = unusable(assignment_values(&entry, &graph, &claim(&keys)));
         assert_eq!(reason, UnusableCounterexample::ParameterValueKindMismatch);
         let mixed = [
@@ -604,7 +603,10 @@ mod tests {
             &graph,
             &mixed,
         ));
-        assert_eq!(both_missing, UnusableCounterexample::ClaimParameterUnassigned);
+        assert_eq!(
+            both_missing,
+            UnusableCounterexample::ClaimParameterUnassigned
+        );
     }
 
     /// Trace: FR-022-AC-13; a provider id carrying an ESC byte and ten

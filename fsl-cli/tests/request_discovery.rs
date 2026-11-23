@@ -69,12 +69,20 @@ fn each_request_verb_prints_fsls_example_in_every_output_mode() {
     let directory = empty_directory();
     for (verb, format) in VERBS {
         let expected = format!("{}\n", example_of(format, None));
-        for extra in [&[][..], &["--format", "text"][..], &["--format", "json"][..]] {
+        for extra in [
+            &[][..],
+            &["--format", "text"][..],
+            &["--format", "json"][..],
+        ] {
             let mut arguments = vec![verb, "--example"];
             arguments.extend(extra);
             let output = fsl_in(directory.path(), &arguments);
             assert_eq!(output.status.code(), Some(0), "{arguments:?}: {output:?}");
-            assert!(output.stderr.is_empty(), "{arguments:?}: {:?}", output.stderr);
+            assert!(
+                output.stderr.is_empty(),
+                "{arguments:?}: {:?}",
+                output.stderr
+            );
             assert_eq!(stdout(&output), expected, "{arguments:?}");
         }
         let parsed: Value = serde_json::from_str(&expected).expect("the example is JSON");
@@ -111,8 +119,14 @@ fn export_prints_its_ordinary_and_evidence_examples() {
         let expected = format!("{}\n", example_of("native-run/1", Some(selection)));
         assert_eq!(stdout(&output), expected, "{option}");
         let parsed: Value = serde_json::from_str(&expected).expect("the example is JSON");
-        assert!(parsed["request"].get(present).is_some(), "{option}: {parsed}");
-        assert!(parsed["request"].get(absent).is_none(), "{option}: {parsed}");
+        assert!(
+            parsed["request"].get(present).is_some(),
+            "{option}: {parsed}"
+        );
+        assert!(
+            parsed["request"].get(absent).is_none(),
+            "{option}: {parsed}"
+        );
     }
     let both = fsl_in(
         directory.path(),
@@ -133,13 +147,7 @@ fn each_example_is_read_as_a_valid_request() {
     let directory = empty_directory();
     let mut cases: Vec<(String, String, Vec<&str>)> = VERBS
         .iter()
-        .map(|(verb, format)| {
-            (
-                (*verb).to_owned(),
-                example_of(format, None),
-                vec![*verb],
-            )
-        })
+        .map(|(verb, format)| ((*verb).to_owned(), example_of(format, None), vec![*verb]))
         .collect();
     cases.push((
         "export".to_owned(),
@@ -202,7 +210,11 @@ fn example_misuse_refuses_naming_both_arguments() {
     ] {
         let output = fsl_in(directory.path(), &arguments);
         assert_eq!(output.status.code(), Some(20), "{arguments:?}: {output:?}");
-        assert!(output.stderr.is_empty(), "{arguments:?}: {:?}", output.stderr);
+        assert!(
+            output.stderr.is_empty(),
+            "{arguments:?}: {:?}",
+            output.stderr
+        );
         let shown = stdout(&output);
         assert!(shown.contains("--example"), "{arguments:?}: {shown}");
         assert!(shown.contains(other), "{arguments:?}: {shown}");
@@ -214,7 +226,10 @@ fn example_misuse_refuses_naming_both_arguments() {
     let bogus = fsl_in(directory.path(), &["run", "--example", "--format", "bogus"]);
     assert_eq!(bogus.status.code(), Some(20), "{bogus:?}");
     let shown = stdout(&bogus);
-    assert!(shown.contains("--format") && shown.contains("bogus"), "{shown}");
+    assert!(
+        shown.contains("--format") && shown.contains("bogus"),
+        "{shown}"
+    );
     for arguments in [
         vec!["check", "--example"],
         vec!["parse", "--example"],
@@ -244,7 +259,11 @@ fn example_misuse_refuses_naming_both_arguments() {
         VERBS.len() + 1,
         "{root}"
     );
-    assert_eq!(root.matches("\n  --example-evidence\n").count(), 1, "{root}");
+    assert_eq!(
+        root.matches("\n  --example-evidence\n").count(),
+        1,
+        "{root}"
+    );
 }
 
 /// The `details.missing` of a refusal document.
@@ -292,7 +311,10 @@ fn request_member_order(text: &str) -> Vec<String> {
     struct KeysSeed;
     impl<'de> serde::de::DeserializeSeed<'de> for KeysSeed {
         type Value = Vec<String>;
-        fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+        fn deserialize<D: Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
             deserializer.deserialize_map(Keys(Vec::new()))
         }
     }
@@ -355,7 +377,11 @@ fn a_request_lacking_members_lists_all_of_them() {
                 &[verb, file.to_str().expect("UTF-8 path"), "--format", "json"],
             );
             assert_eq!(output.status.code(), Some(20), "{verb} {name}: {output:?}");
-            assert!(output.stderr.is_empty(), "{verb} {name}: {:?}", output.stderr);
+            assert!(
+                output.stderr.is_empty(),
+                "{verb} {name}: {:?}",
+                output.stderr
+            );
             let document = document(&output);
             assert_eq!(missing(&document), expected, "{verb} {name}: {document}");
             let shown = message(&document);
@@ -443,7 +469,10 @@ fn export_refusals_without_a_hint_print_the_text_rendering() {
         assert!(text.stderr.is_empty(), "{:?}", text.stderr);
         let shown = stdout(&text);
         assert!(shown.starts_with("export: refusal (exit 20)"), "{shown}");
-        assert!(!shown.starts_with('{') && !shown.contains("hint:"), "{shown}");
+        assert!(
+            !shown.starts_with('{') && !shown.contains("hint:"),
+            "{shown}"
+        );
 
         let mut json_arguments = arguments.clone();
         json_arguments.extend(["--format", "json"]);
@@ -491,8 +520,11 @@ fn a_request_of_another_format_names_the_formats_the_verb_reads() {
         ("compile", "native-run/1", json!(["native-compile/1"])),
     ] {
         let file = directory.path().join("request.json");
-        std::fs::write(&file, format!("{{\"format\":\"{format}\",\"request\":{{}}}}"))
-            .expect("write");
+        std::fs::write(
+            &file,
+            format!("{{\"format\":\"{format}\",\"request\":{{}}}}"),
+        )
+        .expect("write");
         let output = fsl_in(
             directory.path(),
             &[verb, file.to_str().expect("UTF-8 path"), "--format", "json"],
@@ -504,7 +536,10 @@ fn a_request_of_another_format_names_the_formats_the_verb_reads() {
             json!({"path": "/format", "accepted": accepted}),
             "{verb}: {document}"
         );
-        assert_ne!(document["diagnostics"][0]["code"], "unknown_wire", "{document}");
+        assert_ne!(
+            document["diagnostics"][0]["code"], "unknown_wire",
+            "{document}"
+        );
     }
 }
 
@@ -514,18 +549,28 @@ fn a_request_of_another_format_names_the_formats_the_verb_reads() {
 #[trace("TC-050", "FR-028-AC-7")]
 fn an_export_syntax_error_refusal_renders_as_run_does() {
     let directory = empty_directory();
-    let example: Value = serde_json::from_str(&example_of("native-run/1", Some(ExportSelection::Ordinary)))
-        .expect("the export example is JSON");
-    std::fs::write(directory.path().join("program.fsl"), "this is not a program\n")
-        .expect("write the program");
+    let example: Value =
+        serde_json::from_str(&example_of("native-run/1", Some(ExportSelection::Ordinary)))
+            .expect("the export example is JSON");
+    std::fs::write(
+        directory.path().join("program.fsl"),
+        "this is not a program\n",
+    )
+    .expect("write the program");
     let file = directory.path().join("request.json");
     std::fs::write(&file, example.to_string()).expect("write the request");
-    let output = fsl_in(directory.path(), &["export", file.to_str().expect("UTF-8 path")]);
+    let output = fsl_in(
+        directory.path(),
+        &["export", file.to_str().expect("UTF-8 path")],
+    );
     assert_eq!(output.status.code(), Some(20), "{output:?}");
     assert!(output.stderr.is_empty(), "{:?}", output.stderr);
     let shown = stdout(&output);
     assert!(shown.starts_with("export: refusal (exit 20)"), "{shown}");
-    let run = fsl_in(directory.path(), &["run", file.to_str().expect("UTF-8 path")]);
+    let run = fsl_in(
+        directory.path(),
+        &["run", file.to_str().expect("UTF-8 path")],
+    );
     let run = stdout(&run);
     // FSL renders the locus of a refusal it raised before any source opened
     // the way `run` does; the export refusal carries the same sources.

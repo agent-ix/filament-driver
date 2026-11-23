@@ -57,11 +57,11 @@ fn an_unknown_option_names_the_nearest_option_and_lists_the_verbs_options(
     );
     assert_eq!(
         message(&case.run(&["run", "--engin", "jit", "r.json", "--format", "json"])?),
-        "unknown run option `--engin`; did you mean `--engine`; run accepts --request-bytes, --dependent-bytes, --limit, --engine, --provider-config, --provider-limit, --clocks, --format"
+        "unknown run option `--engin`; did you mean `--engine`; run accepts --request-bytes, --dependent-bytes, --limit, --engine, --provider-config, --provider-limit, --clocks, --example, --format"
     );
     assert_eq!(
         message(&case.run(&["compile", "--bogus", "r.json", "--format", "json"])?),
-        "unknown compile option `--bogus`; compile accepts --clocks, --output, --limit, --format"
+        "unknown compile option `--bogus`; compile accepts --clocks, --output, --limit, --example, --format"
     );
     Ok(())
 }

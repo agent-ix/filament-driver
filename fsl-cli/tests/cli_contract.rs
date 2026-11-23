@@ -1735,7 +1735,7 @@ fn implemented_verb_argument_refusals_use_the_selected_operation() {
         (
             "compile",
             Operation::Package,
-            "unknown compile option `--unknown`; compile accepts --clocks, --output, --limit, --format",
+            "unknown compile option `--unknown`; compile accepts --clocks, --output, --limit, --example, --format",
         ),
         (
             "format",

@@ -3183,7 +3183,10 @@ fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
         "  diagnostic: invalid_result/invalid-value: provider counterexample unusable [claim-parameter-unassigned]: claim parameter has no assignment",
         "{shown}"
     );
-    assert!(at > 0 && !lines[at - 1].starts_with("  diagnostic"), "{shown}");
+    assert!(
+        at > 0 && !lines[at - 1].starts_with("  diagnostic"),
+        "{shown}"
+    );
 }
 
 const EXTENSION_HEADER: &str =

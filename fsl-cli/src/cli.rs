@@ -2194,7 +2194,10 @@ fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     let caller = match apply_command_limits(&options.limits, base_command_limits(Verb::Replay)) {
         Ok(limits) => limits,
         Err(message) => {
-            return with_format(CommandResult::input_refusal(Operation::Replay, message), format);
+            return with_format(
+                CommandResult::input_refusal(Operation::Replay, message),
+                format,
+            );
         }
     };
     let config = match load_provider_config(&options.providers) {
@@ -2385,15 +2388,21 @@ fn analyze_text(document: &serde_json::Value, category: Category) -> String {
 /// diagnostic: its code, cause and FSL's reason spelling, with the driver's
 /// fixed phrase for that reason and no provider-supplied text.
 fn unusable_counterexample_line(diagnostic: &serde_json::Value) -> Option<String> {
-    let code = diagnostic["code"].as_str().filter(|code| *code == "invalid_result")?;
-    let cause = diagnostic["cause"].as_str().filter(|cause| *cause == "invalid-value")?;
+    let code = diagnostic["code"]
+        .as_str()
+        .filter(|code| *code == "invalid_result")?;
+    let cause = diagnostic["cause"]
+        .as_str()
+        .filter(|cause| *cause == "invalid-value")?;
     let reason = UnusableCounterexample::from_spelling(diagnostic["reason"].as_str()?)?;
     let phrase = match reason {
         UnusableCounterexample::AssignmentNotClaimParameter => {
             "assignment names a node that is not a claim parameter"
         }
         UnusableCounterexample::ClaimParameterUnassigned => "claim parameter has no assignment",
-        UnusableCounterexample::NodeIdUnresolved => "assignment node id does not resolve in the package",
+        UnusableCounterexample::NodeIdUnresolved => {
+            "assignment node id does not resolve in the package"
+        }
         UnusableCounterexample::PackageGraphUnreadable => "package graph is unreadable",
         UnusableCounterexample::ParameterValueKindMismatch => {
             "assignment value has the wrong kind for its claim parameter"
@@ -2442,8 +2451,7 @@ impl MonitorOptions {
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
-        let limits = LimitOverrides::parse(&limit_operands)
-            .map_err(|error| {
+        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| {
             limit_usage_message(
                 &error,
                 "monitor",
@@ -3328,7 +3336,10 @@ mod outcome_tests {
     use fsl_foundation::Setting;
 
     fn parsed(operands: &[&str]) -> LimitOverrides {
-        let operands: Vec<String> = operands.iter().map(|operand| (*operand).to_owned()).collect();
+        let operands: Vec<String> = operands
+            .iter()
+            .map(|operand| (*operand).to_owned())
+            .collect();
         LimitOverrides::parse(&operands).expect("FSL parses the operands")
     }
 
