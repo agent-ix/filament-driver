@@ -2416,7 +2416,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => option_refusal(operation, &error),
         },
         Verb::Run => match RunOptions::from_scanned(&scanned) {
-            Ok(options) => with_format(run(options), format),
+            Ok(options) => with_format_as(run(options), format, Some("run")),
             Err(error) => option_refusal(operation, &error),
         },
         Verb::Export => match ExportOptions::from_scanned(&scanned) {
@@ -2494,7 +2494,29 @@ fn unrouted_operation(verb: Verb) -> Option<Operation> {
 /// In text mode, replace the result's outcome document with FSL's FR-865 text
 /// form of it, built from the same document and the sources the command read.
 /// Machine mode keeps the document untouched and the exit category never moves.
-fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult {
+fn with_format(result: CommandResult, format: OutputFormat) -> CommandResult {
+    with_format_as(result, format, None)
+}
+
+/// `rendered` with its leading `<operation>: ` header replaced by `<command>: `;
+/// text that does not begin with that header is returned unchanged.
+fn relabel_header(rendered: &str, operation: &str, command: &str) -> String {
+    match rendered
+        .strip_prefix(operation)
+        .and_then(|rest| rest.strip_prefix(": "))
+    {
+        Some(rest) => format!("{command}: {rest}"),
+        None => rendered.to_owned(),
+    }
+}
+
+/// Render a result using the invoked CLI verb as its text header when one is
+/// supplied, while preserving the machine outcome document unchanged.
+fn with_format_as(
+    mut result: CommandResult,
+    format: OutputFormat,
+    command_name: Option<&'static str>,
+) -> CommandResult {
     if format != OutputFormat::Text {
         return result;
     }
@@ -2514,6 +2536,16 @@ fn with_format(mut result: CommandResult, format: OutputFormat) -> CommandResult
     ) {
         Ok(staged) => {
             let mut rendered = staged.into_value().as_str().to_owned();
+            if let Some(command_name) = command_name {
+                // Only the header the renderer wrote is replaced; text without it
+                // (the first diagnostic line, for one) is left untouched.
+                let operation = serde_json::to_value(document)
+                    .ok()
+                    .and_then(|value| value["operation"].as_str().map(str::to_owned));
+                if let Some(operation) = operation {
+                    rendered = relabel_header(&rendered, &operation, command_name);
+                }
+            }
             if let Some(hint) = observation_input_limit_hint(document) {
                 if !rendered.is_empty() {
                     rendered.push('\n');
@@ -2784,9 +2816,9 @@ mod outcome_tests {
 )]
 mod tests {
     use super::{
-        options, parse_invocation, read_source, CheckOptions, ExecutionEngine, ExportOptions,
-        Invocation, LimitOverrides, OptionRefusal, OutputFormat, RunOptions, Scan, SpineLimits,
-        Verb,
+        options, parse_invocation, read_source, relabel_header, CheckOptions, ExecutionEngine,
+        ExportOptions, Invocation, LimitOverrides, OptionRefusal, OutputFormat, RunOptions, Scan,
+        SpineLimits, Verb,
     };
     use fsl_foundation::{Setting, SettingName};
     use std::ffi::OsString;
@@ -2814,6 +2846,22 @@ mod tests {
     fn parse_run(arguments: &[OsString]) -> Result<RunOptions, OptionRefusal> {
         let scanned = scanned("run", arguments)?;
         RunOptions::from_scanned(&scanned)
+    }
+
+    /// Trace: FR-002-AC-13; only the renderer's own header is relabelled.
+    #[test]
+    fn relabel_header_replaces_only_the_operation_header() {
+        assert_eq!(
+            relabel_header("execute: success (exit 0) at S6a\n", "execute", "run"),
+            "run: success (exit 0) at S6a\n"
+        );
+        // Text without the header keeps a diagnostic line's own `: `.
+        let bare = "<no-source>: io-error: cannot access x\n";
+        assert_eq!(relabel_header(bare, "execute", "run"), bare);
+        assert_eq!(
+            relabel_header("executed: x\n", "execute", "run"),
+            "executed: x\n"
+        );
     }
 
     #[test]
