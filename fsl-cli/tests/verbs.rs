@@ -108,6 +108,7 @@ fn inspect_with_dot_format_is_not_silent() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("inspect"));
 }
 
+#[trace("TC-049", "FR-002-AC-29")]
 #[trace("TC-1082", "FSpec-FR-301-AC-4")]
 #[test]
 fn unknown_verb_is_usage_error() {

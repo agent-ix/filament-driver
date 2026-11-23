@@ -493,16 +493,66 @@ fn text_mode_writes_event_lines_then_clause_lines_and_the_counts() {
 #[test]
 fn a_signal_ends_an_open_stream_as_a_cancelled_run() {
     for signal in ["-TERM", "-INT"] {
-        let folder = Folder::new(&format!("signal{signal}"));
+        let (status, lines, stderr) = signalled_stream(signal, "json");
+        assert_eq!(status, Some(22), "{signal}");
+        assert!(stderr.is_empty(), "{signal}: {stderr:?}");
+        for line in &lines {
+            serde_json::from_str::<Value>(line).unwrap_or_else(|error| {
+                panic!("{signal}: one JSON document per line: {line}: {error}")
+            });
+        }
+        let document: Value =
+            serde_json::from_str(lines.last().expect("a last line")).expect("json");
+        assert_eq!(document["category"], "incomplete", "{signal}: {document}");
+        assert_eq!(document["operation"], "monitor", "{signal}: {document}");
+        assert!(
+            lines.len() >= 2,
+            "{signal}: events precede the refusal outcome: {lines:?}"
+        );
+    }
+}
+
+/// The text-mode twin: the events already written stay, the cancelled run's
+/// text outcome follows on stdout, and stderr stays empty.
+#[trace("TC-039", "FR-025-AC-9")]
+#[test]
+fn a_signal_in_text_mode_appends_the_text_outcome_after_the_events() {
+    for signal in ["-TERM", "-INT"] {
+        let (status, lines, stderr) = signalled_stream(signal, "text");
+        assert_eq!(status, Some(22), "{signal}");
+        assert!(stderr.is_empty(), "{signal}: {stderr:?}");
+        let header = lines
+            .iter()
+            .position(|line| line.starts_with("monitor: incomplete (exit 22)"))
+            .unwrap_or_else(|| panic!("{signal}: the text outcome: {lines:?}"));
+        assert!(
+            header > 0,
+            "{signal}: an event precedes the outcome: {lines:?}"
+        );
+        assert!(
+            lines[..header]
+                .iter()
+                .all(|line| !line.starts_with("monitor: ")),
+            "{signal}: {lines:?}"
+        );
+    }
+}
+
+/// Run `fsl monitor` over an open stream, signal it after its first event
+/// and return its exit code, stdout lines and stderr bytes.
+fn signalled_stream(signal: &str, format: &str) -> (Option<i32>, Vec<String>, Vec<u8>) {
+    {
+        let folder = Folder::new(&format!("signal{signal}{format}"));
         let request = folder.request("request.json", &["Never"]);
         let mut child = Command::new(FSL)
-            .args(["monitor", request.to_str().unwrap(), "--format", "json"])
+            .args(["monitor", request.to_str().unwrap(), "--format", format])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("spawn fsl");
         let mut stdin = child.stdin.take().expect("stdin");
+        let mut stderr_pipe = child.stderr.take().expect("stderr");
         let stdout = child.stdout.take().expect("stdout");
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
@@ -517,7 +567,7 @@ fn a_signal_ends_an_open_stream_as_a_cancelled_run() {
             writeln!(stdin, "{line}").expect("send a record");
         }
         // The first event shows the run is live; stdin stays open.
-        receiver.recv_timeout(wait).expect("an event");
+        let first = receiver.recv_timeout(wait).expect("an event");
         let killed = Command::new("kill")
             .args([signal, &child.id().to_string()])
             .status()
@@ -525,12 +575,10 @@ fn a_signal_ends_an_open_stream_as_a_cancelled_run() {
         assert!(killed.success());
         let status = child.wait().expect("exit");
         drop(stdin);
-        assert_eq!(status.code(), Some(22), "{signal}");
-        let last = receiver
-            .iter()
-            .last()
-            .expect("an outcome document after the signal");
-        let document: Value = serde_json::from_str(&last).expect("json");
-        assert_eq!(document["category"], "incomplete", "{signal}: {document}");
+        let mut stderr = Vec::new();
+        std::io::Read::read_to_end(&mut stderr_pipe, &mut stderr).expect("read stderr");
+        let mut lines = vec![first];
+        lines.extend(receiver.iter());
+        (status.code(), lines, stderr)
     }
 }

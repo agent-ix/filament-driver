@@ -1755,6 +1755,22 @@ fn implemented_verb_argument_refusals_use_the_selected_operation() {
             output.stderr
         );
         assert_fsl_document(&output.stdout, &argument_refusal_bytes(operation, message));
+        let text = Command::new(FSL)
+            .args([verb, "--unknown"])
+            .output()
+            .expect("run command with an unknown operation option in text mode");
+        assert_eq!(text.status.code(), Some(20), "{verb} text exit status");
+        assert!(
+            text.stderr.is_empty(),
+            "{verb} text stderr: {:?}",
+            text.stderr
+        );
+        let header = if verb == "compile" { "package" } else { verb };
+        assert_eq!(
+            String::from_utf8_lossy(&text.stdout),
+            format!("{header}: refusal (exit 20)\n<no-source>: invalid-request: {message}\n"),
+            "{verb} text stdout"
+        );
     }
 }
 
@@ -2259,6 +2275,7 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     }
 }
 
+#[trace("TC-049", "FR-002-AC-29")]
 #[trace("TC-009", "FR-002-AC-17")]
 #[test]
 fn informative_help_does_not_replace_invalid_command_or_format_refusals() {

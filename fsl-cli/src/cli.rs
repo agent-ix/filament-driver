@@ -810,6 +810,9 @@ struct CommandResult {
     analyze_document: Option<serde_json::Value>,
     /// The admitted sources the command read, for locating text diagnostics (FR-865).
     render_sources: Option<fsl_inspect::RenderSources>,
+    /// The command wrote its result as a stream already (monitor), so a
+    /// non-success category with no document is its verdict, not a lost result.
+    streamed: bool,
 }
 
 impl CommandResult {
@@ -822,6 +825,7 @@ impl CommandResult {
             text_output: None,
             analyze_document: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -834,6 +838,7 @@ impl CommandResult {
             text_output: None,
             analyze_document: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -848,6 +853,7 @@ impl CommandResult {
             text_output: Some(text),
             analyze_document: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -860,6 +866,7 @@ impl CommandResult {
             text_output,
             analyze_document: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -2087,6 +2094,7 @@ fn native_result(document: serde_json::Value, exit_code: u8) -> CommandResult {
         text_output: Some(document.to_string()),
         analyze_document: Some(document),
         render_sources: None,
+        streamed: false,
     }
 }
 
@@ -2117,6 +2125,7 @@ fn analyze_result(
         text_output,
         analyze_document: Some(document),
         render_sources: None,
+        streamed: false,
     }
 }
 
@@ -2450,6 +2459,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         text_output: None,
         analyze_document: None,
         render_sources: None,
+        streamed: true,
     }
 }
 
@@ -2695,11 +2705,16 @@ fn finalize(mut result: CommandResult, verb: Verb, format: OutputFormat) -> Comm
     let messageless = result.document.is_none()
         && result.analyze_document.is_none()
         && result.text_output.is_none();
-    if messageless && result.category != Category::Success {
-        let Some(message) = result.diagnostic.clone() else {
-            return result;
-        };
-        result.document = Some(message_document(verb.operation(), result.category, message));
+    if messageless && !result.streamed && result.category != Category::Success {
+        let message = result.diagnostic.clone().unwrap_or_else(|| {
+            format!(
+                "the command ended with category `{}` and produced no outcome",
+                result.category.as_str()
+            )
+        });
+        let document = message_document(verb.operation(), result.category, message);
+        result.category = document.category();
+        result.document = Some(document);
     }
     if format == OutputFormat::Text
         && result.text_output.is_none()
@@ -2715,8 +2730,9 @@ fn finalize(mut result: CommandResult, verb: Verb, format: OutputFormat) -> Comm
 /// The refusal document of a driver message: FSL's catalog code and cause the
 /// message names (`<code>[/<cause>]: ...`), or the category's own code.
 fn message_document(operation: Operation, category: Category, message: String) -> OutcomeDocument {
-    let (code, cause) = match category {
+    let (category, code, cause) = match category {
         Category::Unsupported => (
+            Category::Unsupported,
             "unsupported_operation",
             message
                 .split_once(": ")
@@ -2724,13 +2740,28 @@ fn message_document(operation: Operation, category: Category, message: String) -
                 .filter(|cause| !cause.contains(' '))
                 .map(str::to_owned),
         ),
-        Category::InternalFailure => (Code::RuntimeInvariant.as_str(), None),
-        _ => match message.split_once(": ").map(|(head, _)| head) {
-            Some("unknown_wire/unsupported-wire") => {
-                ("unknown_wire", Some("unsupported-wire".to_owned()))
-            }
-            _ => (Code::InvalidRequest.as_str(), None),
+        Category::Refusal => match message.split_once(": ").map(|(head, _)| head) {
+            Some("unknown_wire/unsupported-wire") => (
+                Category::Refusal,
+                "unknown_wire",
+                Some("unsupported-wire".to_owned()),
+            ),
+            _ => (Category::Refusal, Code::InvalidRequest.as_str(), None),
         },
+        // A message-only result of any other category has no code of its own
+        // in the catalog; it is a driver fault, and says so in its category.
+        Category::InternalFailure
+        | Category::Success
+        | Category::Violation
+        | Category::Undefined
+        | Category::Incomplete
+        | Category::Pending
+        | Category::Indeterminate
+        | Category::Inconclusive => (
+            Category::InternalFailure,
+            Code::RuntimeInvariant.as_str(),
+            None,
+        ),
     };
     OutcomeDocument::new(operation, None, category).with_diagnostics(vec![OutcomeDiagnostic::new(
         cause.as_deref(),
@@ -2933,6 +2964,57 @@ mod outcome_tests {
         write_result_diagnostics(&result, super::OutputFormat::Text, &mut stderr)
             .expect("write FSL diagnostic");
         assert_eq!(stderr, b"the selected function has no parameter named x\n");
+    }
+
+    /// FR-002: a result with neither a document nor a message, and a
+    /// message-only result of a category the catalog gives no code, still
+    /// write an outcome: an internal failure that says so.
+    #[trace("FR-002-AC-18")]
+    #[test]
+    fn finalize_never_leaves_a_failed_result_without_an_outcome() {
+        use super::{finalize, OutputFormat, Verb};
+        for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Dot] {
+            for category in [
+                Category::Violation,
+                Category::Undefined,
+                Category::Refusal,
+                Category::Unsupported,
+                Category::Incomplete,
+                Category::Pending,
+                Category::Indeterminate,
+                Category::Inconclusive,
+                Category::InternalFailure,
+            ] {
+                let mut bare = CommandResult::plain(String::new());
+                bare.text_output = None;
+                bare.category = category;
+                let result = finalize(bare, Verb::Check, format);
+                let document = result.document.as_ref().expect("an outcome document");
+                assert_eq!(document.category(), result.category, "{category:?}");
+                assert!(!document.diagnostics().is_empty(), "{category:?}");
+                if !matches!(category, Category::Refusal | Category::Unsupported) {
+                    assert_eq!(result.category, Category::InternalFailure, "{category:?}");
+                }
+                if format != OutputFormat::Json {
+                    assert!(result.text_output.is_some(), "{category:?} {format:?}");
+                }
+
+                let mut messaged = CommandResult::failure(category, "driver message");
+                messaged.diagnostic_on_stderr = true;
+                let result = finalize(messaged, Verb::Analyze, format);
+                let document = result.document.as_ref().expect("an outcome document");
+                assert_eq!(document.category(), result.category, "{category:?}");
+                let code = document.diagnostics()[0].code();
+                match category {
+                    Category::Refusal => assert_eq!(code, "invalid-request"),
+                    Category::Unsupported => assert_eq!(code, "unsupported_operation"),
+                    _ => {
+                        assert_eq!(result.category, Category::InternalFailure);
+                        assert_eq!(code, "runtime_invariant");
+                    }
+                }
+            }
+        }
     }
 }
 

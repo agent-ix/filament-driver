@@ -448,6 +448,16 @@ fn output_mode_is_resolved_before_options_are_validated() {
     assert_eq!(json["operation"], "check", "{json}");
     assert_eq!(message(&json), "unknown check option `--bogus`");
 
+    // The mode is selected whether `--format` comes before or after the bad option.
+    let before = fsl_in(directory.path(), &["check", "--format", "json", "--bogus"]);
+    assert_eq!(before.status.code(), Some(20), "{before:?}");
+    assert!(before.stderr.is_empty(), "{:?}", before.stderr);
+    assert_eq!(document(&before)["operation"], "check");
+    assert_eq!(
+        message(&document(&before)),
+        "unknown check option `--bogus`"
+    );
+
     let text = fsl_in(directory.path(), &["check", "--bogus", "--format", "text"]);
     assert!(text.stderr.is_empty(), "{:?}", text.stderr);
     assert!(
@@ -489,5 +499,144 @@ fn output_mode_is_resolved_before_options_are_validated() {
             "{context}: {text}"
         );
         assert!(serde_json::from_str::<Value>(&text).is_err(), "{context}");
+    }
+}
+
+/// FR-002-AC-18, FR-002-AC-28: a missing file and an unreadable one (a
+/// directory named as the file) refuse on `parse`, `format`, `compile`,
+/// `export` and `inspect` with exactly the text outcome on stdout in text
+/// mode and one document in JSON mode, and nothing on stderr.
+#[test]
+#[trace("TC-040", "FR-002-AC-18")]
+fn unreadable_inputs_refuse_on_stdout_for_the_source_and_package_verbs() {
+    const HINT: &str =
+        "  hint: Check that the path exists and that the process can read or write it.\n";
+    let directory = empty_directory();
+    std::fs::create_dir(directory.path().join("adir")).expect("a directory");
+    std::fs::write(directory.path().join("afile"), b"x").expect("a file");
+    let missing = "No such file or directory (os error 2)";
+    let is_directory = "Is a directory (os error 21)";
+    // (arguments, operation in the document, text header, text diagnostic line)
+    let cases: Vec<(Vec<&str>, &str, &str, String)> = vec![
+        (
+            vec!["parse", "a", "b", "nosuch.fsl"],
+            "parse",
+            "parse",
+            format!("<no-source>: io-error: could not read source nosuch.fsl: {missing}\n{HINT}"),
+        ),
+        (
+            vec!["parse", "a", "b", "adir"],
+            "parse",
+            "parse",
+            format!("<no-source>: io-error: could not read source adir: {is_directory}\n{HINT}"),
+        ),
+        (
+            vec!["format", "a", "b", "nosuch.fsl"],
+            "format",
+            "format",
+            format!("<no-source>: io-error: could not read source nosuch.fsl: {missing}\n{HINT}"),
+        ),
+        (
+            vec!["format", "a", "b", "adir"],
+            "format",
+            "format",
+            format!("<no-source>: io-error: could not read source adir: {is_directory}\n{HINT}"),
+        ),
+        (
+            vec!["compile", "nosuch.json"],
+            "package",
+            "package",
+            format!("<no-source>: io-error: cannot access nosuch.json: {missing}\n{HINT}"),
+        ),
+        (
+            vec!["compile", "adir"],
+            "package",
+            "package",
+            format!("<no-source>: io-error: cannot access adir: {is_directory}\n{HINT}"),
+        ),
+        (
+            vec!["export", "nosuch.json"],
+            "export",
+            "export",
+            format!("<no-source>: io-error: cannot access nosuch.json: {missing}\n{HINT}"),
+        ),
+        (
+            vec!["export", "adir"],
+            "export",
+            "export",
+            format!("<no-source>: io-error: cannot access adir: {is_directory}\n{HINT}"),
+        ),
+        (
+            vec!["inspect", "--handoff", "nosuch"],
+            "inspect",
+            "inspect",
+            format!("<no-source>: handoff-read: cannot read nosuch: {missing}\n"),
+        ),
+        (
+            vec!["inspect", "--handoff", "afile"],
+            "inspect",
+            "inspect",
+            "<no-source>: handoff-read: cannot read afile: Not a directory (os error 20)\n"
+                .to_owned(),
+        ),
+    ];
+    for (arguments, operation, header, body) in cases {
+        let context = format!("{arguments:?}");
+        let text = fsl_in(directory.path(), &arguments);
+        assert_eq!(text.status.code(), Some(20), "{context}: {text:?}");
+        assert!(text.stderr.is_empty(), "{context}: {:?}", text.stderr);
+        assert_eq!(
+            String::from_utf8_lossy(&text.stdout),
+            format!("{header}: refusal (exit 20)\n{body}"),
+            "{context}"
+        );
+        let mut machine = arguments.clone();
+        machine.extend(["--format", "json"]);
+        let json = fsl_in(directory.path(), &machine);
+        assert_eq!(json.status.code(), Some(20), "{context}: {json:?}");
+        assert!(json.stderr.is_empty(), "{context}: {:?}", json.stderr);
+        let document = document(&json);
+        assert_eq!(document["operation"], operation, "{context}: {document}");
+        assert_eq!(document["category"], "refusal", "{context}: {document}");
+    }
+}
+
+/// FR-002-AC-29: with no recognized verb, or a command that is not valid
+/// UTF-8, there is no operation to name in an outcome: one diagnostic line on
+/// stderr, nothing on stdout, exit 20.
+#[test]
+#[trace("TC-049", "FR-002-AC-29")]
+fn an_unrecognized_command_writes_one_stderr_line_and_no_outcome() {
+    let directory = empty_directory();
+    for arguments in [
+        vec!["not-a-verb"],
+        vec!["not-a-verb", "--format", "json"],
+        vec!["not-a-verb", "--format", "text"],
+    ] {
+        let output = fsl_in(directory.path(), &arguments);
+        assert_eq!(output.status.code(), Some(20), "{arguments:?}");
+        assert!(
+            output.stdout.is_empty(),
+            "{arguments:?}: {:?}",
+            output.stdout
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr.lines().count(), 1, "{arguments:?}: {stderr}");
+        assert!(stderr.contains("unknown verb `not-a-verb`"), "{stderr}");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let output = Command::new(FSL)
+            .arg(std::ffi::OsStr::from_bytes(&[0xff]))
+            .current_dir(directory.path())
+            .stdin(Stdio::null())
+            .output()
+            .expect("run fsl with a non-UTF-8 command");
+        assert_eq!(output.status.code(), Some(20));
+        assert!(output.stdout.is_empty(), "{:?}", output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr.lines().count(), 1, "{stderr}");
+        assert!(stderr.contains("valid UTF-8"), "{stderr}");
     }
 }

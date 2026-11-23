@@ -96,7 +96,6 @@ fn help_needs_no_request_and_repeated_single_options_write_only_usage(
 /// Trace: FR-002-AC-25
 /// Provenance: QSL-2471
 #[test]
-#[ignore = "QSL-2661: run accepts duplicate nonrepeatable --format and opens request"]
 fn repeated_output_format_refuses_usage_before_request_io_or_execution(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = fixture()?;
@@ -104,12 +103,9 @@ fn repeated_output_format_refuses_usage_before_request_io_or_execution(
         let output = case.run(&["run", path, "--format", "json", "--format", "json"])?;
         assert_eq!(output.0.status.code(), Some(20), "{output:?}");
         assert!(output.0.stderr.is_empty(), "{output:?}");
-        assert!(
-            output.json()?["diagnostics"][0]["message"]
-                .as_str()
-                .is_some_and(|message| message.contains("usage: fsl run")),
-            "{output:?}"
-        );
+        let text = output.stdout_text()?;
+        assert!(text.starts_with("run: refusal (exit 20)\n"), "{text}");
+        assert!(text.contains("usage: fsl run"), "{text}");
     }
     Ok(())
 }

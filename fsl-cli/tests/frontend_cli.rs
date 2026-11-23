@@ -87,8 +87,15 @@ fn missing_and_extra_operands_are_refused_before_any_file_is_read() {
     for (verb, arguments) in cases {
         let output = fsl(arguments);
         let stderr = assert_refused_quietly(&output, &format!("{arguments:?}"));
+        let header = if verb == "compile" { "package" } else { verb };
         assert!(
-            stderr.contains(&format!("usage: fsl {verb} ")),
+            stderr.starts_with(&format!(
+                "{header}: refusal (exit 20)\n<no-source>: invalid-request: usage: fsl {verb} "
+            )),
+            "{arguments:?}: {stderr}"
+        );
+        assert!(
+            stderr.ends_with('\n') && stderr.lines().count() == 2,
             "{arguments:?}: {stderr}"
         );
         assert!(
@@ -271,6 +278,7 @@ fn invalid_os_string() -> std::ffi::OsString {
 }
 
 #[cfg(any(unix, windows))]
+#[trace("TC-049", "FR-002-AC-29")]
 #[trace("TC-1262", "FR-287-AC-6")]
 #[test]
 fn non_utf8_commands_and_labels_refuse() {

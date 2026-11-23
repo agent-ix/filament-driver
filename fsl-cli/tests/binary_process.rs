@@ -1084,9 +1084,10 @@ fn root_argv_refusal_names_invalid_format_without_result_output() {
         .expect("run fsl with an invalid root format");
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stderr.is_empty(), "{:?}", output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.starts_with("run: refusal (exit 20)"), "{stdout}");
-    assert!(stdout.contains("dot"), "{stdout}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "run: refusal (exit 20)\n<no-source>: invalid-request: the `dot` format is available only for `inspect`\n"
+    );
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-8; an option the verb does not list is refused and named.
@@ -1169,7 +1170,10 @@ fn an_unknown_engine_is_a_refusal() {
         Some(i32::from(Category::Refusal.exit_code()))
     );
     assert!(output.stderr.is_empty(), "{:?}", output.stderr);
-    assert!(String::from_utf8_lossy(&output.stdout).contains("gpu"));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "run: refusal (exit 20)\n<no-source>: invalid-request: unknown engine `gpu`\n"
+    );
 }
 
 /// Trace: FR-003-AC-1, the exposed checking work bound reaches FSL unchanged.
