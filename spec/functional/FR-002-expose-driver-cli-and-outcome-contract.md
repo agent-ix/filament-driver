@@ -109,7 +109,8 @@ the fallback when that function returns reserved value `5`.
   specifies the separate CLI package boundary.
 - The CLI SHALL preserve the library's FSL-defined `filament-outcome/1` value
   without adding, removing or changing outcome data, except in the two
-  invocation cases specified by AC-6 and AC-7.
+  invocation cases specified by AC-6 and AC-7 and the text-mode export hint line of
+  FR-028-AC-7; machine mode is unchanged.
 - When an invocation on Linux or macOS is terminated by SIGINT or SIGTERM
   during an active plugin session, after the plugin cleanup specified by
   FR-006 the CLI SHALL
@@ -369,7 +370,7 @@ the fallback when that function returns reserved value `5`.
   naming the option.
 - The request verbs take `--example` (and `export` also `--example-evidence`), and the text of their request refusals is
   specified by [FR-028](FR-028-print-a-minimal-request-with-example.md); the CLI
-  writes those refusals unchanged under AC-3.
+  writes those refusals unchanged under AC-3, except the text-mode export hint line of FR-028-AC-7.
 - The CLI SHALL accept no `--color` option on any verb.
 - The CLI SHALL emit no ANSI escape sequence of its own on stdout or
   stderr: its text output
@@ -399,7 +400,7 @@ the fallback when that function returns reserved value `5`.
 | --- | --- | --- |
 | FR-002-AC-1 | The driver binary exposes the command and output surface defined by FSL ADR-029 LC-1, CB-1 and CB-5, and dispatches each command to its typed operation. | Test (TC-009) |
 | FR-002-AC-2 | For each FSL category whose exit result is not reserved code `5`, the process status equals the value returned by FSL's `Category::exit_code`; no second category-to-exit mapping is applied. Reserved result `5` is governed by AC-6. | Test (TC-009, TC-018) |
-| FR-002-AC-3 | In machine mode, each command writes one parseable `filament-outcome/1` value equal to the library outcome under FSL's schema; the CLI adds, removes or changes no outcome data. The mapping-invariant and signal exceptions are specified in AC-6 and AC-7. | Test (TC-009, TC-018, TC-028) |
+| FR-002-AC-3 | In machine mode, each command writes one parseable `filament-outcome/1` value equal to the library outcome under FSL's schema; the CLI adds, removes or changes no outcome data. The mapping-invariant and signal exceptions are specified in AC-6 and AC-7; the one further exception is the text-mode export hint line of FR-028-AC-7 (machine mode is unchanged), on a missing-`export` or missing-`export_evidence` refusal of `fsl export` only. | Test (TC-009, TC-018, TC-028) |
 | FR-002-AC-4 | The CLI passes FSL's `Category::exit_code` result through `ix_cli_kit::exit::caller_exit_code` and preserves each accepted numeric value without mapping it through the kit's typed `Outcome`. | Test (TC-009, TC-018) |
 | FR-002-AC-5 | The CLI reads only input paths named by its arguments and reads no unnamed configuration file. | Test (TC-009) |
 | FR-002-AC-6 | If FSL's category exit function returns reserved value `5`, the CLI writes a plain-text stderr diagnostic naming reserved code `5` and fallback code `30`, writes no text result or `filament-outcome/1` document to stdout, and returns `Category::InternalFailure.exit_code()` (`30`) without attributing a FSL cause. | Test (TC-009, TC-018) |
