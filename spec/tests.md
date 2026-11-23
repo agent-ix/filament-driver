@@ -11,7 +11,7 @@ This authored verification inventory integrates FR-001 and SP-D1 through
 SP-D9 (FR-002 through FR-010) from IR-527, FR-011 from IR-616, FR-012 for
 the downstream cache component, FR-013 for the process plugin host, and FR-014
 for the CLI package boundary, and planned FR-015 for admitted monitor program
-preparation. It covers FR-001 through FR-027 and TC-001 through TC-049.
+preparation. It covers FR-001 through FR-028 and TC-001 through TC-050.
 Discrete FR and TC artifacts remain authoritative;
 this matrix is their index, not a computed implementation-coverage report.
 
@@ -150,6 +150,8 @@ verification; they do not substitute for IR-528 acceptance evidence.
 | TC-048 | Verify a checked-package handoff with fsl inspect --handoff | Integration | FR-002-AC-23 | ✅ See the FR-002-AC-23 row. |
 | FR-002 | FR-002-AC-24..FR-002-AC-26, FR-002-AC-28 | TC-049 | ✅ `fsl-cli/src/options.rs` is the one option table; `fsl-cli/tests/help_contract.rs` runs `help_lists_every_accepted_option`, `parser_refuses_options_outside_its_entry`, `verb_help_writes_its_section`, `help_precedence` and `color_is_refused_on_every_verb` over the built binary, and the `fsl-cli` unit tests `removing_a_table_option_removes_it_from_parser_and_help` and `no_option_literal_appears_outside_the_table` check the table-mutation and no-literal rules (QSL-2602). `--extensions <file>` on `parse` and `check` (QSL-2603) is covered by `fsl-cli/tests/frontend_cli.rs` `extension_sets_supply_the_selected_definition_to_check_and_parse` and `malformed_extension_sets_refuse_before_any_stage`. The filament-docs generator update for the per-verb sections is QSL-2608. |
 | TC-049 | List every accepted option in root and per-verb help | Integration | FR-002-AC-24..FR-002-AC-26, FR-002-AC-28 | ✅ See the FR-002-AC-24 row. |
+| FR-028 | FR-028-AC-1..FR-028-AC-9 | TC-050 | 🚧 Planned (QSL-2930): `fsl-cli/tests/request_discovery.rs`. Depends on FSL's request-example entry and refusal text, which FSL has not yet specified. |
+| TC-050 | Print a request example and name every request defect | Integration | FR-028-AC-1..FR-028-AC-9 | 🚧 See the FR-028 row. |
 
 ## Test Case Summary
 

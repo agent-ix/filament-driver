@@ -329,6 +329,9 @@ the fallback when that function returns reserved value `5`.
 - `--version` and `-V` are root options only. No verb's table entry lists
   them, so after a verb each refuses in step 2 as `invalid-request`, exit 20,
   naming the option.
+- The request verbs take `--example`, and the text of their request refusals is
+  specified by [FR-028](FR-028-print-a-minimal-request-with-example.md); the CLI
+  writes those refusals unchanged under AC-3.
 - The CLI SHALL accept no `--color` option on any verb.
 - The CLI SHALL emit no ANSI escape sequence of its own on stdout or
   stderr: its text output
