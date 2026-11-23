@@ -36,3 +36,9 @@ No applicable `AssuranceProfile` exists in this repository's specification scope
 | FND-001 | medium | FR-022-AC-13 does not define what machine-mode output is compared against | spec/functional/FR-022-analyze-a-native-analyze-request.md:242 |
 
 The clause `machine-mode bytes and exit status are unchanged by text rendering` is ambiguous: the AC does not state which two invocations are compared, and text mode necessarily uses a different output representation from JSON mode. TC-036 does not assert this clause. Specify the unchanged invariant against a named baseline or remove the clause.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-022-AC-13 removes the undefined machine-mode bytes and exit-status comparison. |
