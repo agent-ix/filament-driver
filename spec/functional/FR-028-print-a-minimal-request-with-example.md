@@ -35,14 +35,13 @@ relationships:
 A user who has only the `fsl` binary and its output cannot learn what a
 request file holds. Today `fsl run` over `{"format":"native-run/1","request":{}}`
 exits 20 with `invalid request: missing field 'models' at line 1 column 2`,
-one missing member per attempt and no member path; `fsl export` over a run
+one missing member per attempt and no member path; and `fsl export` over a run
 request reports `the selected export invocation requires export`, which
-names the missing thing and nothing else; and a request whose `format` the
-verb does not read reports `unsupported native command format` with no list
-of what the verb reads.
+names the missing thing and nothing else.
 
 This requirement gives each request verb a way to print a minimal valid
-request, and fixes what its request refusals tell the user. The request
+request, and fixes what its missing-member and export refusals tell the user. The
+accepted-format list for a wrong `format` is FSL's and is not specified here. The request
 verbs are `run`, `compile`, `analyze`, `monitor`, `replay` and `export`
 (`export --evidence <request-file>` reads the evidence request). `check`, `parse`, `format` and
 `inspect` read no request file, so `--example` is an unknown option on them.
@@ -65,8 +64,7 @@ tested against it.
 
 - For `--example` and `--example-evidence`: one JSON request document on
   stdout, followed by one newline, and nothing on stderr.
-- For a defective request: FSL's refusal document, `invalid-request` or
-  `unknown_wire`, exit 20, written as FR-002 routes refusals.
+- For a defective request: FSL's refusal document, `invalid-request`, exit 20, written as FR-002 routes refusals.
 
 ## Definitions
 
@@ -128,12 +126,6 @@ tested against it.
   reported the same way. The message form is FSL's.
 - If a request carries an invalid member, then FSL's refusal message SHALL
   contain the JSON pointer of that member.
-- If a request's `format` is not one the verb reads, then FSL's refusal SHALL
-  be `unknown_wire` and SHALL name the format it read and list every format the verb reads. The formats a
-  verb reads are those its FSL reader accepts (FSL FR-100 for `run`, FR-027
-  for `compile`, FR-620, FR-644, FR-862 and FR-1015 for the others). The
-  export request is `native-run/1`; `native-export/1` is not a format, so no
-  list names it as accepted.
 - If `fsl export` reads a `native-run/1` request without an `export` member,
   then FSL's refusal SHALL be `invalid-request` whose member is `export` and
   whose reason names the accepted format and member and points to the
@@ -153,9 +145,8 @@ tested against it.
 | FR-028-AC-4 | `fsl run --example R`, `fsl run --example --limit s1.nodes=1`, `fsl compile --example --output m.pkg` and `fsl export --example --example-evidence` each refuse `invalid-request`, exit 20, naming `--example` and the other argument, and read no file. `fsl run --example --help` writes help and exits 0; `fsl run --example --format bogus` refuses naming `--format` and `bogus`. `fsl check --example`, `fsl parse --example`, `fsl format --example`, `fsl inspect --example` and `fsl run --example-evidence` each refuse `invalid-request`, exit 20, naming the option as unknown. For every request verb, `--example` (and for `export`, `--example-evidence`) appears on its own line in the verb's `<verb> options:` section and in root help. | Test (TC-050) |
 | FR-028-AC-5 | Over each of `{}`, `{"format":"native-run/1"}` and, for each request verb, `{"format":"<its format>","request":{}}`, the verb refuses `invalid-request`, exit 20, with a diagnostic message that contains, once each, the expected pointers and contains no line or column. The expected pointers are derived from the verb's own `--example` output, not from FSL's reader: for `{}` they are `/format` and `/request`; for the second `/request`; for the third, one pointer for each member of the example's `request`, in the example's order, where the example's member of a one-of group is replaced by every member pointer of the group, shown as one alternatives entry in FSL's join (for `run`: `/request/models`, and `/request/program` with `/request/package`). A reader that reports only the first missing member, or omits the group, fails. | Test (TC-050) |
 | FR-028-AC-6 | `fsl run R` over `{"format":"native-run/1","request":{"models":"x"}}` refuses `invalid-request`, exit 20, with a diagnostic message that contains `/request/models`; the same holds for an unknown member `/request/bogus` and for a request with both `program` and `package`. | Test (TC-050) |
-| FR-028-AC-7 | For each request verb and each request format other than those it reads, the verb refuses `unknown_wire`, exit 20, with a diagnostic message that contains the format read and every format FSL's reader for that verb accepts. `fsl export R` over `{"format":"native-export/1","request":{}}` refuses `unknown_wire` with a message that contains `native-export/1` as the format read and `native-run/1` as the accepted format, and no accepted list contains `native-export/1`. | Test (TC-050) |
-| FR-028-AC-8 | `fsl export R` over a `native-run/1` request with no `export` member refuses `invalid-request`, exit 20, with member `export` and a reason that contains `native-run/1`, `export` and `fsl export --example`; `fsl export --evidence R` over one with no `export_evidence` member refuses with member `export_evidence` and a reason that contains `native-run/1`, `export_evidence` and `fsl export --example-evidence`. Neither refusal contains `requires export`. | Test (TC-050) |
-| FR-028-AC-9 | Each refusal of FR-028-AC-5 to FR-028-AC-8 is byte-equal to the document the FSL entry the driver calls for the verb under test returns for the same request: `run_with_providers_and_limits_and_overrides` for `run` (FR-002), `compile_outcome_with_overrides` for `compile` (`fsl-cli/src/cli.rs`; FSL FR-287; FR-024 names no entry), `analyze_with_providers_and_limits` for `analyze` (FR-022 names `analyze_with_providers`; the driver calls the `_and_limits` form), `monitor` for `monitor` (FR-025), `run_with_providers` for `replay` (FR-026) and `export_with_limits_and_overrides` for `export` (FR-027 names only "FSL's export entry"; the driver calls this one), exits 20 in both output modes, and in text mode and JSON mode writes only its outcome to stdout and nothing to stderr (FR-002). | Test (TC-050) |
+| FR-028-AC-7 | `fsl export R` over a `native-run/1` request with no `export` member refuses `invalid-request`, exit 20, with member `export` and a reason that contains `native-run/1`, `export` and `fsl export --example`; `fsl export --evidence R` over one with no `export_evidence` member refuses with member `export_evidence` and a reason that contains `native-run/1`, `export_evidence` and `fsl export --example-evidence`. Neither refusal contains `requires export`. | Test (TC-050) |
+| FR-028-AC-8 | Each refusal of FR-028-AC-5 to FR-028-AC-7 is byte-equal to the document the FSL entry the driver calls for the verb under test returns for the same request: `run_with_providers_and_limits_and_overrides` for `run` (FR-002), `compile_outcome_with_overrides` for `compile` (`fsl-cli/src/cli.rs`; FSL FR-287; FR-024 names no entry), `analyze_with_providers_and_limits` for `analyze` (FR-022 names `analyze_with_providers`; the driver calls the `_and_limits` form), `monitor` for `monitor` (FR-025), `run_with_providers` for `replay` (FR-026) and `export_with_limits_and_overrides` for `export` (FR-027 names only "FSL's export entry"; the driver calls this one), exits 20 in both output modes, and in text mode and JSON mode writes only its outcome to stdout and nothing to stderr (FR-002). | Test (TC-050) |
 
 ## Dependencies
 
@@ -166,14 +157,19 @@ tested against it.
   `--evidence` option.
 - FSL FR-100, FR-620, FR-644, FR-862, FR-1015, FR-1022 and FR-027: the run,
   analyze, monitor, replay, export, export-evidence and compile request
-  readers. FSL FR-287 lists the driver-facing verbs. The request-example entry
-  `fsl_command::command::request_example` and the request refusal text are
-  changes to those readers that FSL has not yet specified; they are the oracle
-  of AC-1 and AC-9, and this requirement is not implementable until FSL
-  specifies them (QSL-2930, FSL lane).
+  readers. FSL FR-287 lists the driver-facing verbs. FSL ticket QSL-2935
+  (titan:QSL:code) owns the request-example entry
+  `fsl_command::command::request_example`, the all-missing-members-with-pointers
+  behaviour, the accepted-format list for a wrong `format`, and the export
+  message text. The driver's `--example` calls that entry when it exists; this
+  spec carries no copy of FSL's request shapes or text, and it does not
+  change FSL FR-620-AC-9 (a `run`/`analyze` format mismatch stays
+  `invalid-request` at stage `request`) or `run`'s dispatch on `format`. This
+  requirement is not implementable until QSL-2935 lands; the entry is the
+  oracle of AC-1 and AC-8.
 - Listing a missing one-of group together with the missing required members in
   one refusal is new FSL reader behaviour. Today `required_program`
   (`fsl-command/src/command.rs`) runs only after serde accepts the request, so
-  a request missing `models` is refused for `models` alone. The FSL
-  requirement named above must specify it.
+  a request missing `models` is refused for `models` alone. QSL-2935
+  must specify it.
 - [TC-050](../test-cases/TC-050-print-a-request-example-and-name-request-defects.md).
