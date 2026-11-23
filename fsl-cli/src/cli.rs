@@ -14,6 +14,7 @@ use filament_driver::{
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
+use fsl_analyze::provider::UnusableCounterexample;
 use fsl_command::command::{
     self, CommandLimits, ExportSelection, MonitorPreparationLimits, RunLimits,
 };
@@ -1273,7 +1274,14 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     ) {
         Ok(result) => result,
         Err(error) => {
-            return CommandResult::document(error.outcome_document(Operation::Export));
+            let hint = export_example_hint(&error.cause);
+            let refusal = CommandResult::document(error.outcome_document(Operation::Export));
+            return match hint {
+                Some(hint) if format.outcome_mode() == OutputFormat::Text => {
+                    with_hint_line(with_format(refusal, format), hint)
+                }
+                _ => refusal,
+            };
         }
     };
     let Some(document) = runner.outcome else {
@@ -1283,6 +1291,36 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         );
     };
     with_format(CommandResult::document(document), format)
+}
+
+/// The text-mode hint of an export refusal for a missing `export` or
+/// `export_evidence` member (FR-028-AC-7), derived from FSL's typed
+/// `missing` entries and never from message text.
+fn export_example_hint(cause: &command::RunCause) -> Option<&'static str> {
+    let command::RunCause::MissingMembers { missing, .. } = cause else {
+        return None;
+    };
+    let names = |pointer: &str| missing.iter().any(|entry| entry == pointer);
+    if names("/request/export") {
+        Some("run 'fsl export --example' to print a valid request")
+    } else if names("/request/export_evidence") {
+        Some("run 'fsl export --example-evidence' to print a valid request")
+    } else {
+        None
+    }
+}
+
+/// `result`'s text output followed by one `hint: ` line of its own.
+fn with_hint_line(mut result: CommandResult, hint: &str) -> CommandResult {
+    if let Some(text) = result.text_output.as_mut() {
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str("hint: ");
+        text.push_str(hint);
+        text.push('\n');
+    }
+    result
 }
 
 /// Compile a request through its owner and retain the actual package outcome.
@@ -2328,10 +2366,40 @@ fn analyze_text(document: &serde_json::Value, category: Category) -> String {
             }
         }
         text.push('\n');
+        for diagnostic in item["diagnostics"].as_array().into_iter().flatten() {
+            if let Some(line) = unusable_counterexample_line(diagnostic) {
+                text.push_str(&line);
+                text.push('\n');
+            }
+        }
     }
     text.push_str(category.as_str());
     text.push('\n');
     text
+}
+
+/// The FR-022 line of FSL's typed unusable-provider-counterexample item
+/// diagnostic: its code, cause and FSL's reason spelling, with the driver's
+/// fixed phrase for that reason and no provider-supplied text.
+fn unusable_counterexample_line(diagnostic: &serde_json::Value) -> Option<String> {
+    let code = diagnostic["code"].as_str().filter(|code| *code == "invalid_result")?;
+    let cause = diagnostic["cause"].as_str().filter(|cause| *cause == "invalid-value")?;
+    let reason = UnusableCounterexample::from_spelling(diagnostic["reason"].as_str()?)?;
+    let phrase = match reason {
+        UnusableCounterexample::AssignmentNotClaimParameter => {
+            "assignment names a node that is not a claim parameter"
+        }
+        UnusableCounterexample::ClaimParameterUnassigned => "claim parameter has no assignment",
+        UnusableCounterexample::NodeIdUnresolved => "assignment node id does not resolve in the package",
+        UnusableCounterexample::PackageGraphUnreadable => "package graph is unreadable",
+        UnusableCounterexample::ParameterValueKindMismatch => {
+            "assignment value has the wrong kind for its claim parameter"
+        }
+    };
+    Some(format!(
+        "  diagnostic: {code}/{cause}: provider counterexample unusable [{}]: {phrase}",
+        reason.as_str()
+    ))
 }
 
 /// The record's disposition diagnostic, cause or proof basis, compactly.
@@ -2647,6 +2715,9 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             return CommandResult::failure(Code::InvalidRequest.category(), message);
         }
     };
+    if scanned.has(options::EXAMPLE) || scanned.has(options::EXAMPLE_EVIDENCE) {
+        return request_example(verb, &scanned);
+    }
     match verb {
         Verb::Analyze | Verb::Replay => match RequestOptions::from_scanned(verb, &scanned) {
             Ok(options) if verb == Verb::Analyze => analyze(&options, format),
@@ -2662,7 +2733,7 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => option_refusal(operation, &error),
         },
         Verb::Export => match ExportOptions::from_scanned(&scanned) {
-            Ok(options) => with_format(export(&options, format), format),
+            Ok(options) => export(&options, format),
             Err(error) => CommandResult::input_refusal(operation, error),
         },
         Verb::Compile => match CompileOptions::from_scanned(&scanned) {
@@ -2689,6 +2760,56 @@ fn dispatch(verb: Verb, format: OutputFormat, raw_arguments: &[OsString]) -> Com
             Err(error) => CommandResult::input_refusal(operation, error),
         },
         Verb::Prove | Verb::Generate | Verb::Render => unrouted_verb(verb, format),
+    }
+}
+
+/// `fsl <verb> --example` and `fsl export --example-evidence` (FR-028): the
+/// minimal valid request FSL's `request_example` returns for the verb,
+/// followed by one newline, in every output format. Any operand or option
+/// other than `--format` refuses before a file is read.
+fn request_example(verb: Verb, scanned: &Scanned) -> CommandResult {
+    let operation = verb.operation();
+    let selected = [options::EXAMPLE, options::EXAMPLE_EVIDENCE]
+        .into_iter()
+        .filter(|name| scanned.has(name))
+        .collect::<Vec<_>>();
+    let primary = selected[0];
+    let other = scanned
+        .positionals
+        .first()
+        .map(|operand| format!("`{}`", operand.to_string_lossy()))
+        .or_else(|| selected.get(1).map(|name| (*name).to_owned()))
+        .or_else(|| {
+            scanned
+                .options
+                .iter()
+                .map(|(name, _)| *name)
+                .find(|name| !selected.contains(name) && *name != options::FORMAT)
+                .map(str::to_owned)
+        });
+    if let Some(other) = other {
+        return CommandResult::input_refusal(
+            operation,
+            format!("{primary} cannot be combined with {other}"),
+        );
+    }
+    let (format, selection) = match (verb, primary) {
+        (Verb::Export, options::EXAMPLE_EVIDENCE) => {
+            (WireFormat::RunRequest, Some(ExportSelection::Evidence))
+        }
+        (Verb::Export, _) => (WireFormat::RunRequest, Some(ExportSelection::Ordinary)),
+        (Verb::Compile, _) => (WireFormat::CompileRequest, None),
+        (Verb::Analyze, _) => (WireFormat::AnalyzeRequest, None),
+        (Verb::Monitor, _) => (WireFormat::MonitorRequest, None),
+        (Verb::Replay, _) => (WireFormat::ReplayRequest, None),
+        _ => (WireFormat::RunRequest, None),
+    };
+    match command::request_example(format.as_str(), selection) {
+        Ok(mut example) => {
+            example.push('\n');
+            CommandResult::plain(example)
+        }
+        Err(error) => CommandResult::input_refusal(operation, error.to_string()),
     }
 }
 
@@ -3194,6 +3315,147 @@ mod outcome_tests {
                 }
             }
         }
+    }
+
+    use super::{
+        analyze_text, apply_command_limits, base_command_limits, unusable_counterexample_line,
+        LimitOverrides, UnusableCounterexample, Verb as LimitVerb,
+    };
+    use fsl_command::command::{CommandLimits, MonitorPreparationLimits};
+    use fsl_foundation::Setting;
+
+    fn parsed(operands: &[&str]) -> LimitOverrides {
+        let operands: Vec<String> = operands.iter().map(|operand| (*operand).to_owned()).collect();
+        LimitOverrides::parse(&operands).expect("FSL parses the operands")
+    }
+
+    /// FR-003-AC-13: with no override `fsl monitor` passes 268435456 bytes as
+    /// the storage allowance and the existing uncapped work allowance.
+    #[trace("TC-010", "FR-003-AC-13")]
+    #[test]
+    fn monitor_starts_at_the_published_preparation_defaults() {
+        let limits = apply_command_limits(&parsed(&[]), base_command_limits(LimitVerb::Monitor))
+            .expect("no override");
+        assert_eq!(
+            limits.preparation(),
+            MonitorPreparationLimits {
+                work: u64::MAX,
+                storage: 268_435_456
+            }
+        );
+    }
+
+    /// FR-003-AC-12: each preparation operand changes only its own bound.
+    #[trace("TC-010", "FR-003-AC-12")]
+    #[test]
+    fn each_preparation_operand_changes_only_its_bound() {
+        let storage = apply_command_limits(
+            &parsed(&["monitor.preparation_storage=125611543"]),
+            base_command_limits(LimitVerb::Monitor),
+        )
+        .expect("monitor exposes the storage bound");
+        assert_eq!(
+            storage.preparation(),
+            MonitorPreparationLimits {
+                work: u64::MAX,
+                storage: 125_611_543
+            }
+        );
+        let work = apply_command_limits(
+            &parsed(&["monitor.preparation_work_units=9"]),
+            base_command_limits(LimitVerb::Monitor),
+        )
+        .expect("monitor exposes the work bound");
+        assert_eq!(
+            work.preparation(),
+            MonitorPreparationLimits {
+                work: 9,
+                storage: 268_435_456
+            }
+        );
+    }
+
+    /// FR-003-AC-12: a stage setting reaches the operation's own bound, and an
+    /// operation never receives another operation's setting.
+    #[trace("TC-010", "FR-003-AC-12")]
+    #[test]
+    fn a_setting_outside_the_operation_set_is_refused_without_work() {
+        let analyze = apply_command_limits(
+            &parsed(&["replay.input_bytes=7", "accounting.work_units=3"]),
+            base_command_limits(LimitVerb::Analyze),
+        )
+        .expect("analyze exposes the reader bound and every accounting counter");
+        assert_eq!(analyze.replay_input_bytes(), 7);
+        let refusal = apply_command_limits(
+            &parsed(&["monitor.preparation_storage=7"]),
+            base_command_limits(LimitVerb::Analyze),
+        )
+        .expect_err("analyze does not prepare a monitor plan");
+        assert!(
+            refusal.starts_with(
+                "limit setting `monitor.preparation_storage` is unavailable for the `analyze` operation; settings this command accepts, by stage: "
+            ),
+            "{refusal}"
+        );
+        assert!(CommandLimits::replay().exposes(Setting::ReplayInputBytes));
+        assert!(!CommandLimits::analyze().exposes(Setting::MonitorPreparationWorkUnits));
+    }
+
+    /// FR-022-AC-13: FSL's typed diagnostic prints one line with the fixed
+    /// phrase of its reason and nothing else of the document.
+    #[trace("TC-036", "FR-022-AC-13")]
+    #[test]
+    fn an_unusable_counterexample_prints_its_reason_phrase_after_the_item() {
+        let cases = [
+            (
+                UnusableCounterexample::AssignmentNotClaimParameter,
+                "assignment names a node that is not a claim parameter",
+            ),
+            (
+                UnusableCounterexample::ClaimParameterUnassigned,
+                "claim parameter has no assignment",
+            ),
+            (
+                UnusableCounterexample::NodeIdUnresolved,
+                "assignment node id does not resolve in the package",
+            ),
+            (
+                UnusableCounterexample::PackageGraphUnreadable,
+                "package graph is unreadable",
+            ),
+            (
+                UnusableCounterexample::ParameterValueKindMismatch,
+                "assignment value has the wrong kind for its claim parameter",
+            ),
+        ];
+        for (reason, phrase) in cases {
+            let diagnostic = serde_json::json!({
+                "code": "invalid_result", "cause": "invalid-value", "reason": reason.as_str()
+            });
+            let expected = format!(
+                "  diagnostic: invalid_result/invalid-value: provider counterexample unusable [{}]: {phrase}",
+                reason.as_str()
+            );
+            assert_eq!(
+                unusable_counterexample_line(&diagnostic).as_deref(),
+                Some(expected.as_str())
+            );
+            let document = serde_json::json!({"items": [{
+                "request_index": 0, "claim_name": "Three",
+                "record": {"result": "inconclusive", "cause": {"kind": "replay-parity"}},
+                "diagnostics": [diagnostic]
+            }]});
+            assert_eq!(
+                analyze_text(&document, Category::Inconclusive),
+                format!(
+                    "0 Three inconclusive {{\"kind\":\"replay-parity\"}}\n{expected}\ninconclusive\n"
+                )
+            );
+        }
+        let unknown = serde_json::json!({
+            "code": "invalid_result", "cause": "invalid-value", "reason": "provider said so"
+        });
+        assert_eq!(unusable_counterexample_line(&unknown), None);
     }
 }
 

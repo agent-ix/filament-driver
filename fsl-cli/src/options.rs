@@ -45,6 +45,10 @@ pub const PROVIDER_CONFIG: &str = "--provider-config";
 pub const PROVIDER_LIMIT: &str = "--provider-limit";
 /// `monitor --input <file>`.
 pub const INPUT: &str = "--input";
+/// `<request verb> --example`: print a minimal valid request (FR-028).
+pub const EXAMPLE: &str = "--example";
+/// `export --example-evidence`: print a minimal valid evidence request (FR-028).
+pub const EXAMPLE_EVIDENCE: &str = "--example-evidence";
 /// `inspect --handoff <directory>`.
 pub const HANDOFF: &str = "--handoff";
 
@@ -225,6 +229,10 @@ fn format() -> OptionSpec {
     OptionSpec::valued(FORMAT, FORMAT_VALUE, "text, json, or dot")
 }
 
+fn example() -> OptionSpec {
+    OptionSpec::flag(EXAMPLE)
+}
+
 fn provider_config() -> OptionSpec {
     OptionSpec::valued(PROVIDER_CONFIG, "<path>", PATH)
 }
@@ -275,6 +283,7 @@ fn build() -> Vec<VerbEntry> {
                 OptionSpec::valued(CLOCKS, "<json-file>", PATH),
                 OptionSpec::valued(OUTPUT, "<file>", PATH),
                 limit(),
+                example(),
                 format(),
             ],
         },
@@ -289,6 +298,7 @@ fn build() -> Vec<VerbEntry> {
                 provider_config(),
                 provider_limit(),
                 OptionSpec::valued(CLOCKS, "<json-file>", PATH),
+                example(),
                 format(),
             ],
         },
@@ -302,13 +312,21 @@ fn build() -> Vec<VerbEntry> {
                 OptionSpec::valued(OUTPUT, "<file>", PATH),
                 OptionSpec::valued(EVIDENCE, "<request-file>", "a request file"),
                 limit(),
+                example(),
+                OptionSpec::flag(EXAMPLE_EVIDENCE),
                 format(),
             ],
         },
         VerbEntry {
             verb: "analyze",
             usage: vec!["analyze [options] <request-file>"],
-            options: vec![limit(), provider_config(), provider_limit(), format()],
+            options: vec![
+                limit(),
+                provider_config(),
+                provider_limit(),
+                example(),
+                format(),
+            ],
         },
         VerbEntry {
             verb: "monitor",
@@ -318,13 +336,20 @@ fn build() -> Vec<VerbEntry> {
                 limit(),
                 provider_config(),
                 provider_limit(),
+                example(),
                 format(),
             ],
         },
         VerbEntry {
             verb: "replay",
             usage: vec!["replay [options] <request-file>"],
-            options: vec![limit(), provider_config(), provider_limit(), format()],
+            options: vec![
+                limit(),
+                provider_config(),
+                provider_limit(),
+                example(),
+                format(),
+            ],
         },
         VerbEntry {
             verb: "inspect",

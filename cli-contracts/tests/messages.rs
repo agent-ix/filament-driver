@@ -80,6 +80,8 @@ fn an_unknown_engine_lists_the_engines() -> Result<(), Box<dyn std::error::Error
 
 const SPINE_SETTINGS: &str = "s1 (input_bytes, tokens, nodes, work_units); model (declaration_records, derivation_facts, effective_declarations, dispatch_candidates, work_units, ancestor_steps, family_steps, sequence_maximum); intake (input_bytes); s3 (nodes, input_bytes, work_units, rational_bits, decimal_scale, decimal_literal_scale, decimal_literal_scale_total); dependency (libraries, import_edges, source_bytes); environment (ancestor_steps, work_units); identity (input_bytes); i2 (input_bytes, nodes, edges, occurrences, diagnostics, work_units, native_join_storage); progress (covered_positions); emit (output_bytes)";
 const RUN_EXTRA_SETTINGS: &str = "; observation (input_bytes, objects, values); accounting (integer_bits, decimal_digits, scale_expansion, text_input_bytes, text_scalars, normalized_scalars, unit_edges, value_occurrences, work_units, result_units)";
+const COMMAND_COMMON_SETTINGS: &str = "s1 (input_bytes, tokens, nodes, work_units); model (declaration_records, derivation_facts, effective_declarations, dispatch_candidates, work_units, ancestor_steps, family_steps, sequence_maximum); intake (input_bytes); s3 (nodes, input_bytes, work_units, rational_bits, decimal_scale, decimal_literal_scale, decimal_literal_scale_total); dependency (libraries, import_edges, source_bytes); environment (ancestor_steps, work_units); identity (input_bytes); i2 (input_bytes, nodes, edges, occurrences, diagnostics, work_units, native_join_storage)";
+const ACCOUNTING_SETTINGS: &str = "accounting (integer_bits, decimal_digits, scale_expansion, text_input_bytes, text_scalars, normalized_scalars, unit_edges, value_occurrences, work_units, result_units)";
 const EXPORT_EXTRA_SETTINGS: &str = "; export (output_bytes, nodes, work_units)";
 
 fn unknown_setting(listing: &str) -> String {
@@ -116,14 +118,22 @@ fn an_unknown_limit_setting_lists_only_what_the_verb_accepts(
     );
     assert_eq!(
         message(&json("analyze", &["r.json"])?),
-        unknown_setting("replay (input_bytes)")
+        unknown_setting(&format!(
+            "{COMMAND_COMMON_SETTINGS}; emit (output_bytes); observation (input_bytes, objects, values); replay (input_bytes); {ACCOUNTING_SETTINGS}"
+        ))
     );
-    for verb in ["monitor", "replay"] {
-        assert_eq!(
-            message(&json(verb, &["r.json"])?),
-            format!("`--limit foo=1` names no setting, and {verb} accepts no --limit settings")
-        );
-    }
+    assert_eq!(
+        message(&json("monitor", &["r.json"])?),
+        unknown_setting(&format!(
+            "{COMMAND_COMMON_SETTINGS}; observation (input_bytes, objects, values); monitor (max_window_values, retained_positions, retained_identities, preparation_work_units, preparation_storage); {ACCOUNTING_SETTINGS}"
+        ))
+    );
+    assert_eq!(
+        message(&json("replay", &["r.json"])?),
+        unknown_setting(&format!(
+            "{COMMAND_COMMON_SETTINGS}; library (definitions, dependency_edges, artifact_bytes, single_artifact_bytes); admission (population_members, work_units, ancestor_steps); observation (input_bytes, objects, values); replay (input_bytes); model_check (max_states, max_transitions, max_automaton_states); {ACCOUNTING_SETTINGS}"
+        ))
+    );
     Ok(())
 }
 

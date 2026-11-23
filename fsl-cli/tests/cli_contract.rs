@@ -2472,9 +2472,9 @@ fn unknown_limit_setting_lists_accepted_settings() {
     );
 }
 
-/// Trace: FR-255-AC-2, a reached run limit names its CLI setting and the request's `stage_limits` entry.
+/// Trace: FR-255-AC-2, a reached run limit names its CLI setting and no request entry, since a `native-run/1` request has no `stage_limits` member.
 #[test]
-fn run_limit_message_names_cli_setting_and_stage_limits_entry() {
+fn run_limit_message_names_the_cli_setting_only() {
     let request = requests::request(SOURCE, Some(("yes", serde_json::json!([]))));
     let output = Command::new(FSL)
         .args([
@@ -2491,11 +2491,10 @@ fn run_limit_message_names_cli_setting_and_stage_limits_entry() {
     let document = String::from_utf8_lossy(&output.stdout);
     assert!(document.contains("s1.tokens"), "{document}");
     assert!(
-        document.contains(
-            "raise it with `--limit s1.tokens=<n>` or the request's `stage_limits` entry `s1.tokens`"
-        ),
+        document.contains("raise it with `--limit s1.tokens=<n>`"),
         "{document}"
     );
+    assert!(!document.contains("stage_limits"), "{document}");
 }
 
 #[test]
