@@ -42,3 +42,5 @@ No applicable AssuranceProfile exists in the specification scope; `spec/` contai
 | --- | --- | --- |
 | FND-001 | fixed | TC-010 now blocks the storage acceptance cases until the owner supplies a reproducible plan path and exact measured charge, and forbids substituting an unmeasured plan. |
 | FND-002 | fixed | The unsupported 16777216-unit default was removed; the requirement names the caller setting and preserves the operation's existing default. |
+| FND-001 | fixed | The latest head identifies both reproducible plan variants, their exact measurements, the FSL source test, and the one-byte-short tick refusal; the fixture ambiguity is resolved. |
+| FND-002 | fixed | The latest head still omits the unsupported work default and explicitly preserves the operation's existing default. |
