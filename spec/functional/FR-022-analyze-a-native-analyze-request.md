@@ -179,7 +179,19 @@ under QSL-2234.
   cause code is `invalid-request`) and the record's `result` otherwise, and `claim_name` is `-`
   when the item has no name, followed by the first present of the record's
   diagnostic `code/cause`, its cause and its proof-basis type; then one line
-  with the document category.
+  with the document category. For an item with FR-290's typed
+  unusable-provider-counterexample diagnostic, the driver SHALL print one
+  indented line immediately after that item's line as
+  `  diagnostic: <code>/<cause>: <message>`. For this diagnostic, the
+  message SHALL be `provider counterexample unusable [<reason>]: <reason
+  phrase>`, where the fixed phrases are: `assignment-not-claim-parameter` →
+  `assignment names a node that is not a claim parameter`;
+  `claim-parameter-unassigned` → `claim parameter has no assignment`;
+  `node-id-unresolved` → `assignment node id does not resolve in the
+  package`; `package-graph-unreadable` → `package graph is unreadable`; and
+  `parameter-value-kind-mismatch` → `assignment value has the wrong kind for
+  its claim parameter`. The diagnostic line SHALL use the typed reason
+  spelling and SHALL NOT include provider-supplied text.
 - The driver SHALL settle each item FSL hands it through CG's `negotiate_item`
   over the manifest of that registry, and apply no candidate rule
   of its own. The settlement is a pure function of that manifest and the
@@ -227,6 +239,7 @@ with counter `a` at 0.
 | FR-022-AC-10 | SIGTERM or SIGINT while an item runs gives a document whose open and later items are `incomplete` with cause `{"kind": "cancelled", "source": "requested"}`, and exit 22. | Test (TC-036) |
 | FR-022-AC-11 | With no `--provider-config`, `fsl analyze` over FSL's `examples/hybrid-braking/slow-enough.analyze.json` with `--format json` writes one item settled `proved` with certification `certified` and backend `fsl-hybrid-reference`, category `success`, exit 0, and over `too-slow.analyze.json` one item settled `refuted` with backend `fsl-hybrid-reference`, category `violation`, exit 10; neither writes `HybridProviderAbsent`, and the document's `registry` lists `fsl-hybrid-reference` and `en-1`. The process-provider half depends on FSL's `Engine::hybrid_process` (FSL FR-750): with `--provider-config` starting a fixture process provider whose `hello` advertises (`temporal-satisfaction`, `unbounded`) with `dynamics` `["hybrid"]` and that answers `delta-complete` `unsat` covering horizon 10 with certification `trusted`, the slow-enough item rewritten to name that provider's backend is sent to it as one FR-447 request and settles `proved`, `bounded-solver`, `trusted`, naming the fixture backend, exit 0, with no `ambiguous-backend`; the item naming `fsl-hybrid-reference` settles `proved`, `certified`, exit 0; the item naming neither settles `invalid-request` with `invalid_capability`/`ambiguous-backend` naming both backends, exit 20 (FSL FR-1019-AC-5); a provider whose `hello` advertises neither (`value-validity`, `unbounded`) nor (`temporal-satisfaction`, `unbounded`) with `dynamics` `["hybrid"]` refuses with exit 20 before any item runs. | Test (TC-047) |
 | FR-022-AC-12 | With no `--provider-config`, `fsl analyze` over a timed Counter subject with one item named `TimedLiveness`, whose clause is the unbounded `always (holds(c.value = 0) implies eventually holds(c.value = 0))` on `model-time`, writes one item settled `proved` by `en-6`; the record includes FR-632's `non_zeno` member, the document category is `success`, and the process exits 0. | Test |
+| FR-022-AC-13 | With `--provider-config` starting a process provider that reports a refuted verdict with each FR-290 unusable-counterexample reason, the JSON item is `inconclusive`/`replay-parity`, has no `counterexample` or `replay`, and carries exactly one item-level diagnostic `{"code":"invalid_result","cause":"invalid-value","reason":R}`; text mode prints immediately after that item's line `  diagnostic: invalid_result/invalid-value: provider counterexample unusable [<R>]: <fixed reason phrase>` using FR-022's phrase for `R`, with no provider-supplied text. Mapped assignments that replay to a violation remain `refuted`; machine-mode bytes and exit status are unchanged by text rendering. | Test (TC-036) |
 
 ## Dependencies
 

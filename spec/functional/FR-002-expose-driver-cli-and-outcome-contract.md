@@ -75,6 +75,10 @@ the fallback when that function returns reserved value `5`.
   analyze and monitor write the text forms FR-022 and FR-025 give them. The
   header departs from FSL FR-865, whose header names the operation
   (`execute` for `fsl run`); the JSON `operation` is unchanged.
+- `fsl analyze` text mode renders FR-290's typed
+  unusable-provider-counterexample diagnostic immediately after its item's
+  line using the exact code, cause, typed reason and fixed message form
+  FR-022 specifies; it adds no provider-supplied text.
 - Root help text for a help invocation, as specified by AC-17 and AC-24, and
   one verb's section of that help for `fsl <verb> --help`, as specified by
   AC-25; help does not produce a lifecycle outcome document.

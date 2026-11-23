@@ -16,7 +16,7 @@ with its exit code, for each outcome a user meets: proved, refuted with a
 replayable counterexample, incomplete under a limit or a deadline,
 unsupported or refused per item, and a refused request.
 
-Scope: FR-022-AC-1 through FR-022-AC-10, and FR-022-AC-12.
+Scope: FR-022-AC-1 through FR-022-AC-10, and FR-022-AC-12 through FR-022-AC-13.
 
 ## Test Procedure
 
@@ -48,9 +48,23 @@ Scope: FR-022-AC-1 through FR-022-AC-10, and FR-022-AC-12.
     eventually holds(c.value = 0))` on `model-time`; assert the `fsl` binary
     writes one `proved` item settled by EN-6, includes FR-632's `non_zeno`
     record member, and exits 0 (AC-12).
+11. With a fixture process provider, run a refuted `value-validity` item for
+    each of FR-290's five unusable-counterexample reasons. In JSON mode assert
+    each item is `inconclusive`/`replay-parity`, contains exactly one
+    item-level diagnostic with `code` `invalid_result`, `cause`
+    `invalid-value` and the corresponding `reason`, and omits `counterexample`
+    and `replay`. In text mode assert the diagnostic line follows the item
+    line and uses FR-022's fixed phrase and typed reason spelling, with no
+    provider-supplied message. Also run a mapped assignment that replays to a
+    violation and assert it remains `refuted` (AC-13).
 
 ## Expected Results
 
 - Every outcome is one document or one line, never empty output, with the
   FR-285 exit code of its category.
 - The binary's machine-mode document equals the library's.
+- For each unusable provider counterexample, JSON has one item-level
+  `invalid_result`/`invalid-value` diagnostic and no replay or counterexample;
+  text prints the fixed `provider counterexample unusable [<reason>]: ...`
+  line immediately after that item's line. Provider text is absent. A
+  replayable mapped assignment continues to yield `refuted`.
