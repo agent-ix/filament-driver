@@ -45,3 +45,4 @@ All nine ACs can fail, and each states its code, exit status and stream. One low
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | AC-1 now names `fsl_command::command::request_example` as the oracle, and Dependencies records that FSL must specify it |
+| FND-002 | fixed | verified in fix commit a664ab18 |

@@ -48,6 +48,14 @@ The new `--example-evidence` option was judged against FR-002, FR-027 and FSL FR
 | FND-008 | low | `--example-evidence` is missing in two places. The FR-002 pointer bullet still says only "The request verbs take `--example`". TC-050 step 4's Expected Results omit the `fsl run --example-evidence` unknown-option result and the `--example-evidence` help-listing check that AC-4 requires | spec/functional/FR-002-expose-driver-cli-and-outcome-contract.md:332 |
 | FND-009 | low | The fix dropped the refusal code from the wrong-format case. AC-7 and its Behavior bullet now state only "refuses ... exit 20" with no code, where the previous text and FSL (`Code::UnknownWire`, command.rs:1216) give `unknown_wire`. A refusal under any code passes AC-7 | spec/functional/FR-028-print-a-minimal-request-with-example.md:150 |
 
+## New findings (disposition pass 2)
+
+These were found at head a664ab18dd737054431fc27985ed894216f250df.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | Two problems with the one-of group form. First, Dependencies does not name it as an FSL change. It says only that the request refusal text is not yet specified in FSL. Today FSL reports a missing one-of group (program or package) as a separate refusal: required_program, command.rs:4964, runs only after serde accepts the required members. Listing it together with the missing required members, in the form /request/program or /request/package, is new FSL reader behaviour, but nothing says so. Second, the driver Definitions fix the pointer form joined by ' or ', while the Behavior bullet says the message form is FSL's. The spec therefore authors part of FSL's message form while claiming not to | spec/functional/FR-028-print-a-minimal-request-with-example.md:79-81 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -57,3 +65,7 @@ The new `--example-evidence` option was judged against FR-002, FR-027 and FSL FR
 | FND-003 | fixed | The exact message strings and member lists were removed from AC-5, AC-7 and AC-8. These ACs now defer to FSL's reader and the FSL FRs. The message form is FSL's |
 | FND-004 | fixed | AC-8 now asserts member `export` or `export_evidence` and reason substrings, with no nested backticks |
 | FND-005 | fixed | FSL FR-1022 was added to the `depends_on` edges and to Dependencies |
+| FND-006 | fixed | verified in fix commit a664ab18 |
+| FND-007 | still-open | AC-9 now maps compile to fsl_command::command::run. The driver calls compile_outcome_with_overrides (fsl-cli/src/cli.rs:1124, FSL FR-287), not run, and FSL's run refuses a native-compile/1 request on format, so a correct driver still fails byte-equality for compile. Its claim that FR-002 says which entry each verb calls is also unsupported: FR-002 names run and inspect_handoff only. analyze, monitor and replay are named loosely (FSL's analyze entry, its monitor entry), and FR-026 says replay goes through run_with_providers. The run, replay and export mappings are acceptable |
+| FND-008 | fixed | verified in fix commit a664ab18 |
+| FND-009 | fixed | verified in fix commit a664ab18 |
