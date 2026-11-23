@@ -103,8 +103,8 @@ fn assert_complete_producer_rows(admitted: &AdmittedSourceRecords, emission: &Em
             assert_eq!(actual.presence, original.presence);
             assert_eq!(actual.type_node.as_ref(), original.type_node.as_ref());
             assert_eq!(actual.value_type.as_ref(), original.value_type.as_ref());
-            assert_eq!(actual.member_type, None);
-            assert!(actual.collections.is_empty());
+            assert_eq!(actual.member_type, original.member_type);
+            assert_eq!(actual.collections, original.collections);
         }
     }
 }
@@ -658,4 +658,57 @@ fn source_record_error_catalog_has_exact_distinct_round_trip_spellings() {
     ] {
         assert_eq!(SourceRecordAdmissionErrorCode::from_code(invalid), None);
     }
+}
+
+/// A clock-entry member keeps its FSpec type rendering and collection layers
+/// through admission: the driver passes the producer row through unchanged.
+#[trace("FR-018-AC-1")]
+#[test]
+fn clock_entry_member_type_and_collections_pass_through_admission() {
+    let source = "language \"ix:native\" edition \"1-draft\";\n        profile v = \"filament.value.complete/v1\";\n        profile P = \"filament.temporal.complete/v1\";\n        dimension Time; unit ms : Time = rational(1, 1); time Order dense unit ms;\n        record W { c: Clock; n: Integer; }\n        object Order { w: W; }\n        function f using v(t: W): Boolean pure { true }\n";
+    let limits = SpineLimits::default();
+    let cancel = Cancel::new();
+    let parsed = parse(
+        &ParseRequest {
+            source: &SourceIdentity::new("agent-ix", "clock-entry"),
+            path: "clock.native",
+            bytes: source.as_bytes(),
+        },
+        limits.source,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let packages = package_input(std::iter::empty::<&[u8]>()).unwrap();
+    let selected = select(&parsed, &packages, limits.model, &cancel)
+        .unwrap()
+        .into_value();
+    let checked = check(
+        &parsed,
+        "agent-ix/clock-entry".to_owned(),
+        &selected,
+        &DependencyInput::default(),
+        limits,
+        &cancel,
+    )
+    .unwrap()
+    .into_value();
+    let emission = emit_checked(checked.package(), limits.package.emit()).unwrap();
+    let originals: Vec<_> = emission
+        .selected_source_record_rows()
+        .iter()
+        .flat_map(|row| row.members.iter())
+        .collect();
+    assert!(
+        originals.iter().any(|member| member.member_type.is_some()),
+        "the producer emits a clock entry with a member type"
+    );
+    let admitted = admit_source_records(
+        &emission,
+        emission.evidence(),
+        CheckedPackageReadLimits::bounded(),
+        JOIN_LIMITS,
+    )
+    .unwrap();
+    assert_complete_producer_rows(&admitted, &emission);
 }

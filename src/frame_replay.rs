@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use filament_contract_codegen::{
     FrameReplay, FrameReplayError, FrameReplayInputs, SelectedFrameTarget,
 };
-use filament_contract_model::ContractSourceV1;
+use filament_contract_model::{ContractSourceV1, TemporalBinding};
 use fsl_foundation::SourceIdentity;
 use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, RequestClocks, SuppliedLibrary};
 
@@ -30,23 +30,6 @@ pub enum FrameReplayFailure {
 }
 
 impl Driven {
-    /// The FR-640 clock selections this run compiled under: the admitted package's
-    /// own `temporal_bindings` rows, read as FSL's replay reads them (model binding
-    /// names are derived, not members; the first row of a clock name wins). `None`
-    /// when a row is not a well formed selection.
-    fn request_clocks(&self) -> Option<RequestClocks> {
-        let mut members = BTreeMap::new();
-        for row in self.checked().temporal_bindings().unwrap_or_default() {
-            if fsl_package::is_model_binding_name(&row.clock_name) {
-                continue;
-            }
-            members
-                .entry(row.clock_name.to_string())
-                .or_insert_with(|| row.clock.clone());
-        }
-        RequestClocks::new(members).ok()
-    }
-
     /// Prepares one operation-frame replay using FSL's exact declaring-owner target.
     ///
     /// `inputs.selected_target` must be `None`: the driver supplies that value from
@@ -82,11 +65,7 @@ impl Driven {
                 .collect::<Vec<_>>(),
         )
         .map_err(FrameReplayFailure::Dependencies)?;
-        let clocks = self.request_clocks().ok_or_else(|| {
-            FrameReplayFailure::Driver(Box::new(DriverRefusal::Fault(
-                DriverFault::FrameReplayAssociation,
-            )))
-        })?;
+        let clocks = request_clocks(self.checked().temporal_bindings())?;
         let located = fsl_replay::call_site(
             SourceIdentity::new(&inputs.run.source.authority, &inputs.run.source.identity),
             inputs.run.package_name.clone(),
@@ -183,6 +162,116 @@ impl FrameReplayFailure {
             Self::CallSite(_) => FrameReplayFailureCode::CallSite,
             Self::Driver(_) => FrameReplayFailureCode::RuntimeInvariant,
             Self::Codegen(_) => FrameReplayFailureCode::Codegen,
+        }
+    }
+}
+
+/// The FR-640 clock selections the run compiled under: the admitted package's own
+/// `temporal_bindings` rows, read as FSL's replay reads them (model binding names
+/// are derived, not members; the first row of a clock name wins).
+///
+/// `rows` is IR's typed accessor over a package its strict reader already
+/// admitted, so `None` is an absent member (a unit without clock selections), not
+/// an unreadable one; an unreadable array never reaches this point. A row that is
+/// not a well formed selection (empty name or unit, non-positive period) is the
+/// `FrameReplayAssociation` fault.
+///
+/// Known limit (QSL-2999): the package lock's `dependency_clock_selections` are
+/// not carried. FSL's `RequestClocks::for_replay`, which keeps program and
+/// dependency clocks apart, is `pub(crate)`; `RequestClocks::new` serves both
+/// namespaces from one map. The driver adopts `for_replay` once FSL exposes it.
+fn request_clocks(
+    rows: Option<&[TemporalBinding]>,
+) -> Result<RequestClocks, FrameReplayFailure> {
+    let mut members = BTreeMap::new();
+    for row in rows.unwrap_or_default() {
+        if fsl_package::is_model_binding_name(&row.clock_name) {
+            continue;
+        }
+        members
+            .entry(row.clock_name.to_string())
+            .or_insert_with(|| row.clock.clone());
+    }
+    RequestClocks::new(members).map_err(|_| {
+        FrameReplayFailure::Driver(Box::new(DriverRefusal::Fault(
+            DriverFault::FrameReplayAssociation,
+        )))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use filament_contract_model::{CheckedNodeId, ClockConfiguration};
+    use filament_exact::{NodeKey, PathSegment};
+
+    use super::*;
+
+    fn row(name: &str, unit: &str) -> TemporalBinding {
+        let key = NodeKey::new(
+            "pkg".to_owned(),
+            vec![PathSegment::Text("claim".to_owned())],
+            0,
+        )
+        .expect("a fixture key is admissible");
+        let declaration: CheckedNodeId = serde_json::from_value(
+            fsl_foundation::node_wire::node_key_to_json(&key).expect("the key encodes"),
+        )
+        .expect("a checked node identity");
+        serde_json::from_value(serde_json::json!({
+            "declaration": serde_json::to_value(&declaration).expect("serializes"),
+            "occurrence": 0,
+            "clock_name": name,
+            "clock": {"kind": "timestamped_event", "timestamp_unit": unit},
+        }))
+        .expect("a temporal binding row")
+    }
+
+    fn configured(unit: &str) -> ClockConfiguration {
+        ClockConfiguration::TimestampedEvent {
+            timestamp_unit: unit.into(),
+        }
+    }
+
+    /// A real clock row becomes a named member, not the default selection.
+    #[test]
+    fn a_real_clock_row_becomes_a_request_clock_member() {
+        let rows = [row("events", "ms")];
+        let clocks = request_clocks(Some(&rows)).expect("well formed rows");
+        assert_eq!(clocks.get("events"), Some(&configured("ms")));
+        assert_ne!(clocks, RequestClocks::default());
+    }
+
+    /// A model binding row is derived, not a member; the first row of a name wins.
+    #[test]
+    fn model_binding_rows_are_skipped_and_the_first_row_of_a_name_wins() {
+        let rows = [
+            row("model-time", "ms"),
+            row("events", "ms"),
+            row("events", "s"),
+        ];
+        let clocks = request_clocks(Some(&rows)).expect("well formed rows");
+        assert!(clocks.get("model-time").is_none());
+        assert_eq!(clocks.get("events"), Some(&configured("ms")));
+        assert_eq!(clocks.iter().count(), 1);
+    }
+
+    /// A package without the member has no clock selections.
+    #[test]
+    fn an_absent_member_selects_no_clocks() {
+        assert!(request_clocks(None).expect("no rows").is_empty());
+    }
+
+    /// A malformed row is the association fault, never silently dropped.
+    #[test]
+    fn a_malformed_row_is_the_frame_replay_association_fault() {
+        for rows in [[row("", "ms")], [row("events", "")]] {
+            let Err(FrameReplayFailure::Driver(refusal)) = request_clocks(Some(&rows)) else {
+                panic!("a malformed row must refuse");
+            };
+            assert!(matches!(
+                *refusal,
+                DriverRefusal::Fault(DriverFault::FrameReplayAssociation)
+            ));
         }
     }
 }
