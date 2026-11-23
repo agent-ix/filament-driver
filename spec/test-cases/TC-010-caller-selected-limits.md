@@ -20,7 +20,7 @@ accounting settings do not pass through stage bounds. The driver adds no
 namespace or aliases. The driver supports 64-bit hosts; it adds no platform
 overflow rule, and FSL owns bound application behavior on 32-bit hosts.
 
-Scope: FR-003-AC-1 through FR-003-AC-11.
+Scope: FR-003-AC-1 through FR-003-AC-17.
 
 ## Test Procedure
 
@@ -60,6 +60,22 @@ Scope: FR-003-AC-1 through FR-003-AC-11.
    `--limit` override and without it. Verify that the caller's value reaches
    the matching operation bound, the request's other values are preserved,
    and a setting unavailable to that operation refuses before work begins.
+6. For `analyze`, `monitor` and `replay`, exercise each operation-specific
+   setting listed in FSL FR-255's “Lifecycle caller-limit coverage”; inspect
+   that each accepted spelling changes its matching bound and that an
+   unavailable recognized spelling is refused before work. For monitor, use
+   the variants in FSL PR #3532's
+   `fsl-analyze/tests/it/monitor_authority.rs::complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget`:
+   dense `root_of(authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"), "C", &target())`
+   and tick `tick_root()`. Verify the dense plan is 2,912,360 package bytes,
+   1,136 nodes, and 113,158,334 cumulative read-storage bytes; verify the tick
+   plan is 3,176,346 package bytes, 1,231 nodes, and 125,611,544 cumulative
+   read-storage bytes. Confirm both pass with the 268435456-byte default.
+   Run the tick plan with
+   `--limit monitor.preparation_storage=125611543`; verify it refuses and
+   names `monitor.preparation_storage` and the matching raise operand. Also
+   set `--limit monitor.preparation_work_units=<n>` and verify only the
+   preparation work bound changes; do not infer a new default from this test.
 
 Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 `fsl-cli/tests/binary_process.rs`.
@@ -88,3 +104,9 @@ Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 - `run`, `check`, `analyze`, `monitor` and `replay` accept the repeatable
   option; each forwards only accepted matching overrides and preserves other
   request values.
+- `analyze`, `monitor` and `replay` accept exactly their operation-specific
+  caller limits in FSL FR-255; recognized unsupported operation limits are
+  refused before work.
+- The dense and tick variants match their exact package-byte, node-count and
+  read-storage measurements, both pass under the 256 MiB default, and the tick
+  variant refuses at 125611543 while naming `monitor.preparation_storage`.
