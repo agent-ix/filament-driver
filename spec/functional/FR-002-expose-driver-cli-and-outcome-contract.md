@@ -119,6 +119,14 @@ the fallback when that function returns reserved value `5`.
   `streams` module for stream discipline.
 - When the CLI writes machine-mode outcomes, it SHALL use ix-cli-kit's `json`
   module for canonical JSON encoding.
+- When the CLI begins processing a verb invocation, it SHALL resolve the
+  refusal output mode before validating other verb options or reading inputs.
+  No `--format` or one valid `--format text`
+  selects text; one valid `--format json` selects JSON. If `--format` is
+  missing its value, repeated or names an unsupported value, the CLI SHALL
+  render that refusal as text. Any refused `inspect` invocation carrying
+  `--format dot` also uses the text refusal rendering because DOT does not
+  encode an outcome.
 - In `--format json` mode the diagnostics of a document result are carried in
   the document and nothing is written to stderr.
 - When the CLI writes a refusal in JSON mode, it SHALL write its
