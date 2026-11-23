@@ -31,8 +31,13 @@ Scope: FR-025-AC-1 through FR-025-AC-9 except FR-025-AC-4 (TC-044). Ticket: QSL-
    closing stdin (AC-6).
 8. Run with `--input` and with stdin, then with a missing `--input` file in machine and text mode (AC-7).
 9. Run the AC-1 records in text mode and assert each line and exit 10 (AC-8).
+10. Run the monitor request with a matching `--limit` override and assert the
+    caller value reaches the operation while other request limits remain
+    unchanged.
 
 ## Expected Results
 
 - The binary's lines equal the library's; each refusal exits 20; events arrive
   before the stream ends.
+- A refusal outcome is appended to stdout in the selected format, including
+  after already-written events, and no refusal writes to stderr.

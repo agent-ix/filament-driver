@@ -40,7 +40,9 @@ The verb is the command-line encoding of FSL's in-process entry
 `native-run/1` request. The request document carries every analysis
 setting: the program, models, supplied documents, subject, items with their
 engines, fairness, reductions and limits, the shared limits and the deadline.
-The driver therefore reads no analysis setting from options; `--format`
+The driver accepts `--limit name=value` as a caller override for a matching
+FSL-exposed bound; the request's value remains effective where the caller
+does not supply an override. `--format`
 selects the output mode, `--provider-config` names the process providers
 registered beside FSL's engines (FSL FR-287, FR-635; FSpec FR-561), and
 `--provider-limit` sets the run's FSpec FR-462 limits (FSL FR-287, FR-964).
@@ -122,6 +124,8 @@ under QSL-2234.
   the request names resolve against the request file's folder (FSL FR-026).
 - `--provider-config <path>`, at most once: FSpec FR-561's provider
   configuration in the driver's FR-014 shape, read before the request.
+- Zero or more `--limit name=value` options, resolved and applied as FR-003
+  specifies.
 - `--format json` (machine mode) or `--format text` (the default).
 
 ## Outputs
@@ -129,8 +133,9 @@ under QSL-2234.
 - Machine mode: one `filament-outcome/1` document with `operation`
   `analyze` on stdout, encoded with ix-cli-kit's canonical JSON
   ([FR-002](FR-002-expose-driver-cli-and-outcome-contract.md)).
-- Text mode: FSL FR-621's item lines on stdout, or FSL FR-624's one refusal
-  line on stderr.
+- Text mode: FSL FR-621's item lines on stdout, or the selected text rendering
+  of FSL FR-624's refusal outcome on stdout; the verb writes nothing to
+  stderr.
 - The FR-285 exit code of the outcome's category.
 
 ## Behavior
@@ -170,9 +175,12 @@ under QSL-2234.
   is not the category that exit code names, the driver SHALL exit with the
   internal-failure code and a diagnostic naming both, rather than guess.
 - For a whole-request refusal the driver SHALL write the refusal's
-  `analyze` outcome document in machine mode, and in text mode the line
-  `fsl analyze: <code>: <message>` on stderr, and exit with the refusal's
-  category code.
+  `analyze` outcome document in machine mode and its FR-865 text rendering in
+  text mode, both on stdout and with no stderr output, and exit with the
+  refusal's category code.
+- The driver SHALL apply each accepted `--limit` override to the matching
+  exposed analysis bound before calling FSL. A caller value overrides the
+  request value for that bound; other request values remain unchanged.
 - In text mode the driver SHALL print, per item in request order,
   `<request_index> <claim_name> <label>`, where `label` is `invalid-request`
   for an `invalid-request` disposition record (one with no `result`, or whose
@@ -219,7 +227,7 @@ with counter `a` at 0.
 | FR-022-AC-2 | The item `{"claim": "BelowThree"}` gives an item whose record is `refuted`, with a `counterexample` entry and `replay` `{"target": {"state_clause": Q}, "reproduced": true}`, `Q` ending in `BelowThree`, category `violation`, and exit 10. | Test (TC-036) |
 | FR-022-AC-3 | A request whose item sets `temporal.limits.max_states` to 1 gives an `incomplete` record whose cause names `max_states`, with no `counterexample`, and exit 22; a request with `deadline_ms` 0 gives an `incomplete` record whose cause is `{"kind": "cancelled", "source": "deadline"}`, and exit 22. | Test (TC-036) |
 | FR-022-AC-4 | An item naming a backend the registry does not hold settles with category `refusal` and the record diagnostic `invalid_capability`/`unknown-backend` naming the backend, exit 20; an item over the Counter fixture naming backend `en-6`, which lists no temporal-satisfaction form, settles `unsupported` with `unsupported_projection`/`unsupported-requested-capability`, exit 21 (the item kind is incidental: EN-1 serves derived deadlock-freedom since QSL-2122, and a state-graph claim over a timed subject stays unsupported until QSL-2305); neither writes empty output. | Test (TC-036) |
-| FR-022-AC-5 | A malformed `native-analyze/1` document gives, in machine mode, a document with `operation` `analyze`, category `refusal`, empty `items` and one `invalid-request` diagnostic, and in text mode one stderr line starting `fsl analyze: invalid-request:`; both exit 20. A program the checker refuses gives a document whose `last_stage` is the checker stage FSL names (`S3`), empty `items` and that refusal's code, and the text line `fsl analyze: <code>: `; a snapshot naming a population the model does not declare gives the binding refusal's code with empty `items`; each exits 20. A missing operand, an unknown option, or a `--provider-config` with no path or given twice refuses with exit 20 naming the usage, before any file is read. | Test (TC-036) |
+| FR-022-AC-5 | A malformed `native-analyze/1` document gives, in machine mode, one document with `operation` `analyze`, category `refusal`, empty `items` and one `invalid-request` diagnostic, and in text mode the selected text rendering of that refusal outcome on stdout; both exit 20 and write nothing to stderr. A program the checker refuses gives a document whose `last_stage` is the checker stage FSL names (`S3`), empty `items` and that refusal's code, and its text rendering on stdout; a snapshot naming a population the model does not declare gives the binding refusal's code with empty `items`; each exits 20 and writes nothing to stderr. A missing operand, an unknown option, or a `--provider-config` with no path or given twice refuses with exit 20 naming the usage before any file is read, with the refusal outcome in the selected format on stdout and no stderr. | Test (TC-036) |
 | FR-022-AC-6 | The machine-mode stdout for the AC-2 request is byte-equal to the canonical encoding of the document `fsl_command::command::analyze` returns in process for the same request, followed by one newline. | Test (TC-036) |
 | FR-022-AC-7 | In text mode the AC-2 request prints `0 BelowThree refuted` at the start of its first line, `violation` as its last line, and exits 10; an item naming an unregistered backend prints `0 Bounded invalid-request invalid_capability/unknown-backend`. | Test (TC-036) |
 | FR-022-AC-8 | Each settlement row of the table holds for the driver's negotiation over a candidate outcome of that shape, except the several-candidates-with-a-named-backend row, which FSL's candidate computation does not produce; the `registry` member of an outcome lists the engines FSL registers (`en-1` among them), and the `Bounded` item's candidates are `["en-1"]`. | Test (TC-036) |

@@ -27,7 +27,10 @@ FSL's operand parser and typed caller limits to apply those values to the
 selected lifecycle operation. When a caller omits a limit setting, the
 operation SHALL use that setting's published FSL default. Every
 FSL-enforced bound SHALL be caller-configurable through the canonical FSL
-setting interface. The driver
+setting interface. When a caller invokes `run`, `check`, `analyze`, `monitor`
+or `replay` with repeatable `--limit name=value` options, the driver SHALL
+override each matching exposed bound for that operation; request-supplied
+bounds and omitted settings retain their operation-defined values. The driver
 supports 64-bit hosts. On a 32-bit host, FSL owns its documented bound
 application behavior, including any clamp; the driver adds no platform
 overflow rule. When an operation reaches a bound, it SHALL return FSL's typed
@@ -48,6 +51,11 @@ limit outcome and report no success.
 - When the CLI receives `--limit` operands, the driver SHALL call
   `fsl_foundation::setting::parse_operands` to resolve them as FSL
   `SettingName` values.
+- The option table SHALL list `--limit name=value` as repeatable for `run`,
+  `check`, `analyze`, `monitor` and `replay`. The driver SHALL apply these
+  overrides to each verb's corresponding FSL operation before it starts the
+  operation; an operation that does not expose a resolved bound SHALL refuse
+  that setting before starting any stage.
 - When FSL resolves a stage setting, the driver SHALL check it against the
   selected operation's `SettingLimits::bounds()`.
 - When a resolved stage setting is exposed by those bounds, the driver SHALL
@@ -93,6 +101,7 @@ limit outcome and report no success.
 | FR-003-AC-8 | A duplicate `--limit` setting is refused before any stage with code `invalid-request` and identifies the duplicate setting. | Test (TC-010) |
 | FR-003-AC-9 | The driver accepts FSL FR-255's `accounting.<counter>` setting names through FSL's operand APIs and retains FSL's unknown-setting refusal for a bare counter such as `work_units`, without adding a driver-defined namespace or aliases. | Test (TC-010) |
 | FR-003-AC-10 | When FSL resolves an `accounting.<counter>` setting name, the driver applies its value through FSL `AccountingLimits::set_bound` to `Call.accounting`; the stage `SpineLimits` remain unchanged and the accounting value reaches `spine::run`, except on a `fsl run` whose call carries `requirements`, which refuses accounting settings (FR-002-AC-27). | Test (TC-010) |
+| FR-003-AC-11 | The `run`, `check`, `analyze`, `monitor` and `replay` option-table entries accept repeatable `--limit name=value`; each operation receives accepted overrides to its exposed limits, retains request-supplied bounds and defaults for omitted settings, and refuses an operation-unavailable setting before work begins. | Test |
 
 ## Dependencies
 
