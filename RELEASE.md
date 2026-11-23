@@ -75,11 +75,9 @@ The examples image workflow is different: its manual dispatch builds and pushes 
 
 ## Released-mode journey gate
 
-Run this on Titan after the driver release assets, docs tag, and examples tag are available. Prerequisites: Cargo and the pinned Rust toolchain, Docker running, host `readelf` from binutils, matching local docs and examples checkouts, and network access to pull Ubuntu 26.04. Use the actual released Linux GNU `fsl` binary, not a local candidate:
+Run this on Titan after the driver release assets, docs tag, and examples tag are available. First complete the release download and full checksum verification above; reuse that `release/` directory here. Prerequisites: Cargo and the pinned Rust toolchain, Docker running, host `readelf` from binutils, matching local docs and examples checkouts, and network access to pull Ubuntu 26.04. Use the actual released Linux GNU `fsl` binary, not a local candidate:
 
 ```sh
-gh release download v0.2.0 --repo agent-ix/filament-driver \
-  --pattern fsl-v0.2.0-x86_64-unknown-linux-gnu.tar.gz --dir release
 tar -xzf release/fsl-v0.2.0-x86_64-unknown-linux-gnu.tar.gz -C release fsl
 make alpha-journey-gate \
   FILAMENT_DOCS_DIR=/home/peter/dev/filament-docs \
