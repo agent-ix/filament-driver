@@ -33,8 +33,12 @@ for FR-020-AC-6 only.
    takes no `RequirementMap`, so a test upstream overrides it), drive the
    run with a `RequirementMap` missing the routed
    item's `value-validity` record (AC-4), and with a record whose
-   key node the admitted package does not hold, and with a record whose
-   key has an unmapped role and with a record whose path guard names a node the package lacks (AC-14, built with FSL's `test-support` constructors). Assert the fault
+   key node the admitted package does not hold, with a record whose
+   key has an unmapped role, and with a record whose referenced shared frame
+   has a guard node absent from the admitted package (AC-14). Build the last
+   case through FSL's `test-support` requirement-map seam by giving the frame
+   table a missing guard node and making the record cite that frame; do not
+   construct a per-record guard list. Assert the fault
    fields, code, stage, kind and that the recording seam saw no generation
    call.
 3. Reuse the FR-010-AC-4 partition vector, once as is and once with B's
