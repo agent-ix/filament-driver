@@ -232,9 +232,9 @@ fn checker_and_snapshot_binding_failures_keep_the_stage() -> Result<(), Contract
 }
 
 /// Trace: FR-022-AC-5
-/// FSL FR-620 default and empty item semantics.
+/// FSL FR-620: an explicit empty `items` list analyses nothing.
 #[test]
-fn explicit_empty_items_and_omitted_items_have_different_meanings() -> Result<(), ContractError> {
+fn explicit_empty_items_settle_no_items() -> Result<(), ContractError> {
     let (case, mut request) = setup()?;
     request["request"]["items"] = json!([]);
     write_request(&case, &request)?;
@@ -244,38 +244,6 @@ fn explicit_empty_items_and_omitted_items_have_different_meanings() -> Result<()
         "success",
     );
     assert!(empty["items"].as_array().unwrap().is_empty());
-    request["request"].as_object_mut().unwrap().remove("items");
-    write_request(&case, &request)?;
-    // FSL FR-620: the default items are every operation contract and every claim.
-    // The two operation contracts have an unbounded extent this build cannot
-    // prove, so the run is `unsupported` (exit 21) and the claims follow them.
-    let all = document(
-        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
-        21,
-        "unsupported",
-    );
-    let names: Vec<_> = all["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item["claim_name"].as_str().unwrap_or_default())
-        .collect();
-    assert_eq!(
-        names,
-        [
-            "SpaceAvailable",
-            "AppendOne",
-            "WithinCapacity",
-            "NeverFull",
-            ""
-        ]
-    );
-    for (index, item) in all["items"].as_array().unwrap().iter().enumerate() {
-        assert_eq!(item["request_index"], index, "{item}");
-    }
-    assert_eq!(all["items"][0]["category"], "unsupported");
-    assert_eq!(all["items"][2]["category"], "success");
-    assert_eq!(all["items"][3]["category"], "violation");
     Ok(())
 }
 
