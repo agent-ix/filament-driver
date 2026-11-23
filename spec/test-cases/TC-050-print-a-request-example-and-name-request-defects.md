@@ -31,5 +31,5 @@ Test: `fsl-cli/tests/request_discovery.rs`.
 - Step 3: each is refused at stage `file` or succeeds, never at `envelope` or `request`.
 - Step 4: `fsl run --example-evidence` refuses naming the unknown option; help and root help list `--example` on each request verb and `--example-evidence` on `export`; exit 20 naming `--example` and the other argument with no file read; help exit 0; `--format` refusal first; unknown option on the four non-request verbs; `--example` listed on each request verb.
 - Step 5: each message contains, once, the pointers derived from that verb's `--example` output (a one-of group shown as one alternatives entry in FSL's join), and no line or column; the wrong-typed member's message contains `/request/models`.
-- Step 6: members `export` and `export_evidence` with reasons as FR-028-AC-8 states, none containing `requires export`.
+- Step 6: members `export` and `export_evidence` with reasons as FR-028-AC-7 states, none containing `requires export`.
 - Step 7: byte-equal documents, exit 20, stdout only.

@@ -65,6 +65,14 @@ These were found at head 27249bb081e1b12c6ba76902dcc64a2d020218e6.
 | FND-011 | high | AC-9's reference documents for run and replay are FSL entries that execute, not refuse, the wrong-format requests AC-7 requires them to refuse. FSL run_with_providers and run_with_providers_and_limits_and_overrides both reach run_configured, which dispatches on format: a native-monitor/1 request is run as monitor (command.rs:2040) and a native-replay/1 request is replayed (command.rs:2042). So for fsl run over a native-replay/1 or native-monitor/1 request, and fsl replay over native-run/1 or native-monitor/1, the named entry returns a run outcome, not the unknown_wire refusal AC-7 requires. AC-7 and AC-9 cannot both hold. The replay wrong-format refusal is the driver's own today (fsl-cli/src/cli.rs:2015, FR-026-AC-4), which also contradicts the rule that the driver adds no refusal text. 'Every format FSL's reader for that verb accepts' is undefined when the entry accepts more formats than the verb reads. The FSL entry must be made to refuse by verb (a new FSL dependency), or AC-9 must exclude these pairings | spec/functional/FR-028-print-a-minimal-request-with-example.md:158 |
 | FND-012 | high | AC-7 requires unknown_wire for every wrong-format pairing, including a native-analyze/1 request given to run, replay or export, and a native-run/1 request given to analyze. FSL FR-620-AC-9 specifies those pairings as invalid-request at the request stage, and FSL implements that at command.rs:3973-3980 (member format, 'is not read here'). FR-028 does not list FR-620-AC-9 as an FSL contract to change, so AC-7 contradicts an existing FSL requirement for those pairings | spec/functional/FR-028-print-a-minimal-request-with-example.md:156 |
 
+## New findings (disposition pass 4)
+
+These were found at head 2829a5cd5c64ff9c8835b0bad0e835ea73cc5800.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | medium | AC-5 is ambiguous about which verbs its first two documents go to. Read the natural way (each of the three documents, given to each request verb), `{"format":"native-run/1"}` given to analyze, compile, monitor or replay would be a format-mismatch refusal: invalid-request on format for analyze, per FSL FR-620-AC-9, and unknown_wire for the others. It would not be the `/request` missing-member refusal AC-5 requires, so under that reading the AC is wrong for those verbs. TC-050 step 5 runs both documents only through `fsl run`. The AC should say `fsl run` for `{}` and `{"format":"native-run/1"}` | spec/functional/FR-028-print-a-minimal-request-with-example.md:146 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -80,3 +88,5 @@ These were found at head 27249bb081e1b12c6ba76902dcc64a2d020218e6.
 | FND-009 | fixed | verified in fix commit a664ab18 |
 | FND-007 | fixed | verified in fix commit 27249bb0; entry names match fsl-cli/src/cli.rs and FSL |
 | FND-010 | fixed | verified in fix commit 27249bb0 |
+| FND-011 | fixed | verified in 2829a5cd; the wrong-format AC was dropped and the AC-8 oracle now covers only the missing-member and export refusals |
+| FND-012 | fixed | verified in 2829a5cd; the unknown_wire AC was removed and Dependencies keeps FSL FR-620-AC-9 unchanged |
