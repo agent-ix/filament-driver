@@ -20,9 +20,14 @@ accounting settings do not pass through stage bounds. The driver adds no
 namespace or aliases. The driver supports 64-bit hosts; it adds no platform
 overflow rule, and FSL owns bound application behavior on 32-bit hosts.
 
-Scope: FR-003-AC-1 through FR-003-AC-14.
+Scope: FR-003-AC-1 through FR-003-AC-16.
 
 ## Test Procedure
+
+Prerequisite for FR-003-AC-14 through FR-003-AC-16: blocked until the owner supplies a reproducible
+monitor-plan fixture path and its exact measured preparation read charge. The
+current repository and issue reference do not identify this evidence; do not
+substitute an unmeasured plan.
 
 1. Inspect the parser and application path: the driver calls
    `fsl_foundation::setting::parse_operands` and branches on the returned
@@ -64,17 +69,16 @@ Scope: FR-003-AC-1 through FR-003-AC-14.
    setting listed in FSL FR-255's “Lifecycle caller-limit coverage”; inspect
    that each accepted spelling changes its matching bound and that an
    unavailable recognized spelling is refused before work. For monitor,
-   prepare a real tutorial-sized 2.9–3.2 MB plan whose measured read-storage
-   charge is at most 126 MB. With no override, verify that
-   `MonitorPreparationLimits.storage` is 268435456 bytes and the plan
-   completes. Repeat with `--limit monitor.preparation_storage=1` (or another
-   measured lower value the plan exceeds); verify the typed refusal names
+   use the exact measured monitor-plan fixture identified by the owner before
+   implementation; record its repository path and exact preparation
+   read-storage charge M. Verify M is no greater than 268435456. With no
+   override, verify that `MonitorPreparationLimits.storage` is 268435456 bytes
+   and the fixture completes. Repeat with an explicit
+   `--limit monitor.preparation_storage=<n>` where n is less than M; verify the typed refusal names
    `monitor.preparation_storage` and says to raise it with
    `--limit monitor.preparation_storage=<n>`. Also set
    `--limit monitor.preparation_work_units=<n>` and verify only the preparation
-   work bound changes; with no override, verify its default is 16777216 units.
-   Repeat with a work value below the plan's measured preparation charge and
-   verify the refusal names `monitor.preparation_work_units`.
+   work bound changes; do not infer a new default from this test.
 
 Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 `fsl-cli/tests/binary_process.rs`.
@@ -106,6 +110,6 @@ Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 - `analyze`, `monitor` and `replay` accept exactly their operation-specific
   caller limits in FSL FR-255; recognized unsupported operation limits are
   refused before work.
-- The monitor plan is admitted under the 256 MiB default storage allowance;
-  a reached storage allowance names `monitor.preparation_storage` and the
-  matching `--limit` spelling.
+- The owner-identified monitor fixture and measured read charge are recorded;
+  the fixture's run/refusal results match its measured charge and the fixed
+  256 MiB default.
