@@ -20,14 +20,9 @@ accounting settings do not pass through stage bounds. The driver adds no
 namespace or aliases. The driver supports 64-bit hosts; it adds no platform
 overflow rule, and FSL owns bound application behavior on 32-bit hosts.
 
-Scope: FR-003-AC-1 through FR-003-AC-16.
+Scope: FR-003-AC-1 through FR-003-AC-17.
 
 ## Test Procedure
-
-Prerequisite for FR-003-AC-14 through FR-003-AC-16: blocked until the owner supplies a reproducible
-monitor-plan fixture path and its exact measured preparation read charge. The
-current repository and issue reference do not identify this evidence; do not
-substitute an unmeasured plan.
 
 1. Inspect the parser and application path: the driver calls
    `fsl_foundation::setting::parse_operands` and branches on the returned
@@ -68,17 +63,19 @@ substitute an unmeasured plan.
 6. For `analyze`, `monitor` and `replay`, exercise each operation-specific
    setting listed in FSL FR-255's “Lifecycle caller-limit coverage”; inspect
    that each accepted spelling changes its matching bound and that an
-   unavailable recognized spelling is refused before work. For monitor,
-   use the exact measured monitor-plan fixture identified by the owner before
-   implementation; record its repository path and exact preparation
-   read-storage charge M. Verify M is no greater than 268435456. With no
-   override, verify that `MonitorPreparationLimits.storage` is 268435456 bytes
-   and the fixture completes. Repeat with an explicit
-   `--limit monitor.preparation_storage=<n>` where n is less than M; verify the typed refusal names
-   `monitor.preparation_storage` and says to raise it with
-   `--limit monitor.preparation_storage=<n>`. Also set
-   `--limit monitor.preparation_work_units=<n>` and verify only the preparation
-   work bound changes; do not infer a new default from this test.
+   unavailable recognized spelling is refused before work. For monitor, use
+   the variants in FSL PR #3532's
+   `fsl-analyze/tests/it/monitor_authority.rs::complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget`:
+   dense `root_of(authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"), "C", &target())`
+   and tick `tick_root()`. Verify the dense plan is 2,912,360 package bytes,
+   1,136 nodes, and 113,158,334 cumulative read-storage bytes; verify the tick
+   plan is 3,176,346 package bytes, 1,231 nodes, and 125,611,544 cumulative
+   read-storage bytes. Confirm both pass with the 268435456-byte default.
+   Run the tick plan with
+   `--limit monitor.preparation_storage=125611543`; verify it refuses and
+   names `monitor.preparation_storage` and the matching raise operand. Also
+   set `--limit monitor.preparation_work_units=<n>` and verify only the
+   preparation work bound changes; do not infer a new default from this test.
 
 Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 `fsl-cli/tests/binary_process.rs`.
@@ -110,6 +107,6 @@ Test location: `src/limits.rs`, `src/execute.rs`, `fsl-cli/src/cli.rs`, and
 - `analyze`, `monitor` and `replay` accept exactly their operation-specific
   caller limits in FSL FR-255; recognized unsupported operation limits are
   refused before work.
-- The owner-identified monitor fixture and measured read charge are recorded;
-  the fixture's run/refusal results match its measured charge and the fixed
-  256 MiB default.
+- The dense and tick variants match their exact package-byte, node-count and
+  read-storage measurements, both pass under the 256 MiB default, and the tick
+  variant refuses at 125611543 while naming `monitor.preparation_storage`.

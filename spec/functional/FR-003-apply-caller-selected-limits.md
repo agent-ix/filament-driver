@@ -97,10 +97,16 @@ limit outcome and report no success.
   `monitor.preparation_work_units` in its refusal.
 - For real inputs, `fsl monitor` SHALL use a default read-storage allowance
   of 268435456 bytes (256 MiB) for `monitor.preparation_storage`. It provides
-  approximately 2.1 times headroom over QSL-2912's reported upper charge of
-  126 MB and gives a predictable allowance independent of package size; it is
-  not calculated from the input package size. A caller MAY replace it with the
-  repeatable CLI operand `--limit monitor.preparation_storage=<n>`; the
+  approximately 2.14 times headroom over the measured tick-plan charge of
+  125611544 bytes and gives a predictable allowance independent of package
+  size; it is not calculated from the input package size. The measurements
+  are from `fsl-analyze/tests/it/monitor_authority.rs::complete_handoffs_measure_work_logical_storage_and_read_storage_on_one_budget`
+  in FSL PR #3532 and the measurement comment in IR-1584. IR-1584 tracks
+  reduction of read-storage internals, and QSL-2908 tracks related spec work;
+  the fixed default is revisitable when those reductions produce new
+  measurements. A caller MAY
+  replace it with the repeatable CLI operand
+  `--limit monitor.preparation_storage=<n>`; the
   explicit value is the effective allowance. When this bound is reached, the
   refusal SHALL name `monitor.preparation_storage` and state that the caller
   can raise it with `--limit monitor.preparation_storage=<n>`. This storage
@@ -127,9 +133,10 @@ limit outcome and report no success.
 | FR-003-AC-11 | The `run`, `check`, `analyze`, `monitor` and `replay` option-table entries accept repeatable `--limit name=value`; each operation receives accepted overrides to its exposed limits, retains request-supplied bounds and defaults for omitted settings, and refuses an operation-unavailable setting before work begins. | Test |
 | FR-003-AC-12 | `analyze`, `monitor` and `replay` expose the exact caller-limit sets assigned by FSL FR-255's “Lifecycle caller-limit coverage”; each accepted CLI operand reaches only its matching bound, and each recognized but operation-unavailable setting is refused before work. | Test (TC-010) |
 | FR-003-AC-13 | With no caller override, `fsl monitor` passes 268435456 bytes as `MonitorPreparationLimits.storage` for `monitor.preparation_storage`. | Test (TC-010) |
-| FR-003-AC-14 | The recorded owner-identified monitor-plan fixture has a measured preparation read charge M no greater than 268435456 bytes. | Test (TC-010) |
-| FR-003-AC-15 | The owner-identified monitor-plan fixture completes when run with the 268435456-byte default read-storage allowance. | Test (TC-010) |
-| FR-003-AC-16 | When the owner-identified fixture is run with an explicit `monitor.preparation_storage` value n less than its measured read charge M, `fsl monitor` returns a typed refusal naming `monitor.preparation_storage` and how to raise it. | Test (TC-010) |
+| FR-003-AC-14 | The dense monitor plan `root_of(authored("eventually[0 ms, 3 ms] holds(c.versionNumber = 3)"), "C", &target())` has package size 2,912,360 bytes, 1,136 nodes, and cumulative preparation read-storage charge 113,158,334 bytes. | Test (TC-010) |
+| FR-003-AC-15 | The tick monitor plan `tick_root()` has package size 3,176,346 bytes, 1,231 nodes, and cumulative preparation read-storage charge 125,611,544 bytes. | Test (TC-010) |
+| FR-003-AC-16 | Both measured monitor plans complete with the 268435456-byte default read-storage allowance. | Test (TC-010) |
+| FR-003-AC-17 | The tick monitor plan reaches a typed refusal naming `monitor.preparation_storage` when run with `--limit monitor.preparation_storage=125611543`, one byte below its measured cumulative read-storage charge; the refusal states how to raise the setting. | Test (TC-010) |
 
 ## Dependencies
 
