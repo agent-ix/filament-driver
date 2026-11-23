@@ -31,7 +31,7 @@ Test: `fsl-cli/tests/replay_cli.rs`.
 
 - Step 1: byte-equal canonical outcome document plus newline, `result`
   `replayed` with one `input` row, `reproduced-without-witness`; exit 0.
-- Step 2: `replay: success (exit 0) at S8`, then
+- Step 2: `replay: success (exit 0) at stage replay`, then
   `result 0: input reproduced-without-witness`; exit 0.
 - Step 3: `result` `null` and an `invalid-request` diagnostic; text is the
   selected refusal rendering on stdout, with no stderr; exit 20.

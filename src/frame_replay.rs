@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Retained request to FSL-selected frame replay preparation (FR-009).
 
+use std::collections::BTreeMap;
+
 use filament_contract_codegen::{
     FrameReplay, FrameReplayError, FrameReplayInputs, SelectedFrameTarget,
 };
 use filament_contract_model::ContractSourceV1;
 use fsl_foundation::SourceIdentity;
-use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, SuppliedLibrary};
+use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, RequestClocks, SuppliedLibrary};
 
 use crate::{Driven, DriverFault, DriverRefusal};
 
@@ -28,6 +30,23 @@ pub enum FrameReplayFailure {
 }
 
 impl Driven {
+    /// The FR-640 clock selections this run compiled under: the admitted package's
+    /// own `temporal_bindings` rows, read as FSL's replay reads them (model binding
+    /// names are derived, not members; the first row of a clock name wins). `None`
+    /// when a row is not a well formed selection.
+    fn request_clocks(&self) -> Option<RequestClocks> {
+        let mut members = BTreeMap::new();
+        for row in self.checked().temporal_bindings().unwrap_or_default() {
+            if fsl_package::is_model_binding_name(&row.clock_name) {
+                continue;
+            }
+            members
+                .entry(row.clock_name.to_string())
+                .or_insert_with(|| row.clock.clone());
+        }
+        RequestClocks::new(members).ok()
+    }
+
     /// Prepares one operation-frame replay using FSL's exact declaring-owner target.
     ///
     /// `inputs.selected_target` must be `None`: the driver supplies that value from
@@ -63,6 +82,11 @@ impl Driven {
                 .collect::<Vec<_>>(),
         )
         .map_err(FrameReplayFailure::Dependencies)?;
+        let clocks = self.request_clocks().ok_or_else(|| {
+            FrameReplayFailure::Driver(Box::new(DriverRefusal::Fault(
+                DriverFault::FrameReplayAssociation,
+            )))
+        })?;
         let located = fsl_replay::call_site(
             SourceIdentity::new(&inputs.run.source.authority, &inputs.run.source.identity),
             inputs.run.package_name.clone(),
@@ -73,6 +97,7 @@ impl Driven {
                 .iter()
                 .map(|document| document.bytes.as_slice()),
             &dependencies,
+            &clocks,
             &inputs.operation,
         )
         .map_err(FrameReplayFailure::CallSite)?;

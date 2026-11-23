@@ -2470,7 +2470,7 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     );
     assert_eq!(
         String::from_utf8_lossy(&run.stdout).lines().next(),
-        Some("run: success (exit 0) at S6a")
+        Some("run: success (exit 0) at stage execution")
     );
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
@@ -2482,7 +2482,7 @@ fn text_command_first_lines_cover_run_check_analyze_and_monitor() {
     assert_eq!(check.status.code(), Some(0));
     assert_eq!(
         String::from_utf8_lossy(&check.stdout).lines().next(),
-        Some("check: success (exit 0) at S4")
+        Some("check: success (exit 0) at stage packaging")
     );
     assert_eq!(
         String::from_utf8_lossy(&check.stdout),
@@ -2636,7 +2636,7 @@ fn default_text_carries_the_fr_865_header_items_and_result() {
     let (code, check) = text(&["check", INVALID_SOURCE]);
     assert_eq!(code, Some(20), "{check}");
     assert!(
-        check.starts_with("check: refusal (exit 20) at S1\n"),
+        check.starts_with("check: refusal (exit 20) at stage syntax\n"),
         "{check}"
     );
     assert!(
@@ -2646,29 +2646,41 @@ fn default_text_carries_the_fr_865_header_items_and_result() {
     assert!(check.contains("  cause: unexpected-token"), "{check}");
     let (code, check) = text(&["check", SOURCE]);
     assert_eq!(code, Some(0));
-    assert_eq!(check, "check: success (exit 0) at S4\n");
+    assert_eq!(check, "check: success (exit 0) at stage packaging\n");
 
     let (code, compile) = text(&["compile", COMPILE_REFUSED]);
     assert_eq!(code, Some(20), "{compile}");
     assert!(
-        compile.starts_with("package: refusal (exit 20) at S1\n"),
+        compile.starts_with("package: refusal (exit 20) at stage syntax\n"),
         "{compile}"
     );
     assert!(compile.contains("  cause: unexpected-token"), "{compile}");
     let (code, compile) = text(&["compile", COMPILE_REQUEST]);
     assert_eq!(code, Some(0));
-    assert_eq!(compile, "package: success (exit 0) at S4\n");
+    let (header, rest) = compile
+        .split_once('\n')
+        .expect("a header line");
+    assert_eq!(header, "package: success (exit 0) at stage packaging");
+    let (produced, rest) = rest.split_once('\n').expect("a produced line");
+    assert!(
+        produced.starts_with("produced: checked package (") && produced.ends_with(" bytes)"),
+        "{compile}"
+    );
+    assert_eq!(
+        rest,
+        "nothing written: no --output option, output member or handoff member was given\n"
+    );
 
     let (code, run) = text(&["run", RUN_REQUEST]);
     assert_eq!(code, Some(0), "{run}");
-    assert!(run.starts_with("run: success (exit 0) at S6a\n"), "{run}");
+    assert!(run.starts_with("run: success (exit 0) at stage execution\n"), "{run}");
     assert!(
         run.contains("result: completed {\"value\":{\"type\":\"boolean\",\"value\":true}}"),
         "{run}"
     );
     let (code, run) = text(&["run", RUN_REFUSED]);
     assert_eq!(code, Some(20), "{run}");
-    assert!(run.starts_with("run: refusal (exit 20) at S6a\n"), "{run}");
+    assert!(run.starts_with("run: refusal (exit 20) at stage execution\n"), "{run}");
     assert!(run.contains("missing_declaration"), "{run}");
 }
 
@@ -2909,7 +2921,7 @@ fn parse_defaults_to_the_text_form_with_header_and_result_lines() {
     let mut lines = body.lines();
     assert_eq!(
         lines.next(),
-        Some("parse: success (exit 0) at S2"),
+        Some("parse: success (exit 0) at stage forms"),
         "{body}"
     );
     assert!(

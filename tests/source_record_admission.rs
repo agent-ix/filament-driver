@@ -101,8 +101,8 @@ fn assert_complete_producer_rows(admitted: &AdmittedSourceRecords, emission: &Em
             );
             assert_eq!(actual.admitted_name, original.admitted_name);
             assert_eq!(actual.presence, original.presence);
-            assert_eq!(actual.type_node.as_ref(), Some(&original.type_node));
-            assert_eq!(actual.value_type.as_ref(), Some(&original.value_type));
+            assert_eq!(actual.type_node.as_ref(), original.type_node.as_ref());
+            assert_eq!(actual.value_type.as_ref(), original.value_type.as_ref());
             assert_eq!(actual.member_type, None);
             assert!(actual.collections.is_empty());
         }
@@ -607,11 +607,11 @@ temporal SelectedMonitor using timed over (candidate: Selected::ConfigVersion) c
         assert_eq!(row.members[index].admitted_name.as_ref(), admitted_name);
         assert_eq!(
             row.members[index].type_node.as_ref(),
-            Some(&producer.members[index].type_node)
+            producer.members[index].type_node.as_ref()
         );
         assert_eq!(
             row.members[index].value_type.as_ref(),
-            Some(&producer.members[index].value_type)
+            producer.members[index].value_type.as_ref()
         );
     }
 }

@@ -93,7 +93,7 @@ its input arm.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-026-AC-1 | `fsl replay <request> --format json` over the fixture writes stdout byte-equal to the canonical encoding of the outcome document `fsl_command::command::run` returns in process for the same request, followed by one newline: operation `replay`, category `success`, and `result` `{"kind": "replayed", "results": [R]}` with `R`'s `arm` `input` and `settlement` `reproduced-without-witness`; exit 0. | Test (TC-042) |
-| FR-026-AC-2 | The same request without `--format` writes stdout byte-equal to `render_outcome`'s text of AC-1's document, whose lines are `replay: success (exit 0) at S8` and `result 0: input reproduced-without-witness`; exit 0. | Test (TC-042) |
+| FR-026-AC-2 | The same request without `--format` writes stdout byte-equal to `render_outcome`'s text of AC-1's document, whose lines are `replay: success (exit 0) at stage replay` and `result 0: input reproduced-without-witness`; exit 0. | Test (TC-042) |
 | FR-026-AC-3 | The fixture request with `clocks` added writes in machine mode one outcome document on stdout with operation `replay`, category `refusal`, `result` `null` and an `invalid-request` diagnostic, and nothing to stderr; in text mode it writes the selected text rendering of that refusal outcome to stdout and nothing to stderr. Both exit 20. | Test (TC-042) |
 | FR-026-AC-4 | A `native-run/1` request handed to `fsl replay` writes the selected text rendering of the refusal outcome to stdout in text mode and one refusal document to stdout in JSON mode, with no stderr in either mode; it exits 20 with no replay run. | Test (TC-042) |
 

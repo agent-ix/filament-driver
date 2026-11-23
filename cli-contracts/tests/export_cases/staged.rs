@@ -110,7 +110,7 @@ fn assembled_text_names_exact_destination_and_written_byte_count(
     let output = case.run(&["export", "export.json", "--output", "model.tla"])?;
     assert_eq!(output.0.status.code(), Some(0), "{output:?}");
     let written = std::fs::read(case.directory().join("model.tla"))?;
-    assert_eq!(output.stdout_text()?,format!("export: success (exit 0) at S4\ntarget: tla filament.output.tla2/v1\nbytes written: {}\noutput: model.tla\n",written.len()));
+    assert_eq!(output.stdout_text()?,format!("export: success (exit 0) at stage packaging\ntarget: tla filament.output.tla2/v1\nbytes written: {}\noutput: model.tla\n",written.len()));
     Ok(())
 }
 

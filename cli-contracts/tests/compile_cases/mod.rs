@@ -280,7 +280,7 @@ fn default_and_explicit_text_describe_the_same_success_as_machine_mode() -> Test
     assert_eq!(default.stderr_text()?, "");
     assert!(default
         .stdout_text()?
-        .starts_with("package: success (exit 0) at S4"));
+        .starts_with("package: success (exit 0) at stage packaging"));
     Ok(())
 }
 
