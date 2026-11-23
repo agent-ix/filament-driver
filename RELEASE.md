@@ -57,7 +57,7 @@ For this release, keep these authoritative values aligned with `0.2.0` where app
 
 `filament-spec-language` has package version `0.3.0`; repository tag `v0.3.0` matches it. The standard uses dynamic package versioning. Contract IR and codegen repository tags are independent repository tags; do not change their Cargo package versions solely to make them equal the driver version. Before a later alpha, search these files and the image configuration for the selected version, update only the authoritative values, then regenerate Cargo.lock for manifest changes.
 
-The toolchain image's pinned npm tools are separate from the driver's `fsl` version. Examples PR [#104](https://github.com/agent-ix/filament-examples/pull/104), head `971b698d3ccc514297539fa394ee99da80b781aa`, sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. During the image build, license records and notices are generated from the installed npm tree and the exact driver and runner sources using Cargo metadata. The generated notices ship in the image under `/usr/share/licenses/filament-toolchain`; generated license records and notices are not checked into the repository. These npm versions describe the toolchain image, not the driver's version.
+The toolchain image's pinned npm tools are separate from the driver's `fsl` version. Examples PR [#104](https://github.com/agent-ix/filament-examples/pull/104), head `971b698d3ccc514297539fa394ee99da80b781aa`, sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. During the image build, `cargo metadata --locked` runs against `/tmp/driver-source` at the exact release revision, `/tmp/licences/tools/fsl-examples` at the image revision, `/tmp/quire-cli-source` from `agent-ix/quire-cli` tag `v0.52.1`, and `/tmp/quoin-source` from `agent-ix/quoin` tag `v0.36.10`. The npm inventory comes from installed `/opt/npm/node_modules` and `/opt/npm/package-lock.json`. The generated notices ship in the image under `/usr/share/licenses/filament-toolchain`; generated license records and notices are not checked into the repository. These npm versions describe the toolchain image, not the driver's version.
 
 ## Driver release workflow
 
@@ -79,7 +79,14 @@ gh release download v0.2.0 --repo agent-ix/filament-driver --dir release
 (cd release && sha256sum -c SHA256SUMS.txt)
 ```
 
-The examples image workflow is different: its manual dispatch builds and pushes the multi-platform `ghcr.io/agent-ix/filament-toolchain` image. It has no non-publishing dry-run. It builds the Ubuntu 26.04 image for Linux/amd64 and Linux/arm64, generates notices from the exact tools and source metadata included in the image, runs `image/smoke.sh`, then publishes the requested image tags. After the driver release tag and examples source tag are ready, hand off to Titan to dispatch the workflow with `tags=0.2.0`, `fsl_source=release`, and `fsl_version=0.2.0`. After publication, verify the built image on Titan:
+The examples image workflow is different: its manual dispatch builds and pushes the multi-platform `ghcr.io/agent-ix/filament-toolchain` image. It has no non-publishing dry-run. It builds the Ubuntu 26.04 image for Linux/amd64 and Linux/arm64, generates notices from the exact tools and source metadata included in the image, runs `image/smoke.sh`, then publishes the requested image tags. After the driver release tag and examples tag `v0.2.0` are ready, hand off to Titan to dispatch from the tagged examples source:
+
+```sh
+gh workflow run image.yml --repo agent-ix/filament-examples --ref v0.2.0 \
+  -f tags=0.2.0 -f fsl_version=0.2.0 -f fsl_source=release
+```
+
+After publication, verify the built image on Titan:
 
 ```sh
 IMAGE=ghcr.io/agent-ix/filament-toolchain:0.2.0
