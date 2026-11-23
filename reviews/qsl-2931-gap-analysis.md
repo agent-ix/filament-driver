@@ -35,3 +35,10 @@ CONDITIONAL. No untagged criterion and no high finding.
 - FR-002-AC-23: the new bare-inspect test adds the no-operand forms, which existing `inspect_cases/options.rs` tests (which pass a path) do not cover.
 - Semantic review: skipped (not requested).
 - Plan completion: not assessed
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-31 and the FR-002 Behavior statement now cover every verb's list, and `an_unknown_limit_setting_lists_only_what_the_verb_accepts` pins check, run, export, analyze, monitor and replay. |
+| FND-002 | fixed | FR-002 Behavior now owns `help <verb>` for every listed verb, `help <non-verb>` and `help <verb> <extra>`. AC-25, AC-31 and AC-32 pin them, so the code paths have an owning requirement. |

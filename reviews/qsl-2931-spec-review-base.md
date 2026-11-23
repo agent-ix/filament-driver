@@ -38,3 +38,19 @@ and layout.
 | FND-003 | low | TC-049 says `cli-contracts/tests/messages.rs` covers "steps 11 to 15"; step 11 (AC-29, including `fsl not-a-verb --format json`) is not in messages.rs and is bound elsewhere. The line should say steps 13 to 15. | spec/test-cases/TC-049-list-every-accepted-option-in-help.md:77 |
 | FND-004 | low | AC-31 nests backticks inside single-backtick code spans (`unknown verb `bogus`; ...`, `; did you mean `check``), so the exact pinned text renders broken and reads ambiguously. Use double-backtick spans. | FR-002-AC-31 |
 | FND-005 | low | EARS: `help <verb>`, nearest-match refusals and the `Operands:`/`Exit codes:` sections are stated only as Outputs bullets. The Behavior SHALL statements still say root help for `help` "as its sole argument" and "Root help SHALL keep its current layout" without the new sections, so no SHALL statement owns AC-31/AC-32, and `help <unrouted verb>` and `help a b` stay unspecified. | FR-002-AC-32; spec/functional/FR-002-expose-driver-cli-and-outcome-contract.md:291-330 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-002 Behavior still opens with "Help applies only to verbs that execute operations:" and then says `prove`, `generate` and `render` write the not-available help for `--help`/`-h`, so the lead clause contradicts the rule that follows it. | spec/functional/FR-002-expose-driver-cli-and-outcome-contract.md:354-358 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The Behavior statement now says "the settings that verb accepts", and gives `monitor`/`replay` their "accepts no --limit settings" text. AC-31 lists every verb's set, and the code matches. |
+| FND-002 | fixed | TC-049 step 13 is now a top-level numbered step. |
+| FND-003 | fixed | The TC-049 test line now names steps 8, 13, 14, 15 and 16. messages.rs covers step 8's unrouted-help part, and help_contract.rs covers the rest. |
+| FND-004 | fixed | AC-31 now uses double-backtick spans around text that contains backticks. |
+| FND-005 | fixed | The new behaviour moved from Outputs bullets to Behavior SHALL statements (help word, unknown verb, unknown option/engine/limit, Operands/Exit codes, unrouted help). The root-help statement now says `help` "alone", so AC-31 and AC-32 have owning EARS statements. |

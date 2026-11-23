@@ -351,7 +351,7 @@ the fallback when that function returns reserved value `5`.
   when `--help` is present; (2) an option-shaped argument the verb's table
   entry does not list (`invalid-request`, exit 20); (3) `--help` or `-h` in
   option position (help, exit 0); (4) the verb's operand and value checks;
-  (5) the operation. Help applies only to verbs that execute operations: for
+  (5) the operation. Help applies to every verb root help lists: for
   `prove`, `generate` and `render`, `--help` and `-h` write the not-available
   help of the next bullet and running the verb gives FSpec FR-522's
   `unsupported`/`operation-not-routed` result, exit 21 (FSpec FR-522 says

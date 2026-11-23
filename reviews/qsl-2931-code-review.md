@@ -53,3 +53,21 @@ passing each verb's accepted set or by narrowing the FR-002 bullet. The rest are
 | FND-005 | low | New cli-contracts tests bind with deprecated `/// Trace:` doc lines; the project rule (2026-10-17) is ix-trace-rs `#[trace]`. cli-contracts has no ix-trace-rs dependency, so this follows the crate's existing 14 tags, but propagates the deprecated form. | cli-contracts/tests/messages.rs:29; cli-contracts/tests/messages.rs:166; cli-contracts/tests/messages.rs:190 |
 | FND-006 | low | The bare-inspect test asserts the `inspect --handoff missing --format dot` refusal only by `contains("--format")`, which also matches a usage line, and its name ("...text_and_dot_and_dot_with_handoff...") is garbled. | cli-contracts/tests/messages.rs:190-215 |
 | FND-007 | low | Root help `Operands:` row `--model <identity>=<file>` puts its description at column 29, while every other row starts at column 26, so the section is misaligned. | fsl-cli/src/options.rs:538 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | `request_setting_names` hard-codes `analyze`'s accepted list as `&["replay.input_bytes"]`, a second copy of the match in `analyze_run_limits`. If a setting is added to one and not the other, the refusal text drifts from what analyze applies, and only the `messages.rs` literal would catch it. | fsl-cli/src/cli.rs:865-870; fsl-cli/src/cli.rs:1952-1966 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fix 8a5efea passes each verb's set (`run_setting_names`, `export_setting_names`, `request_setting_names`, `monitor` empty), and messages.rs pins exact text for check, run, export, analyze, monitor and replay. |
+| FND-002 | fixed | `unknown_verb` suggests no verb for a word starting with `-`; `help <non-verb>` refusal is now specified in FR-002 Behavior and pinned by `help_with_a_non_verb_or_extra_words_refuses_on_stderr`. |
+| FND-003 | fixed | `help <verb>` now routes every recognized verb to `<verb> --help`; prove/generate/render print the not-available help, exit 0, the same bytes for `--help`, `-h` and `help <verb>` (owner decision a). |
+| FND-004 | fixed | "help takes at most one verb", the compile "settings this command accepts, by stage:" refusal and every verb's unknown-setting text now have exact `assert_eq!` cases. |
+| FND-005 | accepted-no-change | cli-contracts is a standalone test-only workspace with its own lockfile and no ix-trace-rs dependency; its 14 existing tags use `/// Trace:` and the matrix binds them. Converting the crate is crate-wide work, not this PR's. Acceptable here; a crate-wide conversion ticket is the right follow-up. |
+| FND-006 | fixed | Dot-with-handoff refusal is now an exact `assert_eq!` and the test is renamed. |
+| FND-007 | fixed | The `--model <identity>=<file>` row now puts its description on the next line at the shared column. |

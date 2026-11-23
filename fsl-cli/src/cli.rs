@@ -862,12 +862,16 @@ fn run_setting_names() -> Vec<&'static str> {
 
 /// The settings `analyze` and `replay` take: `analyze` reads one, `replay`
 /// none (FR-003-AC-5).
-fn request_setting_names(verb: Verb) -> &'static [&'static str] {
+fn request_setting_names(verb: Verb) -> Vec<&'static str> {
     match verb {
-        Verb::Analyze => &["replay.input_bytes"],
-        _ => &[],
+        Verb::Analyze => vec![ANALYZE_SETTING.name()],
+        _ => Vec::new(),
     }
 }
+
+/// The one setting `fsl analyze` takes from a caller; the refusal lists and
+/// `analyze_run_limits` both read it.
+const ANALYZE_SETTING: Setting = Setting::ReplayInputBytes;
 
 fn apply_frontend_limits(
     overrides: &LimitOverrides,
@@ -1624,7 +1628,7 @@ impl RequestOptions {
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
         let limits = LimitOverrides::parse(&limit_operands).map_err(|error| {
-            limit_usage_message(&error, verb.name(), request_setting_names(verb))
+            limit_usage_message(&error, verb.name(), &request_setting_names(verb))
         })?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(verb).into());
@@ -1955,7 +1959,9 @@ fn analyze_run_limits(
     let mut limits = RunLimits::default();
     for (name, value) in overrides.values() {
         match name {
-            SettingName::Stage(Setting::ReplayInputBytes) => limits.replay_input_bytes = *value,
+            SettingName::Stage(setting) if *setting == ANALYZE_SETTING => {
+                limits.replay_input_bytes = *value;
+            }
             _ => {
                 return Err(filament_driver::LimitError::OperationUnavailable {
                     setting: *name,
