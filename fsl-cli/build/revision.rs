@@ -75,61 +75,108 @@ fn is_sha(text: &str) -> bool {
     text.len() == 40 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-/// The `.git` directory holding `HEAD` of the checkout at `root`; follows a
-/// worktree or submodule `.git` file to its `gitdir`.
-fn git_dir(root: &Path) -> Option<PathBuf> {
-    let dot_git = root.join(".git");
-    if dot_git.is_dir() {
-        return Some(dot_git);
-    }
-    let text = fs::read_to_string(&dot_git).ok()?;
-    let target = text.trim().strip_prefix("gitdir:")?.trim();
-    Some(root.join(target))
+/// What reading a local checkout produced.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LocalRevision {
+    /// The text `fsl --version` reports after `FSL revision: `.
+    pub revision: String,
+    /// Every path the resolver read or would read next; a build script emits
+    /// `cargo:rerun-if-changed` for each so a moved checkout is never reported
+    /// with a stale commit.
+    pub watched: Vec<PathBuf>,
 }
 
-/// The ref `name` as a commit, from a loose ref file or `packed-refs`, in
-/// `git_dir` or its common directory.
-fn resolve_ref(git_dir: &Path, name: &str) -> Option<String> {
-    let common = fs::read_to_string(git_dir.join("commondir"))
-        .ok()
-        .map(|text| git_dir.join(text.trim()));
-    for dir in std::iter::once(git_dir).chain(common.as_deref()) {
+/// The outcome of resolving a checkout's `HEAD`.
+enum Head {
+    /// No `.git` entry: not a git checkout.
+    NotGit,
+    /// A git checkout whose `HEAD` cannot be read as a 40-hex commit.
+    Unknown,
+    Sha(String),
+}
+
+/// The text `fsl --version` reports for a local path build of the checkout at
+/// `root` (FR-002-AC-11): `<sha> (local path)`; `local path` when `root` has no
+/// `.git`; `unknown (local path)` when `.git`, `HEAD` or the ref it names is
+/// unreadable or is not a 40-hex commit (a garbage loose ref is unknown and is
+/// never replaced by a `packed-refs` value; a 64-hex SHA-256 commit is unknown).
+pub fn local_path_revision(root: &Path) -> LocalRevision {
+    let mut watched = Vec::new();
+    let head = resolve_head(root, &mut watched);
+    let revision = match head {
+        Head::Sha(sha) => format!("{sha} (local path)"),
+        Head::NotGit => "local path".to_owned(),
+        Head::Unknown => "unknown (local path)".to_owned(),
+    };
+    LocalRevision { revision, watched }
+}
+
+fn resolve_head(root: &Path, watched: &mut Vec<PathBuf>) -> Head {
+    let dot_git = root.join(".git");
+    watched.push(dot_git.clone());
+    let git_dir = if dot_git.is_dir() {
+        dot_git
+    } else if dot_git.exists() {
+        // A worktree or submodule: `.git` is a file naming the real directory.
+        let target = fs::read_to_string(&dot_git).ok().and_then(|text| {
+            text.trim()
+                .strip_prefix("gitdir:")
+                .map(|t| t.trim().to_owned())
+        });
+        match target {
+            Some(target) if !target.is_empty() => root.join(target),
+            _ => return Head::Unknown,
+        }
+    } else {
+        return Head::NotGit;
+    };
+    let head_path = git_dir.join("HEAD");
+    let commondir_path = git_dir.join("commondir");
+    watched.extend([
+        head_path.clone(),
+        commondir_path.clone(),
+        git_dir.join("packed-refs"),
+    ]);
+    let mut dirs = vec![git_dir.clone()];
+    if let Ok(text) = fs::read_to_string(&commondir_path) {
+        let common = git_dir.join(text.trim());
+        watched.push(common.join("packed-refs"));
+        dirs.push(common);
+    }
+    let Ok(head) = fs::read_to_string(&head_path) else {
+        return Head::Unknown;
+    };
+    let head = head.trim();
+    let Some(name) = head.strip_prefix("ref:").map(str::trim) else {
+        return if is_sha(head) {
+            Head::Sha(head.to_owned())
+        } else {
+            Head::Unknown
+        };
+    };
+    for dir in &dirs {
+        watched.push(dir.join(name));
+    }
+    for dir in &dirs {
         if let Ok(text) = fs::read_to_string(dir.join(name)) {
             let value = text.trim();
-            if is_sha(value) {
-                return Some(value.to_owned());
-            }
+            return if is_sha(value) {
+                Head::Sha(value.to_owned())
+            } else {
+                Head::Unknown
+            };
         }
+    }
+    for dir in &dirs {
         if let Ok(packed) = fs::read_to_string(dir.join("packed-refs")) {
             let found = packed.lines().find_map(|line| {
                 let (sha, reference) = line.split_once(' ')?;
                 (reference == name && is_sha(sha)).then(|| sha.to_owned())
             });
-            if found.is_some() {
-                return found;
+            if let Some(sha) = found {
+                return Head::Sha(sha);
             }
         }
     }
-    None
-}
-
-/// The commit `HEAD` names in the git checkout at `root`, read from its `.git`
-/// directory, or `None` when `root` is not a git checkout.
-pub fn head_commit(root: &Path) -> Option<String> {
-    let git_dir = git_dir(root)?;
-    let head = fs::read_to_string(git_dir.join("HEAD")).ok()?;
-    let head = head.trim();
-    match head.strip_prefix("ref:") {
-        Some(name) => resolve_ref(&git_dir, name.trim()),
-        None => is_sha(head).then(|| head.to_owned()),
-    }
-}
-
-/// The text `fsl --version` reports for a local path build of the checkout at
-/// `root`: `<sha> (local path)`, or `local path` when it is not a git checkout.
-pub fn local_path_revision(root: &Path) -> String {
-    match head_commit(root) {
-        Some(sha) => format!("{sha} (local path)"),
-        None => "local path".to_owned(),
-    }
+    Head::Unknown
 }
