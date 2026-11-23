@@ -241,6 +241,7 @@ fn replay_request(package: &Value) -> Value {
         PROGRAM.as_bytes(),
         std::iter::empty::<&[u8]>(),
         &dependencies,
+        &fsl_replay::RequestClocks::default(),
         &entry(),
     )
     .expect("the call site resolves");
@@ -348,7 +349,7 @@ fn text_mode_writes_the_header_and_one_result_line() {
     assert_eq!(
         lines,
         [
-            "replay: success (exit 0) at S8",
+            "replay: success (exit 0) at stage replay",
             "result 0: input reproduced-without-witness"
         ],
         "{text}"

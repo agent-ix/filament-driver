@@ -14,7 +14,7 @@ use filament_driver::{
 };
 use filament_exact::{Cancel, Origin, Role};
 use fsl_foundation::SourceIdentity;
-use fsl_replay::spine::{default_accounting, DependencyInput, SpineLimits};
+use fsl_replay::spine::{default_accounting, DependencyInput, RequestClocks, SpineLimits};
 use fsl_replay::{
     call_site, ClaimedChange, ClauseName, DocumentRef, Identifier, OperationName, ReplayLimits,
     SelectedObject,
@@ -113,6 +113,7 @@ impl Fixture {
             unit.as_bytes(),
             [domain.as_slice()],
             &DependencyInput::default(),
+            &RequestClocks::default(),
             &operation("touch"),
         )
         .unwrap();
@@ -123,6 +124,7 @@ impl Fixture {
             unit.as_bytes(),
             [domain.as_slice()],
             &DependencyInput::default(),
+            &RequestClocks::default(),
             &ClauseName(Identifier::new("Holds").unwrap()),
         )
         .unwrap();
@@ -366,6 +368,7 @@ fn frame_projection_preserves_fsl_refusal_before_any_join_or_codegen_check() {
         fixture.unit.as_bytes(),
         [fixture.domain.as_slice()],
         &DependencyInput::default(),
+        &RequestClocks::default(),
         &operation("missing"),
     )
     .unwrap_err();
