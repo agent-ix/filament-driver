@@ -309,10 +309,11 @@ enum Unreadable {
 ///
 /// # Errors
 ///
-/// [`Unreadable::Malformed`] for an unreadable assignment or a value that is
-/// not an `Integer` or `Boolean`; [`Unreadable::Unusable`] for an unreadable
-/// package graph, an id that does not resolve, a node that is not a parameter
-/// of the claim, or a claim parameter the provider assigns no value.
+/// [`Unreadable::Malformed`] for an unreadable assignment; [`Unreadable::Unusable`]
+/// for an unreadable package graph, an id that does not resolve, a node that is
+/// not a parameter of the claim, a claim parameter the provider assigns no value,
+/// or a value that is not of its parameter's kind (a value that is neither
+/// an `Integer` nor a `Boolean` is of the wrong kind: FSL FR-290 reasons).
 fn assignment_values(
     entry: &serde_json::Value,
     package: &PackageGraph<'_>,

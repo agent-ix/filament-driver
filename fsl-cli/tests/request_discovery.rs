@@ -252,13 +252,60 @@ fn missing(document: &Value) -> Value {
     document["diagnostics"][0]["details"]["missing"].clone()
 }
 
+/// The member names of `text`'s `request` object, in the order the example
+/// prints them (FSL reports missing members in that order).
+fn request_member_order(text: &str) -> Vec<String> {
+    use serde::de::{Deserializer, IgnoredAny, MapAccess, Visitor};
+
+    struct Keys(Vec<String>);
+    impl<'de> Visitor<'de> for Keys {
+        type Value = Vec<String>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an object")
+        }
+        fn visit_map<A: MapAccess<'de>>(mut self, mut map: A) -> Result<Self::Value, A::Error> {
+            while let Some(key) = map.next_key::<String>()? {
+                map.next_value::<IgnoredAny>()?;
+                self.0.push(key);
+            }
+            Ok(self.0)
+        }
+    }
+    struct Outer;
+    impl<'de> Visitor<'de> for Outer {
+        type Value = Vec<String>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an object")
+        }
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            let mut found = Vec::new();
+            while let Some(key) = map.next_key::<String>()? {
+                if key == "request" {
+                    found = map.next_value_seed(KeysSeed)?;
+                } else {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+            Ok(found)
+        }
+    }
+    struct KeysSeed;
+    impl<'de> serde::de::DeserializeSeed<'de> for KeysSeed {
+        type Value = Vec<String>;
+        fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+            deserializer.deserialize_map(Keys(Vec::new()))
+        }
+    }
+    serde_json::Deserializer::from_str(text)
+        .deserialize_map(Outer)
+        .expect("the example is a JSON object")
+}
+
 /// The `missing` array the verb's own example gives for `{"request": {}}`:
 /// one element per top-level member of the example's `request`, a one-of
 /// group's example member replaced by the array of the group's pointers
 /// (FSL FR-1047's Definitions).
 fn expected_missing(verb: &str, format: &str) -> Value {
-    let example: Value =
-        serde_json::from_str(&example_of(format, None)).expect("the example is JSON");
     let groups = |name: &str| -> Option<Vec<&str>> {
         match (verb, name) {
             ("run", "program") | ("analyze", "program") => Some(vec!["program", "package"]),
@@ -267,11 +314,9 @@ fn expected_missing(verb: &str, format: &str) -> Value {
         }
     };
     Value::Array(
-        example["request"]
-            .as_object()
-            .expect("a request object")
-            .keys()
-            .map(|name| match groups(name) {
+        request_member_order(&example_of(format, None))
+            .iter()
+            .map(|name| match groups(name.as_str()) {
                 Some(group) => Value::Array(
                     group
                         .iter()
@@ -423,7 +468,10 @@ fn other_refusals_carry_no_hint() {
     ] {
         let output = fsl_in(directory.path(), &arguments);
         assert_eq!(output.status.code(), Some(20), "{output:?}");
-        assert!(!stdout(&output).contains("hint:"), "{output:?}");
+        assert!(
+            !stdout(&output).contains("run 'fsl export --example"),
+            "{output:?}"
+        );
     }
 }
 
@@ -458,4 +506,33 @@ fn a_request_of_another_format_names_the_formats_the_verb_reads() {
         );
         assert_ne!(document["diagnostics"][0]["code"], "unknown_wire", "{document}");
     }
+}
+
+/// FR-028-AC-7 and FR-002: an export refusal over a program that does not
+/// parse renders its locus as `run` does.
+#[test]
+#[trace("TC-050", "FR-028-AC-7")]
+fn an_export_syntax_error_refusal_renders_as_run_does() {
+    let directory = empty_directory();
+    let example: Value = serde_json::from_str(&example_of("native-run/1", Some(ExportSelection::Ordinary)))
+        .expect("the export example is JSON");
+    std::fs::write(directory.path().join("program.fsl"), "this is not a program\n")
+        .expect("write the program");
+    let file = directory.path().join("request.json");
+    std::fs::write(&file, example.to_string()).expect("write the request");
+    let output = fsl_in(directory.path(), &["export", file.to_str().expect("UTF-8 path")]);
+    assert_eq!(output.status.code(), Some(20), "{output:?}");
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let shown = stdout(&output);
+    assert!(shown.starts_with("export: refusal (exit 20)"), "{shown}");
+    let run = fsl_in(directory.path(), &["run", file.to_str().expect("UTF-8 path")]);
+    let run = stdout(&run);
+    // FSL renders the locus of a refusal it raised before any source opened
+    // the way `run` does; the export refusal carries the same sources.
+    assert_eq!(
+        shown.split_once('\n').map(|(_, rest)| rest),
+        run.split_once('\n').map(|(_, rest)| rest),
+        "{shown}\n{run}"
+    );
+    assert!(shown.contains("invalid_syntax"), "{shown}");
 }

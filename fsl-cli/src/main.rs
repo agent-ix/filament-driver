@@ -13,7 +13,7 @@ mod extension_set;
 mod options;
 #[allow(
     dead_code,
-    reason = "FR-003 monitor preparation allowances await a CLI path that prepares a plan"
+    reason = "QSL-2910: monitor preparation wiring is blocked on a MonitorTarget input in native-monitor/1 (FSL and driver); it remains tracked under QSL-2910"
 )]
 mod preparation;
 mod process_provider;

@@ -1275,7 +1275,9 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         Ok(result) => result,
         Err(error) => {
             let hint = export_example_hint(&error.cause);
-            let refusal = CommandResult::document(error.outcome_document(Operation::Export));
+            let sources = fsl_command::render_sources(error.sources());
+            let refusal = CommandResult::document(error.outcome_document(Operation::Export))
+                .with_sources(sources);
             let refusal = with_format(refusal, format);
             return match hint {
                 Some(hint) if format.outcome_mode() == OutputFormat::Text => {
@@ -3641,13 +3643,18 @@ mod tests {
 
     #[test]
     fn export_without_an_export_member_is_invalid_input() {
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let directory = tempfile::tempdir().expect("temporary directory");
+        let request = directory.path().join("request.json");
+        std::fs::write(
+            &request,
+            r#"{"format":"native-run/1","request":{"models":[],"program":{"source":{"file":"ir608-run.fsl","authority":"issuer","identity":"document","document":"CliFrontend","formal_revision":1}}}}"#,
+        )
+        .expect("write the request");
         let output = directory.path().join("model.tla");
         let result = super::export(
             &ExportOptions {
                 output: Some(output.clone()),
-                request: fixtures.join("frontend-run.json"),
+                request: request,
                 selection: super::ExportSelection::Ordinary,
                 limits: LimitOverrides::default(),
             },
@@ -3659,7 +3666,7 @@ mod tests {
         assert!(document["diagnostics"][0]["message"]
             .as_str()
             .unwrap()
-            .contains("requires export"));
+            .contains("missing required member /request/export"));
         assert!(document["last_stage"].is_null());
         assert!(document["result"].is_null());
         assert!(!output.exists());
