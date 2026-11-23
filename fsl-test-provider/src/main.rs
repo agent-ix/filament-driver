@@ -4,7 +4,9 @@
 //! manifest advertises (`value-validity`, `<mode>`) over `integer`, then
 //! answers every request item with `<result>` until `shutdown`. The result
 //! `refuted` also reports the integer 0 for the parameter whose node identity
-//! is in `FSL_TEST_PROVIDER_PARAMETER`.
+//! is in `FSL_TEST_PROVIDER_PARAMETER`: the node FSL sent as the request item's
+//! first unbounded domain (`request.items[0].extent.domains[0].domain.node` in the
+//! request log). Unset, the parameter is null, a malformed witness.
 //!
 //! Usage: `fsl-test-provider <backend> <mode> <result> [<request-log>|-]
 //! [<shutdown-marker>|-] [<descendant-ready> <descendant-leaked>]`.
