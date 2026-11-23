@@ -383,6 +383,32 @@ fn export_refusals_end_with_the_hint_in_text_mode_only() {
     }
 }
 
+/// FR-028-AC-7: in text mode every export refusal is FSL's text rendering,
+/// hint or not; only `--format json` prints the refusal document.
+#[test]
+#[trace("TC-050", "FR-028-AC-7")]
+fn export_refusals_without_a_hint_print_the_text_rendering() {
+    let directory = empty_directory();
+    let file = directory.path().join("request.json");
+    std::fs::write(&file, r#"{"format":"native-analyze/1","request":{}}"#).expect("write");
+    let file = file.to_str().expect("UTF-8 path");
+    for arguments in [vec!["export", file], vec!["export", "--evidence", file]] {
+        let text = fsl_in(directory.path(), &arguments);
+        assert_eq!(text.status.code(), Some(20), "{text:?}");
+        assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+        let shown = stdout(&text);
+        assert!(shown.starts_with("export: refusal (exit 20)"), "{shown}");
+        assert!(!shown.starts_with('{') && !shown.contains("hint:"), "{shown}");
+
+        let mut json_arguments = arguments.clone();
+        json_arguments.extend(["--format", "json"]);
+        let machine = fsl_in(directory.path(), &json_arguments);
+        assert_eq!(machine.status.code(), Some(20), "{machine:?}");
+        let refusal = document(&machine);
+        assert!(!message(&refusal).is_empty(), "{refusal}");
+    }
+}
+
 /// FR-028-AC-7 and FR-028-AC-5: a refusal that lacks the export members
 /// carries no hint line.
 #[test]

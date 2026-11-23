@@ -11,6 +11,11 @@ mod cli;
 mod clocks;
 mod extension_set;
 mod options;
+#[allow(
+    dead_code,
+    reason = "FR-003 monitor preparation allowances await a CLI path that prepares a plan"
+)]
+mod preparation;
 mod process_provider;
 mod provider_config;
 mod signals;

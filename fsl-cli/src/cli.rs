@@ -1276,9 +1276,10 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
         Err(error) => {
             let hint = export_example_hint(&error.cause);
             let refusal = CommandResult::document(error.outcome_document(Operation::Export));
+            let refusal = with_format(refusal, format);
             return match hint {
                 Some(hint) if format.outcome_mode() == OutputFormat::Text => {
-                    with_hint_line(with_format(refusal, format), hint)
+                    with_hint_line(refusal, hint)
                 }
                 _ => refusal,
             };
