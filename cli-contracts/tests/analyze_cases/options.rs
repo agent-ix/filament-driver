@@ -165,8 +165,8 @@ fn invalid_provider_limit_values_refuse_without_opening_a_request() -> Result<()
                 format,
             ])?;
             assert_eq!(output.0.status.code(), Some(20));
-            assert!(output.0.stdout.is_empty());
-            let text = output.stderr_text()?;
+            assert!(output.0.stderr.is_empty(), "{output:?}");
+            let text = output.stdout_text()?;
             assert!(
                 text.contains("--provider-limit") && text.contains(value),
                 "{text}"
@@ -182,7 +182,8 @@ fn invalid_provider_limit_values_refuse_without_opening_a_request() -> Result<()
         "deadline_ms=5",
     ])?;
     assert_eq!(repeated.0.status.code(), Some(20));
-    assert!(repeated.stderr_text()?.contains("already given"));
+    assert!(repeated.0.stderr.is_empty(), "{repeated:?}");
+    assert!(repeated.stdout_text()?.contains("already given"));
     Ok(())
 }
 
@@ -209,8 +210,8 @@ fn provider_configuration_refusals_precede_request_admission() -> Result<(), Con
             "json",
         ])?;
         assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-        assert!(output.0.stdout.is_empty());
-        assert!(output.stderr_text()?.contains(path), "{output:?}");
+        assert!(output.0.stderr.is_empty(), "{output:?}");
+        assert!(output.stdout_text()?.contains(path), "{output:?}");
     }
     Ok(())
 }

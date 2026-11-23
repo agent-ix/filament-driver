@@ -139,6 +139,17 @@ enum OutputFormat {
     Dot,
 }
 
+impl OutputFormat {
+    /// The mode a refusal is written in: `dot` encodes no outcome, so a
+    /// refused `inspect --format dot` uses text (FR-002).
+    fn outcome_mode(self) -> Self {
+        match self {
+            Self::Dot => Self::Text,
+            other => other,
+        }
+    }
+}
+
 /// Dispatch selector for verbs specified by FSL ADR-029.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Verb {
@@ -239,6 +250,12 @@ impl Verb {
 enum Invocation {
     Help,
     Version,
+    /// A refusal of the root `--format` option on a recognized verb. The
+    /// output mode is text for its own refusal (FR-002).
+    Refused {
+        verb: Verb,
+        message: String,
+    },
     Operation {
         verb: Verb,
         format: OutputFormat,
@@ -334,6 +351,20 @@ fn limit_operands(scanned: &Scanned) -> Result<Vec<String>, String> {
 }
 
 /// Parse the root command surface defined by FSL ADR-029.
+fn resolve_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
+    let verb = arguments
+        .first()
+        .and_then(|command| command.to_str())
+        .and_then(Verb::parse);
+    match parse_invocation(arguments) {
+        Err(message) => match verb {
+            Some(verb) => Ok(Invocation::Refused { verb, message }),
+            None => Err(message),
+        },
+        ok => ok,
+    }
+}
+
 fn parse_invocation(arguments: &[OsString]) -> Result<Invocation, String> {
     let Some(command) = arguments.first() else {
         return Ok(Invocation::Help);
@@ -777,10 +808,11 @@ struct CommandResult {
     /// The FSL FR-621 `analyze` document, written in machine mode in place
     /// of `document`.
     analyze_document: Option<serde_json::Value>,
-    /// One plain stderr line, written in place of the document diagnostics.
-    stderr_line: Option<String>,
     /// The admitted sources the command read, for locating text diagnostics (FR-865).
     render_sources: Option<fsl_inspect::RenderSources>,
+    /// The command wrote its result as a stream already (monitor), so a
+    /// non-success category with no document is its verdict, not a lost result.
+    streamed: bool,
 }
 
 impl CommandResult {
@@ -792,8 +824,8 @@ impl CommandResult {
             diagnostic_on_stderr: false,
             text_output: None,
             analyze_document: None,
-            stderr_line: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -805,8 +837,8 @@ impl CommandResult {
             diagnostic_on_stderr: true,
             text_output: None,
             analyze_document: None,
-            stderr_line: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -820,8 +852,8 @@ impl CommandResult {
             diagnostic_on_stderr: false,
             text_output: Some(text),
             analyze_document: None,
-            stderr_line: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -833,8 +865,8 @@ impl CommandResult {
             diagnostic_on_stderr: false,
             text_output,
             analyze_document: None,
-            stderr_line: None,
             render_sources: None,
+            streamed: false,
         }
     }
 
@@ -871,9 +903,6 @@ fn write_result_diagnostics<W: Write>(
     format: OutputFormat,
     sink: &mut W,
 ) -> io::Result<()> {
-    if let Some(line) = &result.stderr_line {
-        return writeln!(sink, "{line}");
-    }
     if let Some(message) = &result.diagnostic {
         if result.diagnostic_on_stderr
             || (format != OutputFormat::Json && result.text_output.is_none())
@@ -1446,26 +1475,30 @@ fn read_source(path: impl AsRef<Path>, source_limit: usize) -> std::io::Result<V
 struct RequestOptions {
     path: PathBuf,
     providers: ProviderArguments,
+    /// Each `--limit name=value` (FR-003).
+    limits: LimitOverrides,
 }
 
 impl RequestOptions {
     fn from_scanned(verb: Verb, scanned: &Scanned) -> Result<Self, OptionRefusal> {
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
+        let limit_operands = limit_operands(scanned)?;
+        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(verb).into());
         };
         Ok(Self {
             path: PathBuf::from(path),
             providers,
+            limits,
         })
     }
 }
 
 /// The CLI result of a refused provider option: a usage refusal is the
 /// verb's typed `invalid-request` document; a refused `--provider-limit`
-/// writes empty stdout and names the option and argument on stderr (FSL
-/// FR-287; FR-006).
+/// is that document too, naming the option and argument (FSL FR-287; FR-006).
 fn option_refusal(operation: Operation, error: &OptionRefusal) -> CommandResult {
     match error {
         OptionRefusal::Usage(message) => CommandResult::input_refusal(operation, message),
@@ -1476,8 +1509,8 @@ fn option_refusal(operation: Operation, error: &OptionRefusal) -> CommandResult 
 }
 
 /// Read the caller's FSpec FR-561 document, or the empty one when none is
-/// named. A refusal exits 20 with empty stdout and its diagnostic, naming
-/// the file and the member, on stderr (FSpec FR-561; FR-006).
+/// named. A refusal exits 20 and its outcome, naming the file and the member,
+/// goes to stdout in the selected mode (FSpec FR-561; FR-006).
 fn load_provider_config(
     arguments: &ProviderArguments,
 ) -> Result<crate::provider_config::ProviderConfig, Box<CommandResult>> {
@@ -1771,6 +1804,44 @@ fn start_configured_provider(
     provider.start(&configured.path, &arguments, limits, cancel)
 }
 
+/// The `RunLimits` an `fsl analyze` run takes: FSL reads the request's own
+/// bounds from the request document and exposes only `replay.input_bytes`
+/// (FSL FR-255) to a caller, through `RunLimits`. Every other setting is
+/// unavailable to `analyze` (FR-003-AC-5).
+fn analyze_run_limits(
+    overrides: &LimitOverrides,
+) -> Result<RunLimits, filament_driver::LimitError> {
+    let mut limits = RunLimits::default();
+    for (name, value) in overrides.values() {
+        match name {
+            SettingName::Stage(Setting::ReplayInputBytes) => limits.replay_input_bytes = *value,
+            _ => {
+                return Err(filament_driver::LimitError::OperationUnavailable {
+                    setting: *name,
+                    operation: "analyze",
+                });
+            }
+        }
+    }
+    Ok(limits)
+}
+
+/// Refuse every `--limit` setting for an operation whose FSL command API
+/// takes no caller bound (FR-003-AC-5): `monitor` and `replay` read their
+/// bounds from the request document only.
+fn refuse_unexposed_limits(
+    overrides: &LimitOverrides,
+    operation: &'static str,
+) -> Result<(), filament_driver::LimitError> {
+    match overrides.values().first() {
+        Some((name, _)) => Err(filament_driver::LimitError::OperationUnavailable {
+            setting: *name,
+            operation,
+        }),
+        None => Ok(()),
+    }
+}
+
 /// Read the `native-analyze/1` request, have FSL analyze its items under the
 /// driver's negotiation, and keep FSL FR-621's document with its exit code,
 /// or FR-624's whole-request refusal.
@@ -1779,6 +1850,12 @@ fn start_configured_provider(
 /// handle with cause `requested`, and the verb writes the outcome FSL settles
 /// for it (FSL FR-624 `cancelled`, exit 22) rather than dying by the signal.
 fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
+    let run_limits = match analyze_run_limits(&options.limits) {
+        Ok(limits) => limits,
+        Err(error) => {
+            return CommandResult::input_refusal(Operation::Analyze, error.message_for("analyze"));
+        }
+    };
     let config = match load_provider_config(&options.providers) {
         Ok(config) => config,
         Err(refusal) => return *refusal,
@@ -1789,7 +1866,14 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
         &options.providers,
         true,
         move |negotiation, engines, provider_options, cancel| {
-            command::analyze_with_providers(&path, negotiation, engines, provider_options, cancel)
+            command::analyze_with_providers_and_limits(
+                &path,
+                run_limits,
+                negotiation,
+                engines,
+                provider_options,
+                cancel,
+            )
         },
     );
     let written = match ran {
@@ -1804,25 +1888,7 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     };
     match written {
         Ok(result) => analyze_result(result.value.as_value().clone(), result.exit_code, format),
-        Err(error) => {
-            let document = error.outcome_document(Operation::Analyze);
-            if format == OutputFormat::Json {
-                return CommandResult::document(document);
-            }
-            let line = document.diagnostics().first().map_or_else(
-                || format!("fsl analyze: {}", document.category().as_str()),
-                |diagnostic| {
-                    format!(
-                        "fsl analyze: {}: {}",
-                        diagnostic.code(),
-                        diagnostic.message()
-                    )
-                },
-            );
-            let mut result = CommandResult::document(document);
-            result.stderr_line = Some(line);
-            result
-        }
+        Err(error) => CommandResult::document(error.outcome_document(Operation::Analyze)),
     }
 }
 
@@ -1932,6 +1998,12 @@ fn run_with_providers(
 /// never runs or analyzes it. `--provider-config` and `--provider-limit` are
 /// read and the providers started and shut down as for `run` (FR-006).
 fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
+    if let Err(error) = refuse_unexposed_limits(&options.limits, "replay") {
+        return with_format(
+            CommandResult::input_refusal(Operation::Replay, error.message_for("replay")),
+            format,
+        );
+    }
     let config = match load_provider_config(&options.providers) {
         Ok(config) => config,
         Err(refusal) => return *refusal,
@@ -2021,8 +2093,8 @@ fn native_result(document: serde_json::Value, exit_code: u8) -> CommandResult {
         diagnostic_on_stderr: false,
         text_output: Some(document.to_string()),
         analyze_document: Some(document),
-        stderr_line: None,
         render_sources: None,
+        streamed: false,
     }
 }
 
@@ -2052,8 +2124,8 @@ fn analyze_result(
         diagnostic_on_stderr: false,
         text_output,
         analyze_document: Some(document),
-        stderr_line: None,
         render_sources: None,
+        streamed: false,
     }
 }
 
@@ -2134,6 +2206,8 @@ fn compact_json(value: &serde_json::Value) -> String {
 struct MonitorOptions {
     path: PathBuf,
     input: Option<PathBuf>,
+    /// Each `--limit name=value` (FR-003).
+    limits: LimitOverrides,
     /// `--provider-config` and `--provider-limit`, as every provider-routing
     /// verb takes them (FSL FR-287, FR-644).
     providers: ProviderArguments,
@@ -2144,12 +2218,15 @@ impl MonitorOptions {
         let input = scanned.value(options::INPUT).map(PathBuf::from);
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
+        let limit_operands = limit_operands(scanned)?;
+        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| error.to_string())?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(Verb::Monitor).into());
         };
         Ok(Self {
             path: PathBuf::from(path),
             input,
+            limits,
             providers,
         })
     }
@@ -2277,6 +2354,9 @@ impl Iterator for CancellableRecords {
 /// The exit code is FSL's. A refusal before any record is read is the
 /// command-error envelope.
 fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
+    if let Err(error) = refuse_unexposed_limits(&options.limits, "monitor") {
+        return CommandResult::input_refusal(Operation::Monitor, error.message_for("monitor"));
+    }
     let reader: Box<dyn io::BufRead + Send> = match &options.input {
         Some(path) => match File::open(path) {
             Ok(file) => Box::new(io::BufReader::new(file)),
@@ -2378,8 +2458,8 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
         diagnostic_on_stderr: false,
         text_output: None,
         analyze_document: None,
-        stderr_line: None,
         render_sources: None,
+        streamed: true,
     }
 }
 
@@ -2582,8 +2662,8 @@ fn observation_input_limit_hint(document: &OutcomeDocument) -> Option<String> {
 
 /// Refuse a verb this build accepts but does not route (FSpec FR-522): an
 /// `unsupported_operation` document with cause `operation-not-routed` whose
-/// detail names the verb under machine output, or the named stderr line
-/// otherwise. Neither stream stays empty.
+/// detail names the verb under machine output; its text rendering goes to
+/// stdout like every refusal (FR-002).
 fn unrouted_verb(verb: Verb, format: OutputFormat) -> CommandResult {
     const CODE: &str = "unsupported_operation";
     const CAUSE: &str = "operation-not-routed";
@@ -2595,18 +2675,11 @@ fn unrouted_verb(verb: Verb, format: OutputFormat) -> CommandResult {
     };
     let name = verb.name();
     let line = format!("fsl {name}: this build does not route the {name} operation ({CODE})");
-    let document =
-        OutcomeDocument::new(operation, None, Category::Unsupported).with_diagnostics(vec![
-            OutcomeDiagnostic::new(Some(CAUSE), CODE, None, line.clone()),
-        ]);
+    let document = OutcomeDocument::new(operation, None, Category::Unsupported)
+        .with_diagnostics(vec![OutcomeDiagnostic::new(Some(CAUSE), CODE, None, line)]);
     let mut result = CommandResult::document(document.clone());
-    if format != OutputFormat::Json {
-        result.stderr_line = Some(line);
-        return result;
-    }
-    match unrouted_wire(&document, name) {
-        Some(wire) => result.analyze_document = Some(wire),
-        None => result.stderr_line = Some(line),
+    if format == OutputFormat::Json {
+        result.analyze_document = unrouted_wire(&document, name);
     }
     result
 }
@@ -2618,6 +2691,84 @@ fn unrouted_wire(document: &OutcomeDocument, verb: &str) -> Option<serde_json::V
     let diagnostic = wire.get_mut("diagnostics")?.get_mut(0)?.as_object_mut()?;
     diagnostic.insert("detail".to_owned(), serde_json::json!({ "verb": verb }));
     Some(wire)
+}
+
+/// Route a result to stdout in the selected output mode (FR-002): a refusal
+/// is written as its `filament-outcome/1` document in JSON mode and as the
+/// text rendering of that document in text mode, never to stderr. A result
+/// that carries only a message becomes such a document, and a document the
+/// command left unrendered is rendered in text mode. `format` is the mode
+/// [`OutputFormat::outcome_mode`] names.
+fn finalize(mut result: CommandResult, verb: Verb, format: OutputFormat) -> CommandResult {
+    let format = format.outcome_mode();
+    result.diagnostic_on_stderr = false;
+    let messageless = result.document.is_none()
+        && result.analyze_document.is_none()
+        && result.text_output.is_none();
+    if messageless && !result.streamed && result.category != Category::Success {
+        let message = result.diagnostic.clone().unwrap_or_else(|| {
+            format!(
+                "the command ended with category `{}` and produced no outcome",
+                result.category.as_str()
+            )
+        });
+        let document = message_document(verb.operation(), result.category, message);
+        result.category = document.category();
+        result.document = Some(document);
+    }
+    if format == OutputFormat::Text
+        && result.text_output.is_none()
+        && result.analyze_document.is_none()
+        && result.document.is_some()
+    {
+        let name = (verb == Verb::Run).then_some("run");
+        return with_format_as(result, format, name);
+    }
+    result
+}
+
+/// The refusal document of a driver message: FSL's catalog code and cause the
+/// message names (`<code>[/<cause>]: ...`), or the category's own code.
+fn message_document(operation: Operation, category: Category, message: String) -> OutcomeDocument {
+    let (category, code, cause) = match category {
+        Category::Unsupported => (
+            Category::Unsupported,
+            "unsupported_operation",
+            message
+                .split_once(": ")
+                .map(|(cause, _)| cause)
+                .filter(|cause| !cause.contains(' '))
+                .map(str::to_owned),
+        ),
+        Category::Refusal => match message.split_once(": ").map(|(head, _)| head) {
+            Some("unknown_wire/unsupported-wire") => (
+                Category::Refusal,
+                "unknown_wire",
+                Some("unsupported-wire".to_owned()),
+            ),
+            _ => (Category::Refusal, Code::InvalidRequest.as_str(), None),
+        },
+        // A message-only result of any other category has no code of its own
+        // in the catalog; it is a driver fault, and says so in its category.
+        Category::InternalFailure
+        | Category::Success
+        | Category::Violation
+        | Category::Undefined
+        | Category::Incomplete
+        | Category::Pending
+        | Category::Indeterminate
+        | Category::Inconclusive => (
+            Category::InternalFailure,
+            Code::RuntimeInvariant.as_str(),
+            None,
+        ),
+    };
+    OutcomeDocument::new(operation, None, category).with_diagnostics(vec![OutcomeDiagnostic::new(
+        cause.as_deref(),
+        code,
+        None,
+        message,
+    )])
 }
 
 /// Emit one result document with the kit's canonical JSON and stream APIs.
@@ -2671,14 +2822,12 @@ fn emit_result(result: &CommandResult, format: OutputFormat) -> Category {
             }
         }
     }
-    let mut stderr = io::stderr().lock();
-    let _ = write_result_diagnostics(result, format, &mut stderr);
     category
 }
 
 pub(super) fn entrypoint() -> ExitCode {
     let arguments: Vec<OsString> = std::env::args_os().skip(1).collect();
-    match parse_invocation(&arguments) {
+    match resolve_invocation(&arguments) {
         Ok(Invocation::Help) => help_exit_code(),
         Ok(Invocation::Version) => version_exit_code(),
         Ok(Invocation::Operation {
@@ -2697,12 +2846,22 @@ pub(super) fn entrypoint() -> ExitCode {
                 }
                 process_exit_code(result.category)
             } else {
-                process_exit_code(emit_result(&result, format))
+                process_exit_code(emit_result(
+                    &finalize(result, verb, format),
+                    format.outcome_mode(),
+                ))
             }
         }
-        Err(message) => {
-            let result = CommandResult::failure(Category::Refusal, message);
+        Ok(Invocation::Refused { verb, message }) => {
+            let result = CommandResult::input_refusal(verb.operation(), message);
+            let result = finalize(result, verb, OutputFormat::Text);
             process_exit_code(emit_result(&result, OutputFormat::Text))
+        }
+        Err(message) => {
+            // No verb is recognized, so no outcome operation exists to carry the
+            // refusal: it stays the driver's own stderr line.
+            emit_diagnostic("DriverDiagnostic", &message);
+            process_exit_code(Category::Refusal)
         }
     }
 }
@@ -2805,6 +2964,57 @@ mod outcome_tests {
         write_result_diagnostics(&result, super::OutputFormat::Text, &mut stderr)
             .expect("write FSL diagnostic");
         assert_eq!(stderr, b"the selected function has no parameter named x\n");
+    }
+
+    /// FR-002: a result with neither a document nor a message, and a
+    /// message-only result of a category the catalog gives no code, still
+    /// write an outcome: an internal failure that says so.
+    #[trace("FR-002-AC-18")]
+    #[test]
+    fn finalize_never_leaves_a_failed_result_without_an_outcome() {
+        use super::{finalize, OutputFormat, Verb};
+        for format in [OutputFormat::Text, OutputFormat::Json, OutputFormat::Dot] {
+            for category in [
+                Category::Violation,
+                Category::Undefined,
+                Category::Refusal,
+                Category::Unsupported,
+                Category::Incomplete,
+                Category::Pending,
+                Category::Indeterminate,
+                Category::Inconclusive,
+                Category::InternalFailure,
+            ] {
+                let mut bare = CommandResult::plain(String::new());
+                bare.text_output = None;
+                bare.category = category;
+                let result = finalize(bare, Verb::Check, format);
+                let document = result.document.as_ref().expect("an outcome document");
+                assert_eq!(document.category(), result.category, "{category:?}");
+                assert!(!document.diagnostics().is_empty(), "{category:?}");
+                if !matches!(category, Category::Refusal | Category::Unsupported) {
+                    assert_eq!(result.category, Category::InternalFailure, "{category:?}");
+                }
+                if format != OutputFormat::Json {
+                    assert!(result.text_output.is_some(), "{category:?} {format:?}");
+                }
+
+                let mut messaged = CommandResult::failure(category, "driver message");
+                messaged.diagnostic_on_stderr = true;
+                let result = finalize(messaged, Verb::Analyze, format);
+                let document = result.document.as_ref().expect("an outcome document");
+                assert_eq!(document.category(), result.category, "{category:?}");
+                let code = document.diagnostics()[0].code();
+                match category {
+                    Category::Refusal => assert_eq!(code, "invalid-request"),
+                    Category::Unsupported => assert_eq!(code, "unsupported_operation"),
+                    _ => {
+                        assert_eq!(result.category, Category::InternalFailure);
+                        assert_eq!(code, "runtime_invariant");
+                    }
+                }
+            }
+        }
     }
 }
 

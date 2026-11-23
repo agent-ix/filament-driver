@@ -282,13 +282,14 @@ fn build() -> Vec<VerbEntry> {
         VerbEntry {
             verb: "analyze",
             usage: vec!["analyze [options] <request-file>"],
-            options: vec![provider_config(), provider_limit(), format()],
+            options: vec![limit(), provider_config(), provider_limit(), format()],
         },
         VerbEntry {
             verb: "monitor",
             usage: vec!["monitor [options] <request-file>"],
             options: vec![
                 OptionSpec::valued(INPUT, "<file>", PATH),
+                limit(),
                 provider_config(),
                 provider_limit(),
                 format(),
@@ -297,7 +298,7 @@ fn build() -> Vec<VerbEntry> {
         VerbEntry {
             verb: "replay",
             usage: vec!["replay [options] <request-file>"],
-            options: vec![provider_config(), provider_limit(), format()],
+            options: vec![limit(), provider_config(), provider_limit(), format()],
         },
         VerbEntry {
             verb: "inspect",

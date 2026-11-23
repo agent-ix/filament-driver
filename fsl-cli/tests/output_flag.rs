@@ -83,14 +83,15 @@ fn assert_invalid_request(output: &Output, names: &[&str]) {
     }
 }
 
-/// Assert a refusal of the command line itself: exit 20, nothing on stdout,
-/// and a stderr message containing `message`.
+/// Assert a refusal of the command line itself: exit 20, nothing on stderr,
+/// and its text refusal outcome on stdout containing `message`.
 fn assert_argument_refusal(output: &Output, message: &str) {
     assert_eq!(output.status.code(), Some(refusal_code()), "{output:?}");
-    assert!(output.stdout.is_empty(), "{output:?}");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains(message), "{stderr}");
-    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("refusal (exit 20)"), "{stdout}");
+    assert!(stdout.contains(message), "{stdout}");
+    assert!(!stdout.contains("panicked"), "{stdout}");
 }
 
 /// FR-024-AC-1: `fsl compile --output` writes the bytes the library writes for

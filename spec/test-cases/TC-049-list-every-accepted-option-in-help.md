@@ -16,7 +16,7 @@ under mutation of the table; that the root-help layout keeps the sections
 the docs generator reads; that `fsl <verb> --help` writes the verb's usage
 lines and options section with the specified precedence; that `--version`
 is a root option only; and that `--color` is refused everywhere.
-Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28.
+Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28, FR-002-AC-29.
 
 ## Test Procedure
 
@@ -58,7 +58,10 @@ Scope: FR-002-AC-24, FR-002-AC-25, FR-002-AC-26, FR-002-AC-28.
    `fsl <verb> -V`.
 10. For each verb that executes operations, run it over its fixture with
     `--color always`, then `--color never`; record files opened.
-11. Run steps 1, 2, 7 and 10 once with `NO_COLOR=1` and once without, over
+11. Run `fsl not-a-verb`, `fsl not-a-verb --format json` and `fsl` with a
+    first argument that is not valid UTF-8; check stderr holds one line,
+    stdout is empty and the exit status is 20 (AC-29).
+12. Run steps 1, 2, 7 and 10 once with `NO_COLOR=1` and once without, over
     fixtures that contain no `0x1B` byte, and scan stdout and stderr for the
     byte `0x1B`.
 

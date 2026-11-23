@@ -1285,14 +1285,20 @@ fn check_text_refusal_prints_its_message_once() {
 /// Provenance: QSL-2202.
 #[test]
 #[trace("FSpec-FR-301-AC-3")]
-fn check_bad_option_still_reports_on_stderr() {
+fn check_bad_option_json_refuses_on_stdout_only() {
     let output = Command::new(FSL)
         .args(["check", SOURCE, "--bogus", "--format", "json"])
         .output()
         .expect("run check with an unknown option");
     assert_eq!(output.status.code(), Some(20));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--bogus"), "{stderr}");
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("one outcome document on stdout");
+    assert_eq!(document["operation"], "check", "{document}");
+    assert_eq!(
+        document["diagnostics"][0]["message"], "unknown check option `--bogus`",
+        "{document}"
+    );
 }
 
 /// Trace: TC-049, FR-002-AC-25; repeated root formats refuse before opening the request.
@@ -1309,10 +1315,10 @@ fn repeated_format_refuses_with_run_usage_before_request_io() {
         .output()
         .expect("run fsl with repeated formats and missing request");
     assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
     assert_eq!(
-        output.stderr,
-        b"--format may be supplied only once; usage: fsl run [options] <request-file>\n"
+        output.stdout,
+        b"run: refusal (exit 20)\n<no-source>: invalid-request: --format may be supplied only once; usage: fsl run [options] <request-file>\n"
     );
 
     let valid = concat!(
@@ -1324,8 +1330,8 @@ fn repeated_format_refuses_with_run_usage_before_request_io() {
         .output()
         .expect("run fsl with repeated formats and valid request");
     assert_eq!(duplicate.status.code(), Some(20));
-    assert!(duplicate.stdout.is_empty());
-    assert_eq!(duplicate.stderr, output.stderr);
+    assert!(duplicate.stderr.is_empty(), "{:?}", duplicate.stderr);
+    assert_eq!(duplicate.stdout, output.stdout);
 
     let single = Command::new(FSL)
         .args(["run", valid, "--format", "json"])
@@ -1362,8 +1368,8 @@ fn nested_provider_configuration_type_refusal_names_the_member_path() {
         .output()
         .expect("run fsl with malformed provider configuration");
     assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let stderr = String::from_utf8_lossy(&output.stdout);
     assert!(stderr.contains("providers[1].arguments"), "{stderr}");
     assert!(stderr.contains("invalid-request"), "{stderr}");
     assert!(stderr.contains(&path.display().to_string()), "{stderr}");
@@ -1743,12 +1749,28 @@ fn implemented_verb_argument_refusals_use_the_selected_operation() {
             .output()
             .expect("run command with an unknown operation option");
         assert_eq!(output.status.code(), Some(20), "{verb} exit status");
-        assert_eq!(
-            output.stderr,
-            format!("{message}\n").as_bytes(),
-            "{verb} stderr"
+        assert!(
+            output.stderr.is_empty(),
+            "{verb} stderr: {:?}",
+            output.stderr
         );
         assert_fsl_document(&output.stdout, &argument_refusal_bytes(operation, message));
+        let text = Command::new(FSL)
+            .args([verb, "--unknown"])
+            .output()
+            .expect("run command with an unknown operation option in text mode");
+        assert_eq!(text.status.code(), Some(20), "{verb} text exit status");
+        assert!(
+            text.stderr.is_empty(),
+            "{verb} text stderr: {:?}",
+            text.stderr
+        );
+        let header = if verb == "compile" { "package" } else { verb };
+        assert_eq!(
+            String::from_utf8_lossy(&text.stdout),
+            format!("{header}: refusal (exit 20)\n<no-source>: invalid-request: {message}\n"),
+            "{verb} text stdout"
+        );
     }
 }
 
@@ -2253,14 +2275,20 @@ fn root_help_identifies_current_command_availability_and_text_restrictions() {
     }
 }
 
+#[trace("TC-049", "FR-002-AC-29")]
 #[trace("TC-009", "FR-002-AC-17")]
 #[test]
 fn informative_help_does_not_replace_invalid_command_or_format_refusals() {
-    for (arguments, diagnostic) in [
-        (&["not-a-command"][..], "unknown verb `not-a-command`"),
+    for (arguments, diagnostic, on_stdout) in [
+        (
+            &["not-a-command"][..],
+            "unknown verb `not-a-command`",
+            false,
+        ),
         (
             &["check", "--format", "dot"][..],
             "the `dot` format is available only for `inspect`",
+            true,
         ),
     ] {
         let output = Command::new(FSL)
@@ -2268,9 +2296,14 @@ fn informative_help_does_not_replace_invalid_command_or_format_refusals() {
             .output()
             .expect("run an invalid command selection");
         assert_eq!(output.status.code(), Some(20), "{arguments:?}");
-        assert!(output.stdout.is_empty(), "{arguments:?}");
+        let (written, silent) = if on_stdout {
+            (&output.stdout, &output.stderr)
+        } else {
+            (&output.stderr, &output.stdout)
+        };
+        assert!(silent.is_empty(), "{arguments:?}");
         assert!(
-            std::str::from_utf8(&output.stderr)
+            std::str::from_utf8(written)
                 .expect("diagnostics are UTF-8")
                 .contains(diagnostic),
             "arguments: {arguments:?}"
@@ -2695,13 +2728,15 @@ fn inspect_handoff_verifies_the_package_and_sidecar() {
         let output = run_fsl(&full);
         assert_eq!(output.status.code(), Some(20), "{full:?}: {output:?}");
         if full.contains(&OsStr::new("dot")) {
-            // `dot` selects no JSON document: the refusal is the stderr line.
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            // `dot` encodes no outcome: the refusal is its text rendering on stdout.
+            let stdout = String::from_utf8_lossy(&output.stdout);
             assert!(
-                stderr.contains("--format") && stderr.contains("dot"),
-                "{stderr}"
+                stdout.starts_with("inspect: refusal (exit 20)")
+                    && stdout.contains("--format")
+                    && stdout.contains("dot"),
+                "{stdout}"
             );
-            assert!(output.stdout.is_empty(), "{output:?}");
+            assert!(output.stderr.is_empty(), "{output:?}");
             continue;
         }
         let value: serde_json::Value = serde_json::from_slice(&output.stdout)
