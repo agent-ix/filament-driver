@@ -78,17 +78,74 @@ fn an_unknown_engine_lists_the_engines() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+const SPINE_SETTINGS: &str = "s1 (input_bytes, tokens, nodes, work_units); model (declaration_records, derivation_facts, effective_declarations, dispatch_candidates, work_units, ancestor_steps, family_steps, sequence_maximum); intake (input_bytes); s3 (nodes, input_bytes, work_units, rational_bits, decimal_scale, decimal_literal_scale, decimal_literal_scale_total); dependency (libraries, import_edges, source_bytes); environment (ancestor_steps, work_units); identity (input_bytes); i2 (input_bytes, nodes, edges, occurrences, diagnostics, work_units, native_join_storage); progress (covered_positions); emit (output_bytes)";
+const RUN_EXTRA_SETTINGS: &str = "; observation (input_bytes, objects, values); accounting (integer_bits, decimal_digits, scale_expansion, text_input_bytes, text_scalars, normalized_scalars, unit_edges, value_occurrences, work_units, result_units)";
+const EXPORT_EXTRA_SETTINGS: &str = "; export (output_bytes, nodes, work_units)";
+
+fn unknown_setting(listing: &str) -> String {
+    format!(
+        "`--limit foo=1` names no setting; a setting is <stage>.<name>, and the settings are {listing}"
+    )
+}
+
 /// Trace: FR-002-AC-31
 /// Provenance: QSL-2932
 #[test]
-fn an_unknown_limit_setting_prints_one_stage_grouped_list() -> Result<(), Box<dyn std::error::Error>>
-{
+fn an_unknown_limit_setting_lists_only_what_the_verb_accepts(
+) -> Result<(), Box<dyn std::error::Error>> {
     let case = CliCase::from_environment()?;
     case.write("a.fsl", b"x")?;
-    let text = message(&case.run(&["check", "--limit", "foo=1", "a.fsl", "--format", "json"])?);
+    case.write("r.json", b"{}")?;
+    let json = |verb: &str, operands: &[&str]| {
+        let mut args = vec![verb];
+        args.extend_from_slice(operands);
+        args.extend(["--limit", "foo=1", "--format", "json"]);
+        case.run(&args)
+    };
     assert_eq!(
-        text,
-        "`--limit foo=1` names no setting; a setting is <stage>.<name>, and the settings are s1 (input_bytes, tokens, nodes, work_units); model (declaration_records, derivation_facts, effective_declarations, dispatch_candidates, work_units, ancestor_steps, family_steps, sequence_maximum); intake (input_bytes); s3 (nodes, input_bytes, work_units, rational_bits, decimal_scale, decimal_literal_scale, decimal_literal_scale_total); dependency (libraries, import_edges, source_bytes); environment (ancestor_steps, work_units); identity (input_bytes); i2 (input_bytes, nodes, edges, occurrences, diagnostics, work_units, native_join_storage); progress (covered_positions); emit (output_bytes)"
+        message(&json("check", &["a.fsl"])?),
+        unknown_setting(SPINE_SETTINGS)
+    );
+    assert_eq!(
+        message(&json("run", &["r.json"])?),
+        unknown_setting(&format!("{SPINE_SETTINGS}{RUN_EXTRA_SETTINGS}"))
+    );
+    assert_eq!(
+        message(&json("export", &["r.json"])?),
+        unknown_setting(&format!("{SPINE_SETTINGS}{EXPORT_EXTRA_SETTINGS}"))
+    );
+    assert_eq!(
+        message(&json("analyze", &["r.json"])?),
+        unknown_setting("replay (input_bytes)")
+    );
+    for verb in ["monitor", "replay"] {
+        assert_eq!(
+            message(&json(verb, &["r.json"])?),
+            format!("`--limit foo=1` names no setting, and {verb} accepts no --limit settings")
+        );
+    }
+    Ok(())
+}
+
+/// Trace: FR-002-AC-31
+/// Provenance: QSL-2932
+#[test]
+fn a_setting_the_verb_cannot_apply_is_named_with_the_settings_it_accepts(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = CliCase::from_environment()?;
+    case.write("r.json", b"{}")?;
+    assert_eq!(
+        message(&case.run(&[
+            "compile",
+            "r.json",
+            "--limit",
+            "admission.work_units=5",
+            "--format",
+            "json"
+        ])?),
+        format!(
+            "limit setting `admission.work_units` is unavailable for the `compile` operation; settings this command accepts, by stage: {SPINE_SETTINGS}"
+        )
     );
     Ok(())
 }
@@ -142,7 +199,8 @@ fn root_help_describes_each_verb_the_operands_and_the_exit_codes(
   <authority> <identity>  Labels that name the source in diagnostics and outcome documents,
                          for example `example example:shop/orders`. `check <source-path>`
                          labels the source with authority `filament` and the path as identity.
-  --model <identity>=<file>  Supplies an imported model. <identity> is the string in the
+  --model <identity>=<file>
+                         Supplies an imported model. <identity> is the string in the
                          source's model line, such as `example/shop`; <file> is its source.
   <request-file>          A JSON request; its `format` member names the request kind,
                          such as native-run/1.
@@ -187,10 +245,62 @@ fn a_non_utf8_argument_after_a_verb_is_refused_on_stdout_a_non_utf8_verb_on_stde
     Ok(())
 }
 
-/// Trace: FR-002-AC-23
-/// Provenance: QSL-2929
+const NOT_AVAILABLE: &str =
+    "is not available in this build; running it exits 21 (unsupported_operation).\n\n";
+
+/// Trace: FR-002-AC-25
+/// Provenance: QSL-2931
 #[test]
-fn a_bare_inspect_is_not_routed_in_text_and_dot_and_dot_with_handoff_is_refused(
+fn help_for_a_verb_this_build_does_not_route_says_so_first_and_exits_zero(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let case = CliCase::from_environment()?;
+    for (verb, usage) in [
+        ("prove", "prove [options] <request-file>"),
+        ("generate", "generate [options]"),
+        ("render", "render [options]"),
+    ] {
+        let expected = format!(
+            "fsl {verb} {NOT_AVAILABLE}Usage: fsl {usage}\n\n{verb} options:\n  --format text|json\n"
+        );
+        for args in [vec![verb, "--help"], vec![verb, "-h"], vec!["help", verb]] {
+            let output = case.run(&args)?;
+            assert_eq!(output.0.status.code(), Some(0), "{args:?} {output:?}");
+            assert!(output.0.stderr.is_empty(), "{args:?} {output:?}");
+            assert_eq!(output.stdout_text()?, expected, "{args:?}");
+        }
+        let run = case.run(&[verb])?;
+        assert_eq!(run.0.status.code(), Some(21), "{run:?}");
+        assert_eq!(
+            run.stdout_text()?,
+            format!(
+                "{verb}: unsupported (exit 21)\n<no-source>: unsupported_operation: fsl {verb}: this build does not route the {verb} operation (unsupported_operation)\n  cause: operation-not-routed\n"
+            )
+        );
+    }
+    Ok(())
+}
+
+/// Trace: FR-002-AC-32
+/// Provenance: QSL-2931
+#[test]
+fn help_with_a_non_verb_or_extra_words_refuses_on_stderr() -> Result<(), Box<dyn std::error::Error>>
+{
+    let case = CliCase::from_environment()?;
+    stderr_only(
+        &case.run(&["help", "--format", "json"])?,
+        &format!("unknown verb `--format`; verbs are {VERBS}; run `fsl --help` for usage\n"),
+    );
+    stderr_only(
+        &case.run(&["help", "run", "extra"])?,
+        "help takes at most one verb\n",
+    );
+    Ok(())
+}
+
+/// Trace: FR-002-AC-23
+/// Provenance: QSL-2933
+#[test]
+fn a_bare_inspect_is_not_routed_names_the_handoff_form_and_dot_with_handoff_is_refused(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let case = CliCase::from_environment()?;
     for args in [
@@ -203,13 +313,16 @@ fn a_bare_inspect_is_not_routed_in_text_and_dot_and_dot_with_handoff_is_refused(
         assert!(output.0.stderr.is_empty(), "{output:?}");
         assert_eq!(
             output.stdout_text()?,
-            "inspect: unsupported (exit 21)\n<no-source>: unsupported_operation: fsl inspect: this build does not route the inspect operation (unsupported_operation)\n  cause: operation-not-routed\n",
+            "inspect: unsupported (exit 21)\n<no-source>: unsupported_operation: fsl inspect: this build does not route the inspect operation (unsupported_operation); use `fsl inspect --handoff <directory>`\n  cause: operation-not-routed\n",
             "{args:?}"
         );
     }
     let output = case.run(&["inspect", "--handoff", "missing", "--format", "dot"])?;
     assert_eq!(output.0.status.code(), Some(20), "{output:?}");
     assert!(output.0.stderr.is_empty(), "{output:?}");
-    assert!(output.stdout_text()?.contains("--format"), "{output:?}");
+    assert_eq!(
+        output.stdout_text()?,
+        "inspect: refusal (exit 20)\n<no-source>: invalid-request: --format `dot` is not available with --handoff\n"
+    );
     Ok(())
 }

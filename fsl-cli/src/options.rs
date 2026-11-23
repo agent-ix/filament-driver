@@ -165,6 +165,18 @@ impl VerbEntry {
         message
     }
 
+    /// The text `fsl <verb> --help` writes for a verb this build does not
+    /// route: a first line saying so, then the usage and options as for a
+    /// routed verb.
+    #[must_use]
+    pub fn unrouted_help(&self) -> String {
+        format!(
+            "fsl {} is not available in this build; running it exits 21 (unsupported_operation).\n\n{}",
+            self.verb,
+            self.help()
+        )
+    }
+
     /// The `<verb> options:` section, each line ending in a newline.
     #[must_use]
     pub fn options_section(&self) -> String {
@@ -327,17 +339,29 @@ fn build() -> Vec<VerbEntry> {
 
 /// The entry of a recognized verb this build does not route. Its options
 /// refuse as unknown like a routed verb's, so an unknown option exits 20
-/// before the verb answers unsupported; it has no help section.
+/// before the verb answers unsupported; its help starts by saying so.
 #[must_use]
 pub fn unrouted_entry(verb: &str) -> Option<&'static VerbEntry> {
     static ENTRIES: OnceLock<Vec<VerbEntry>> = OnceLock::new();
     ENTRIES
         .get_or_init(|| {
-            vec![VerbEntry {
-                verb: "prove",
-                usage: vec!["prove [options] <request-file>"],
-                options: vec![format()],
-            }]
+            vec![
+                VerbEntry {
+                    verb: "prove",
+                    usage: vec!["prove [options] <request-file>"],
+                    options: vec![format()],
+                },
+                VerbEntry {
+                    verb: "generate",
+                    usage: vec!["generate [options]"],
+                    options: vec![format()],
+                },
+                VerbEntry {
+                    verb: "render",
+                    usage: vec!["render [options]"],
+                    options: vec![format()],
+                },
+            ]
         })
         .iter()
         .find(|entry| entry.verb == verb)
@@ -535,7 +559,8 @@ pub const ROOT_HELP_NOTES: &str = concat!(
     "  <authority> <identity>  Labels that name the source in diagnostics and outcome documents,\n",
     "                         for example `example example:shop/orders`. `check <source-path>`\n",
     "                         labels the source with authority `filament` and the path as identity.\n",
-    "  --model <identity>=<file>  Supplies an imported model. <identity> is the string in the\n",
+    "  --model <identity>=<file>\n",
+    "                         Supplies an imported model. <identity> is the string in the\n",
     "                         source's model line, such as `example/shop`; <file> is its source.\n",
     "  <request-file>          A JSON request; its `format` member names the request kind,\n",
     "                         such as native-run/1.\n",
