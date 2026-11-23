@@ -65,6 +65,8 @@ The toolchain image's pinned npm tools are separate from the driver's `fsl` vers
 
 Only `.github/workflows/release.yml` builds the versioned driver archives. It builds `fsl` and `fsl-plugin-launch` for Linux x86_64 and aarch64 on Ubuntu 26.04, plus macOS arm64 and x86_64. It packages each pair as `fsl-v<VERSION>-<TARGET>.tar.gz`, checks the packaged CLI version, and uploads workflow artifacts. Linux checks inspect both packaged ELF files, reject `GLIBC_PRIVATE`, and require the maximum numeric GLIBC symbol version to be at most 2.43. A tag push runs the publish job, which checks tag/version agreement, writes `SHA256SUMS.txt`, and creates the GitHub Release.
 
+On macOS, `fsl` defaults provider memory limits to zero, enforces CPU time only, and writes a memory-not-enforced notice to stderr. With a configured provider, explicitly setting `--provider-limit max_memory_bytes=<bytes>` is refused before provider start for `run`, `analyze`, `monitor`, and `replay` (exit 21, unsupported on this platform). The launcher itself refuses a nonzero memory argument on macOS; zero allows provider execution without a memory cap. The release workflow therefore keeps archive, executable, and version checks on all targets but runs its nonzero-memory launcher probe only on Linux.
+
 The manual release workflow is a non-publishing build when dispatched from `main` with `publish=false`. The release owner coordinates this dry run with this command; do not dispatch it from this runbook or use it as a substitute for checking the final tag's artifacts:
 
 ```sh
