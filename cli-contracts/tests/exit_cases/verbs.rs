@@ -29,7 +29,7 @@ fn routed_source_verbs_preserve_success_in_their_own_operation() -> Result<(), C
         if verb == "run" {
             assert_eq!(
                 value["result"],
-                json!({"kind":"completed","value":{"integer":"11"}})
+                json!({"kind":"completed","value":{"type":"integer","value":"11"}})
             );
         }
     }

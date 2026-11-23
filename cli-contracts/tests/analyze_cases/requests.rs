@@ -240,15 +240,36 @@ fn explicit_empty_items_and_omitted_items_have_different_meanings() -> Result<()
     assert!(empty["items"].as_array().unwrap().is_empty());
     request["request"].as_object_mut().unwrap().remove("items");
     write_request(&case, &request)?;
+    // FSL FR-620: the default items are every operation contract and every claim.
+    // The two operation contracts have an unbounded extent this build cannot
+    // prove, so the run is `unsupported` (exit 21) and the claims follow them.
     let all = document(
         &case.run(&["analyze", "data/request.json", "--format", "json"])?,
-        10,
-        "violation",
+        21,
+        "unsupported",
     );
-    assert_eq!(all["items"][0]["claim_name"], "WithinCapacity");
-    assert_eq!(all["items"][1]["claim_name"], "NeverFull");
-    assert_eq!(all["items"][0]["request_index"], 0);
-    assert_eq!(all["items"][1]["request_index"], 1);
+    let names: Vec<_> = all["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["claim_name"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "SpaceAvailable",
+            "AppendOne",
+            "WithinCapacity",
+            "NeverFull",
+            ""
+        ]
+    );
+    for (index, item) in all["items"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(item["request_index"], index, "{item}");
+    }
+    assert_eq!(all["items"][0]["category"], "unsupported");
+    assert_eq!(all["items"][2]["category"], "success");
+    assert_eq!(all["items"][3]["category"], "violation");
     Ok(())
 }
 

@@ -50,8 +50,8 @@ fn fixture() -> Result<CliCase, ContractError> {
         "run.json",
         &json!({"format":"native-run/1","request":{
             "models":[],"program":source_ref("program.fsl"),"call":{"function":"Spare","arguments":[
-                {"parameter":"total","value":{"integer":"17"}},
-                {"parameter":"held","value":{"integer":"6"}}
+                {"parameter":"total","value":{"type":"integer","value":"17"}},
+                {"parameter":"held","value":{"type":"integer","value":"6"}}
             ]}
         }}),
     )?;

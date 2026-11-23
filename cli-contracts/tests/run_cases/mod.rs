@@ -33,8 +33,8 @@ fn fixture() -> Result<CliCase, ContractError> {
             "packing.fsl",
             "Remaining",
             &[
-                ("total", json!({"integer":"17"})),
-                ("held", json!({"integer":"5"})),
+                ("total", json!({"type":"integer","value":"17"})),
+                ("held", json!({"type":"integer","value":"5"})),
             ],
         ),
     )?;

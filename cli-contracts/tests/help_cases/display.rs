@@ -97,9 +97,20 @@ fn root_version_aliases_equal_the_cli_package_version_and_have_no_lifecycle_outp
         .expect("declared package version");
     let version: String = serde_json::from_str(version)?;
     assert!(!version.is_empty());
+    // FR-002-AC-11: the version line, then the pinned FSL source revision on its own line.
+    let revision = include_str!("../../../Cargo.toml")
+        .lines()
+        .find(|line| line.starts_with("fsl-analyze = "))
+        .and_then(|line| line.split_once("rev = \"")?.1.split_once('"'))
+        .map(|(revision, _)| revision.to_owned())
+        .expect("the pinned FSL revision");
+    assert_eq!(revision.len(), 40);
     for flag in options::VERSION_OPTIONS {
         let output = case.run(&[flag])?;
-        assert_eq!(successful_text(&output)?, format!("{version}\n"));
+        assert_eq!(
+            successful_text(&output)?,
+            format!("{version}\nFSL revision: {revision}\n")
+        );
         assert!(
             output.json().is_err(),
             "version is plain text, not an outcome document"

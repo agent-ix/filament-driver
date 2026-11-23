@@ -59,10 +59,31 @@ fn refusal(output: &Captured, code: &str) -> Value {
     assert_eq!(value["diagnostics"].as_array().unwrap().len(), 1);
     let diagnostic = &value["diagnostics"][0];
     assert_eq!(diagnostic["code"], code, "{value}");
-    assert_eq!(
-        diagnostic["locus"],
-        json!({"kind":"artifact","pointer":"/"})
-    );
+    // FSL FR-665-AC-5: a reader refusal that names a file or directory carries an
+    // `input` locus with exactly these four members; any other refusal is
+    // located in the artifact.
+    let locus = diagnostic["locus"].as_object().expect("a locus object");
+    if locus["kind"] == "input" {
+        let mut keys: Vec<_> = locus.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["kind", "member", "operand", "pointer"], "{value}");
+        assert!(
+            locus["member"].is_null() || locus["member"].is_string(),
+            "{value}"
+        );
+        assert!(
+            locus["operand"]
+                .as_str()
+                .is_some_and(|operand| !operand.is_empty()),
+            "{value}"
+        );
+        assert!(locus["pointer"].is_null(), "{value}");
+    } else {
+        assert_eq!(
+            diagnostic["locus"],
+            json!({"kind":"artifact","pointer":"/"})
+        );
+    }
     assert!(!diagnostic["message"].as_str().unwrap().is_empty());
     value
 }

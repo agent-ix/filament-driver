@@ -213,7 +213,9 @@ fn mixed_provider_unknown_preserves_violation_precedence_but_cannot_prove_succes
             write_request(&case, &input)?;
         }
         let output = case.run_stdin(&arguments(), &records(&[2, 9], true))?;
-        let (_, summary) = stream(&output, if all_successful { 22 } else { 10 })?;
+        // FSL FR-644-AC-10 and FR-285: an inconclusive item outranks the violation, so
+        // both runs exit 22.
+        let (_, summary) = stream(&output, 22)?;
         let item = &summary["items"][0];
         assert_eq!(item["record"]["result"], "inconclusive", "{item}");
         assert_eq!(

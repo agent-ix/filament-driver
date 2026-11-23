@@ -95,6 +95,10 @@ fn removing_a_selected_package_is_an_input_read_refusal() -> Result<(), Contract
     let case = handoff("handoff")?;
     std::fs::remove_file(case.directory().join("handoff/checked-package.json")).unwrap();
     let value = refusal(&inspect(&case, "handoff")?, "handoff-read");
+    assert_eq!(
+        value["diagnostics"][0]["locus"],
+        json!({"kind":"input","member":"checked-package.json","operand":"handoff","pointer":null})
+    );
     assert!(value["diagnostics"][0]["message"]
         .as_str()
         .unwrap()

@@ -19,7 +19,7 @@ function AsFraction using v(x: Float64[nearest-even]): Fraction pure { convert<F
         "undefined.json",
         &json!({"format":"native-run/1","request":{
             "models":[],"program":source_ref("fraction.fsl"),"call":{"function":"AsFraction",
-            "arguments":[{"parameter":"x","value":{"kind":"float64","bits":"7ff8000000000000"}}]}
+            "arguments":[{"parameter":"x","value":{"type":"float64","bits":"7ff8000000000000"}}]}
         }}),
     )?;
     let value = outcome(
