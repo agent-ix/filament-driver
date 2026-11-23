@@ -33,7 +33,7 @@ pub fn project_monitor_initializer(
     let invalid = || Error::InvalidAdmittedEntry {
         node: Box::new(init.node_id().clone()),
     };
-    let CheckedTerm::Aggregate { members } = init.body() else {
+    let CheckedTerm::Aggregate { members, .. } = init.body() else {
         return Err(invalid());
     };
     let mut body = None;

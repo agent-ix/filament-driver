@@ -281,7 +281,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         node: &'a CheckedNodeId,
         term: &'a CheckedTerm,
     ) -> Result<(Vec<&'a CheckedNodeId>, &'a CheckedNodeId), Error> {
-        let CheckedTerm::Aggregate { members } = term else {
+        let CheckedTerm::Aggregate { members, .. } = term else {
             return Err(Error::InvalidAdmittedEntry {
                 node: Box::new(node.clone()),
             });
@@ -289,7 +289,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
         let (mut parameters, mut body) = (None, None);
         for member in members {
             match binding_kind(member) {
-                Some((CheckedBindingNameKind::Parameters, CheckedTerm::Aggregate { members })) => {
+                Some((CheckedBindingNameKind::Parameters, CheckedTerm::Aggregate { members, .. })) => {
                     let mut list = Vec::with_capacity(members.len());
                     for member in members {
                         let CheckedTerm::Reference { target } = member else {
@@ -582,7 +582,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                 result_type,
                 ..
             } => self.application(frame, node, operation, arguments, result_type)?,
-            CheckedTerm::Aggregate { members } => {
+            CheckedTerm::Aggregate { members, .. } => {
                 if let Some((name, level)) = parameter_shape(members) {
                     self.variable(frame, node, &name, level)?
                 } else {
@@ -712,7 +712,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
             };
             let Some((
                 CheckedBindingNameKind::Other(case),
-                CheckedTerm::Aggregate { members: payload },
+                CheckedTerm::Aggregate { members: payload, .. },
             )) = binding_kind(member)
             else {
                 return Err(self.invalid(node));
@@ -820,7 +820,7 @@ impl<'a, 'b> Lowerer<'a, 'b> {
                 };
                 let Some((
                     CheckedBindingNameKind::Other(accumulator),
-                    CheckedTerm::Aggregate { members },
+                    CheckedTerm::Aggregate { members, .. },
                 )) = binding_kind(binding)
                 else {
                     return Err(self.unsupported(node));

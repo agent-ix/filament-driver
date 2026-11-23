@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use filament_exact::Cancel;
-use fsl_command::command::{monitor, RunLimits};
+use fsl_command::command::{monitor, CommandLimits, MonitorPreparationLimits, RunLimits};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
 
@@ -117,6 +117,10 @@ fn library_lines(request: &Path, lines: &[String]) -> (Vec<String>, u8) {
             options: &fsl_analyze::provider::ProviderOptions::default(),
         },
         RunLimits::default(),
+        &CommandLimits::monitor(MonitorPreparationLimits {
+            work: u64::MAX,
+            storage: 268_435_456,
+        }),
         &Cancel::new(),
     )
     .expect("the stream runs");

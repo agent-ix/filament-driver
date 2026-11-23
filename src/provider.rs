@@ -485,8 +485,8 @@ mod tests {
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::SpineLimits;
     use fsl_replay::statistical::{
-        Confidence, Coverage, Decision, StatisticalBasis, StatisticalMethod, StatisticalProvenance,
-        StatisticalVerdict, UndecidedCause,
+        BoundComparison, ClaimForm, Confidence, Coverage, Decision, StatisticalBasis,
+        StatisticalMethod, StatisticalProvenance, StatisticalVerdict, UndecidedCause, VerdictBound,
     };
     use fsl_replay::{
         compile_package, Certification, DependencyInput, IncompleteCause, Operation,
@@ -1321,6 +1321,12 @@ mod tests {
             .expect("one-half is a valid confidence value");
         let verdict = StatisticalVerdict {
             decision: Decision::Undecided(UndecidedCause::IndifferenceRegion),
+            bound: VerdictBound {
+                form: ClaimForm::Probability,
+                comparison: BoundComparison::GreaterOrEqual,
+                threshold: half.clone(),
+                level: None,
+            },
             estimate: None,
             interval: None,
             quantile: None,

@@ -14,7 +14,9 @@ use filament_driver::{
 };
 use filament_exact::Cancel;
 use filament_semantic_value::catalog::Category;
-use fsl_command::command::{self, ExportSelection, RunLimits};
+use fsl_command::command::{
+    self, CommandLimits, ExportSelection, MonitorPreparationLimits, RunLimits,
+};
 use fsl_cst::format::{format_with_limits, FormatLimits, FormatRefusal};
 use fsl_foundation::diagnostic::Code;
 use fsl_foundation::diagnostic::Staged;
@@ -860,18 +862,58 @@ fn run_setting_names() -> Vec<&'static str> {
     names
 }
 
-/// The settings `analyze` and `replay` take: `analyze` reads one, `replay`
-/// none (FR-003-AC-5).
-fn request_setting_names(verb: Verb) -> Vec<&'static str> {
+/// The settings an `analyze`, `monitor` or `replay` run takes from a caller:
+/// the stage settings FSL's `CommandLimits` exposes for the operation
+/// (FSL FR-255 "Lifecycle caller-limit coverage") and the accounting
+/// settings every operation exposes.
+fn command_setting_names(base: &CommandLimits) -> Vec<&'static str> {
+    let mut names = setting_names(base);
+    names.extend(AccountingSetting::ALL.iter().map(|setting| setting.name()));
+    names
+}
+
+/// The `CommandLimits` of `verb` before any caller setting: the monitor's
+/// plan preparation starts at the driver's published defaults (FR-003).
+fn base_command_limits(verb: Verb) -> CommandLimits {
     match verb {
-        Verb::Analyze => vec![ANALYZE_SETTING.name()],
-        _ => Vec::new(),
+        Verb::Monitor => CommandLimits::monitor(MONITOR_PREPARATION_DEFAULTS),
+        Verb::Replay => CommandLimits::replay(),
+        _ => CommandLimits::analyze(),
     }
 }
 
-/// The one setting `fsl analyze` takes from a caller; the refusal lists and
-/// `analyze_run_limits` both read it.
-const ANALYZE_SETTING: Setting = Setting::ReplayInputBytes;
+/// The monitor plan preparation allowances `fsl monitor` starts from
+/// (FR-003-AC-13). FSL carries these bounds and the driver enforces them;
+/// the work bound keeps the preparation's existing, uncapped value until a
+/// caller sets `monitor.preparation_work_units`.
+const MONITOR_PREPARATION_DEFAULTS: MonitorPreparationLimits = MonitorPreparationLimits {
+    work: u64::MAX,
+    storage: 268_435_456,
+};
+
+/// Apply each `--limit` setting to `base` through FSL's `CommandLimits::set`
+/// (FR-003-AC-12), refusing a recognized setting the operation does not
+/// expose before any work.
+fn apply_command_limits(
+    overrides: &LimitOverrides,
+    mut base: CommandLimits,
+) -> Result<CommandLimits, String> {
+    let operation = base.operation().name();
+    for (name, value) in overrides.values() {
+        if base.set(*name, *value).is_err() {
+            let accepted = grouped_settings(&command_setting_names(&base));
+            return Err(format!(
+                "{}; settings this command accepts, by stage: {accepted}",
+                filament_driver::LimitError::OperationUnavailable {
+                    setting: *name,
+                    operation,
+                }
+                .message_for(operation)
+            ));
+        }
+    }
+    Ok(base)
+}
 
 fn apply_frontend_limits(
     overrides: &LimitOverrides,
@@ -1628,7 +1670,11 @@ impl RequestOptions {
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
         let limits = LimitOverrides::parse(&limit_operands).map_err(|error| {
-            limit_usage_message(&error, verb.name(), &request_setting_names(verb))
+            limit_usage_message(
+                &error,
+                verb.name(),
+                &command_setting_names(&base_command_limits(verb)),
+            )
         })?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(verb).into());
@@ -1949,46 +1995,6 @@ fn start_configured_provider(
     provider.start(&configured.path, &arguments, limits, cancel)
 }
 
-/// The `RunLimits` an `fsl analyze` run takes: FSL reads the request's own
-/// bounds from the request document and exposes only `replay.input_bytes`
-/// (FSL FR-255) to a caller, through `RunLimits`. Every other setting is
-/// unavailable to `analyze` (FR-003-AC-5).
-fn analyze_run_limits(
-    overrides: &LimitOverrides,
-) -> Result<RunLimits, filament_driver::LimitError> {
-    let mut limits = RunLimits::default();
-    for (name, value) in overrides.values() {
-        match name {
-            SettingName::Stage(setting) if *setting == ANALYZE_SETTING => {
-                limits.replay_input_bytes = *value;
-            }
-            _ => {
-                return Err(filament_driver::LimitError::OperationUnavailable {
-                    setting: *name,
-                    operation: "analyze",
-                });
-            }
-        }
-    }
-    Ok(limits)
-}
-
-/// Refuse every `--limit` setting for an operation whose FSL command API
-/// takes no caller bound (FR-003-AC-5): `monitor` and `replay` read their
-/// bounds from the request document only.
-fn refuse_unexposed_limits(
-    overrides: &LimitOverrides,
-    operation: &'static str,
-) -> Result<(), filament_driver::LimitError> {
-    match overrides.values().first() {
-        Some((name, _)) => Err(filament_driver::LimitError::OperationUnavailable {
-            setting: *name,
-            operation,
-        }),
-        None => Ok(()),
-    }
-}
-
 /// Read the `native-analyze/1` request, have FSL analyze its items under the
 /// driver's negotiation, and keep FSL FR-621's document with its exit code,
 /// or FR-624's whole-request refusal.
@@ -1997,11 +2003,9 @@ fn refuse_unexposed_limits(
 /// handle with cause `requested`, and the verb writes the outcome FSL settles
 /// for it (FSL FR-624 `cancelled`, exit 22) rather than dying by the signal.
 fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
-    let run_limits = match analyze_run_limits(&options.limits) {
+    let caller = match apply_command_limits(&options.limits, base_command_limits(Verb::Analyze)) {
         Ok(limits) => limits,
-        Err(error) => {
-            return CommandResult::input_refusal(Operation::Analyze, error.message_for("analyze"));
-        }
+        Err(message) => return CommandResult::input_refusal(Operation::Analyze, message),
     };
     let config = match load_provider_config(&options.providers) {
         Ok(config) => config,
@@ -2015,7 +2019,8 @@ fn analyze(options: &RequestOptions, format: OutputFormat) -> CommandResult {
         move |negotiation, engines, provider_options, cancel| {
             command::analyze_with_providers_and_limits(
                 &path,
-                run_limits,
+                RunLimits::default(),
+                &caller,
                 negotiation,
                 engines,
                 provider_options,
@@ -2145,12 +2150,12 @@ fn run_with_providers(
 /// never runs or analyzes it. `--provider-config` and `--provider-limit` are
 /// read and the providers started and shut down as for `run` (FR-006).
 fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
-    if let Err(error) = refuse_unexposed_limits(&options.limits, "replay") {
-        return with_format(
-            CommandResult::input_refusal(Operation::Replay, error.message_for("replay")),
-            format,
-        );
-    }
+    let caller = match apply_command_limits(&options.limits, base_command_limits(Verb::Replay)) {
+        Ok(limits) => limits,
+        Err(message) => {
+            return with_format(CommandResult::input_refusal(Operation::Replay, message), format);
+        }
+    };
     let config = match load_provider_config(&options.providers) {
         Ok(config) => config,
         Err(refusal) => return *refusal,
@@ -2173,8 +2178,8 @@ fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
         config,
         &options.providers,
         false,
-        move |negotiation, engines, provider_options, cancel| {
-            command::run_with_providers(&path, negotiation, engines, provider_options, cancel)
+        move |_negotiation, _engines, _provider_options, _cancel| {
+            command::replay_with_limits(&path, RunLimits::default(), &caller)
         },
     );
     let written = match ran {
@@ -2367,7 +2372,13 @@ impl MonitorOptions {
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
         let limits = LimitOverrides::parse(&limit_operands)
-            .map_err(|error| limit_usage_message(&error, "monitor", &[]))?;
+            .map_err(|error| {
+            limit_usage_message(
+                &error,
+                "monitor",
+                &command_setting_names(&base_command_limits(Verb::Monitor)),
+            )
+        })?;
         let [path] = scanned.positionals.as_slice() else {
             return Err(entry_usage(Verb::Monitor).into());
         };
@@ -2502,9 +2513,10 @@ impl Iterator for CancellableRecords {
 /// The exit code is FSL's. A refusal before any record is read is the
 /// command-error envelope.
 fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
-    if let Err(error) = refuse_unexposed_limits(&options.limits, "monitor") {
-        return CommandResult::input_refusal(Operation::Monitor, error.message_for("monitor"));
-    }
+    let caller = match apply_command_limits(&options.limits, base_command_limits(Verb::Monitor)) {
+        Ok(limits) => limits,
+        Err(message) => return CommandResult::input_refusal(Operation::Monitor, message),
+    };
     let reader: Box<dyn io::BufRead + Send> = match &options.input {
         Some(path) => match File::open(path) {
             Ok(file) => Box::new(io::BufReader::new(file)),
@@ -2548,6 +2560,7 @@ fn monitor(options: &MonitorOptions, format: OutputFormat) -> CommandResult {
                     options: provider_options,
                 },
                 RunLimits::default(),
+                &caller,
                 cancel,
             );
             // A stream the cancellation ended is not the complete stream, so its
