@@ -3059,6 +3059,65 @@ fn analyze_external_provider_refutes_with_evidence() {
     );
 }
 
+/// FSL FR-281, FR-635: a refutation the driver cannot map to the claim's
+/// parameters (here a claim over two parameters with an assignment to one)
+/// is no verdict: FSL settles the item `inconclusive` with cause
+/// `replay-parity` in the result document, and in machine mode nothing is
+/// written to stderr (FR-002: a document result carries its diagnostics in
+/// the document).
+#[trace("TC-036", "FR-022-AC-9")]
+#[test]
+fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
+    let mut program = even_program();
+    program.extend_from_slice(
+        b"function Pair using v(n: Integer, m: Integer): Boolean pure { n = m }\n",
+    );
+    let items = serde_json::json!([
+        {"claim": "Pair", "kind": "value-validity", "backend": PROVIDER_BACKEND}]);
+    let request = AnalyzeRequest::new("provider-unusable", items, serde_json::json!({})).with_file(
+        "/request/program/source/file",
+        "pair.fsl",
+        &program,
+    );
+    let log = request.directory.0.join("provider-request.json");
+    let log_argument = log.to_str().expect("UTF-8 log path");
+    let proved = provider_config(
+        &request,
+        &[PROVIDER_BACKEND, "unbounded", "proved", log_argument],
+    );
+    analyze_with_config(&request, &proved);
+    let sent: serde_json::Value = serde_json::from_str(
+        std::fs::read_to_string(&log)
+            .expect("the provider request log")
+            .lines()
+            .next()
+            .expect("one logged request"),
+    )
+    .expect("the logged request is JSON");
+    let parameter =
+        sent["request"]["items"][0]["extent"]["domains"][0]["domain"]["node"].to_string();
+    let config = provider_config(&request, &[PROVIDER_BACKEND, "unbounded", "refuted"]);
+    let output = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(&config)
+        .args(["--format", "json"])
+        .env("FSL_TEST_PROVIDER_PARAMETER", parameter)
+        .output()
+        .expect("run fsl analyze --provider-config");
+    assert_eq!(output.status.code(), Some(22), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).expect("a document");
+    let record = &document["items"][0]["record"];
+    assert_eq!(record["result"], "inconclusive", "{document}");
+    assert_eq!(record["cause"]["kind"], "replay-parity", "{document}");
+    assert!(
+        document["items"][0].get("counterexample").is_none(),
+        "{document}"
+    );
+}
+
 const EXTENSION_HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"filament.value.complete/v1\";\n";
 const EXTENSION_FORM: &str = "retention Audit { subject: \"audit\", days: 30 }";

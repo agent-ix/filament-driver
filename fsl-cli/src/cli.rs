@@ -75,7 +75,7 @@ fn write_diagnostic<W: Write>(sink: &mut W, kind: &str, message: &str) -> io::Re
 
 /// Best-effort stderr output; a closed diagnostic pipe must not replace the
 /// command's already selected FSL exit result with a panic.
-pub(crate) fn emit_diagnostic(kind: &str, message: &str) {
+fn emit_diagnostic(kind: &str, message: &str) {
     let mut stderr = io::stderr().lock();
     let _ = write_diagnostic(&mut stderr, kind, message);
 }
