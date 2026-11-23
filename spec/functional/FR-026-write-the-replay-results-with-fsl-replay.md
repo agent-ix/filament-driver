@@ -26,7 +26,7 @@ relationships:
 
 `fsl replay <request-file>` SHALL hand one `native-replay/1` request
 ([FSL FR-862](ix://agent-ix/filament-spec-language/FR-862)) to FSL's replay
-reader through `fsl_command::command::run_with_providers`, and write the one
+reader through `fsl_command::command::replay_with_limits`, and write the one
 FR-286 outcome document FSL returns for it: unchanged in machine mode, and in
 text mode as `fsl_inspect::render_outcome` renders that same document (FSL
 FR-865). Both success and refusal outcomes go to stdout, with nothing to

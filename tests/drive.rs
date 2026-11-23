@@ -979,7 +979,7 @@ fn integer_range_bound(package: &CheckedPackageV2, lower: &str, upper: &str) -> 
 
 /// The literal text value of member `name` in an `aggregate` node's `body`.
 fn member_literal<'a>(body: &'a CheckedTerm, name: &str) -> Option<&'a str> {
-    let CheckedTerm::Aggregate { members } = body else {
+    let CheckedTerm::Aggregate { members, .. } = body else {
         return None;
     };
     let binding = members.iter().find(|member| {

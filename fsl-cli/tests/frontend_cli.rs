@@ -3137,7 +3137,7 @@ fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
         .arg("--provider-config")
         .arg(&config)
         .args(["--format", "json"])
-        .env("FSL_TEST_PROVIDER_PARAMETER", parameter)
+        .env("FSL_TEST_PROVIDER_PARAMETER", parameter.clone())
         .output()
         .expect("run fsl analyze --provider-config");
     assert_eq!(output.status.code(), Some(22), "{output:?}");
@@ -3150,6 +3150,40 @@ fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
         document["items"][0].get("counterexample").is_none(),
         "{document}"
     );
+    // FR-022-AC-13: the item carries exactly one `invalid_result` diagnostic
+    // naming the closed reason, and text mode prints it right after the item.
+    let diagnostics = document["items"][0]["diagnostics"]
+        .as_array()
+        .unwrap_or_else(|| panic!("item diagnostics: {document}"));
+    assert_eq!(diagnostics.len(), 1, "{document}");
+    assert_eq!(diagnostics[0]["code"], "invalid_result", "{document}");
+    assert_eq!(diagnostics[0]["cause"], "invalid-value", "{document}");
+    assert_eq!(
+        diagnostics[0]["reason"], "claim-parameter-unassigned",
+        "{document}"
+    );
+    let text = Command::new(FSL)
+        .arg("analyze")
+        .arg(request.path())
+        .arg("--provider-config")
+        .arg(&config)
+        .env("FSL_TEST_PROVIDER_PARAMETER", parameter)
+        .output()
+        .expect("run fsl analyze --provider-config in text mode");
+    assert_eq!(text.status.code(), Some(22), "{text:?}");
+    assert!(text.stderr.is_empty(), "{text:?}");
+    let shown = String::from_utf8(text.stdout).expect("UTF-8 text");
+    let lines: Vec<&str> = shown.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with("  diagnostic: invalid_result/invalid-value"))
+        .unwrap_or_else(|| panic!("the diagnostic line: {shown}"));
+    assert_eq!(
+        lines[at],
+        "  diagnostic: invalid_result/invalid-value: provider counterexample unusable [claim-parameter-unassigned]: claim parameter has no assignment",
+        "{shown}"
+    );
+    assert!(at > 0 && !lines[at - 1].starts_with("  diagnostic"), "{shown}");
 }
 
 const EXTENSION_HEADER: &str =

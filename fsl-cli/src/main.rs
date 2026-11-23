@@ -11,6 +11,11 @@ mod cli;
 mod clocks;
 mod extension_set;
 mod options;
+#[allow(
+    dead_code,
+    reason = "QSL-2986: monitor preparation wiring is blocked on a MonitorTarget input in native-monitor/1 (FSL and driver); it remains tracked under QSL-2986"
+)]
+mod preparation;
 mod process_provider;
 mod provider_config;
 mod signals;

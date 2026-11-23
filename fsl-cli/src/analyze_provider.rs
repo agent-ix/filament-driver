@@ -10,9 +10,11 @@ use std::sync::{Arc, Mutex};
 
 use filament_driver::{ProcessProviderRequest, ProcessProviderSession as _, ProviderManifest};
 use filament_exact::{Cancel, Integer, NodeKey, Value};
-use fsl_analyze::provider::{ExternalProvider, ProviderRequest, ProviderTarget, ProviderVerdict};
+use fsl_analyze::provider::{
+    ExternalProvider, ProviderRequest, ProviderTarget, ProviderVerdict, UnusableCounterexample,
+};
 use fsl_foundation::{BackendId, RequestIndex};
-use fsl_replay::value_check::ValueTarget;
+use fsl_replay::value_check::{ParameterDomain, ValueTarget};
 use fsl_replay::WitnessValue;
 use fsl_semantics::check::wire_id::WireGraph;
 
@@ -201,7 +203,7 @@ impl<'a> PackageGraph<'a> {
         self.graph
             .get_or_init(|| WireGraph::of_package_bytes(self.bytes).map_err(|_| ()))
             .as_ref()
-            .map_err(|()| Unreadable::Unusable("the package graph is unreadable"))
+            .map_err(|()| Unreadable::Unusable(UnusableCounterexample::PackageGraphUnreadable))
     }
 }
 
@@ -234,22 +236,56 @@ fn counterexample(
                 && entry.get("backend").and_then(serde_json::Value::as_str)
                     == Some(backend.as_str())
         })?;
-    let parameters: Vec<NodeKey> = target
+    let parameters: Vec<ClaimParameter> = target
         .parameters()
         .iter()
-        .map(fsl_replay::value_check::TargetParameter::wire)
+        .map(|parameter| ClaimParameter {
+            key: parameter.wire(),
+            kind: ParameterKind::of(parameter.domain()),
+        })
         .collect();
     match assignment_values(entry, package, &parameters) {
         Ok(values) => Some(ProviderVerdict::Refuted {
             counterexample: values,
         }),
         Err(Unreadable::Malformed) => None,
-        // The empty assignment is wrong in arity for every claim that has a
-        // parameter, which FSL reports as `replay-parity`.
-        Err(Unreadable::Unusable(_)) if !parameters.is_empty() => Some(ProviderVerdict::Refuted {
-            counterexample: Vec::new(),
-        }),
-        Err(Unreadable::Unusable(_)) => None,
+        // FSL settles the item `inconclusive`/`replay-parity` without replay
+        // and writes the typed reason as the item's diagnostic (FSL FR-290).
+        Err(Unreadable::Unusable(reason)) => Some(ProviderVerdict::RefutedUnusable { reason }),
+    }
+}
+
+/// One parameter of the claim, as the assignment mapping checks it.
+struct ClaimParameter {
+    key: NodeKey,
+    kind: ParameterKind,
+}
+
+/// The kind of value a claim parameter takes from a provider's assignment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ParameterKind {
+    Boolean,
+    Integer,
+    /// A domain the value-validity arm does not read an assignment for.
+    Other,
+}
+
+impl ParameterKind {
+    fn of(domain: &ParameterDomain) -> Self {
+        match domain {
+            ParameterDomain::Boolean => Self::Boolean,
+            ParameterDomain::Integers(_) | ParameterDomain::Unbounded => Self::Integer,
+            _ => Self::Other,
+        }
+    }
+
+    fn admits(self, value: &Value) -> bool {
+        matches!(
+            (self, value),
+            (Self::Boolean, Value::Boolean(_))
+                | (Self::Integer, Value::Integer(_))
+                | (Self::Other, _)
+        )
     }
 }
 
@@ -258,9 +294,9 @@ fn counterexample(
 enum Unreadable {
     /// The provider's own data is malformed: not a refutation, nothing more.
     Malformed,
-    /// Well-formed data the driver cannot map to the claim. The reason is a
-    /// fixed string; it never carries text the provider supplied.
-    Unusable(&'static str),
+    /// Well-formed data the driver cannot map to the claim. The reason is
+    /// FSL's closed FR-290 set; it never carries text the provider supplied.
+    Unusable(UnusableCounterexample),
 }
 
 /// The runtime values of the provider's assignments, one per claim
@@ -273,36 +309,46 @@ enum Unreadable {
 ///
 /// # Errors
 ///
-/// [`Unreadable::Malformed`] for an unreadable assignment or a value that is
-/// not an `Integer` or `Boolean`; [`Unreadable::Unusable`] for an unreadable
-/// package graph, an id that does not resolve, a node that is not a parameter
-/// of the claim, or a claim parameter the provider assigns no value.
+/// [`Unreadable::Malformed`] for an unreadable assignment; [`Unreadable::Unusable`]
+/// for an unreadable package graph, an id that does not resolve, a node that is
+/// not a parameter of the claim, a claim parameter the provider assigns no value,
+/// or a value that is not of its parameter's kind (a value that is neither
+/// an `Integer` nor a `Boolean` is of the wrong kind: FSL FR-290 reasons).
 fn assignment_values(
     entry: &serde_json::Value,
     package: &PackageGraph<'_>,
-    parameters: &[NodeKey],
+    parameters: &[ClaimParameter],
 ) -> Result<Vec<Value>, Unreadable> {
     let entry = structural_entry(entry, package)?;
     let assignments =
         fsl_replay::read_plugin_assignments(&entry).map_err(|_| Unreadable::Malformed)?;
-    if assignments
-        .iter()
-        .any(|assignment| !parameters.contains(&assignment.parameter))
-    {
+    if assignments.iter().any(|assignment| {
+        !parameters
+            .iter()
+            .any(|parameter| parameter.key == assignment.parameter)
+    }) {
         return Err(Unreadable::Unusable(
-            "an assignment names a node that is not a parameter of the claim",
+            UnusableCounterexample::AssignmentNotClaimParameter,
         ));
     }
-    parameters
-        .iter()
-        .map(|parameter| {
-            let assignment = assignments
-                .iter()
-                .find(|assignment| &assignment.parameter == parameter)
+    let mut assigned = Vec::with_capacity(parameters.len());
+    for parameter in parameters {
+        let assignment = assignments
+            .iter()
+            .find(|assignment| assignment.parameter == parameter.key)
+            .ok_or(Unreadable::Unusable(
+                UnusableCounterexample::ClaimParameterUnassigned,
+            ))?;
+        assigned.push((parameter.kind, &assignment.value));
+    }
+    assigned
+        .into_iter()
+        .map(|(kind, assigned)| {
+            value(assigned)
+                .filter(|value| kind.admits(value))
                 .ok_or(Unreadable::Unusable(
-                    "a parameter of the claim has no assignment",
-                ))?;
-            value(&assignment.value).ok_or(Unreadable::Malformed)
+                    UnusableCounterexample::ParameterValueKindMismatch,
+                ))
         })
         .collect()
 }
@@ -362,7 +408,7 @@ fn structural_entry(
             // A parameter that is no node id is the reader's to refuse as malformed.
             if let Some(parameter) = assignment.get_mut("parameter").filter(|p| p.is_object()) {
                 *parameter = package.get()?.structural_value(parameter).map_err(|_| {
-                    Unreadable::Unusable("a node id does not resolve in the package")
+                    Unreadable::Unusable(UnusableCounterexample::NodeIdUnresolved)
                 })?;
             }
         }
@@ -377,7 +423,10 @@ fn structural_entry(
     reason = "a failed assertion is the test failure report"
 )]
 mod tests {
-    use super::{assignment_values, PackageGraph, Unreadable};
+    use super::{
+        assignment_values, ClaimParameter, PackageGraph, ParameterKind, Unreadable,
+        UnusableCounterexample,
+    };
     use filament_exact::{Cancel, Integer, NodeKey, Value};
     use fsl_foundation::SourceIdentity;
     use fsl_replay::spine::{check, parse, select, DependencyInput, ParseRequest, SpineLimits};
@@ -452,7 +501,16 @@ mod tests {
         fsl_foundation::node_wire::node_key_from_json(&structural).expect("node key")
     }
 
-    fn unusable(result: Result<Vec<Value>, Unreadable>) -> &'static str {
+    fn claim(keys: &[NodeKey]) -> Vec<ClaimParameter> {
+        keys.iter()
+            .map(|key| ClaimParameter {
+                key: key.clone(),
+                kind: ParameterKind::Integer,
+            })
+            .collect()
+    }
+
+    fn unusable(result: Result<Vec<Value>, Unreadable>) -> UnusableCounterexample {
         match result {
             Err(Unreadable::Unusable(reason)) => reason,
             other => panic!("expected an unusable counterexample, got {other:?}"),
@@ -466,7 +524,7 @@ mod tests {
     fn a_held_form_parameter_is_read_as_a_refutation() {
         let (bytes, parameters) = package();
         let graph = PackageGraph::new(&bytes);
-        let claim = [key_of(&bytes, &parameters[0])];
+        let claim = claim(&[key_of(&bytes, &parameters[0])]);
         let values = assignment_values(&entry(&[&parameters[0]]), &graph, &claim)
             .expect("the assignment is read");
         assert!(
@@ -475,48 +533,89 @@ mod tests {
         );
     }
 
-    /// Trace: FR-022-AC-9; an assignment naming a node that is not a parameter
-    /// of the claim, or no node of the package, is unusable with a fixed reason.
-    #[trace("TC-036", "FR-022-AC-9")]
+    /// Trace: FR-022-AC-13; an assignment naming a node that is not a
+    /// parameter of the claim, or no node of the package, is unusable with
+    /// FSL's typed reason.
+    #[trace("TC-036", "FR-022-AC-13")]
     #[test]
     fn an_assignment_naming_another_node_is_unusable_with_a_reason() {
         let (bytes, parameters) = package();
         let graph = PackageGraph::new(&bytes);
-        let claim = [key_of(&bytes, &parameters[0])];
+        let claim = claim(&[key_of(&bytes, &parameters[0])]);
         let reason = unusable(assignment_values(&entry(&[&parameters[1]]), &graph, &claim));
-        assert_eq!(
-            reason,
-            "an assignment names a node that is not a parameter of the claim"
-        );
+        assert_eq!(reason, UnusableCounterexample::AssignmentNotClaimParameter);
         let outside = serde_json::json!({"ordinal": 0, "package": "held", "path": ["value", {"node": 999_999}]});
         let reason = unusable(assignment_values(&entry(&[&outside]), &graph, &claim));
-        assert_eq!(reason, "a node id does not resolve in the package");
+        assert_eq!(reason, UnusableCounterexample::NodeIdUnresolved);
     }
 
-    /// Trace: FR-022-AC-9; a claim parameter the provider assigns no value is
+    /// Trace: FR-022-AC-13; a claim parameter the provider assigns no value is
     /// named apart from an assignment to a node that is no parameter.
-    #[trace("TC-036", "FR-022-AC-9")]
+    #[trace("TC-036", "FR-022-AC-13")]
     #[test]
     fn a_claim_parameter_without_an_assignment_is_unusable_with_its_own_reason() {
         let (bytes, parameters) = package();
         let graph = PackageGraph::new(&bytes);
-        let claim = [
+        let claim = claim(&[
+            key_of(&bytes, &parameters[0]),
+            key_of(&bytes, &parameters[1]),
+        ]);
+        let reason = unusable(assignment_values(&entry(&[&parameters[0]]), &graph, &claim));
+        assert_eq!(reason, UnusableCounterexample::ClaimParameterUnassigned);
+    }
+
+    /// Trace: FR-022-AC-13; an assigned value of another kind than its
+    /// parameter is unusable with its own reason, after an unassigned
+    /// parameter by FSL FR-290's priority.
+    #[trace("TC-036", "FR-022-AC-13")]
+    #[test]
+    fn a_value_of_the_wrong_kind_is_unusable_with_its_own_reason() {
+        let (bytes, parameters) = package();
+        let graph = PackageGraph::new(&bytes);
+        let keys = [
             key_of(&bytes, &parameters[0]),
             key_of(&bytes, &parameters[1]),
         ];
-        let reason = unusable(assignment_values(&entry(&[&parameters[0]]), &graph, &claim));
-        assert_eq!(reason, "a parameter of the claim has no assignment");
+        let boolean = |parameter: &serde_json::Value| {
+            serde_json::json!({"parameter": parameter, "value": {"type": "boolean", "value": true}})
+        };
+        let entry = serde_json::json!({"request_index": 0, "backend": "p", "counterexample": {
+            "type": "assignments", "values": [
+                boolean(&parameters[0]),
+                serde_json::json!({"parameter": parameters[1],
+                    "value": {"type": "integer", "value": "0"}}),
+            ]}});
+        let reason = unusable(assignment_values(&entry, &graph, &claim(&keys)));
+        assert_eq!(reason, UnusableCounterexample::ParameterValueKindMismatch);
+        let mixed = [
+            ClaimParameter {
+                key: keys[0].clone(),
+                kind: ParameterKind::Boolean,
+            },
+            ClaimParameter {
+                key: keys[1].clone(),
+                kind: ParameterKind::Integer,
+            },
+        ];
+        let values = assignment_values(&entry, &graph, &mixed).expect("each kind matches");
+        assert_eq!(values.len(), 2);
+        let both_missing = unusable(assignment_values(
+            &self::entry(&[&parameters[1]]),
+            &graph,
+            &mixed,
+        ));
+        assert_eq!(both_missing, UnusableCounterexample::ClaimParameterUnassigned);
     }
 
-    /// Trace: FR-022-AC-9; a provider id carrying an ESC byte and ten thousand
-    /// characters reaches no reason: the reasons are fixed, short and free of
-    /// control bytes.
-    #[trace("TC-036", "FR-022-AC-9")]
+    /// Trace: FR-022-AC-13; a provider id carrying an ESC byte and ten
+    /// thousand characters reaches no reason: the reason is one of FSL's
+    /// closed spellings.
+    #[trace("TC-036", "FR-022-AC-13")]
     #[test]
     fn provider_text_never_reaches_a_reason() {
         let (bytes, parameters) = package();
         let graph = PackageGraph::new(&bytes);
-        let claim = [key_of(&bytes, &parameters[0])];
+        let claim = claim(&[key_of(&bytes, &parameters[0])]);
         let hostile = format!("held\u{1b}[31m{}", "A".repeat(10_000));
         let ids = [
             serde_json::json!({"ordinal": 0, "package": hostile, "path": ["value", {"node": 999_999}]}),
@@ -524,9 +623,8 @@ mod tests {
         ];
         for id in &ids {
             let reason = unusable(assignment_values(&entry(&[id]), &graph, &claim));
-            assert!(reason.len() < 200, "{}", reason.len());
-            assert!(!reason.chars().any(char::is_control), "{reason:?}");
-            assert!(!reason.contains("AAAA"), "{reason:?}");
+            assert_eq!(reason, UnusableCounterexample::NodeIdUnresolved);
+            assert_eq!(reason.as_str(), "node-id-unresolved");
         }
     }
 }

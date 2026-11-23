@@ -126,7 +126,7 @@ fn term_at<'a>(
         .ok_or_else(|| failure(MonitorLocusErrorCode::UnknownNode, node, path))?;
     for index in path {
         term = match term {
-            CheckedTerm::Aggregate { members } => members.get(*index),
+            CheckedTerm::Aggregate { members, .. } => members.get(*index),
             CheckedTerm::Application { arguments, .. } => arguments.get(*index),
             CheckedTerm::Binding { value, .. } if *index == 0 => Some(value.as_ref()),
             _ => None,
@@ -169,7 +169,7 @@ fn locus(
 }
 
 fn named_value<'a>(term: &'a CheckedTerm, name: &str) -> Option<(usize, &'a CheckedTerm)> {
-    let CheckedTerm::Aggregate { members } = term else {
+    let CheckedTerm::Aggregate { members, .. } = term else {
         return None;
     };
     members
@@ -211,7 +211,7 @@ pub fn target_mismatch_at(
         .ok_or_else(|| failure(MonitorLocusErrorCode::InvalidBodyPath, root, &[]))?;
     let mut path = vec![slot, 0];
     if let Some(index) = buffer_index {
-        let CheckedTerm::Aggregate { members } = value else {
+        let CheckedTerm::Aggregate { members, .. } = value else {
             return Err(failure(MonitorLocusErrorCode::InvalidBodyPath, root, &path));
         };
         let row = members

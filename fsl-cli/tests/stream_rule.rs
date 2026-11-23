@@ -132,13 +132,15 @@ fn analyze_limit_overrides_the_replay_read_bound() {
 #[trace("TC-010", "FR-003-AC-11")]
 fn unavailable_unknown_malformed_and_duplicate_limits_refuse_before_work() {
     let directory = empty_directory();
-    for verb in ["analyze", "monitor", "replay"] {
-        let cases: [(&[&str], &str); 6] = [
-            (&["--limit", "s1.nodes=5"], "unavailable for the `"),
-            (
-                &["--limit", "accounting.work_units=1"],
-                "unavailable for the `",
-            ),
+    // Each operation's recognized-but-unavailable setting (FSL FR-255).
+    for (verb, unavailable_setting) in [
+        ("analyze", "monitor.preparation_storage"),
+        ("monitor", "replay.input_bytes"),
+        ("replay", "monitor.preparation_storage"),
+    ] {
+        let unavailable_operand = format!("{unavailable_setting}=5");
+        let cases: [(&[&str], &str); 5] = [
+            (&["--limit", &unavailable_operand], "unavailable for the `"),
             (&["--limit", "nosuch.setting=1"], "nosuch.setting"),
             (&["--limit", "s1.nodes"], "s1.nodes"),
             (&["--limit", "s1.nodes=x"], "s1.nodes=x"),
@@ -181,41 +183,29 @@ fn unavailable_unknown_malformed_and_duplicate_limits_refuse_before_work() {
                 verb,
                 "nosuch-request.json",
                 "--limit",
-                "s1.nodes=5",
+                &unavailable_operand,
                 "--format",
                 "json",
             ],
         );
-        assert_eq!(
-            message(&document(&unavailable)),
-            format!("limit setting `s1.nodes` is unavailable for the `{verb}` operation")
+        let shown = message(&document(&unavailable));
+        assert!(
+            shown.starts_with(&format!(
+                "limit setting `{unavailable_setting}` is unavailable for the `{verb}` operation; settings this command accepts, by stage: "
+            )),
+            "{shown}"
         );
+        assert!(!shown.contains("nosuch-request.json"), "{shown}");
     }
 }
 
-/// FR-003-AC-11: `analyze` accepts the one setting FSL exposes and reaches
-/// its request file; `monitor` and `replay` expose none to a caller.
+/// FR-003-AC-12: `replay.input_bytes` is exposed by `analyze` and `replay`,
+/// whose requests are then read, and is unavailable to `monitor`.
 #[test]
-#[trace("TC-010", "FR-003-AC-11")]
-fn replay_input_bytes_is_accepted_by_analyze_only() {
+#[trace("TC-010", "FR-003-AC-12")]
+fn replay_input_bytes_is_accepted_by_analyze_and_replay_not_monitor() {
     let directory = empty_directory();
-    let analyze = fsl_in(
-        directory.path(),
-        &[
-            "analyze",
-            "nosuch-request.json",
-            "--limit",
-            "replay.input_bytes=1",
-            "--format",
-            "json",
-        ],
-    );
-    assert_eq!(analyze.status.code(), Some(20), "{analyze:?}");
-    assert!(
-        message(&document(&analyze)).contains("nosuch-request.json"),
-        "{analyze:?}"
-    );
-    for verb in ["monitor", "replay"] {
+    for verb in ["analyze", "replay"] {
         let output = fsl_in(
             directory.path(),
             &[
@@ -227,11 +217,81 @@ fn replay_input_bytes_is_accepted_by_analyze_only() {
                 "json",
             ],
         );
-        assert!(output.stderr.is_empty(), "{output:?}");
-        assert_eq!(
-            message(&document(&output)),
-            format!("limit setting `replay.input_bytes` is unavailable for the `{verb}` operation")
+        assert_eq!(output.status.code(), Some(20), "{output:?}");
+        assert!(
+            message(&document(&output)).contains("nosuch-request.json"),
+            "{verb}: {output:?}"
         );
+    }
+    let output = fsl_in(
+        directory.path(),
+        &[
+            "monitor",
+            "nosuch-request.json",
+            "--limit",
+            "replay.input_bytes=1",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(
+        message(&document(&output))
+            .starts_with("limit setting `replay.input_bytes` is unavailable for the `monitor` operation"),
+        "{output:?}"
+    );
+}
+
+/// FR-003-AC-12: each of `analyze`, `monitor` and `replay` exposes exactly
+/// FSL's `CommandLimits` set for its operation and every accounting
+/// counter; each accepted operand reads the request file, and a setting
+/// outside the set refuses before it.
+#[test]
+#[trace("TC-010", "FR-003-AC-12")]
+fn each_operation_accepts_its_exact_command_limit_set() {
+    use fsl_command::command::{CommandLimits, MonitorPreparationLimits};
+    use fsl_foundation::{AccountingSetting, Setting, SettingName};
+
+    let directory = empty_directory();
+    let monitor = CommandLimits::monitor(MonitorPreparationLimits { work: 1, storage: 1 });
+    let operations = [
+        ("analyze", CommandLimits::analyze()),
+        ("monitor", monitor),
+        ("replay", CommandLimits::replay()),
+    ];
+    for (verb, limits) in &operations {
+        let names = Setting::ALL
+            .iter()
+            .map(|setting| SettingName::Stage(*setting))
+            .chain(
+                AccountingSetting::ALL
+                    .iter()
+                    .map(|setting| SettingName::Accounting(*setting)),
+            );
+        for name in names {
+            let operand = format!("{}=7", name.name());
+            let output = fsl_in(
+                directory.path(),
+                &[verb, "nosuch-request.json", "--limit", &operand, "--format", "json"],
+            );
+            let shown = message(&document(&output));
+            let accepted = match name {
+                SettingName::Stage(setting) => limits.exposes(setting),
+                SettingName::Accounting(_) => true,
+            };
+            assert_eq!(output.status.code(), Some(20), "{verb} {operand}: {shown}");
+            if accepted {
+                assert!(shown.contains("nosuch-request.json"), "{verb} {operand}: {shown}");
+            } else {
+                assert!(
+                    shown.starts_with(&format!(
+                        "limit setting `{}` is unavailable for the `{verb}` operation",
+                        name.name()
+                    )),
+                    "{verb} {operand}: {shown}"
+                );
+            }
+        }
     }
 }
 

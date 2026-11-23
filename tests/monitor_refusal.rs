@@ -212,7 +212,7 @@ fn selected<'a>(
 ) -> &'a CheckedTerm {
     path.iter()
         .fold(package.term(node).unwrap(), |term, index| match term {
-            CheckedTerm::Aggregate { members } => &members[*index],
+            CheckedTerm::Aggregate { members, .. } => &members[*index],
             CheckedTerm::Application { arguments, .. } => &arguments[*index],
             CheckedTerm::Binding { value, .. } => {
                 assert_eq!(*index, 0);

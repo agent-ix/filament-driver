@@ -251,7 +251,6 @@ fn explicit_empty_items_settle_no_items() -> Result<(), ContractError> {
 /// FSL FR-620 default items; FSL FR-483 and FR-711-AC-2 (a finite bound is
 /// available, so each operation contract settles `requires-bound`).
 #[test]
-#[ignore = "QSL-2913: operation contracts settle unsupported/unbounded-extent although a finite bound is available; FR-483 says requires-bound"]
 fn omitted_items_default_to_every_claim_and_operation_contracts_require_a_bound(
 ) -> Result<(), ContractError> {
     let (case, mut request) = setup()?;
