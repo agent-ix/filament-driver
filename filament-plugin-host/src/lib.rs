@@ -2213,7 +2213,7 @@ mod tests {
         };
         assert!(matches!(
             error.primary_cause(),
-            PluginError::Frame(FrameError::TruncatedLength)
+            PluginError::Exited(status) if status.code() == Some(17)
         ));
 
         let arguments = [OsString::from("stderr")];
