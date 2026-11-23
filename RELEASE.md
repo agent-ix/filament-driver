@@ -21,6 +21,64 @@ Only the driver tag creates downloadable `fsl` release archives. The examples ta
 
 Before the first tag, merge and freeze the release pin updates. FSL main at `5275e5086fec403c4d1a6bce25ab7c3660ea5716` uses specification `01f8dd31b8cc540418a4858543aed7231a1ed1ee` and contract IR `14c06b047b6a3b23a4da53723574ad7ce49ba246`. Codegen PR #888 merged as `ecbc3a4c05a0e76152872fce1bd4c0c7af96a1cb`, moving its FSL dependencies from `7713d248be656715cee7ecdac50106991f0158b4` to the FSL revision. Driver PR #244 merged as `2f5c2a228ee0a273498997db97d3b20b2d645727`, moving its FSL pin from `86acfdeedabe40674067342aaf2f639d48fc15f3` to that same SHA. The driver must pin codegen at `ecbc3a4c05a0e76152872fce1bd4c0c7af96a1cb`; its Cargo.lock must resolve the same dependency cohort. Do not tag a dependent repository until its pin update is merged and the release candidate has passed its required gate.
 
+## One-pass candidate verification
+
+After all pin moves are merged, freeze the driver candidate commit. Record the full 40-character SHA as `DRIVER_SHA`; paste that exact value into the Titan handoff and the source image build. Do not substitute a branch name or move the candidate after freezing it.
+
+```sh
+cd /home/peter/dev/filament-driver
+test -z "$(git status --porcelain)"
+git status --short
+git rev-parse HEAD
+```
+
+On Titan, check out that frozen commit. Run the workspace compile first, then only the named alpha CLI proofs:
+
+```sh
+cd /home/peter/dev/filament-driver
+git fetch origin main
+export DRIVER_SHA=PASTE_FROZEN_40_CHARACTER_SHA_HERE
+git checkout "$DRIVER_SHA"
+test "$(git rev-parse HEAD)" = "$DRIVER_SHA"
+CARGO_BUILD_JOBS=2 cargo check --locked --workspace --all-targets
+CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test cli_contract run_paid_short_json_contains_the_state_rule_witness -- --exact
+CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test cli_contract run_charge_changes_total_json_contains_the_frame_witness -- --exact
+CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test frontend_cli timed_analyze::analyze_zone_deadline_holds -- --exact
+CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test frontend_cli timed_analyze::analyze_zone_deadline_refuted -- --exact
+```
+
+Build the candidate pair with the same `dist` profile used by the release workflow:
+
+```sh
+CARGO_BUILD_JOBS=2 cargo build --locked --profile dist -p fsl-cli --bin fsl
+CARGO_BUILD_JOBS=2 cargo build --locked --profile dist -p filament-plugin-host --bin fsl-plugin-launch
+```
+
+Run the candidate-mode journey with the Ubuntu 26.04 baseline. `FSL_BINARY` points to the just-built candidate; leave `FSL_RELEASE_BINARY` unset.
+
+```sh
+CARGO_BUILD_JOBS=2 make alpha-journey-gate \
+  FILAMENT_DOCS_DIR=/home/peter/dev/filament-docs \
+  FILAMENT_EXAMPLES_DIR=/home/peter/dev/filament-examples \
+  FSL_BINARY="$PWD/target/dist/fsl" \
+  ALPHA_JOURNEY_BASE_IMAGE=ubuntu:26.04
+```
+
+From the examples checkout, build and smoke a local source-mode image on Titan. Set `DRIVER_SHA` to the frozen full SHA. This local Docker build does not publish an image; the Dockerfile applies its own bounded release profile settings to the source build.
+
+```sh
+cd /home/peter/dev/filament-examples
+docker build --pull -f image/Dockerfile \
+  --build-arg UBUNTU=26.04 \
+  --build-arg FSL_SOURCE=source \
+  --build-arg FSL_REVISION="$DRIVER_SHA" \
+  --build-arg IMAGE_VERSION=0.2.0 \
+  -t filament-toolchain:source-candidate .
+docker run --rm filament-toolchain:source-candidate smoke.sh
+```
+
+After the Titan gates pass, stop for Draco's explicit go-ahead. Only then tag the repositories in the release order above, one repository at a time. Recheck each latest tag and candidate commit immediately before that tag push; verify the remote tag before proceeding. A driver tag publishes the GitHub release, and the examples image workflow publishes its requested image tags. Do not create either tag or publish either artifact before the go-ahead.
+
 ## Tag and verify one repository at a time
 
 For each row, enter that repository's checkout and substitute its tag. Check the latest tag immediately before tagging. Confirm the reviewed commit is checked out, then create and push the tag:
