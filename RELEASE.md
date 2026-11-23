@@ -43,15 +43,12 @@ For this release, keep these authoritative values aligned with `0.2.0` where app
 
 | Repository | Version source | Required value or action |
 | --- | --- | --- |
-| Driver | `Cargo.toml` package version | `0.2.0`; workflow reads Cargo metadata |
-| Driver | `Cargo.lock` root package entry | Regenerated from `Cargo.toml` |
-| Driver | `.github/workflows/release.yml` | Tag must match package version |
-| Examples | `image/Dockerfile` `FSL_VERSION` | `0.2.0` release archive |
-| Examples | `.github/workflows/image.yml` `tags`, `fsl_version` | `0.2.0` |
-| Examples | `image/README.md` | Keep examples in sync with image defaults |
-| Docs | `src/content/docs/fsl/releases/v0.2.0.md` | Release notes for this identity |
-| Docs | `src/content/docs/fsl/guides/set-up-your-environment.md` | Show `0.2.0` and the final full FSL SHA |
-| Docs | `src/content/docs/fsl/releases/v0.2.0.md` | Show the same CLI version and FSL SHA |
+| Driver | [manifest](Cargo.toml), [lockfile](Cargo.lock) | `0.2.0`; regenerate lockfile |
+| Driver | Release workflow | Tag matches package version |
+| Examples | Dockerfile and image workflow | Defaults use `0.2.0` |
+| Examples | Image README | Keep examples aligned with defaults |
+| Docs | [release notes](https://github.com/agent-ix/filament-docs/blob/main/src/content/docs/fsl/releases/v0.2.0.md) | Release page for this identity |
+| Docs | [setup guide](https://github.com/agent-ix/filament-docs/blob/main/src/content/docs/fsl/guides/set-up-your-environment.md) | Show CLI version and full FSL SHA |
 | Template | No package version field | Tag the reviewed template commit |
 
 `filament-spec-language` has package version `0.3.0`; repository tag `v0.3.0` matches it. The standard uses dynamic package versioning. Contract IR and codegen repository tags are independent repository tags; do not change their Cargo package versions solely to make them equal the driver version. Before a later alpha, search these files and the image configuration for the selected version, update only the authoritative values, then regenerate Cargo.lock for manifest changes.
@@ -78,14 +75,16 @@ The examples image workflow is different: its manual dispatch builds and pushes 
 
 ## Released-mode journey gate
 
-Run this on Titan after the driver release assets, docs tag, and examples tag are available. Prerequisites: Cargo and the pinned Rust toolchain, Docker running, matching local docs and examples checkouts, and the extracted Linux GNU `fsl` binary from the published driver archive. Use the actual released artifact, not a local candidate:
+Run this on Titan after the driver release assets, docs tag, and examples tag are available. Prerequisites: Cargo and the pinned Rust toolchain, Docker running, host `readelf` from binutils, matching local docs and examples checkouts, and network access to pull Ubuntu 26.04. Use the actual released Linux GNU `fsl` binary, not a local candidate:
 
 ```sh
-tar -xzf fsl-v0.2.0-x86_64-unknown-linux-gnu.tar.gz fsl
+gh release download v0.2.0 --repo agent-ix/filament-driver \
+  --pattern fsl-v0.2.0-x86_64-unknown-linux-gnu.tar.gz --dir release
+tar -xzf release/fsl-v0.2.0-x86_64-unknown-linux-gnu.tar.gz -C release fsl
 make alpha-journey-gate \
   FILAMENT_DOCS_DIR=/home/peter/dev/filament-docs \
   FILAMENT_EXAMPLES_DIR=/home/peter/dev/filament-examples \
-  FSL_RELEASE_BINARY="$PWD/fsl" \
+  FSL_RELEASE_BINARY="$PWD/release/fsl" \
   ALPHA_JOURNEY_BASE_IMAGE=ubuntu:26.04
 ```
 
