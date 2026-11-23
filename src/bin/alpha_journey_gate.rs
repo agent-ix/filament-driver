@@ -11,6 +11,7 @@ use std::process::{Command, Output, Stdio};
 const INSTALL_PAGE: &str = "src/content/docs/fsl/guides/set-up-your-environment.md";
 const INSTALL_STEPS: &str = "install-test/steps.md";
 const TUTORIAL_DIR: &str = "src/content/docs/fsl/tutorials";
+const REFINEMENT_PAGE: &str = "src/content/docs/fsl/learn/refinement.md";
 
 #[derive(Debug, PartialEq, Eq)]
 enum OutputView {
@@ -928,6 +929,7 @@ fn tutorial_pages(docs: &Path, directory: &Path) -> Result<Vec<PathBuf>, String>
             pages.push(Path::new(TUTORIAL_DIR).join(file_name.as_ref()));
         }
     }
+    pages.push(Path::new(REFINEMENT_PAGE).to_path_buf());
     let protocols = docs.join("src/content/docs/fsl/learn/protocols.md");
     if protocols.is_file() {
         pages.push(Path::new("src/content/docs/fsl/learn/protocols.md").to_path_buf());
@@ -1859,6 +1861,54 @@ mod tests {
         let (examples, issues) = page_examples(Path::new("tutorial.md"), "```example bad\n```\n");
         assert!(examples.is_empty());
         assert_eq!(issues.len(), 1);
+    }
+
+    #[test]
+    fn tutorial_pages_includes_refinement_and_optional_probability_page() {
+        let root = std::env::temp_dir().join(format!(
+            "alpha-journey-tutorial-pages-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock is after the Unix epoch")
+                .as_nanos()
+        ));
+        let tutorials = root.join(TUTORIAL_DIR);
+        let learn = root.join("src/content/docs/fsl/learn");
+        fs::create_dir_all(&tutorials).expect("create tutorial fixture directory");
+        fs::create_dir_all(&learn).expect("create learn fixture directory");
+        fs::write(learn.join("refinement.md"), "refinement page")
+            .expect("write refinement fixture");
+        for index in 0..6 {
+            fs::write(
+                tutorials.join(format!("tutorial-existing-{index}.md")),
+                "tutorial page",
+            )
+            .expect("write existing tutorial fixture");
+        }
+
+        let without_probability =
+            tutorial_pages(&root, &tutorials).expect("pages without probability");
+        assert_eq!(without_probability.len(), 7);
+        assert!(without_probability.contains(&Path::new(REFINEMENT_PAGE).to_path_buf()));
+        assert!(!without_probability.iter().any(|page| {
+            page.file_name()
+                .is_some_and(|name| name == "tutorial-probability.md")
+        }));
+
+        fs::write(
+            tutorials.join("tutorial-probability.md"),
+            "probability page",
+        )
+        .expect("write probability fixture");
+        let with_probability = tutorial_pages(&root, &tutorials).expect("pages with probability");
+        assert_eq!(with_probability.len(), 8);
+        assert!(with_probability.iter().any(|page| {
+            page.file_name()
+                .is_some_and(|name| name == "tutorial-probability.md")
+        }));
+
+        fs::remove_dir_all(&root).expect("remove tutorial fixtures");
     }
 
     #[test]
