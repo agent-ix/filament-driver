@@ -146,10 +146,21 @@ fn help_lists_every_accepted_option() {
         ("check", options::EXTENSIONS),
         ("parse", options::EXTENSIONS),
         ("run", options::PROVIDER_LIMIT),
+        ("run", options::LIMIT),
+        ("check", options::LIMIT),
+        ("analyze", options::LIMIT),
+        ("monitor", options::LIMIT),
+        ("replay", options::LIMIT),
         ("inspect", options::HANDOFF),
     ] {
         let entry = options::entry(verb).expect("verb entry");
         assert!(entry.option(option).is_some(), "{verb} {option}");
+        if option == options::LIMIT {
+            assert!(
+                entry.option(option).is_some_and(|spec| spec.repeatable),
+                "{verb} {option} is repeatable"
+            );
+        }
     }
     for verb in ["analyze", "monitor", "replay", "export"] {
         assert!(

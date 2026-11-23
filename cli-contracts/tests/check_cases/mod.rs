@@ -62,13 +62,13 @@ fn source_locus(diagnostic: &Value, path: &str) {
 fn argv_error(output: &Captured, named: &str) {
     assert_eq!(output.0.status.code(), Some(20), "{output:?}");
     assert!(
-        output.0.stdout.is_empty(),
-        "argument usage errors have no primary result: {output:?}"
+        output.0.stderr.is_empty(),
+        "argument usage errors write nothing to stderr: {output:?}"
     );
     assert!(
         output
-            .stderr_text()
-            .expect("text diagnostic")
+            .stdout_text()
+            .expect("text refusal outcome")
             .contains(named),
         "{output:?}"
     );

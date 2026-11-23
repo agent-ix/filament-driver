@@ -50,13 +50,19 @@ fn fsl(arguments: &[&str]) -> Output {
     Command::new(FSL).args(arguments).output().expect("run fsl")
 }
 
-/// Assert a refusal that wrote nothing to stdout and did not panic.
-fn assert_refused_quietly(output: &Output, context: &str) {
+/// Assert a refusal that wrote its outcome to stdout, wrote nothing to stderr
+/// and did not panic (FR-002); return the stdout text.
+fn assert_refused_quietly(output: &Output, context: &str) -> String {
     assert_eq!(output.status.code(), Some(refusal_code()), "{context}");
-    assert!(output.stdout.is_empty(), "{context}: stdout must be empty");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.is_empty(), "{context}: refusal names the problem");
-    assert!(!stderr.contains("panicked"), "{context}: {stderr}");
+    assert!(
+        output.stderr.is_empty(),
+        "{context}: stderr must be empty: {:?}",
+        output.stderr
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    assert!(!stdout.is_empty(), "{context}: refusal names the problem");
+    assert!(!stdout.contains("panicked"), "{context}: {stdout}");
+    stdout
 }
 
 #[trace("TC-1262", "FR-287-AC-3")]
@@ -80,10 +86,16 @@ fn missing_and_extra_operands_are_refused_before_any_file_is_read() {
     ];
     for (verb, arguments) in cases {
         let output = fsl(arguments);
-        assert_refused_quietly(&output, &format!("{arguments:?}"));
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = assert_refused_quietly(&output, &format!("{arguments:?}"));
+        let header = if verb == "compile" { "package" } else { verb };
         assert!(
-            stderr.starts_with(&format!("usage: fsl {verb} ")),
+            stderr.starts_with(&format!(
+                "{header}: refusal (exit 20)\n<no-source>: invalid-request: usage: fsl {verb} "
+            )),
+            "{arguments:?}: {stderr}"
+        );
+        assert!(
+            stderr.ends_with('\n') && stderr.lines().count() == 2,
             "{arguments:?}: {stderr}"
         );
         assert!(
@@ -235,8 +247,7 @@ fn invalid_invocations_exit_20_and_the_next_valid_call_runs() {
     for (valid, invalid) in verbs {
         for (arguments, expected_error) in invalid {
             let output = fsl(arguments);
-            assert_refused_quietly(&output, &format!("{arguments:?}"));
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = assert_refused_quietly(&output, &format!("{arguments:?}"));
             assert!(stderr.contains(expected_error), "{arguments:?}: {stderr}");
             assert!(
                 !stderr.contains("could not read") && !stderr.contains("cannot read"),
@@ -267,6 +278,7 @@ fn invalid_os_string() -> std::ffi::OsString {
 }
 
 #[cfg(any(unix, windows))]
+#[trace("TC-049", "FR-002-AC-29")]
 #[trace("TC-1262", "FR-287-AC-6")]
 #[test]
 fn non_utf8_commands_and_labels_refuse() {
@@ -290,8 +302,14 @@ fn non_utf8_commands_and_labels_refuse() {
             .args(&arguments)
             .output()
             .expect("run fsl with invalid command or label encoding");
-        assert_refused_quietly(&output, &format!("{arguments:?}"));
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = if arguments.first() == Some(&invalid_os_string()) {
+            // No verb is recognized, so the refusal stays the driver's stderr line.
+            assert_eq!(output.status.code(), Some(refusal_code()));
+            assert!(output.stdout.is_empty(), "{arguments:?}");
+            String::from_utf8_lossy(&output.stderr).into_owned()
+        } else {
+            assert_refused_quietly(&output, &format!("{arguments:?}"))
+        };
         assert!(stderr.contains("UTF-8"), "{arguments:?}: {stderr}");
         assert!(
             !stderr.contains("could not read") && !stderr.contains("cannot read"),
@@ -713,7 +731,8 @@ fn request_byte_options_reach_owner_limits_and_compile_accepts_none() {
             "json",
         ]);
         assert_eq!(output.status.code(), Some(refusal_code()));
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(stderr.contains("unknown compile option"), "{stderr}");
         assert!(!stderr.contains("cannot read"), "{stderr}");
     }
@@ -771,7 +790,7 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
     assert_eq!(actual["operation"], "monitor");
     // QSL-2370: the configured provider is never ignored. An FSpec FR-561
     // document naming a plugin path that does not exist refuses naming it,
-    // exit 20 with empty stdout, before any stage runs or any plugin starts
+    // exit 20 with the refusal outcome on stdout and no stderr, before any stage runs or any plugin starts
     // (FSpec FR-561-AC-2, FR-006-AC-24).
     let config_path = directory.0.join("providers.json");
     let never_start = directory.0.join("never-start-provider");
@@ -791,8 +810,8 @@ fn clause_requests_use_the_core_monitor_document_and_never_ignore_configured_pro
         output.status.code(),
         Some(i32::from(Category::Refusal.exit_code()))
     );
-    assert!(output.stdout.is_empty(), "the refusal writes no document");
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let stderr = String::from_utf8_lossy(&output.stdout);
     assert!(stderr.contains("invalid-request"), "{stderr}");
     assert!(
         stderr.contains(never_start.display().to_string().as_str()),
@@ -1129,12 +1148,10 @@ fn analyze_checker_refusal_refuses_at_s3() {
     assert_ne!(code, "invalid-request", "the request itself is well formed");
     let text = request.run("text");
     assert_eq!(text.status.code(), Some(20));
-    assert!(text.stdout.is_empty());
-    let stderr = String::from_utf8_lossy(&text.stderr);
-    assert!(
-        stderr.starts_with(&format!("fsl analyze: {code}: ")),
-        "{stderr}"
-    );
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let stdout = String::from_utf8_lossy(&text.stdout);
+    assert!(stdout.starts_with("analyze: refusal (exit 20)"), "{stdout}");
+    assert!(stdout.contains(&format!(": {code}: ")), "{stdout}");
 }
 
 /// Provenance: QSL-2153.
@@ -1343,12 +1360,13 @@ fn analyze_malformed_request_is_typed_refusal() {
 
     let text = request.run("text");
     assert_eq!(text.status.code(), Some(20));
-    assert!(text.stdout.is_empty());
-    let stderr = String::from_utf8_lossy(&text.stderr);
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let stdout = String::from_utf8_lossy(&text.stdout);
     assert!(
-        stderr.starts_with("fsl analyze: invalid-request:"),
-        "{stderr}"
+        stdout.starts_with("analyze: refusal (exit 20)\n"),
+        "{stdout}"
     );
+    assert!(stdout.contains(": invalid-request: "), "{stdout}");
 
     for arguments in [
         &["analyze"][..],
@@ -1357,7 +1375,12 @@ fn analyze_malformed_request_is_typed_refusal() {
     ] {
         let output = fsl(arguments);
         assert_eq!(output.status.code(), Some(20), "{arguments:?}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.stderr.is_empty(),
+            "{arguments:?}: {:?}",
+            output.stderr
+        );
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(
             stderr.contains("usage: fsl analyze") || stderr.contains("unknown analyze option"),
             "{arguments:?}: {stderr}"
@@ -1381,7 +1404,12 @@ fn analyze_malformed_request_is_typed_refusal() {
     ] {
         let output = fsl(arguments);
         assert_eq!(output.status.code(), Some(20), "{arguments:?}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.stderr.is_empty(),
+            "{arguments:?}: {:?}",
+            output.stderr
+        );
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(
             stderr.contains("--provider-config"),
             "{arguments:?}: {stderr}"
@@ -1745,8 +1773,8 @@ fn analyze_provider_config_refuses_an_invalid_file() {
     for config in [missing, malformed] {
         let output = analyze_with_config(&request, &config);
         assert_eq!(output.status.code(), Some(20), "{}", config.display());
-        assert!(output.stdout.is_empty(), "{}", config.display());
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.stderr.is_empty(), "{}", config.display());
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(stderr.contains("provider configuration"), "{stderr}");
         assert!(
             stderr.contains(config.display().to_string().as_str()),
@@ -1806,8 +1834,8 @@ fn analyze_provider_limit_sets_the_request_deadline() {
             .output()
             .expect("run fsl analyze");
         assert_eq!(output.status.code(), Some(20), "{format}");
-        assert!(output.stdout.is_empty(), "{format}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.stderr.is_empty(), "{format}: {:?}", output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(
             stderr.contains("--provider-limit `deadline_ms=10s`"),
             "{stderr}"
@@ -2760,8 +2788,12 @@ fn check_takes_the_integer_division_law_from_its_option() {
         "json",
     ]);
     assert_eq!(twice.status.code(), Some(20));
-    assert!(twice.stdout.is_empty(), "no stdout byte");
-    assert!(String::from_utf8_lossy(&twice.stderr).contains("usage: fsl check"));
+    assert!(
+        twice.stderr.is_empty(),
+        "no stderr byte: {:?}",
+        twice.stderr
+    );
+    assert!(String::from_utf8_lossy(&twice.stdout).contains("usage: fsl check"));
 
     let headed = division_unit(&directory.0, true);
     let headed = headed.to_str().expect("UTF-8 path");
@@ -2791,7 +2823,8 @@ fn check_takes_the_integer_division_law_from_its_option() {
     for verb in ["run", "compile", "analyze", "prove", "monitor"] {
         let output = fsl(&[verb, "request.json", "--integer-division", "floor"]);
         assert_eq!(output.status.code(), Some(20), "{verb}: {output:?}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.stderr.is_empty(), "{verb}: {output:?}");
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(
             stderr.contains("unknown") || stderr.contains("--integer-division"),
             "{verb}: {stderr}"
@@ -2802,6 +2835,7 @@ fn check_takes_the_integer_division_law_from_its_option() {
     for flag in ["--integer-division", "--bogus"] {
         let output = fsl(&["prove", "request.json", flag, "floor", "--format", "json"]);
         assert_eq!(output.status.code(), Some(20), "{flag}: {output:?}");
+        assert!(output.stderr.is_empty(), "{flag}: {output:?}");
         let document: serde_json::Value =
             serde_json::from_slice(&output.stdout).expect("an outcome document");
         assert_eq!(document["operation"], "prove", "{document}");

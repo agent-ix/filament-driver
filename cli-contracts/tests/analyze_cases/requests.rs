@@ -65,10 +65,10 @@ fn malformed_wrong_format_and_duplicate_json_are_whole_request_refusals(
     }
     let text = case.run(&["analyze", "broken.json", "--format", "text"])?;
     assert_eq!(text.0.status.code(), Some(20));
-    assert!(text.0.stdout.is_empty());
-    assert!(text
-        .stderr_text()?
-        .starts_with("fsl analyze: invalid-request:"));
+    assert!(text.0.stderr.is_empty(), "{text:?}");
+    let rendered = text.stdout_text()?;
+    assert!(rendered.starts_with("analyze: refusal (exit 20)\n"), "{rendered}");
+    assert!(rendered.contains(": invalid-request:"), "{rendered}");
     Ok(())
 }
 
@@ -186,7 +186,10 @@ fn a_bare_dash_is_not_a_stdin_request_option() -> Result<(), ContractError> {
     let value = output.json()?;
     assert_eq!(value["operation"], "analyze");
     assert_eq!(value["diagnostics"][0]["code"], "invalid-request");
-    assert!(output.stderr_text()?.contains("unknown analyze option `-`"));
+    assert!(output.0.stderr.is_empty(), "{output:?}");
+    assert!(value["diagnostics"][0]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("unknown analyze option `-`")));
     Ok(())
 }
 

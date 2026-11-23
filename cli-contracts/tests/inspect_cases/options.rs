@@ -64,28 +64,28 @@ fn a_bare_inspect_path_reports_unsupported_in_default_text_explicit_text_and_dot
     ] {
         let output = case.run(&args)?;
         assert_eq!(output.0.status.code(), Some(21), "{output:?}");
+        assert!(output.0.stderr.is_empty(), "{output:?}");
+        let text = output.stdout_text()?;
+        assert!(text.starts_with("inspect: unsupported (exit 21)\n"), "{text}");
         assert!(
-            output.0.stdout.is_empty(),
-            "unrouted DOT must not fabricate a graph"
+            text.contains("fsl inspect: this build does not route the inspect operation (unsupported_operation)"),
+            "{text}"
         );
-        assert_eq!(output.stderr_text()?, "fsl inspect: this build does not route the inspect operation (unsupported_operation)\n");
+        assert!(!text.contains("digraph"), "unrouted DOT must not fabricate a graph");
     }
     Ok(())
 }
 
 fn argv_refusal(output: &Captured, named: &str) {
     assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-    let printed = format!(
-        "{}{}",
-        output.stdout_text().unwrap(),
-        output.stderr_text().unwrap()
-    );
+    assert!(output.0.stderr.is_empty(), "{output:?}");
+    let printed = output.stdout_text().unwrap();
     assert!(printed.contains(named), "{printed}");
     assert!(
         !printed.contains("handoff-read"),
         "arguments must be rejected before opening a handoff"
     );
-    if !output.0.stdout.is_empty() {
+    if output.0.stdout.starts_with(b"{") {
         let value = output.json().expect("machine-mode argument document");
         assert_eq!(value["operation"], "inspect");
         assert_eq!(value["category"], "refusal");
@@ -190,7 +190,7 @@ fn refused_handoff_formats_name_both_the_format_option_and_its_value() -> Result
     for format in ["dot", "xml"] {
         let output = case.run(&["inspect", "--handoff", "missing", "--format", format])?;
         argv_refusal(&output, format);
-        let diagnostic = format!("{}{}", output.stdout_text()?, output.stderr_text()?);
+        let diagnostic = output.stdout_text()?;
         assert!(diagnostic.contains("--format"), "{diagnostic}");
     }
     Ok(())

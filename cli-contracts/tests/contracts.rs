@@ -124,17 +124,14 @@ mod file_contracts {
     /// Trace: FR-025-AC-3
     /// Provenance: QSL-2468
     #[test]
-    fn raw_stderr_preserves_cli_argument_refusals() -> Result<(), ContractError> {
+    fn argument_refusals_write_their_text_outcome_to_stdout_only() -> Result<(), ContractError> {
         let case = CliCase::from_environment()?;
         let refused = case.run(&["monitor"])?;
         assert_eq!(refused.0.status.code(), Some(20));
-        assert!(refused.0.stdout.is_empty());
-        assert!(refused.stderr_text()?.contains("usage: fsl monitor"));
+        assert!(refused.0.stderr.is_empty(), "{refused:?}");
+        assert!(refused.stdout_text()?.contains("usage: fsl monitor"));
         assert!(matches!(refused.json(), Err(ContractError::Json(_))));
-        assert!(matches!(
-            refused.json_lines(),
-            Err(ContractError::EmptyJsonLines)
-        ));
+        assert!(matches!(refused.json_lines(), Err(ContractError::Json(_))));
         Ok(())
     }
 }

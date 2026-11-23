@@ -73,7 +73,7 @@ fn unbuilt_verb_without_operands_is_typed() {
 #[trace("TC-1082", "FSpec-FR-522-AC-1")]
 #[trace("TC-1584", "FR-624-AC-5")]
 #[test]
-fn unbuilt_verb_text_mode_names_the_verb_on_stderr() {
+fn unbuilt_verb_text_mode_names_the_verb_on_stdout() {
     for verb in UNROUTED {
         for arguments in [vec![verb], vec![verb, "--format", "text"]] {
             let output = fsl(&arguments);
@@ -82,12 +82,19 @@ fn unbuilt_verb_text_mode_names_the_verb_on_stderr() {
                 Some(unsupported_code()),
                 "{arguments:?}"
             );
-            assert!(output.stdout.is_empty(), "{arguments:?}");
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                output.stderr.is_empty(),
+                "{arguments:?}: {:?}",
+                output.stderr
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
             let expected =
                 format!("fsl {verb}: this build does not route the {verb} operation (unsupported_operation)");
-            assert_eq!(stderr.lines().count(), 1, "{arguments:?}: {stderr}");
-            assert!(stderr.contains(&expected), "{arguments:?}: {stderr}");
+            assert!(
+                stdout.starts_with(&format!("{verb}: unsupported (exit 21)\n")),
+                "{arguments:?}: {stdout}"
+            );
+            assert!(stdout.contains(&expected), "{arguments:?}: {stdout}");
         }
     }
 }
@@ -97,9 +104,11 @@ fn unbuilt_verb_text_mode_names_the_verb_on_stderr() {
 fn inspect_with_dot_format_is_not_silent() {
     let output = fsl(&["inspect", "--format", "dot"]);
     assert_eq!(output.status.code(), Some(unsupported_code()));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("inspect"));
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("inspect"));
 }
 
+#[trace("TC-049", "FR-002-AC-29")]
 #[trace("TC-1082", "FSpec-FR-301-AC-4")]
 #[test]
 fn unknown_verb_is_usage_error() {
