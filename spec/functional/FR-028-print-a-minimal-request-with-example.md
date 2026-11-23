@@ -71,10 +71,14 @@ tested against it.
 ## Definitions
 
 - Required member: a member the verb's FSL reader refuses the request for
-  lacking. It includes each member that has no default and each member of a
-  one-of group that the reader requires exactly one of. For `run` the group is
-  `program` or `package` (the reader refuses a request with neither as `a
-  request selects exactly one of program and package`).
+  lacking, that has no default and is not in a one-of group.
+- One-of group: members of which the reader requires exactly one, such as
+  `program` or `package` for `run` (the reader refuses a request with neither
+  as `a request selects exactly one of program and package`). A group is not a
+  required member; a request lacking the whole group lacks the group.
+- Missing-member pointer form: a missing required member is its JSON pointer,
+  for example `/request/models`; a missing one-of group is its members'
+  pointers joined by ` or `, for example `/request/program or /request/package`.
 - Invalid member: a present member the FSL reader refuses because it is
   unknown to the format, has the wrong JSON kind, is outside its value
   domain, or conflicts with another member (a one-of group with two members).
@@ -102,8 +106,8 @@ tested against it.
   `fsl export --example-evidence` SHALL write a `native-run/1` request that
   carries an `export_evidence` member.
 - Each example SHALL be one object whose members are `format` and `request`;
-  its `request` SHALL carry every required member, one member of each one-of
-  group, and no other member.
+  its `request` SHALL carry every required member, exactly one member of each
+  one-of group, and no other member.
 - An example SHALL be a valid request for its verb: saved to a file and given
   to the same verb (`fsl export --evidence <file>` for the evidence example),
   it is not refused at stage `envelope` or `request`. The files an example
@@ -117,13 +121,13 @@ tested against it.
   first (step 1).
 - If a request lacks required members, then FSL's refusal SHALL be
   `invalid-request`, exit 20, and its diagnostic message SHALL list every
-  missing required member at once as JSON pointers from the document root, in
-  the order the verb's example lists them. A missing `format` or `request` is
+  missing required member and each missing one-of group at once, in the
+  missing-member pointer form, in the order the verb's example lists them. A missing `format` or `request` is
   reported the same way. The message form is FSL's.
 - If a request carries an invalid member, then FSL's refusal message SHALL
   contain the JSON pointer of that member.
 - If a request's `format` is not one the verb reads, then FSL's refusal SHALL
-  name the format it read and list every format the verb reads. The formats a
+  be `unknown_wire` and SHALL name the format it read and list every format the verb reads. The formats a
   verb reads are those its FSL reader accepts (FSL FR-100 for `run`, FR-027
   for `compile`, FR-620, FR-644, FR-862 and FR-1015 for the others). The
   export request is `native-run/1`; `native-export/1` is not a format, so no
@@ -145,11 +149,11 @@ tested against it.
 | FR-028-AC-2 | `fsl export --example` writes a `native-run/1` request whose `request` has an `export` member and no `export_evidence` member; `fsl export --example-evidence` writes one with an `export_evidence` member and no `export` member; both exit 0 with empty stderr. `fsl export --evidence <file>` is unchanged: it still takes one value. | Test (TC-050) |
 | FR-028-AC-3 | Over an empty directory, each verb's example saved to a file `R` and given to the same verb (`fsl export --evidence R` for the evidence example) is refused at stage `file` naming a file the example names, or succeeds; it is never refused at stage `envelope` or `request`. The `run` example carries exactly one of `program` and `package`, so it is never refused `a request selects exactly one of program and package`. | Test (TC-050) |
 | FR-028-AC-4 | `fsl run --example R`, `fsl run --example --limit s1.nodes=1`, `fsl compile --example --output m.pkg` and `fsl export --example --example-evidence` each refuse `invalid-request`, exit 20, naming `--example` and the other argument, and read no file. `fsl run --example --help` writes help and exits 0; `fsl run --example --format bogus` refuses naming `--format` and `bogus`. `fsl check --example`, `fsl parse --example`, `fsl format --example`, `fsl inspect --example` and `fsl run --example-evidence` each refuse `invalid-request`, exit 20, naming the option as unknown. For every request verb, `--example` (and for `export`, `--example-evidence`) appears on its own line in the verb's `<verb> options:` section and in root help. | Test (TC-050) |
-| FR-028-AC-5 | Over each of `{}`, `{"format":"native-run/1"}` and, for each request verb, `{"format":"<its format>","request":{}}`, the verb refuses `invalid-request`, exit 20, with a diagnostic message that contains, once each, the JSON pointer of every required member the verb's FSL reader reports missing (`/format` and `/request` for `{}`; `/request` for the second; for the third every required member under `/request`, in example order, including `/request/models` for `run`), and contains no line or column. The set compared is FSL's reader's, so a reader that reports only the first missing member fails. | Test (TC-050) |
+| FR-028-AC-5 | Over each of `{}`, `{"format":"native-run/1"}` and, for each request verb, `{"format":"<its format>","request":{}}`, the verb refuses `invalid-request`, exit 20, with a diagnostic message that contains, once each, the expected pointers and contains no line or column. The expected pointers are derived from the verb's own `--example` output, not from FSL's reader: for `{}` they are `/format` and `/request`; for the second `/request`; for the third, one pointer for each member of the example's `request`, in the example's order, where the example's member of a one-of group is replaced by the group form (for `run`: `/request/models` and `/request/program or /request/package`). A reader that reports only the first missing member, or omits the group, fails. | Test (TC-050) |
 | FR-028-AC-6 | `fsl run R` over `{"format":"native-run/1","request":{"models":"x"}}` refuses `invalid-request`, exit 20, with a diagnostic message that contains `/request/models`; the same holds for an unknown member `/request/bogus` and for a request with both `program` and `package`. | Test (TC-050) |
-| FR-028-AC-7 | For each request verb and each request format other than those it reads, the verb refuses with a diagnostic message that contains the format read and every format FSL's reader for that verb accepts, exit 20. `fsl export R` over `{"format":"native-export/1","request":{}}` refuses with a message that contains `native-export/1` as the format read and `native-run/1` as the accepted format, and no accepted list contains `native-export/1`. | Test (TC-050) |
+| FR-028-AC-7 | For each request verb and each request format other than those it reads, the verb refuses `unknown_wire`, exit 20, with a diagnostic message that contains the format read and every format FSL's reader for that verb accepts. `fsl export R` over `{"format":"native-export/1","request":{}}` refuses `unknown_wire` with a message that contains `native-export/1` as the format read and `native-run/1` as the accepted format, and no accepted list contains `native-export/1`. | Test (TC-050) |
 | FR-028-AC-8 | `fsl export R` over a `native-run/1` request with no `export` member refuses `invalid-request`, exit 20, with member `export` and a reason that contains `native-run/1`, `export` and `fsl export --example`; `fsl export --evidence R` over one with no `export_evidence` member refuses with member `export_evidence` and a reason that contains `native-run/1`, `export_evidence` and `fsl export --example-evidence`. Neither refusal contains `requires export`. | Test (TC-050) |
-| FR-028-AC-9 | Each refusal of FR-028-AC-5 to FR-028-AC-8 is byte-equal to the document `fsl_command::command::run` (or, for export, FSL's export entry) returns for the same request, exits 20 in both output modes, and in text mode and JSON mode writes only its outcome to stdout and nothing to stderr (FR-002). | Test (TC-050) |
+| FR-028-AC-9 | Each refusal of FR-028-AC-5 to FR-028-AC-8 is byte-equal to the document the FSL entry for the verb under test returns for the same request (the typed operation FR-002 says that verb calls: `fsl_command::command::run` for `run`, `compile` and `replay`, FSL's analyze entry for `analyze`, its monitor entry for `monitor`, its export entry for `export`), exits 20 in both output modes, and in text mode and JSON mode writes only its outcome to stdout and nothing to stderr (FR-002). | Test (TC-050) |
 
 ## Dependencies
 

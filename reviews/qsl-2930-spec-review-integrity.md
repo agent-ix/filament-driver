@@ -34,3 +34,26 @@ Not mergeable. There are two high findings. FR-028 treats `--evidence` as a flag
 | FND-003 | medium | FR-028 says it "keeps no copy of a request shape", but AC-5 copies FSL's request shapes: monitor's required-member list and order (`models, program, clauses, trace`, mirroring FSL wire.rs:951) and run's. AC-7 copies the verb-to-format table, and AC-5 to AC-8 author the exact refusal text, labelled "FSL's contract, pinned here", before FSL specifies it. The driver spec becomes a second owner of FSL's wire contract, and it drifts when FSL adds a required member. AC-9 already gives the pass-through check (byte-equal to FSL's entry). The exact text and member lists belong in the FSL FRs that FR-028 depends on | spec/functional/FR-028-print-a-minimal-request-with-example.md:131 |
 | FND-004 | medium | The exact text of AC-8 cannot be determined. The message holds backticks (`run `fsl export --example` for one`) inside a backtick code span, so Markdown splits it and readers cannot tell whether the backticks belong to the message. AC-8 also calls it "the message reason", while AC-5 to AC-7 say "diagnostic message". FSL's `ClauseRequest` has separate `member` and `reason` fields, so it is unclear which output field the exact string must equal | spec/functional/FR-028-print-a-minimal-request-with-example.md:134 |
 | FND-005 | low | The `export --evidence` request reader, FSL FR-1022 (the `export_evidence` member), is missing from the `depends_on` edges and from the Dependencies list. FR-028 lists FR-1015 only for export, but AC-2, AC-3 and AC-8 constrain the evidence reader's example and refusal | spec/functional/FR-028-print-a-minimal-request-with-example.md:17-27 |
+
+## New findings (disposition pass 1)
+
+These were found at head f51257b499fc3a462dcfdb4434f3681bc3e4dd24.
+
+The new `--example-evidence` option was judged against FR-002, FR-027 and FSL FR-287, and it is consistent with all three. It is a no-value entry in the export option table, so FR-002-AC-24 covers its help listing. `--evidence <request-file>` stays valued, as FR-027:36 and FSL FR-287 state. FR-287's `--evidence` refusal rules are untouched. FSpec FR-301 was not checked, because no clone was available.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The new "Required member" definition counts each member of a one-of group as required ("each member of a one-of group that the reader requires exactly one of"). The example rule then says `request` "SHALL carry every required member, one member of each one-of group, and no other member". Read literally, that requires both `program` and `package`, which the "Invalid member" definition makes invalid. It is also unclear whether a run refusal over `"request":{}` must list both `/request/program` and `/request/package` as missing (AC-5), or one, or a group pointer | spec/functional/FR-028-print-a-minimal-request-with-example.md:73-77 |
+| FND-007 | medium | AC-9 names `fsl_command::command::run` (or FSL's export entry) as the oracle for every refusal in AC-5 to AC-7. Those ACs cover `compile`, `analyze`, `monitor` and `replay` too, and FSL has separate entries for them (`compile_outcome`, `analyze`, `monitor`, ...) whose outcome `operation` differs. A correct driver would therefore fail byte-equality against `run`'s document. The oracle should be the FSL entry for the verb under test | spec/functional/FR-028-print-a-minimal-request-with-example.md:152 |
+| FND-008 | low | `--example-evidence` is missing in two places. The FR-002 pointer bullet still says only "The request verbs take `--example`". TC-050 step 4's Expected Results omit the `fsl run --example-evidence` unknown-option result and the `--example-evidence` help-listing check that AC-4 requires | spec/functional/FR-002-expose-driver-cli-and-outcome-contract.md:332 |
+| FND-009 | low | The fix dropped the refusal code from the wrong-format case. AC-7 and its Behavior bullet now state only "refuses ... exit 20" with no code, where the previous text and FSL (`Code::UnknownWire`, command.rs:1216) give `unknown_wire`. A refusal under any code passes AC-7 | spec/functional/FR-028-print-a-minimal-request-with-example.md:150 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `--evidence <request-file>` is unchanged. The evidence example is now `fsl export --example-evidence`, a no-value option on export only, so AC-2 no longer conflicts with FR-002, FR-027 or FSL FR-287 |
+| FND-002 | fixed | A Definitions section defines one-of groups and names `program` or `package` for run. AC-3 now requires the run example to carry exactly one of them. The leftover wording conflict is recorded as new finding FND-006 |
+| FND-003 | fixed | The exact message strings and member lists were removed from AC-5, AC-7 and AC-8. These ACs now defer to FSL's reader and the FSL FRs. The message form is FSL's |
+| FND-004 | fixed | AC-8 now asserts member `export` or `export_evidence` and reason substrings, with no nested backticks |
+| FND-005 | fixed | FSL FR-1022 was added to the `depends_on` edges and to Dependencies |

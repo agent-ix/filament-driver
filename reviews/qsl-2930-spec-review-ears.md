@@ -30,3 +30,10 @@ Mostly conformant. One medium finding: the trigger "present but invalid" is unde
 | --- | --- | --- | --- |
 | FND-001 | medium | The trigger "When a request member is present but invalid" is undefined. It is unclear whether it covers an unknown member (FSL readers are `deny_unknown_fields`), a wrong JSON kind, a value-level violation, or a one-of conflict such as `program` together with `package`. Two implementers would put the pointer obligation on different refusals, and AC-6 tests only a wrong-typed `models` | spec/functional/FR-028-print-a-minimal-request-with-example.md:104 |
 | FND-002 | low | The bullet "The example for `run` is a `native-run/1` request, ... `request` carries every member the verb's reader requires and no optional member" has no SHALL and no EARS form. It is the only statement that sets the format and content of each example, so that obligation is descriptive, not normative | spec/functional/FR-028-print-a-minimal-request-with-example.md:79 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | A Definitions section defines "Invalid member" (unknown, wrong kind, out of domain, one-of conflict). The bullet is now "If a request carries an invalid member, then ... SHALL", and AC-6 adds the unknown-member and one-of-conflict cases |
+| FND-002 | fixed | The bullet now reads "The example for `run` SHALL be ...", and the member rule is a separate SHALL bullet |

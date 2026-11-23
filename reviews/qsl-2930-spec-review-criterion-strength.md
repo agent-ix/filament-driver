@@ -33,3 +33,15 @@ All nine ACs can fail, and each states its code, exit status and stream. One low
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The oracle in AC-1 ("the document FSL's request-example entry returns") and in AC-9 ("the document FSL's own entry returns") is an unnamed FSL entry that does not exist yet. A test author cannot bind these byte-equality checks until FSL names the entry. The Dependencies section records that FR-028 is not implementable until then, but the AC does not say which symbol to call | spec/functional/FR-028-print-a-minimal-request-with-example.md:127 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | AC-5's oracle is circular. The message must contain "the JSON pointer of every required member the verb's FSL reader reports missing", and "the set compared is FSL's reader's". A reader that reports only the first missing member then defines the set as that one member and passes, which contradicts the AC's own claim that it fails. The expected set should come from an independent source, for example the members of the verb's `request_example` `request` object | spec/functional/FR-028-print-a-minimal-request-with-example.md:148 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-1 now names `fsl_command::command::request_example` as the oracle, and Dependencies records that FSL must specify it |
