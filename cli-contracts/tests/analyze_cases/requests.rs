@@ -67,7 +67,10 @@ fn malformed_wrong_format_and_duplicate_json_are_whole_request_refusals(
     assert_eq!(text.0.status.code(), Some(20));
     assert!(text.0.stderr.is_empty(), "{text:?}");
     let rendered = text.stdout_text()?;
-    assert!(rendered.starts_with("analyze: refusal (exit 20)\n"), "{rendered}");
+    assert!(
+        rendered.starts_with("analyze: refusal (exit 20)\n"),
+        "{rendered}"
+    );
     assert!(rendered.contains(": invalid-request:"), "{rendered}");
     Ok(())
 }
@@ -273,6 +276,120 @@ fn explicit_empty_items_and_omitted_items_have_different_meanings() -> Result<()
     assert_eq!(all["items"][0]["category"], "unsupported");
     assert_eq!(all["items"][2]["category"], "success");
     assert_eq!(all["items"][3]["category"], "violation");
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-620 default items; FSL FR-483 and FR-711-AC-2 (a finite bound is
+/// available, so each operation contract settles `requires-bound`).
+#[test]
+#[ignore = "QSL-2913: operation contracts settle unsupported/unbounded-extent although a finite bound is available; FR-483 says requires-bound"]
+fn omitted_items_default_to_every_claim_and_operation_contracts_require_a_bound(
+) -> Result<(), ContractError> {
+    let (case, mut request) = setup()?;
+    request["request"].as_object_mut().unwrap().remove("items");
+    write_request(&case, &request)?;
+    let all = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        21,
+        "unsupported",
+    );
+    let items = all["items"].as_array().unwrap();
+    let names: Vec<_> = items
+        .iter()
+        .map(|item| item["claim_name"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "SpaceAvailable",
+            "AppendOne",
+            "WithinCapacity",
+            "NeverFull",
+            ""
+        ]
+    );
+    for (index, item) in items.iter().enumerate() {
+        assert_eq!(item["request_index"], index, "{item}");
+    }
+    for item in &items[..2] {
+        assert_eq!(item["category"], "unsupported", "{item}");
+        assert_eq!(item["record"]["settled_by"], "disposition", "{item}");
+        assert_eq!(
+            item["record"]["diagnostic"]["code"], "requires_bound",
+            "{item}"
+        );
+        assert_eq!(
+            item["record"]["diagnostic"]["cause"], "requires-bound",
+            "{item}"
+        );
+    }
+    let categories: Vec<_> = items.iter().map(|item| item["category"].clone()).collect();
+    assert_eq!(
+        categories,
+        [
+            "unsupported",
+            "unsupported",
+            "success",
+            "violation",
+            "violation"
+        ]
+    );
+    Ok(())
+}
+
+/// Trace: FR-022-AC-5
+/// FSL FR-620: items named in the request are analysed as named; the claims
+/// that settle on their own are covered here independent of the operation contracts.
+#[test]
+fn named_claims_settle_with_exact_names_categories_and_results() -> Result<(), ContractError> {
+    let (case, request) = setup()?;
+    assert_eq!(
+        request["request"]["items"],
+        json!([{"claim":"WithinCapacity"},{"claim":"NeverFull"}])
+    );
+    let all = document(
+        &case.run(&["analyze", "data/request.json", "--format", "json"])?,
+        10,
+        "violation",
+    );
+    let items = all["items"].as_array().unwrap();
+    let rows: Vec<_> = items
+        .iter()
+        .map(|item| {
+            (
+                item["claim_name"].as_str().unwrap_or_default().to_owned(),
+                item["category"].as_str().unwrap_or_default().to_owned(),
+                item["record"]["result"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "WithinCapacity".to_owned(),
+                "success".to_owned(),
+                "proved".to_owned()
+            ),
+            (
+                "NeverFull".to_owned(),
+                "violation".to_owned(),
+                "refuted".to_owned()
+            ),
+        ]
+    );
+    assert_eq!(items[0]["record"]["certification"], "certified");
+    assert_eq!(items[0]["record"]["settled_by"], "result");
+    assert_eq!(items[1]["record"]["settled_by"], "result");
+    assert_eq!(
+        items.len(),
+        2,
+        "no derived item follows an explicit item list"
+    );
     Ok(())
 }
 
