@@ -84,9 +84,9 @@ fn help_needs_no_request_and_repeated_single_options_write_only_usage(
     ] {
         let output = case.run(&["run", "missing.json", name, value, name, value])?;
         assert_eq!(output.0.status.code(), Some(20), "{name}: {output:?}");
-        assert!(output.0.stdout.is_empty(), "{name}: {output:?}");
+        assert!(output.0.stderr.is_empty(), "{name}: {output:?}");
         assert!(
-            output.stderr_text()?.contains("usage: fsl run"),
+            output.stdout_text()?.contains("usage: fsl run"),
             "{output:?}"
         );
     }
@@ -103,9 +103,11 @@ fn repeated_output_format_refuses_usage_before_request_io_or_execution(
     for path in ["missing.json", "run.json"] {
         let output = case.run(&["run", path, "--format", "json", "--format", "json"])?;
         assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-        assert!(output.0.stdout.is_empty(), "{output:?}");
+        assert!(output.0.stderr.is_empty(), "{output:?}");
         assert!(
-            output.stderr_text()?.contains("usage: fsl run"),
+            output.json()?["diagnostics"][0]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("usage: fsl run")),
             "{output:?}"
         );
     }
@@ -331,8 +333,11 @@ fn provider_limits_accept_distinct_names_and_refuse_bad_counts_before_request_io
             "json",
         ])?;
         assert_eq!(output.0.status.code(), Some(20), "{operand}: {output:?}");
-        assert!(output.0.stdout.is_empty(), "{operand}: {output:?}");
-        let stderr = output.stderr_text()?;
+        assert!(output.0.stderr.is_empty(), "{operand}: {output:?}");
+        let stderr = output.json()?["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
         assert!(
             stderr.contains("invalid-request")
                 && stderr.contains("--provider-limit")
@@ -351,8 +356,8 @@ fn provider_limits_accept_distinct_names_and_refuse_bad_counts_before_request_io
         "json",
     ])?;
     assert_eq!(output.0.status.code(), Some(20));
-    assert!(output.0.stdout.is_empty());
-    assert!(output.stderr_text()?.contains("deadline_ms"));
+    assert!(output.0.stderr.is_empty(), "{output:?}");
+    assert!(output.stdout_text()?.contains("deadline_ms"));
     Ok(())
 }
 
@@ -392,8 +397,11 @@ fn assert_provider_member_refusal(
         "json",
     ])?;
     assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-    assert!(output.0.stdout.is_empty(), "{output:?}");
-    let stderr = output.stderr_text()?;
+    assert!(output.0.stderr.is_empty(), "{output:?}");
+    let stderr = output.json()?["diagnostics"][0]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
     assert!(stderr.starts_with("invalid-request:"), "{stderr}");
     assert!(stderr.contains(member), "{stderr}");
     assert!(stderr.contains("bad-provider.json"), "{stderr}");

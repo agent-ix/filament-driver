@@ -361,6 +361,16 @@ fn status_with_unwritable_stderr(arguments: &[&str], reserved_exit: bool) -> Exi
     child.wait().expect("wait for fsl after closing stderr")
 }
 
+/// The first diagnostic message of the one refusal document on `stdout`.
+fn refusal_message(stdout: &[u8]) -> String {
+    let document: serde_json::Value =
+        serde_json::from_slice(stdout).expect("stdout holds one outcome document");
+    document["diagnostics"][0]["message"]
+        .as_str()
+        .expect("the refusal document names a message")
+        .to_owned()
+}
+
 fn expected_document_bytes(code: Code, message: &str) -> Vec<u8> {
     let document =
         OutcomeDocument::new(Operation::Execute, None, code.category()).with_diagnostics(vec![
@@ -549,12 +559,12 @@ fn malformed_run_limit_emits_one_fsl_outcome_and_streams_diagnostic() {
         .output()
         .expect("run fsl with malformed limit");
     assert_eq!(output.status.code(), Some(20));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("s1.input_bytes=invalid"));
-    assert!(stderr.ends_with('\n'));
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let message = refusal_message(&output.stdout);
+    assert!(message.contains("s1.input_bytes=invalid"), "{message}");
     assert_eq!(
         output.stdout,
-        expected_document_bytes(Code::InvalidRequest, stderr.trim_end())
+        expected_document_bytes(Code::InvalidRequest, &message)
     );
 }
 
@@ -591,9 +601,9 @@ fn missing_source_emits_fsl_io_error_document_and_diagnostic() {
     assert_eq!(output.stdout, format!("{expected}\n").as_bytes());
 }
 
-/// FSpec FR-561 and FR-006-AC-24: each refusal exits 20 with empty stdout,
-/// in text and machine mode alike, and names the file, the member and the
-/// code on stderr.
+/// FSpec FR-561 and FR-006-AC-24: each refusal exits 20 with its refusal outcome on
+/// stdout in the selected format and an empty stderr; the outcome names the
+/// file, the member and the code.
 fn assert_provider_config_refusal(path: &std::path::Path, expected: &str) {
     for format in ["json", "text"] {
         let output = Command::new(FSL)
@@ -603,8 +613,13 @@ fn assert_provider_config_refusal(path: &std::path::Path, expected: &str) {
             .output()
             .expect("run fsl with provider config");
         assert_eq!(output.status.code(), Some(20), "{format}");
-        assert!(output.stdout.is_empty(), "{format}: stdout is empty");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.stderr.is_empty(), "{format}: stderr is empty");
+        let stderr = if format == "json" {
+            refusal_message(&output.stdout)
+        } else {
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        assert!(!stderr.is_empty(), "{format}: the refusal is on stdout");
         assert!(stderr.contains("provider configuration"), "{stderr}");
         assert!(stderr.contains(expected), "{stderr}");
         assert!(
@@ -945,7 +960,7 @@ fn duplicate_provider_identities_refuse_before_negotiation_and_close_sessions() 
         output.stdout,
         expected_document_bytes(Code::InvalidRequest, &message)
     );
-    assert_eq!(String::from_utf8_lossy(&output.stderr).trim(), message);
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
     assert!(request_markers.iter().all(|marker| !marker.exists()));
     assert!(shutdown_markers.iter().all(|marker| marker.is_file()));
 }
@@ -1068,25 +1083,40 @@ fn root_argv_refusal_names_invalid_format_without_result_output() {
         .output()
         .expect("run fsl with an invalid root format");
     assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("dot"));
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.starts_with("run: refusal (exit 20)"), "{stdout}");
+    assert!(stdout.contains("dot"), "{stdout}");
 }
 
 /// Trace: FR-002-AC-1, FR-002-AC-8; an option the verb does not list is refused and named.
 #[test]
 fn unlisted_option_refuses_and_names_the_option() {
-    for (verb, option) in [("check", "--engine"), ("analyze", "--limit")] {
-        let output = Command::new(FSL)
+    for verb in ["check", "analyze", "monitor", "replay"] {
+        let option = "--engine";
+        let message = format!("unknown {verb} option `{option}`");
+        let text = Command::new(FSL)
             .args([verb, option, "gpu"])
             .output()
             .expect("run fsl with an option the verb does not list");
-        assert_eq!(output.status.code(), Some(20), "{option}");
-        assert!(output.stdout.is_empty(), "{option}");
-        assert_eq!(
-            String::from_utf8_lossy(&output.stderr),
-            format!("unknown {verb} option `{option}`\n"),
-            "{verb} {option}"
+        assert_eq!(text.status.code(), Some(20), "{verb}");
+        assert!(text.stderr.is_empty(), "{verb}: {:?}", text.stderr);
+        let stdout = String::from_utf8_lossy(&text.stdout);
+        assert!(
+            stdout.starts_with(&format!("{verb}: refusal (exit 20)")),
+            "{verb}: {stdout}"
         );
+        assert!(stdout.contains(&message), "{verb}: {stdout}");
+        let json = Command::new(FSL)
+            .args([verb, option, "gpu", "--format", "json"])
+            .output()
+            .expect("run fsl with an unlisted option in JSON mode");
+        assert_eq!(json.status.code(), Some(20), "{verb}");
+        assert!(json.stderr.is_empty(), "{verb}: {:?}", json.stderr);
+        let document: serde_json::Value =
+            serde_json::from_slice(&json.stdout).expect("one outcome document on stdout");
+        assert_eq!(document["operation"], verb, "{document}");
+        assert_eq!(document["diagnostics"][0]["message"], message, "{document}");
     }
 }
 
@@ -1138,7 +1168,8 @@ fn an_unknown_engine_is_a_refusal() {
         output.status.code(),
         Some(i32::from(Category::Refusal.exit_code()))
     );
-    assert!(String::from_utf8_lossy(&output.stderr).contains("gpu"));
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("gpu"));
 }
 
 /// Trace: FR-003-AC-1, the exposed checking work bound reaches FSL unchanged.
@@ -1256,8 +1287,8 @@ fn fsl_rejects_unknown_malformed_and_duplicate_limits_before_source_read() {
             Some(i32::from(Category::Refusal.exit_code())),
             "{operand}"
         );
-        assert!(output.stdout.is_empty(), "{operand}");
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.stderr.is_empty(), "{operand}: {:?}", output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stdout);
         assert!(stderr.contains(operand), "{operand}: {stderr}");
         if operand == "work_units=0" {
             assert!(stderr.contains("UnknownSetting"), "{stderr}");
@@ -1287,7 +1318,8 @@ fn recognized_setting_unavailable_for_run_is_named_before_source_read() {
         output.status.code(),
         Some(i32::from(Category::Refusal.exit_code()))
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let stderr = refusal_message(&output.stdout);
     assert!(stderr.contains("explore.states"), "{stderr}");
     assert!(
         stderr.contains("unavailable for the `run` operation"),
@@ -1296,7 +1328,7 @@ fn recognized_setting_unavailable_for_run_is_named_before_source_read() {
     assert!(!stderr.contains("could not read source"), "{stderr}");
     assert_eq!(
         output.stdout,
-        expected_document_bytes(Code::InvalidRequest, stderr.trim_end())
+        expected_document_bytes(Code::InvalidRequest, &stderr)
     );
 }
 
@@ -1315,8 +1347,8 @@ fn invalid_operand_precedes_recognized_but_unavailable_setting() {
         .output()
         .expect("run with an unknown operand and unavailable setting");
     assert_eq!(output.status.code(), Some(20));
-    assert!(output.stdout.is_empty());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let stderr = String::from_utf8_lossy(&output.stdout);
     assert!(stderr.contains("normalization.work_units"), "{stderr}");
     assert!(
         !stderr.contains("unavailable for the `run` operation"),

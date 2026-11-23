@@ -209,11 +209,14 @@ fn a_bad_request_is_refused_before_any_record_with_exit_20() {
         "",
     );
     assert_eq!(output.status.code(), Some(20), "{output:?}");
-    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.starts_with("monitor: refusal (exit 20)"), "{text}");
 
     let missing = fsl_with_stdin(&["monitor"], "");
     assert_eq!(missing.status.code(), Some(20));
-    assert!(String::from_utf8_lossy(&missing.stderr).contains("usage: fsl monitor"));
+    assert!(missing.stderr.is_empty(), "{missing:?}");
+    assert!(String::from_utf8_lossy(&missing.stdout).contains("usage: fsl monitor"));
 }
 
 const PROVIDER_BACKEND: &str = "fsl.test-recording-provider";
@@ -430,7 +433,10 @@ fn input_file_and_standard_input_give_the_same_stream() {
         .output()
         .expect("run fsl");
     assert_eq!(missing.status.code(), Some(20));
-    assert!(missing.stdout.is_empty(), "text mode writes no stdout");
+    assert!(missing.stderr.is_empty(), "no stderr: {missing:?}");
+    let text = String::from_utf8_lossy(&missing.stdout);
+    assert!(text.starts_with("monitor: refusal (exit 20)"), "{text}");
+    assert!(text.contains("absent.jsonl"), "{text}");
 
     let missing = Command::new(FSL)
         .args([

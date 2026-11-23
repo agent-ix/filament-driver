@@ -28,9 +28,9 @@ fn invalid_arguments_refuse_before_consuming_a_valid_observation_stream() -> Tes
     ] {
         let output = case.run_stdin(&args, &records(&[9], true))?;
         assert_eq!(output.0.status.code(), Some(20), "{args:?}: {output:?}");
-        assert!(output.0.stdout.is_empty(), "{args:?}: {output:?}");
+        assert!(output.0.stderr.is_empty(), "{args:?}: {output:?}");
         assert!(
-            !output.0.stderr.is_empty(),
+            !output.0.stdout.is_empty(),
             "{args:?}: missing usage diagnostic"
         );
     }
@@ -59,8 +59,11 @@ fn unopenable_record_input_in_text_mode_has_no_primary_output() -> TestResult {
     ] {
         let output = case.run_stdin(&args, &records(&[9], true))?;
         assert_eq!(output.0.status.code(), Some(20), "{output:?}");
-        assert!(output.0.stdout.is_empty(), "{output:?}");
-        assert!(!output.0.stderr.is_empty());
+        assert!(output.0.stderr.is_empty(), "{output:?}");
+        assert!(
+            output.stdout_text()?.starts_with("monitor: refusal (exit 20)"),
+            "{output:?}"
+        );
     }
     Ok(())
 }
