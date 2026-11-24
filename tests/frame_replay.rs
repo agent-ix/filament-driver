@@ -108,9 +108,7 @@ impl Fixture {
         .unwrap();
         let located = call_site(
             source(),
-            "frame".into(),
-            "frame",
-            unit.as_bytes(),
+            fsl_replay::CallSiteUnit::new("frame", "frame", unit.as_bytes()),
             [domain.as_slice()],
             &DependencyInput::default(),
             &RequestClocks::default(),
@@ -119,9 +117,7 @@ impl Fixture {
         .unwrap();
         let clause = call_site(
             source(),
-            "frame".into(),
-            "frame",
-            unit.as_bytes(),
+            fsl_replay::CallSiteUnit::new("frame", "frame", unit.as_bytes()),
             [domain.as_slice()],
             &DependencyInput::default(),
             &RequestClocks::default(),
@@ -364,9 +360,7 @@ fn frame_projection_preserves_fsl_refusal_before_any_join_or_codegen_check() {
     let fixture = Fixture::new(false);
     let expected = call_site(
         source(),
-        "frame".into(),
-        "frame",
-        fixture.unit.as_bytes(),
+        fsl_replay::CallSiteUnit::new("frame", "frame", fixture.unit.as_bytes()),
         [fixture.domain.as_slice()],
         &DependencyInput::default(),
         &RequestClocks::default(),
