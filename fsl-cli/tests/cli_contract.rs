@@ -461,6 +461,119 @@ fn check_emits_fsl_check_outcome_document() {
     assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
 }
 
+/// Trace: FSpec-FR-718-AC-1; native `check --format text` uses the shared outcome renderer.
+#[test]
+#[trace("FSpec-FR-718-AC-1")]
+fn check_text_format_renders_native_outcome_and_keeps_json_bytes() {
+    let text = Command::new(FSL)
+        .args(["check", CHECK_INVALID_SOURCE, "--format", "text"])
+        .output()
+        .expect("run native check in text format");
+    assert_eq!(
+        text.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let rendered = String::from_utf8(text.stdout).expect("text output is UTF-8");
+    assert!(
+        rendered.starts_with("check: refusal (exit 20)"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("ill_typed"), "{rendered}");
+    assert!(rendered.contains("type-mismatch"), "{rendered}");
+    assert!(rendered.contains("check-invalid.fsl:"), "{rendered}");
+
+    // Explicit text formatting must leave the established JSON contract intact.
+    let json = Command::new(FSL)
+        .args(["check", SOURCE, "--format", "json"])
+        .output()
+        .expect("run native check in JSON format");
+    assert_eq!(json.status.code(), Some(0));
+    assert!(json.stderr.is_empty());
+    assert_fsl_document(&json.stdout, &check_outcome_bytes(SOURCE));
+}
+
+/// Trace: FSpec-FR-563-AC-1, FSpec-FR-718-AC-1; Markdown text keeps each fence result.
+#[test]
+#[trace("FSpec-FR-563-AC-1", "FSpec-FR-718-AC-1")]
+fn check_text_format_renders_markdown_fence_items() {
+    let directory = TemporaryDirectory::new("check-markdown-text");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let broken = format!("{healthy}function Bad using v (x: Integer): Boolean pure {{ x }}\n");
+    let document = format!(
+        "### Healthy\n\n```ix:native\n{healthy}```\n\n### Broken\n\n```ix:native\n{broken}```\n"
+    );
+    std::fs::write(directory.0.join("spec.md"), document).expect("write Markdown fixture");
+    let text = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "text",
+        ])
+        .output()
+        .expect("run Markdown check in text format");
+    assert_eq!(
+        text.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let rendered = String::from_utf8(text.stdout).expect("text output is UTF-8");
+    assert!(
+        rendered.starts_with("check: refusal (exit 20)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("item 0: checked (success) clause Healthy"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("item 1: checked (refusal) clause Broken"),
+        "{rendered}"
+    );
+    assert!(rendered.contains("spec.md:"), "{rendered}");
+    assert!(rendered.contains("ill_typed"), "{rendered}");
+    assert!(rendered.contains("type-mismatch"), "{rendered}");
+}
+
+/// Trace: FSpec-FR-718-AC-1; option refusals are rendered with the shared refusal shape.
+#[test]
+#[trace("FSpec-FR-718-AC-1")]
+fn check_text_format_renders_refusal_category_and_diagnostic() {
+    let output = Command::new(FSL)
+        .args(["check", "missing-check-source.native", "--format", "text"])
+        .output()
+        .expect("run check with a missing source");
+    assert_eq!(
+        output.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let rendered = String::from_utf8(output.stdout).expect("text output is UTF-8");
+    assert!(
+        rendered.starts_with("check: refusal (exit 20)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("io_error") || rendered.contains("io-error"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("missing-check-source.native"),
+        "{rendered}"
+    );
+}
+
 /// Trace: TC-1743, FR-662-AC-1, FSpec-TC-1243, FSpec-FR-563-AC-1, FSpec-FR-563-AC-2.
 /// Provenance: QSL-2019.
 #[test]
