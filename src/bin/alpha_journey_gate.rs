@@ -1,7 +1,7 @@
 //! Execute the alpha install and tutorial journeys in a clean container.
 
 use serde_json::Value;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{hash_map::Entry, HashMap};
 use std::env;
 use std::fs;
 use std::io::Read;
@@ -879,12 +879,24 @@ fn expected_version(page: &str) -> Option<String> {
         let line = line.trim();
         if let Some(version) = line.strip_prefix("FSL v") {
             if let Some(version) = version.split_whitespace().next() {
-                return Some(version.to_owned());
+                return Some(version.trim_end_matches('.').to_owned());
             }
         }
         if let Some(version) = line.strip_prefix("The latest published driver release is v") {
             if let Some(version) = version.split_whitespace().next() {
-                return Some(version.to_owned());
+                return Some(version.trim_end_matches('.').to_owned());
+            }
+        }
+        if let Some((_, version_statement)) = line.split_once("Version ") {
+            if let Some(version) = version_statement.split_whitespace().next() {
+                let version = version.trim_end_matches('.');
+                let is_numeric_version = version.contains('.')
+                    && version
+                        .split('.')
+                        .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()));
+                if is_numeric_version {
+                    return Some(version.to_owned());
+                }
             }
         }
     }
@@ -1933,11 +1945,9 @@ mod tests {
         assert_eq!(commands[2].expected_exit, 0);
         assert!(excerpts.is_empty());
         assert_eq!(issues.len(), 2);
-        assert!(
-            issues
-                .iter()
-                .all(|issue| issue.reason.contains("use an example block"))
-        );
+        assert!(issues
+            .iter()
+            .all(|issue| issue.reason.contains("use an example block")));
     }
 
     #[test]
@@ -2029,6 +2039,29 @@ expect_exit = 10
         );
     }
 
+    /// Provenance: QSL-3161.
+    #[test]
+    fn expected_version_reads_current_install_page_wording_and_keeps_old_forms() {
+        let current =
+            "The v0.1.4 release prints `0.1.4`. Version 0.2.0 also prints the pinned FSL revision.";
+        assert_eq!(expected_version(current).as_deref(), Some("0.2.0"));
+        assert_eq!(
+            expected_version("FSL v0.2.0 release").as_deref(),
+            Some("0.2.0")
+        );
+        assert_eq!(
+            expected_version("The latest published driver release is v0.2.0.").as_deref(),
+            Some("0.2.0")
+        );
+    }
+
+    /// Provenance: QSL-3161.
+    #[test]
+    fn expected_version_requires_a_documented_version() {
+        assert_eq!(expected_version("The FSL release is ready."), None);
+        assert_eq!(expected_version("Version current is pending."), None);
+    }
+
     #[test]
     fn released_glibc_policy_accepts_up_to_243_and_rejects_private_or_newer() {
         assert_eq!(
@@ -2036,11 +2069,9 @@ expect_exit = 10
             Ok((2, 43, 0))
         );
         assert!(validate_glibc_version_info("GLIBC_2.44").is_err());
-        assert!(
-            validate_glibc_version_info("GLIBC_2.40 GLIBC_PRIVATE")
-                .unwrap_err()
-                .contains("GLIBC_PRIVATE")
-        );
+        assert!(validate_glibc_version_info("GLIBC_2.40 GLIBC_PRIVATE")
+            .unwrap_err()
+            .contains("GLIBC_PRIVATE"));
         assert!(validate_glibc_version_info("no symbol versions").is_err());
     }
 
