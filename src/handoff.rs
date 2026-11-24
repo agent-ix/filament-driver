@@ -30,6 +30,11 @@ pub(crate) fn handoff(
                     refusal,
                 ))))
             }
+            CheckedPackageDispatchResult::HostAllocationFailed(failure) => {
+                return Err(DriverRefusal::Fault(DriverFault::HostAllocationFailed(
+                    failure,
+                )))
+            }
             CheckedPackageDispatchResult::CatalogUnavailable(native) => {
                 return Err(DriverRefusal::HandoffCatalogUnavailable(native));
             }

@@ -3107,6 +3107,53 @@ fn tc_004_e5_refusal_is_a_fault() {
     assert_eq!(recorder.calls(), [Call::Compile, Call::ReadPackage]);
 }
 
+/// FSpec FR-330-AC-17: E5 reports an injected host allocation failure as an
+/// internal driver fault, with the read stage and requested size.
+#[trace("FSpec-FR-330-AC-17")]
+#[test]
+fn e5_host_allocation_failure_is_not_a_package_record() {
+    let registry = build_registry(&[manifest("kani", &["value-validity"])])
+        .expect("the kani manifest registers");
+    let packages = BTreeMap::new();
+    let failure = filament_contract_model::CheckedPackageHostAllocationFailed {
+        stage: filament_contract_model::PackageReadStage::Envelope,
+        locus: filament_contract_model::NativeJoinLocus {
+            source: filament_contract_model::NativeJoinLocusSource::PackageRead(
+                filament_contract_model::PackageReadStage::Envelope,
+                0,
+            ),
+            form: "package_bytes",
+        },
+        requested: 32,
+        consumed: 64,
+    };
+    let recorder = Recorder {
+        read_answer: Some(CheckedPackageDispatchResult::HostAllocationFailed(failure)),
+        ..Recorder::default()
+    };
+
+    let driven = drive(
+        &recorder,
+        int_input(&packages),
+        &registry,
+        None,
+        GenerationInput::default(),
+    )
+    .expect_err("injected host allocation failure stops E5 handoff");
+    match &driven {
+        DriverRefusal::Fault(DriverFault::HostAllocationFailed(actual)) => {
+            assert_eq!(*actual, failure);
+        }
+        other => panic!("unexpected driver outcome {other:?}"),
+    }
+    assert_eq!(driven.stage(), DriverStage::Handoff);
+    assert_eq!(driven.kind(), OutcomeKind::Fault);
+    assert_eq!(driven.code(), "runtime_invariant");
+    assert!(driven.to_string().contains("Envelope"));
+    assert!(driven.to_string().contains("32 bytes"));
+    assert_eq!(recorder.calls(), [Call::Compile, Call::ReadPackage]);
+}
+
 /// FR-001-AC-7 (TC-006): E5 admits units with text and rational parameter
 /// types.
 #[test]
