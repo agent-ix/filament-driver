@@ -495,7 +495,7 @@ where
     reason = "an adapter fixture mismatch is the test failure report"
 )]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -553,26 +553,23 @@ mod tests {
         Ok((descriptor, retained))
     }
 
-    fn python_path() -> PathBuf {
-        let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-            .map(|directory| directory.join("python3"))
-            .find(|candidate| candidate.is_file())
-            .expect("the plugin fixture requires Python 3");
-        assert!(python.is_absolute());
-        python
+    fn fixture_executable() -> PathBuf {
+        std::env::current_exe().expect("test fixture executable")
     }
 
-    fn fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../filament-plugin-host/tests/fixtures/echo-plugin.py")
+    fn is_fixture_child(test_name: &str) -> bool {
+        let arguments = std::env::args().collect::<Vec<_>>();
+        arguments
+            .windows(2)
+            .any(|pair| pair[0] == "--exact" && pair[1] == test_name)
     }
 
-    fn backend_provider_fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/backend-provider-plugin.py")
-    }
-
-    fn wrong_result_fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/wrong-result-plugin.py")
+    fn fixture_arguments(test_name: &str) -> [std::ffi::OsString; 3] {
+        [
+            "--exact".into(),
+            format!("process_provider::tests::{test_name}").into(),
+            "--nocapture".into(),
+        ]
     }
 
     fn limits() -> ProcessProviderLimits {
@@ -584,6 +581,261 @@ mod tests {
             memory_limit_requested: false,
             max_cpu_ms: 600_000,
             cancellation_grace: Duration::from_millis(500),
+        }
+    }
+
+    fn write_fixture_frame(value: &serde_json::Value) {
+        use std::io::Write;
+
+        let payload = serde_json::to_vec(value).expect("serialize fixture frame");
+        let mut output = std::io::stdout().lock();
+        let length = u64::try_from(payload.len()).expect("fixture frame length fits u64");
+        output
+            .write_all(&length.to_be_bytes())
+            .and_then(|()| output.write_all(&payload))
+            .and_then(|()| output.flush())
+            .expect("write fixture frame");
+    }
+
+    fn read_fixture_frame() -> serde_json::Value {
+        use std::io::Read;
+
+        let mut input = std::io::stdin().lock();
+        let mut prefix = [0; 8];
+        input
+            .read_exact(&mut prefix)
+            .expect("read fixture frame length");
+        let length = usize::try_from(u64::from_be_bytes(prefix)).expect("frame length fits usize");
+        let mut payload = vec![0; length];
+        input.read_exact(&mut payload).expect("read fixture frame");
+        serde_json::from_slice(&payload).expect("parse fixture frame")
+    }
+
+    fn wire_frame(id: u64, kind: &str, body: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "protocol": "filament.plugin-wire/v1",
+            "id": id,
+            "kind": kind,
+            "body": body,
+        })
+    }
+
+    fn run_plugin_fixture(kind: &str) {
+        const ECHO: &str = "agent-ix/provider/test";
+        const FR331: &str = "agent-ix/provider/fr331-fixture";
+        let (identity, hello_body) = match kind {
+            "echo" | "wrong-result" => (
+                ECHO,
+                serde_json::json!({"identity": ECHO, "advertises": []}),
+            ),
+            "fr331" => (
+                FR331,
+                serde_json::json!({
+                    "contract_version": "filament.backend-provider/v1",
+                    "capability_vocabulary": "filament.capability-kind/v1",
+                    "manifest": [{
+                        "backend": FR331,
+                        "advertises": [{"kind": "operation-contract", "mode": "bounded"}],
+                        "domains": ["integer"],
+                        "bounds": {"max_states": 8}
+                    }]
+                }),
+            ),
+            "signal" => (
+                "agent-ix/provider/signal-test",
+                serde_json::json!({"identity": "agent-ix/provider/signal-test", "advertises": []}),
+            ),
+            _ => panic!("unknown Rust plugin fixture kind"),
+        };
+
+        if kind == "signal"
+            && std::env::var("FILAMENT_PLUGIN_SIGNAL_STAGE")
+                .expect("signal stage")
+                .starts_with("hello")
+        {
+            run_signal_hello();
+        }
+        write_fixture_frame(&wire_frame(0, "hello", hello_body));
+        loop {
+            let request = read_fixture_frame();
+            match request["kind"].as_str().expect("request kind") {
+                "shutdown" => {
+                    if kind == "signal" {
+                        run_signal_shutdown();
+                    }
+                    break;
+                }
+                "cancel" => continue,
+                "request" => {
+                    if kind == "signal" {
+                        run_signal_request();
+                    }
+                    if kind == "wrong-result" {
+                        write_fixture_frame(&wire_frame(
+                            request["id"].as_u64().expect("request id"),
+                            "result",
+                            serde_json::json!({"identity": "agent-ix/provider/other", "items": []}),
+                        ));
+                        break;
+                    }
+                    let mut body = serde_json::json!({"identity": identity, "items": []});
+                    if kind == "echo" || kind == "fr331" {
+                        body["items"] = request["body"]["items"].clone();
+                    }
+                    write_fixture_frame(&wire_frame(
+                        request["id"].as_u64().expect("request id"),
+                        "result",
+                        body,
+                    ));
+                }
+                other => panic!("unexpected fixture request kind: {other}"),
+            }
+        }
+        if kind == "echo" {
+            eprintln!("opaque provider diagnostic");
+        } else if kind == "fr331" {
+            eprintln!("FR-331 fixture diagnostic");
+        }
+    }
+
+    fn signal_fixture_paths() -> (
+        String,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    ) {
+        use std::path::PathBuf;
+
+        let stage = std::env::var("FILAMENT_PLUGIN_SIGNAL_STAGE").expect("signal stage");
+        let ready =
+            PathBuf::from(std::env::var_os("FILAMENT_PLUGIN_SIGNAL_READY").expect("ready path"));
+        let release = PathBuf::from(
+            std::env::var_os("FILAMENT_PLUGIN_SIGNAL_RELEASE").expect("release path"),
+        );
+        let descendant = PathBuf::from(
+            std::env::var_os("FILAMENT_PLUGIN_SIGNAL_DESCENDANT").expect("descendant path"),
+        );
+        let plugin_marker = PathBuf::from(
+            std::env::var_os("FILAMENT_PLUGIN_SIGNAL_PLUGIN_MARKER").expect("plugin marker path"),
+        );
+        (stage, ready, release, descendant, plugin_marker)
+    }
+
+    fn signal_parent(stage: &str) {
+        let signal = if stage.ends_with("-int") {
+            "-INT"
+        } else {
+            "-TERM"
+        };
+        let parent =
+            std::env::var("FILAMENT_PLUGIN_SIGNAL_PARENT_PID").expect("signal test parent pid");
+        let status = std::process::Command::new("/bin/kill")
+            .args([signal, &parent])
+            .status()
+            .expect("run system signal utility");
+        assert!(status.success(), "send lifecycle signal to test process");
+    }
+
+    fn wait_signal_release(release: &std::path::Path) {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !release.is_file() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(release.is_file(), "signal fixture released");
+    }
+
+    fn spawn_signal_descendant(descendant: &std::path::Path) {
+        let executable = std::env::current_exe().expect("fixture test executable");
+        std::process::Command::new(executable)
+            .args([
+                "--exact",
+                "process_provider::tests::run_descendant_plugin_fixture",
+                "--nocapture",
+            ])
+            .env("FILAMENT_PLUGIN_SIGNAL_DESCENDANT_CHILD", descendant)
+            .spawn()
+            .expect("spawn process-group descendant");
+    }
+
+    fn run_signal_hello() {
+        use std::thread;
+        use std::time::Duration;
+
+        let (stage, ready, release, _, plugin_marker) = signal_fixture_paths();
+        std::fs::write(&ready, b"ready").expect("write hello readiness");
+        wait_signal_release(&release);
+        signal_parent(&stage);
+        thread::sleep(Duration::from_secs(2));
+        std::fs::write(plugin_marker, b"leaked").expect("write late plugin marker");
+    }
+
+    fn run_signal_request() {
+        use std::thread;
+        use std::time::Duration;
+
+        let (stage, ready, release, descendant, plugin_marker) = signal_fixture_paths();
+        spawn_signal_descendant(&descendant);
+        std::fs::write(&ready, b"ready").expect("write request readiness");
+        wait_signal_release(&release);
+        signal_parent(&stage);
+        let cancel = read_fixture_frame();
+        assert_eq!(cancel["kind"], "cancel");
+        thread::sleep(Duration::from_secs(2));
+        std::fs::write(plugin_marker, b"leaked").expect("write late plugin marker");
+    }
+
+    fn run_signal_shutdown() {
+        use std::thread;
+        use std::time::Duration;
+
+        let (stage, ready, release, descendant, plugin_marker) = signal_fixture_paths();
+        spawn_signal_descendant(&descendant);
+        std::fs::write(&ready, b"ready").expect("write shutdown readiness");
+        wait_signal_release(&release);
+        signal_parent(&stage);
+        thread::sleep(Duration::from_secs(2));
+        std::fs::write(plugin_marker, b"leaked").expect("write late plugin marker");
+    }
+
+    #[test]
+    fn run_echo_plugin_fixture() {
+        if is_fixture_child("process_provider::tests::run_echo_plugin_fixture") {
+            run_plugin_fixture("echo");
+        }
+    }
+
+    #[test]
+    fn run_fr331_plugin_fixture() {
+        if is_fixture_child("process_provider::tests::run_fr331_plugin_fixture") {
+            run_plugin_fixture("fr331");
+        }
+    }
+
+    #[test]
+    fn run_wrong_result_plugin_fixture() {
+        if is_fixture_child("process_provider::tests::run_wrong_result_plugin_fixture") {
+            run_plugin_fixture("wrong-result");
+        }
+    }
+
+    #[test]
+    fn run_signal_plugin_fixture() {
+        if is_fixture_child("process_provider::tests::run_signal_plugin_fixture") {
+            run_plugin_fixture("signal");
+        }
+    }
+
+    #[test]
+    fn run_descendant_plugin_fixture() {
+        if is_fixture_child("process_provider::tests::run_descendant_plugin_fixture") {
+            let path = std::env::var_os("FILAMENT_PLUGIN_SIGNAL_DESCENDANT_CHILD")
+                .expect("descendant marker path");
+            std::thread::sleep(Duration::from_millis(600));
+            std::fs::write(path, b"leaked").expect("write descendant marker");
         }
     }
 
@@ -646,15 +898,9 @@ mod tests {
             },
         );
         let cancel = Cancel::new();
-        let fixture = fixture_path();
-        assert!(fixture.is_file(), "host echo fixture exists");
+        let arguments = fixture_arguments("run_echo_plugin_fixture");
         let mut session = provider
-            .start(
-                &python_path(),
-                &[fixture.into_os_string()],
-                limits(),
-                &cancel,
-            )
+            .start(&fixture_executable(), &arguments, limits(), &cancel)
             .expect("host starts and admits hello");
         assert_eq!(session.descriptor().origin(), ProviderOrigin::Process);
         assert_eq!(session.descriptor().id().as_str(), "agent-ix/provider/test");
@@ -737,15 +983,9 @@ mod tests {
             |_| Ok(ProviderResults::<serde_json::Value, String>::default()),
         );
         let cancel = Cancel::new();
-        let fixture = backend_provider_fixture_path();
-        assert!(fixture.is_file(), "FR-331 fixture exists");
+        let arguments = fixture_arguments("run_fr331_plugin_fixture");
         let mut session = provider
-            .start(
-                &python_path(),
-                &[fixture.into_os_string()],
-                limits(),
-                &cancel,
-            )
+            .start(&fixture_executable(), &arguments, limits(), &cancel)
             .expect("typed FR-331 hello is admitted");
         assert_eq!(admissions.load(Ordering::Relaxed), 1);
         assert_eq!(session.descriptor().origin(), ProviderOrigin::Process);
@@ -830,10 +1070,9 @@ mod tests {
             |_: serde_json::Value| Ok(ProviderResults::<serde_json::Value, String>::default()),
         );
         let cancel = Cancel::new();
-        let fixture = wrong_result_fixture_path();
-        let arguments = [fixture.into_os_string()];
+        let arguments = fixture_arguments("run_wrong_result_plugin_fixture");
         let mut session = provider
-            .start(&python_path(), &arguments, limits(), &cancel)
+            .start(&fixture_executable(), &arguments, limits(), &cancel)
             .expect("fixture hello is admitted");
         let error = with_provider_request(move |request| {
             session.invoke(ProcessProviderRequest {
@@ -879,13 +1118,8 @@ mod tests {
             |_: &Hello, _: &serde_json::Value| Ok::<(), String>(()),
             |_: serde_json::Value| Ok(ProviderResults::<serde_json::Value, String>::default()),
         );
-        let fixture = fixture_path();
-        let error = provider.start(
-            &python_path(),
-            &[fixture.into_os_string()],
-            limits(),
-            &Cancel::new(),
-        );
+        let arguments = fixture_arguments("run_echo_plugin_fixture");
+        let error = provider.start(&fixture_executable(), &arguments, limits(), &Cancel::new());
         let refused_for_origin = match error {
             Err(super::AdapterError::Start(PluginError::ManifestAdmission(
                 super::AdmissionFailure::WrongOrigin,
