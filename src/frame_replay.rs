@@ -68,9 +68,11 @@ impl Driven {
         let clocks = request_clocks(self.checked().temporal_bindings())?;
         let located = fsl_replay::call_site(
             SourceIdentity::new(&inputs.run.source.authority, &inputs.run.source.identity),
-            inputs.run.package_name.clone(),
-            &inputs.run.source.identity,
-            &inputs.run.source.bytes,
+            fsl_replay::CallSiteUnit::new(
+                inputs.run.package_name.clone(),
+                &inputs.run.source.identity,
+                &inputs.run.source.bytes,
+            ),
             inputs
                 .packages
                 .iter()

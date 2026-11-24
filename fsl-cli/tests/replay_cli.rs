@@ -236,9 +236,11 @@ fn replay_request(package: &Value) -> Value {
     .expect("the library input");
     let site = call_site(
         SourceIdentity::new(AUTHORITY, PROGRAM_ID),
-        package["name"].as_str().expect("a package name").to_owned(),
-        "unit.native",
-        PROGRAM.as_bytes(),
+        fsl_replay::CallSiteUnit::new(
+            package["name"].as_str().expect("a package name"),
+            "unit.native",
+            PROGRAM.as_bytes(),
+        ),
         std::iter::empty::<&[u8]>(),
         &dependencies,
         &fsl_replay::RequestClocks::default(),
