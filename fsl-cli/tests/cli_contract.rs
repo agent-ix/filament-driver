@@ -461,10 +461,27 @@ fn check_emits_fsl_check_outcome_document() {
     assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
 }
 
-/// Trace: FSpec-FR-718-AC-1; native `check --format text` uses the shared outcome renderer.
+/// Trace: FSpec-FR-563-AC-1, FSpec-FR-718-AC-1; native `check --format text` accepts and renders text outcomes.
 #[test]
-#[trace("FSpec-FR-718-AC-1")]
+#[trace("FSpec-FR-563-AC-1", "FSpec-FR-718-AC-1")]
 fn check_text_format_renders_native_outcome_and_keeps_json_bytes() {
+    let success = Command::new(FSL)
+        .args(["check", SOURCE, "--format", "text"])
+        .output()
+        .expect("run successful native check in text format");
+    assert_eq!(
+        success.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&success.stdout)
+    );
+    assert!(success.stderr.is_empty(), "{:?}", success.stderr);
+    let success_rendered = String::from_utf8(success.stdout).expect("text output is UTF-8");
+    assert!(
+        success_rendered.starts_with("check: success (exit 0)"),
+        "{success_rendered}"
+    );
+
     let text = Command::new(FSL)
         .args(["check", CHECK_INVALID_SOURCE, "--format", "text"])
         .output()
@@ -544,9 +561,9 @@ fn check_text_format_renders_markdown_fence_items() {
     assert!(rendered.contains("type-mismatch"), "{rendered}");
 }
 
-/// Trace: FSpec-FR-718-AC-1; option refusals are rendered with the shared refusal shape.
+/// Trace: FSpec-FR-563-AC-1, FSpec-FR-718-AC-1; explicit-text option refusals use the shared refusal shape.
 #[test]
-#[trace("FSpec-FR-718-AC-1")]
+#[trace("FSpec-FR-563-AC-1", "FSpec-FR-718-AC-1")]
 fn check_text_format_renders_refusal_category_and_diagnostic() {
     let output = Command::new(FSL)
         .args(["check", "missing-check-source.native", "--format", "text"])
@@ -1379,10 +1396,10 @@ fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
     assert_eq!(document["diagnostics"][0]["message"], "expected `)`");
 }
 
-/// Trace: FR-002-AC-13.
+/// Trace: FR-002-AC-13, FSpec-FR-563-AC-1.
 /// Provenance: QSL-2202.
 #[test]
-#[trace("FR-002-AC-13")]
+#[trace("FR-002-AC-13", "FSpec-FR-563-AC-1")]
 fn check_text_refusal_prints_its_message_once() {
     let output = Command::new(FSL)
         .args(["check", INVALID_SOURCE, "--format", "text"])
