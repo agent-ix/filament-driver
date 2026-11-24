@@ -9,8 +9,9 @@ use filament_contract_codegen::{
     OracleGenerationError, PackageRequestError, RoutedGenerationError,
 };
 use filament_contract_model::{
-    CheckedNodeId, CheckedPackageIncomplete, CheckedPackageLimit, CheckedPackageRefusal,
-    CheckedPackageRefusalCause, CheckedPackageRefusalCode,
+    CheckedNodeId, CheckedPackageHostAllocationFailed, CheckedPackageIncomplete,
+    CheckedPackageLimit, CheckedPackageRefusal, CheckedPackageRefusalCause,
+    CheckedPackageRefusalCode,
 };
 use filament_exact::CancelCause;
 use filament_exact::NodeKey;
@@ -196,6 +197,15 @@ pub enum DriverFault {
     /// IR's reader refused the bytes FSL's E4 emitter just wrote.
     #[error("IR refused the emitted checked package: {:?}", .0.code)]
     HandoffRefused(Box<CheckedPackageRefusal>),
+    /// IR's reader admitted storage the host allocator could not provide;
+    /// this says nothing about the package or its configured limits.
+    #[error(
+        "host allocation failed during {:?}: requested {} bytes after {} bytes were admitted",
+        .0.stage,
+        .0.requested,
+        .0.consumed
+    )]
+    HostAllocationFailed(CheckedPackageHostAllocationFailed),
     /// FSL admitted a linked manifest whose advertised pair was incomplete.
     #[error("FSL admitted a linked manifest with an incomplete advertised pair")]
     AdmittedManifestMissingLabel,
@@ -674,7 +684,9 @@ impl DriverRefusal {
             Self::Fault(DriverFault::Spine { stage, .. }) => DriverStage::Compile(*stage),
             Self::HandoffCatalogUnavailable(_)
             | Self::HandoffLimit(_)
-            | Self::Fault(DriverFault::HandoffRefused(_)) => DriverStage::Handoff,
+            | Self::Fault(DriverFault::HandoffRefused(_) | DriverFault::HostAllocationFailed(_)) => {
+                DriverStage::Handoff
+            }
             Self::Generation(_)
             | Self::LoweringLimit { .. }
             | Self::Fault(DriverFault::UnknownNode { .. } | DriverFault::AmbiguousNode { .. }) => {
@@ -1014,6 +1026,7 @@ fn oracle_code(error: &OracleGenerationError) -> Code {
         // after IR admitted them, so a refusal or an unreadable catalog breaks
         // that join; a reader that hits the caller's limit is a limit.
         OracleGenerationError::KaniReaderRefused(_)
+        | OracleGenerationError::KaniReaderHostAllocationFailed(_)
         | OracleGenerationError::KaniReaderCatalogUnavailable(_) => Code::RuntimeInvariant,
         OracleGenerationError::KaniReaderIncomplete(incomplete) => {
             if incomplete.limit_kind == CheckedPackageLimit::Diagnostics {
@@ -1238,6 +1251,9 @@ fn oracle_message(error: &OracleGenerationError) -> String {
         }
         OracleGenerationError::KaniReaderRefused(refusal) => {
             format!("the Kani harness reader refused the retained package: {refusal:?}")
+        }
+        OracleGenerationError::KaniReaderHostAllocationFailed(failure) => {
+            format!("the Kani harness reader host allocation failed: {failure:?}")
         }
         OracleGenerationError::KaniReaderIncomplete(incomplete) => {
             format!("the Kani harness reader stopped at a limit: {incomplete:?}")

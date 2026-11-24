@@ -3,9 +3,10 @@
 
 use filament_contract_model::{
     read_checked_package, CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageEvidence,
-    CheckedPackageIncomplete, CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageV2,
-    ExactTypeProjection, ExactTypeProjectionError, NativeJoinBudget, SelectedExactIdentities,
-    SelectedSourceRecordMemberRow, SelectedSourceRecordRow,
+    CheckedPackageHostAllocationFailed, CheckedPackageIncomplete, CheckedPackageReadLimits,
+    CheckedPackageRefusal, CheckedPackageV2, ExactTypeProjection, ExactTypeProjectionError,
+    NativeJoinBudget, SelectedExactIdentities, SelectedSourceRecordMemberRow,
+    SelectedSourceRecordRow,
 };
 use fsl_package::Emission;
 
@@ -20,6 +21,8 @@ pub enum SourceRecordAdmissionErrorCode {
     ReadIncomplete,
     /// The owner operation catalog could not be acquired.
     CatalogUnavailable,
+    /// Host allocation failed during strict package reading.
+    Internal,
     /// Native source-record joining failed or exhausted its allowance.
     Join,
 }
@@ -32,6 +35,7 @@ impl SourceRecordAdmissionErrorCode {
             Self::ReadIncomplete => "read_incomplete",
             Self::Join => "join",
             Self::CatalogUnavailable => "catalog_unavailable",
+            Self::Internal => "internal",
         }
     }
 
@@ -41,6 +45,7 @@ impl SourceRecordAdmissionErrorCode {
             Self::ReadRefused,
             Self::ReadIncomplete,
             Self::CatalogUnavailable,
+            Self::Internal,
             Self::Join,
         ]
     }
@@ -66,6 +71,9 @@ pub enum SourceRecordAdmissionError {
     /// The original operational catalog failure.
     #[error(transparent)]
     CatalogUnavailable(filament_contract_model::CatalogReadError),
+    /// Host allocation failed during strict package reading.
+    #[error("source-record package host allocation failed: {0:?}")]
+    HostAllocationFailed(CheckedPackageHostAllocationFailed),
     /// The native join's original error, including resource cause and source locus.
     #[error("source-record witness join failed: {0}")]
     Join(#[source] ExactTypeProjectionError),
@@ -79,6 +87,7 @@ impl SourceRecordAdmissionError {
             Self::ReadIncomplete(_) => SourceRecordAdmissionErrorCode::ReadIncomplete,
             Self::Join(_) => SourceRecordAdmissionErrorCode::Join,
             Self::CatalogUnavailable(_) => SourceRecordAdmissionErrorCode::CatalogUnavailable,
+            Self::HostAllocationFailed(_) => SourceRecordAdmissionErrorCode::Internal,
         }
     }
 }
@@ -144,6 +153,9 @@ pub fn admit_source_records(
         }
         CheckedPackageDispatchResult::CatalogUnavailable(error) => {
             return Err(SourceRecordAdmissionError::CatalogUnavailable(error));
+        }
+        CheckedPackageDispatchResult::HostAllocationFailed(failure) => {
+            return Err(SourceRecordAdmissionError::HostAllocationFailed(failure));
         }
         CheckedPackageDispatchResult::Incomplete(error) => {
             return Err(SourceRecordAdmissionError::ReadIncomplete(error));

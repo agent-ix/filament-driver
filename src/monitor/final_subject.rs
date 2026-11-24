@@ -84,6 +84,9 @@ pub fn admit_monitor_final_subject<'a>(
         CheckedPackageDispatchResult::CatalogUnavailable(native) => {
             return Err(Error::CatalogUnavailable(native));
         }
+        CheckedPackageDispatchResult::HostAllocationFailed(failure) => {
+            return Err(Error::HostAllocationFailed(failure));
+        }
         CheckedPackageDispatchResult::Incomplete(native) => {
             return Err(Error::EmissionIncomplete(Box::new(native)))
         }
