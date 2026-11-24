@@ -619,17 +619,26 @@ temporal SelectedMonitor using timed over (candidate: Selected::ConfigVersion) c
 #[trace("FR-018-AC-3")]
 #[test]
 fn source_record_error_catalog_has_exact_distinct_round_trip_spellings() {
-    use SourceRecordAdmissionErrorCode::{CatalogUnavailable, Join, ReadIncomplete, ReadRefused};
+    use SourceRecordAdmissionErrorCode::{
+        CatalogUnavailable, Internal, Join, ReadIncomplete, ReadRefused,
+    };
 
     let expected = [
         (ReadRefused, "read_refused"),
         (ReadIncomplete, "read_incomplete"),
         (CatalogUnavailable, "catalog_unavailable"),
+        (Internal, "internal"),
         (Join, "join"),
     ];
     assert_eq!(
         SourceRecordAdmissionErrorCode::all(),
-        &[ReadRefused, ReadIncomplete, CatalogUnavailable, Join]
+        &[
+            ReadRefused,
+            ReadIncomplete,
+            CatalogUnavailable,
+            Internal,
+            Join
+        ]
     );
     let mut spellings = std::collections::BTreeSet::new();
     for (code, spelling) in expected {

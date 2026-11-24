@@ -4,8 +4,9 @@
 use filament_contract_model::{
     CheckedCallableReadError, CheckedCallableReadErrorCode, CheckedMonitorClockReadError,
     CheckedMonitorClockReadErrorCode, CheckedNodeId, CheckedOperationViewError,
-    CheckedPackageIncomplete, CheckedPackageRefusal, ExactTypeProjectionError,
-    ExactTypeProjectionErrorCode, NativeJoinChargeKind, SelectedMonitorTypeClosureErrorCode,
+    CheckedPackageHostAllocationFailed, CheckedPackageIncomplete, CheckedPackageRefusal,
+    ExactTypeProjectionError, ExactTypeProjectionErrorCode, NativeJoinChargeKind,
+    SelectedMonitorTypeClosureErrorCode,
 };
 use filament_contract_runtime::monitor::ProgramRefusal;
 use filament_exact::{CancelCause, InvalidNodeKey};
@@ -151,6 +152,9 @@ pub enum MonitorPreparationError {
     /// The native catalog acquisition failure, separate from malformed input.
     #[error(transparent)]
     CatalogUnavailable(filament_contract_model::CatalogReadError),
+    /// Host allocation failure during strict package acquisition.
+    #[error("monitor emission host allocation failed: {0:?}")]
+    HostAllocationFailed(CheckedPackageHostAllocationFailed),
     /// Original strict native acquisition limit, outside the driver ledger.
     #[error("monitor emission acquisition incomplete: {0:?}")]
     EmissionIncomplete(Box<CheckedPackageIncomplete>),
@@ -308,7 +312,9 @@ impl MonitorPreparationError {
             Self::MissingFinalSubject(_) | Self::EmissionRefused(_) => {
                 MonitorPreparationErrorCode::Selection
             }
-            Self::CatalogUnavailable(_) => MonitorPreparationErrorCode::Internal,
+            Self::CatalogUnavailable(_) | Self::HostAllocationFailed(_) => {
+                MonitorPreparationErrorCode::Internal
+            }
             Self::EmissionIncomplete(_) => MonitorPreparationErrorCode::Work,
             Self::Program(_) => MonitorPreparationErrorCode::Program,
             Self::OperationRead(_) => MonitorPreparationErrorCode::Internal,

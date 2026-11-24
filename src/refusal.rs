@@ -1026,6 +1026,7 @@ fn oracle_code(error: &OracleGenerationError) -> Code {
         // after IR admitted them, so a refusal or an unreadable catalog breaks
         // that join; a reader that hits the caller's limit is a limit.
         OracleGenerationError::KaniReaderRefused(_)
+        | OracleGenerationError::KaniReaderHostAllocationFailed(_)
         | OracleGenerationError::KaniReaderCatalogUnavailable(_) => Code::RuntimeInvariant,
         OracleGenerationError::KaniReaderIncomplete(incomplete) => {
             if incomplete.limit_kind == CheckedPackageLimit::Diagnostics {
@@ -1250,6 +1251,9 @@ fn oracle_message(error: &OracleGenerationError) -> String {
         }
         OracleGenerationError::KaniReaderRefused(refusal) => {
             format!("the Kani harness reader refused the retained package: {refusal:?}")
+        }
+        OracleGenerationError::KaniReaderHostAllocationFailed(failure) => {
+            format!("the Kani harness reader host allocation failed: {failure:?}")
         }
         OracleGenerationError::KaniReaderIncomplete(incomplete) => {
             format!("the Kani harness reader stopped at a limit: {incomplete:?}")
