@@ -21,8 +21,9 @@ generators.
 Download the prebuilt `fsl` and `fsl-plugin-launch` binaries from the [latest release](https://github.com/agent-ix/filament-driver/releases/latest)
 (Linux x86_64 and aarch64, macOS arm64 and x86_64). Each release carries a
 `SHA256SUMS.txt`. Or build from source: `rust-toolchain.toml` pins Rust 1.98.1,
-which `rustup` installs on first use. Install the `fsl` binary using the
-repository's locked dependencies. Set `FSL_REVISION` to the commit or release
+which `rustup` installs on first use. Install the `fsl` binary (from the `fsl-cli`
+crate) and the `fsl-plugin-launch` launcher (from the `filament-plugin-host`
+crate) using the repository's locked dependencies. Set `FSL_REVISION` to the commit or release
 tag revision you want to install. The driver's own release profile needs more
 than 8 GB of memory, so the `CARGO_*` overrides turn off incremental builds,
 debug info and link-time optimization and use 16 code-generation units:
@@ -37,13 +38,17 @@ CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_PROFILE_RELEASE_INCREMEN
   cargo install --git https://github.com/agent-ix/filament-driver --rev "$FSL_REVISION" --locked filament-plugin-host
 ```
 
-To install from a local checkout instead:
+To install from a local checkout instead, with the same overrides:
 
 ```
 git clone https://github.com/agent-ix/filament-driver
 cd filament-driver
-cargo install --path fsl-cli --locked
-cargo install --path filament-plugin-host --locked
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_PROFILE_RELEASE_INCREMENTAL=false \
+  CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+  cargo install --path fsl-cli --locked
+CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_PROFILE_RELEASE_INCREMENTAL=false \
+  CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+  cargo install --path filament-plugin-host --locked
 ```
 
 Check the install with `fsl --version`.
