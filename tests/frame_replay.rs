@@ -211,6 +211,7 @@ impl Fixture {
                 supplied_limits: None,
                 declared_domains: vec![],
                 replay_limits: ReplayLimits::default(),
+                clocks: cg::ReplayClocks::default(),
             },
             packages: vec![ProvidedDocument {
                 bytes: self.domain.clone(),

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use filament_contract_codegen::{
     FrameReplay, FrameReplayError, FrameReplayInputs, SelectedFrameTarget,
 };
-use filament_contract_model::{ContractSourceV1, TemporalBinding};
+use filament_contract_model::{ClockConfiguration, ContractSourceV1, TemporalBinding};
 use fsl_foundation::SourceIdentity;
 use fsl_replay::spine::{DependencyInput, DependencyInputRefusal, RequestClocks, SuppliedLibrary};
 
@@ -80,6 +80,7 @@ impl Driven {
             &inputs.operation,
         )
         .map_err(FrameReplayFailure::CallSite)?;
+        inputs.run.clocks.program = replay_program_clocks(&clocks);
         let mismatch = || {
             FrameReplayFailure::Driver(Box::new(DriverRefusal::Fault(
                 DriverFault::FrameReplayAssociation,
@@ -180,9 +181,7 @@ impl FrameReplayFailure {
 /// not carried. FSL's `RequestClocks::for_replay`, which keeps program and
 /// dependency clocks apart, is `pub(crate)`; `RequestClocks::new` serves both
 /// namespaces from one map. The driver adopts `for_replay` once FSL exposes it.
-fn request_clocks(
-    rows: Option<&[TemporalBinding]>,
-) -> Result<RequestClocks, FrameReplayFailure> {
+fn request_clocks(rows: Option<&[TemporalBinding]>) -> Result<RequestClocks, FrameReplayFailure> {
     let mut members = BTreeMap::new();
     for row in rows.unwrap_or_default() {
         if fsl_package::is_model_binding_name(&row.clock_name) {
@@ -199,10 +198,18 @@ fn request_clocks(
     })
 }
 
+fn replay_program_clocks(clocks: &RequestClocks) -> BTreeMap<String, ClockConfiguration> {
+    clocks
+        .iter()
+        .map(|(name, configuration)| (name.to_owned(), configuration.clone()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use filament_contract_model::{CheckedNodeId, ClockConfiguration};
+    use filament_contract_model::CheckedNodeId;
     use filament_exact::{NodeKey, PathSegment};
+    use ix_trace_rs::trace;
 
     use super::*;
 
@@ -230,6 +237,18 @@ mod tests {
         ClockConfiguration::TimestampedEvent {
             timestamp_unit: unit.into(),
         }
+    }
+
+    #[test]
+    #[trace("FR-009-AC-17", "TC-016")]
+    fn replay_inputs_preserve_the_selected_program_clocks() {
+        let clocks = RequestClocks::new(BTreeMap::from([("events".to_owned(), configured("ms"))]))
+            .expect("well-formed clock selection");
+
+        assert_eq!(
+            replay_program_clocks(&clocks),
+            BTreeMap::from([("events".to_owned(), configured("ms"))])
+        );
     }
 
     /// A real clock row becomes a named member, not the default selection.
