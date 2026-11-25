@@ -13,6 +13,12 @@ publish = false
 name = "fsl"
 path = "src/main.rs"
 
+[[test]]
+name = "fsl-cli-process-fixture"
+path = "tests/fixtures/process_plugin.rs"
+bench = false
+harness = false
+
 [features]
 # Opt-in TC-018 seam; it is absent from default features and only active in
 # builds with debug assertions. Other builds reject explicit feature selection.

@@ -20,6 +20,38 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[cfg(test)]
+pub(crate) fn fixture_executable() -> std::path::PathBuf {
+    let executable = std::env::current_exe().expect("test executable");
+    let target_dir = executable
+        .parent()
+        .and_then(Path::parent)
+        .expect("test executable is under target/debug/deps");
+    let direct = target_dir.join("fsl-cli-process-fixture");
+    if direct.is_file() {
+        return direct;
+    }
+    let deps_dir = target_dir.join("deps");
+    let direct_deps = deps_dir.join("fsl-cli-process-fixture");
+    if direct_deps.is_file() {
+        return direct_deps;
+    }
+    std::fs::read_dir(deps_dir)
+        .expect("Cargo test target directory exists")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            (name.starts_with("fsl_cli_process_fixture-")
+                || name.starts_with("fsl-cli-process-fixture-"))
+                && path.extension().is_none_or(|extension| extension == "exe")
+        })
+        .expect("Cargo-built Rust process fixture executable exists")
+}
+
 /// Closed FR-331 result values retained before a FSL mapping is available.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -495,7 +527,6 @@ where
     reason = "an adapter fixture mismatch is the test failure report"
 )]
 mod tests {
-    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -509,7 +540,7 @@ mod tests {
     use fsl_route::{descriptor_from_manifest, BackendDescriptor, Candidate, ProviderOrigin};
     use serde::Deserialize;
 
-    use super::HostProcessProvider;
+    use super::{fixture_executable, HostProcessProvider};
     use crate::test_support::with_provider_request;
 
     #[derive(Debug, Deserialize)]
@@ -553,26 +584,8 @@ mod tests {
         Ok((descriptor, retained))
     }
 
-    fn python_path() -> PathBuf {
-        let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH is set"))
-            .map(|directory| directory.join("python3"))
-            .find(|candidate| candidate.is_file())
-            .expect("the plugin fixture requires Python 3");
-        assert!(python.is_absolute());
-        python
-    }
-
-    fn fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../filament-plugin-host/tests/fixtures/echo-plugin.py")
-    }
-
-    fn backend_provider_fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/backend-provider-plugin.py")
-    }
-
-    fn wrong_result_fixture_path() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/wrong-result-plugin.py")
+    fn fixture_arguments(kind: &str) -> [std::ffi::OsString; 1] {
+        [kind.into()]
     }
 
     fn limits() -> ProcessProviderLimits {
@@ -646,15 +659,9 @@ mod tests {
             },
         );
         let cancel = Cancel::new();
-        let fixture = fixture_path();
-        assert!(fixture.is_file(), "host echo fixture exists");
+        let arguments = fixture_arguments("echo");
         let mut session = provider
-            .start(
-                &python_path(),
-                &[fixture.into_os_string()],
-                limits(),
-                &cancel,
-            )
+            .start(&fixture_executable(), &arguments, limits(), &cancel)
             .expect("host starts and admits hello");
         assert_eq!(session.descriptor().origin(), ProviderOrigin::Process);
         assert_eq!(session.descriptor().id().as_str(), "agent-ix/provider/test");
@@ -737,15 +744,9 @@ mod tests {
             |_| Ok(ProviderResults::<serde_json::Value, String>::default()),
         );
         let cancel = Cancel::new();
-        let fixture = backend_provider_fixture_path();
-        assert!(fixture.is_file(), "FR-331 fixture exists");
+        let arguments = fixture_arguments("fr331");
         let mut session = provider
-            .start(
-                &python_path(),
-                &[fixture.into_os_string()],
-                limits(),
-                &cancel,
-            )
+            .start(&fixture_executable(), &arguments, limits(), &cancel)
             .expect("typed FR-331 hello is admitted");
         assert_eq!(admissions.load(Ordering::Relaxed), 1);
         assert_eq!(session.descriptor().origin(), ProviderOrigin::Process);
@@ -830,10 +831,9 @@ mod tests {
             |_: serde_json::Value| Ok(ProviderResults::<serde_json::Value, String>::default()),
         );
         let cancel = Cancel::new();
-        let fixture = wrong_result_fixture_path();
-        let arguments = [fixture.into_os_string()];
+        let arguments = fixture_arguments("wrong-result");
         let mut session = provider
-            .start(&python_path(), &arguments, limits(), &cancel)
+            .start(&fixture_executable(), &arguments, limits(), &cancel)
             .expect("fixture hello is admitted");
         let error = with_provider_request(move |request| {
             session.invoke(ProcessProviderRequest {
@@ -879,13 +879,8 @@ mod tests {
             |_: &Hello, _: &serde_json::Value| Ok::<(), String>(()),
             |_: serde_json::Value| Ok(ProviderResults::<serde_json::Value, String>::default()),
         );
-        let fixture = fixture_path();
-        let error = provider.start(
-            &python_path(),
-            &[fixture.into_os_string()],
-            limits(),
-            &Cancel::new(),
-        );
+        let arguments = fixture_arguments("echo");
+        let error = provider.start(&fixture_executable(), &arguments, limits(), &Cancel::new());
         let refused_for_origin = match error {
             Err(super::AdapterError::Start(PluginError::ManifestAdmission(
                 super::AdmissionFailure::WrongOrigin,

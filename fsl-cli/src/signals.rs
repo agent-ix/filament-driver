@@ -520,27 +520,21 @@ mod tests {
             }
         }
 
-        if let (Ok(stage), Ok(ready), Ok(descendant), Ok(plugin_marker), Ok(outcome)) = (
+        if let (Ok(stage), Ok(ready), Ok(_), Ok(_), Ok(outcome)) = (
             std::env::var("FILAMENT_PLUGIN_SIGNAL_STAGE"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_READY"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_DESCENDANT"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_PLUGIN_MARKER"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_OUTCOME"),
         ) {
+            // The fixture signals this test process, not the harness that spawned it.
+            std::env::set_var(
+                "FILAMENT_PLUGIN_SIGNAL_PARENT_PID",
+                std::process::id().to_string(),
+            );
             super::run(move |context| {
-                let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
-                    .map(|directory| directory.join("python3"))
-                    .find(|candidate| candidate.is_file())
-                    .expect("Python fixture interpreter");
-                let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("tests/fixtures/signal-plugin.py");
-                let arguments = [
-                    fixture.into_os_string(),
-                    stage.clone().into(),
-                    ready.clone().into(),
-                    descendant.clone().into(),
-                    plugin_marker.clone().into(),
-                ];
+                let fixture = crate::process_provider::fixture_executable();
+                let arguments = ["signal".into()];
                 let provider = crate::process_provider::HostProcessProvider::<
                     Value,
                     Value,
@@ -592,7 +586,8 @@ mod tests {
                     cancellation_grace: Duration::from_millis(100),
                 };
                 let start_cancel = Cancel::new();
-                let mut session = match provider.start(&python, &arguments, limits, &start_cancel) {
+                let mut session = match provider.start(&fixture, &arguments, limits, &start_cancel)
+                {
                     Ok(session) => session,
                     Err(_) if stage.starts_with("hello") => return,
                     Err(error) => panic!("adapter start failed unexpectedly: {error:?}"),
@@ -664,6 +659,7 @@ mod tests {
                     "signals::tests::plugin_session_signals_cancel_and_reap_each_active_lifecycle_stage",
                 ])
                     .env("FILAMENT_PLUGIN_SIGNAL_STAGE", stage)
+                .env("FILAMENT_PLUGIN_SIGNAL_PARENT_PID", std::process::id().to_string())
                     .env("FILAMENT_PLUGIN_SIGNAL_READY", &ready)
                 .env("FILAMENT_PLUGIN_SIGNAL_RELEASE", &release)
                     .env("FILAMENT_PLUGIN_SIGNAL_DESCENDANT", &descendant)
