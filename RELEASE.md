@@ -47,6 +47,13 @@ CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test frontend_cli timed_anal
 CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test frontend_cli timed_analyze::analyze_zone_deadline_refuted -- --exact
 ```
 
+Then run the named-test sweep on the final candidate, before any tag. For every area that changed since the previous release tag of the repository being tagged (list the changed areas with `git diff --stat <previous-tag>..HEAD`), run name-filtered tests: a test-name filter or an exact test name, never the whole suite. Each filter must run at least one test. Read the result line of every command and fail the sweep on `0 passed` or on a filter that matches no test. For example:
+
+```sh
+CARGO_BUILD_JOBS=2 cargo test --locked -p <package> --lib <module>::<filter>
+CARGO_BUILD_JOBS=2 cargo test --locked -p <package> --test <binary> <filter>
+```
+
 Build the candidate pair with the same `dist` profile used by the release workflow:
 
 ```sh
