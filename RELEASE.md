@@ -1,10 +1,10 @@
 # FSL alpha release runbook
 
-Use this runbook to tag and verify the FSL alpha release. The release identity is `v0.2.0`; alpha describes its quality, not a version suffix. Run the release gates on Titan. The release owner pushes each tag only after checking that repository's latest tag and the exact commit to tag.
+Use this runbook to tag and verify the FSL alpha release. The release identity is `v0.2.0`; alpha describes its quality, not a version suffix. Run the release gates on one release host that has Docker and the pinned Rust toolchain (Titan, Luna or Terra). The release owner pushes each tag only after checking that repository's latest tag and the exact commit to tag.
 
 ## Release order
 
-Tag in dependency order. The proposed tags below are the 2026-11-22 snapshot; stop if a repository already has a later tag and choose the next unused repository-native version.
+Tag in dependency order. Stop if a repository already has a later tag than the one proposed below and choose the next unused repository-native version.
 
 | Order | Repository | Proposed tag | Consumer role |
 | --- | --- | --- | --- |
@@ -19,11 +19,11 @@ Tag in dependency order. The proposed tags below are the 2026-11-22 snapshot; st
 
 Only the driver tag creates downloadable `fsl` release archives. The examples tag carries tutorials and the image workflow; the template and docs tags identify consumer content. Supporting crates such as `filament-exact` and `filament-semantic-value` are consumed at Cargo-pinned commits and do not need separate alpha tags for this install path.
 
-Before the first tag, merge and freeze the release pin updates. FSL main at `5275e5086fec403c4d1a6bce25ab7c3660ea5716` uses specification `01f8dd31b8cc540418a4858543aed7231a1ed1ee` and contract IR `14c06b047b6a3b23a4da53723574ad7ce49ba246`. Codegen PR #888 merged as `ecbc3a4c05a0e76152872fce1bd4c0c7af96a1cb`, moving its FSL dependencies from `7713d248be656715cee7ecdac50106991f0158b4` to the FSL revision. Driver PR #244 merged as `2f5c2a228ee0a273498997db97d3b20b2d645727`, moving its FSL pin from `86acfdeedabe40674067342aaf2f639d48fc15f3` to that same SHA. The driver must pin codegen at `ecbc3a4c05a0e76152872fce1bd4c0c7af96a1cb`; its Cargo.lock must resolve the same dependency cohort. Do not tag a dependent repository until its pin update is merged and the release candidate has passed its required gate.
+Before the first tag, merge and freeze the release pin updates. The driver, codegen, FSL and runtime pins must form one cohort: the driver `Cargo.toml` and `Cargo.lock` pin the same FSL revision as codegen, the same `filament-contract-model` (contract IR) revision as FSL and codegen, the same `filament-semantic-value` and `filament-eval` revisions as FSL, and the codegen and runtime revisions that were merged for this release. `Cargo.lock` must hold one entry each for `filament-semantic-value`, `filament-contract-model` and `filament-contract-runtime`, and every `fsl-*` crate at the one FSL revision; a second copy breaks type identity. The known duplicates in the dependency graph are `quire-canonical` (`v0.3.1` and `v0.3.2`) and `quire-rs` (`0.53.0` and `0.62.3`), which do not cross these interfaces. Tag each dependency repository at the commit the verified candidate resolves (the revision in the driver `Cargo.lock`), not at a later `main`, and tag the driver at `DRIVER_SHA`. Do not tag a dependent repository until its pin update is merged and the release candidate has passed its required gate.
 
 ## One-pass candidate verification
 
-After all pin moves are merged, freeze the driver candidate commit. Record the full 40-character SHA as `DRIVER_SHA`; paste that exact value into the Titan handoff and the source image build. Do not substitute a branch name or move the candidate after freezing it.
+After all pin moves are merged, freeze the driver candidate commit. Record the full 40-character SHA as `DRIVER_SHA`; paste that exact value into the release-host handoff and the source image build. Do not substitute a branch name or move the candidate after freezing it.
 
 ```sh
 cd /home/peter/dev/filament-driver
@@ -32,7 +32,7 @@ git status --short
 git rev-parse HEAD
 ```
 
-On Titan, check out that frozen commit. Run the workspace compile first, then only the named alpha CLI proofs:
+On the release host, check out that frozen commit. Run the workspace compile first, then only the named alpha CLI proofs:
 
 ```sh
 cd /home/peter/dev/filament-driver
@@ -54,7 +54,7 @@ CARGO_BUILD_JOBS=2 cargo build --locked --profile dist -p fsl-cli --bin fsl
 CARGO_BUILD_JOBS=2 cargo build --locked --profile dist -p filament-plugin-host --bin fsl-plugin-launch
 ```
 
-Run the candidate-mode journey with the Ubuntu 26.04 baseline. `FSL_BINARY` points to the just-built candidate; leave `FSL_RELEASE_BINARY` unset.
+Run the candidate-mode journey with the Ubuntu 26.04 baseline. `FSL_BINARY` points to the just-built candidate; leave `FSL_RELEASE_BINARY` unset. Candidate mode skips the released-artifact check and the tutorial setup commands that clone the examples repository or change directory; the gate reports them as skipped, not failed.
 
 ```sh
 CARGO_BUILD_JOBS=2 make alpha-journey-gate \
@@ -64,7 +64,7 @@ CARGO_BUILD_JOBS=2 make alpha-journey-gate \
   ALPHA_JOURNEY_BASE_IMAGE=ubuntu:26.04
 ```
 
-From the examples checkout, build and smoke a local source-mode image on Titan. Set `DRIVER_SHA` to the frozen full SHA. This local Docker build does not publish an image; the Dockerfile applies its own bounded release profile settings to the source build.
+From the examples checkout, build and smoke a local source-mode image on the release host. Set `DRIVER_SHA` to the frozen full SHA. This local Docker build does not publish an image; the Dockerfile applies its own bounded release profile settings to the source build.
 
 ```sh
 cd /home/peter/dev/filament-examples
@@ -77,7 +77,7 @@ docker build --pull -f image/Dockerfile \
 docker run --rm filament-toolchain:source-candidate smoke.sh
 ```
 
-After the Titan gates pass, stop for Draco's explicit go-ahead. Only then tag the repositories in the release order above, one repository at a time. Recheck each latest tag and candidate commit immediately before that tag push; verify the remote tag before proceeding. A driver tag publishes the GitHub release, and the examples image workflow publishes its requested image tags. Do not create either tag or publish either artifact before the go-ahead.
+After the release-host gates pass, stop for Draco's explicit go-ahead. Only then tag the repositories in the release order above, one repository at a time. Recheck each latest tag and candidate commit immediately before that tag push; verify the remote tag before proceeding. A driver tag publishes the GitHub release, and the examples image workflow publishes its requested image tags. Do not create either tag or publish either artifact before the go-ahead.
 
 ## Tag and verify one repository at a time
 
@@ -115,7 +115,7 @@ For this release, keep these authoritative values aligned with `0.2.0` where app
 
 `filament-spec-language` has package version `0.3.0`; repository tag `v0.3.0` matches it. The standard uses dynamic package versioning. Contract IR and codegen repository tags are independent repository tags; do not change their Cargo package versions solely to make them equal the driver version. Before a later alpha, search these files and the image configuration for the selected version, update only the authoritative values, then regenerate Cargo.lock for manifest changes.
 
-The toolchain image's pinned npm tools are separate from the driver's `fsl` version. Examples PR [#104](https://github.com/agent-ix/filament-examples/pull/104), head `971b698d3ccc514297539fa394ee99da80b781aa`, sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. During the image build, `cargo metadata --locked` runs against `/tmp/driver-source` at the exact release revision, `/tmp/licences/tools/fsl-examples` at the image revision, `/tmp/quire-cli-source` from `agent-ix/quire-cli` tag `v0.52.1`, and `/tmp/quoin-source` from `agent-ix/quoin` tag `v0.36.10`. The npm inventory comes from installed `/opt/npm/node_modules` and `/opt/npm/package-lock.json`. The generated notices ship in the image under `/usr/share/licenses/filament-toolchain`; generated license records and notices are not checked into the repository. These npm versions describe the toolchain image, not the driver's version.
+The toolchain image's pinned npm tools are separate from the driver's `fsl` version. The examples image sets `@agent-ix/quire-cli` to `0.52.1` and `@agent-ix/quoin` to `0.36.10` in `image/package.json`. `image/package-lock.json` records the exact npm versions and integrity values, and the Docker build installs them with `npm ci`. During the image build, `cargo metadata --locked` runs against `/tmp/driver-source` at the exact release revision, `/tmp/licences/tools/fsl-examples` at the image revision, `/tmp/quire-cli-source` from `agent-ix/quire-cli` tag `v0.52.1`, and `/tmp/quoin-source` from `agent-ix/quoin` tag `v0.36.10`. The npm inventory comes from installed `/opt/npm/node_modules` and `/opt/npm/package-lock.json`. The generated notices ship in the image under `/usr/share/licenses/filament-toolchain`; generated license records and notices are not checked into the repository. These npm versions describe the toolchain image, not the driver's version.
 
 ## Driver release workflow
 
@@ -144,7 +144,7 @@ gh workflow run image.yml --repo agent-ix/filament-examples --ref v0.2.0 \
   -f tags=0.2.0 -f fsl_version=0.2.0 -f fsl_source=release
 ```
 
-After publication, verify the built image on Titan:
+After publication, verify the built image on the release host:
 
 ```sh
 IMAGE=ghcr.io/agent-ix/filament-toolchain:0.2.0
@@ -160,7 +160,7 @@ Inspect the generated notices under `/usr/share/licenses/filament-toolchain`. Co
 
 ## Released-mode journey gate
 
-Run this on Titan after the driver release assets, docs tag, and examples tag are available. First complete the release download and full checksum verification above; reuse that `release/` directory here. Prerequisites: Cargo and the pinned Rust toolchain, Docker running, host `readelf` from binutils, matching local docs and examples checkouts, and network access to pull Ubuntu 26.04. Use the actual released Linux GNU `fsl` binary, not a local candidate:
+Run this on the release host after the driver release assets, docs tag, and examples tag are available. First complete the release download and full checksum verification above; reuse that `release/` directory here. Prerequisites: Cargo and the pinned Rust toolchain, Docker running, host `readelf` from binutils, matching local docs and examples checkouts, and network access to pull Ubuntu 26.04. Use the actual released Linux GNU `fsl` binary, not a local candidate:
 
 ```sh
 tar -xzf release/fsl-v0.2.0-x86_64-unknown-linux-gnu.tar.gz -C release fsl
