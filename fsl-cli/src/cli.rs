@@ -2943,6 +2943,12 @@ fn with_format_as(
                 }
                 rendered.push_str(&hint);
             }
+            if rendered.len() > fsl_replay::RenderLimits::default().output_bytes {
+                return CommandResult::failure(
+                    Category::InternalFailure,
+                    "could not render the outcome document as text",
+                );
+            }
             result.text_output = Some(rendered);
             result
         }
@@ -2969,20 +2975,23 @@ fn native_fences_text(document: &OutcomeDocument) -> Option<String> {
             fence.category.as_str(),
             fence.first_line
         ));
+        if let Some(actual) = fence.actual {
+            rendered.push_str(&format!("  actual: {actual}\n"));
+        }
         for diagnostic in &fence.diagnostics {
-            let locus = diagnostic
+            let position = diagnostic
                 .original_regions
                 .first()
-                .and_then(|region| serde_json::to_value(region).ok());
-            let position = locus.as_ref().and_then(|region| {
-                Some(format!(
-                    "{}:{}:{}",
-                    region.get("file")?.as_str()?,
-                    region.get("span")?.get("start")?.get("line")?.as_u64()?,
-                    region.get("span")?.get("start")?.get("column")?.as_u64()?
-                ))
-            });
-            let prefix = position.unwrap_or_else(|| format!("<no-source:{}>", fence.path));
+                .map(|region| match region {
+                    fsl_replay::OutcomeLocus::Located { file, span } => {
+                        format!("{}:{}:{}", file, span.start.line, span.start.column)
+                    }
+                    fsl_replay::OutcomeLocus::Region { source, start, end } => {
+                        format!("{}/{}:{start}-{end}", source.authority(), source.identity())
+                    }
+                    _ => String::from("<no-source>"),
+                });
+            let prefix = position.unwrap_or_else(|| String::from("<no-source>"));
             rendered.push_str(&format!(
                 "{prefix}: {}: {}\n",
                 diagnostic.diagnostic.code(),
@@ -2990,6 +2999,19 @@ fn native_fences_text(document: &OutcomeDocument) -> Option<String> {
             ));
             if let Some(cause) = diagnostic.diagnostic.cause() {
                 rendered.push_str(&format!("  cause: {cause}\n"));
+            }
+            let diagnostic_wire = serde_json::to_value(&diagnostic.diagnostic).ok();
+            if let Some(label) = diagnostic_wire
+                .as_ref()
+                .and_then(|value| value.get("label")?.as_str())
+            {
+                rendered.push_str(&format!("  label: {label}\n"));
+            }
+            if let Some(hint) = diagnostic_wire
+                .as_ref()
+                .and_then(|value| value.get("hint")?.as_str())
+            {
+                rendered.push_str(&format!("  hint: {hint}\n"));
             }
         }
     }
