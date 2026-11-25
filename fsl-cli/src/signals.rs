@@ -520,7 +520,7 @@ mod tests {
             }
         }
 
-        if let (Ok(stage), Ok(ready), Ok(descendant), Ok(plugin_marker), Ok(outcome)) = (
+        if let (Ok(stage), Ok(ready), Ok(_), Ok(_), Ok(outcome)) = (
             std::env::var("FILAMENT_PLUGIN_SIGNAL_STAGE"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_READY"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_DESCENDANT"),
