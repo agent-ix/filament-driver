@@ -9,12 +9,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 fn main() {
-    let kind = std::env::args().nth(1).expect("fixture kind argument");
+    let Some(kind) = std::env::args().nth(1) else {
+        return;
+    };
     if kind == "descendant" {
         run_descendant();
-        return;
+    } else if matches!(kind.as_str(), "echo" | "fr331" | "wrong-result" | "signal") {
+        run_plugin_fixture(&kind);
     }
-    run_plugin_fixture(&kind);
 }
 
 fn write_frame(value: &Value) {

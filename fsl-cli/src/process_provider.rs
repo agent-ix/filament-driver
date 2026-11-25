@@ -22,12 +22,34 @@ use serde::Serialize;
 
 #[cfg(test)]
 pub(crate) fn fixture_executable() -> std::path::PathBuf {
-    std::env::current_exe()
+    let target_dir = std::env::current_exe()
         .expect("test executable")
         .parent()
         .and_then(Path::parent)
-        .expect("test executable is under target/debug/deps")
-        .join("fsl-cli-process-fixture")
+        .expect("test executable is under target/debug/deps");
+    let direct = target_dir.join("fsl-cli-process-fixture");
+    if direct.is_file() {
+        return direct;
+    }
+    let deps_dir = target_dir.join("deps");
+    let direct_deps = deps_dir.join("fsl-cli-process-fixture");
+    if direct_deps.is_file() {
+        return direct_deps;
+    }
+    std::fs::read_dir(deps_dir)
+        .expect("Cargo test target directory exists")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            (name.starts_with("fsl_cli_process_fixture-")
+                || name.starts_with("fsl-cli-process-fixture-"))
+                && path.extension().is_none_or(|extension| extension == "exe")
+        })
+        .expect("Cargo-built Rust process fixture executable exists")
 }
 
 /// Closed FR-331 result values retained before a FSL mapping is available.
