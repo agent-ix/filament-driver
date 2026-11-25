@@ -900,6 +900,8 @@ fn package_read_refusal_cause(cause: CheckedPackageRefusalCause) -> &'static str
         CheckedPackageRefusalCause::InexactNumber => "inexact-number",
         CheckedPackageRefusalCause::InvalidSemanticGraph => "invalid-semantic-graph",
         CheckedPackageRefusalCause::InvalidTaskSet => "invalid-task-set",
+        // FSL FR-320-AC-4 pairs a stale node key with `invalid_package`.
+        CheckedPackageRefusalCause::StaleNodeKey => "stale-node-key",
         CheckedPackageRefusalCause::ClockReadOutsideConstraint => "clock-read-outside-constraint",
     }
 }
@@ -1506,10 +1508,7 @@ mod tests {
                 CheckedPackageRefusalCause::ClockWithoutDenseTime,
                 "clock-without-dense-time",
             ),
-            (
-                CheckedPackageRefusalCause::StaleNodeKey,
-                "stale-node-key",
-            ),
+            (CheckedPackageRefusalCause::StaleNodeKey, "stale-node-key"),
         ];
         for (cause, spelling) in cases {
             let projection = ContractPackageRefusalProjection {
