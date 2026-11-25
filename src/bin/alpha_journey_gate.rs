@@ -12,6 +12,8 @@ const INSTALL_PAGE: &str = "src/content/docs/fsl/guides/set-up-your-environment.
 const INSTALL_STEPS: &str = "install-test/steps.md";
 const TUTORIAL_DIR: &str = "src/content/docs/fsl/tutorials";
 const REFINEMENT_PAGE: &str = "src/content/docs/fsl/learn/refinement.md";
+const MODEL_GENERATOR_PREFIX: &str = "node tools/model.mjs ";
+const WRITE_A_MODEL_PAGE: &str = "src/content/docs/fsl/guides/write-a-model.md";
 
 #[derive(Debug, PartialEq, Eq)]
 enum OutputView {
@@ -192,6 +194,7 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
     let mut examples_list = Vec::new();
     let mut literal_commands = Vec::new();
     let mut file_excerpts = Vec::new();
+    let mut step_files = Vec::new();
     for page in &tutorial_pages {
         let content = match read(&docs.join(page)) {
             Ok(content) => content,
@@ -231,9 +234,32 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
         for issue in unparsed_fences(page, &content) {
             record_parse_issue(stats, &docs, issue);
         }
+        for (line, path) in page_step_files(&content) {
+            step_files.push((page.clone(), line, path));
+        }
         literal_commands.extend(page_literals);
         file_excerpts.extend(page_excerpts);
         examples_list.extend(page_examples);
+    }
+    for (page, line, path) in step_files {
+        stats.checked += 1;
+        let file = examples.join(&path);
+        if fs::read_to_string(&file).is_ok_and(|text| !text.trim().is_empty()) {
+            println!(
+                "PASS {}:{} | steps file {} exists in the examples repository",
+                docs.join(&page).display(),
+                line,
+                path
+            );
+        } else {
+            record_failure(
+                stats,
+                &docs.join(&page),
+                &format!("steps file fence at line {line}"),
+                "a non-empty file in the examples repository",
+                &format!("{} is missing or empty", file.display()),
+            );
+        }
     }
     for excerpt in file_excerpts {
         stats.checked += 1;
@@ -434,10 +460,7 @@ fn run_inner(stats: &mut GateStats) -> Result<(), String> {
         stats.tutorial_commands += 1;
         let expected_status = format!("exit {}", literal.expected_exit);
         let command_label = format!("line {}: {}", literal.line, literal.command);
-        let shell_command = format!(
-            "cd /candidate-examples/examples/{} && export PATH=/root/.local/bin:$PATH && {}",
-            literal.system, literal.command
-        );
+        let shell_command = literal_shell_command(&literal);
         match exec(&container, "bash", &["-lc", &shell_command]) {
             Ok(actual) => {
                 let actual_text = normalize_lines(&stdout_text(&actual));
@@ -942,6 +965,7 @@ fn tutorial_pages(docs: &Path, directory: &Path) -> Result<Vec<PathBuf>, String>
         }
     }
     pages.push(Path::new(REFINEMENT_PAGE).to_path_buf());
+    pages.push(Path::new(WRITE_A_MODEL_PAGE).to_path_buf());
     let protocols = docs.join("src/content/docs/fsl/learn/protocols.md");
     if protocols.is_file() {
         pages.push(Path::new("src/content/docs/fsl/learn/protocols.md").to_path_buf());
@@ -1147,7 +1171,7 @@ fn page_literal_commands(
                 .position(|line| !line.trim().is_empty())
                 .map(|index| content[index].trim());
             if let Some(command) = first.filter(|line| {
-                ["fsl ", "cat ", "sed "]
+                ["fsl ", "cat ", "sed ", MODEL_GENERATOR_PREFIX]
                     .iter()
                     .any(|prefix| line.starts_with(prefix))
             }) {
@@ -1226,6 +1250,25 @@ fn page_literal_commands(
     (commands, skips, excerpts, issues)
 }
 
+/// The shell command that runs one literal tutorial command in the container.
+///
+/// A command runs in its system folder. The model generator is the one command that
+/// writes a file, and the examples mount is read-only: it runs from the examples root,
+/// writes to a temporary file, and the generated model must equal the written file.
+fn literal_shell_command(literal: &LiteralCommand) -> String {
+    let words: Vec<&str> = literal.command.split_whitespace().collect();
+    if literal.command.starts_with(MODEL_GENERATOR_PREFIX) && words.len() == 4 {
+        return format!(
+            "cd /candidate-examples && export PATH=/root/.local/bin:$PATH && node tools/model.mjs {} /tmp/journey-model.json && cmp /tmp/journey-model.json {}",
+            words[2], words[3]
+        );
+    }
+    format!(
+        "cd /candidate-examples/examples/{} && export PATH=/root/.local/bin:$PATH && {}",
+        literal.system, literal.command
+    )
+}
+
 fn shown_nonzero_exit(text: &str) -> Option<i32> {
     text.match_indices("exit ").find_map(|(index, _)| {
         text[index + 5..]
@@ -1236,6 +1279,19 @@ fn shown_nonzero_exit(text: &str) -> Option<i32> {
             .ok()
             .filter(|exit| *exit != 0)
     })
+}
+
+/// The files that a `steps file=<path>` fence renders, with the line of the fence.
+fn page_step_files(source: &str) -> Vec<(usize, String)> {
+    source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let (_, _, _, info) = fence_open(line)?;
+            let path = info.trim().strip_prefix("steps file=")?;
+            Some((index + 1, path.trim().to_owned()))
+        })
+        .collect()
 }
 
 fn unparsed_fences(page: &Path, source: &str) -> Vec<ParseIssue> {
@@ -1264,7 +1320,8 @@ fn unparsed_fences(page: &Path, source: &str) -> Vec<ParseIssue> {
             if !(kind == "example"
                 || kind.starts_with("example ")
                 || kind == "text"
-                || kind.starts_with("text "))
+                || kind.starts_with("text ")
+                || kind.starts_with("steps file="))
             {
                 issues.push(ParseIssue {
                     page: page.to_path_buf(),
@@ -1876,7 +1933,7 @@ mod tests {
     }
 
     #[test]
-    fn tutorial_pages_includes_refinement_and_optional_probability_page() {
+    fn tutorial_pages_includes_refinement_write_a_model_and_optional_probability_page() {
         let root = std::env::temp_dir().join(format!(
             "alpha-journey-tutorial-pages-{}-{}",
             std::process::id(),
@@ -1901,8 +1958,9 @@ mod tests {
 
         let without_probability =
             tutorial_pages(&root, &tutorials).expect("pages without probability");
-        assert_eq!(without_probability.len(), 7);
+        assert_eq!(without_probability.len(), 8);
         assert!(without_probability.contains(&Path::new(REFINEMENT_PAGE).to_path_buf()));
+        assert!(without_probability.contains(&Path::new(WRITE_A_MODEL_PAGE).to_path_buf()));
         assert!(!without_probability.iter().any(|page| {
             page.file_name()
                 .is_some_and(|name| name == "tutorial-probability.md")
@@ -1914,7 +1972,7 @@ mod tests {
         )
         .expect("write probability fixture");
         let with_probability = tutorial_pages(&root, &tutorials).expect("pages with probability");
-        assert_eq!(with_probability.len(), 8);
+        assert_eq!(with_probability.len(), 9);
         assert!(with_probability.iter().any(|page| {
             page.file_name()
                 .is_some_and(|name| name == "tutorial-probability.md")
@@ -1959,6 +2017,44 @@ mod tests {
         assert_eq!(skips.len(), 1);
         assert!(excerpts.is_empty());
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn model_generator_command_runs_from_the_examples_root_and_compares_the_model() {
+        let source = "```text\nnode tools/model.mjs tools/models/library.mjs examples/library/model/library.semantic-ir.json\n```\n";
+        let (commands, skips, excerpts, issues) =
+            page_literal_commands(Path::new("guide.md"), "library", source);
+        assert_eq!(commands.len(), 1);
+        assert!(skips.is_empty() && excerpts.is_empty() && issues.is_empty());
+        let shell = literal_shell_command(&commands[0]);
+        assert!(shell.starts_with("cd /candidate-examples && "));
+        assert!(shell.contains(
+            "node tools/model.mjs tools/models/library.mjs /tmp/journey-model.json && cmp /tmp/journey-model.json examples/library/model/library.semantic-ir.json"
+        ));
+    }
+
+    #[test]
+    fn other_literal_commands_run_from_their_system_folder() {
+        let source = "```text\nfsl --version\n```\n";
+        let (commands, _, _, _) = page_literal_commands(Path::new("guide.md"), "shop", source);
+        assert_eq!(
+            literal_shell_command(&commands[0]),
+            "cd /candidate-examples/examples/shop && export PATH=/root/.local/bin:$PATH && fsl --version"
+        );
+    }
+
+    #[test]
+    fn steps_file_fences_are_listed_and_not_reported_as_unparsed() {
+        let source = "1. Describe it.\n\n   ```steps file=tools/models/library.mjs\n   ```\n";
+        assert_eq!(
+            page_step_files(source),
+            vec![(3, "tools/models/library.mjs".to_owned())]
+        );
+        assert!(unparsed_fences(Path::new("guide.md"), source).is_empty());
+        assert_eq!(
+            unparsed_fences(Path::new("guide.md"), "```steps other\n```\n").len(),
+            1
+        );
     }
 
     #[test]
