@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/filament-contract-codegen/FR-024
     type: depends_on
+  - target: ix://agent-ix/filament-spec-language/FR-621
+    type: depends_on
 ---
 # FR-009: Settle executions after replaying counterexamples
 
@@ -286,6 +288,7 @@ replay context through FSL evaluation and report handling.
 | FR-009-AC-24 | The driver invokes the selected provider with exactly one generated function item and privately retains that invocation’s request index, backend, occurrence, admitted package and full CG proving-run identity. A typed provider refusal is preserved before playback intake. A returned item count other than one, a returned request index or backend different from the invocation, or successful `KaniExecutionEvidence` whose harness path, proof ceilings, contract kind, symbolic argument bounds, solver or unwind differ from the selected generated harness and identity returns a driver `runtime_invariant` fault before playback intake, replay, settlement or terminal creation. The provider result is not assumed to carry occurrence, package or full identity; those are read from the retained invocation context, never another item’s context. | Planned (TC-016; IR-610 E9 function producer; IR-1121 CG current-V2 function proof producer) |
 | FR-009-AC-25 | A `ToolFailed` terminal value becomes FSL's tool-failed terminal record with the same typed failure, byte-limit counts when present, request index, and backend identity. | Test (TC-016) |
 | FR-009-AC-26 | Before the driver calls CG's paired proof/native runner (`execute_kani_scalar_native`) for a routed scalar harness, it passes the harness to CG's `refuse_if_not_tractable` with `TractabilityTable::shipped_general_route_scalar()`. A harness the table refuses is not launched: `drive` returns `DriverRefusal::ScalarNotTractable` carrying CG's `UnsupportedObligation::V2ClauseNotTractable` unchanged, with stage Replay and kind Refused. A harness the table does not refuse reaches the runner. A failed table load is the existing `Generation(Kani(TractabilityTable))` runtime-invariant fault. | Test (`src/drive.rs::scalar_native_tractability_tests`; TC-016; CG FR-056-AC-15) |
+| FR-009-AC-27 | For a temporal SMT proof item that reaches driver per-item settlement, the driver passes codegen's typed SMT outcome to FSL's production `settle_temporal_smt_proof` writer; the resulting FR-621 outcome item contains the writer's `CertificateChecker::SmtProof` evidence. A driver CLI acceptance test invokes the temporal SMT example from its existing repository path without copying its source or request files, and verifies the emitted FR-621 checker evidence. | Test (TC-051) |
 
 ## Dependencies
 
