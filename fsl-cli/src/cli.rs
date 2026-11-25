@@ -2194,7 +2194,10 @@ fn replay(options: &RequestOptions, format: OutputFormat) -> CommandResult {
     let caller = match apply_command_limits(&options.limits, base_command_limits(Verb::Replay)) {
         Ok(limits) => limits,
         Err(message) => {
-            return with_format(CommandResult::input_refusal(Operation::Replay, message), format);
+            return with_format(
+                CommandResult::input_refusal(Operation::Replay, message),
+                format,
+            );
         }
     };
     let config = match load_provider_config(&options.providers) {
@@ -2385,15 +2388,21 @@ fn analyze_text(document: &serde_json::Value, category: Category) -> String {
 /// diagnostic: its code, cause and FSL's reason spelling, with the driver's
 /// fixed phrase for that reason and no provider-supplied text.
 fn unusable_counterexample_line(diagnostic: &serde_json::Value) -> Option<String> {
-    let code = diagnostic["code"].as_str().filter(|code| *code == "invalid_result")?;
-    let cause = diagnostic["cause"].as_str().filter(|cause| *cause == "invalid-value")?;
+    let code = diagnostic["code"]
+        .as_str()
+        .filter(|code| *code == "invalid_result")?;
+    let cause = diagnostic["cause"]
+        .as_str()
+        .filter(|cause| *cause == "invalid-value")?;
     let reason = UnusableCounterexample::from_spelling(diagnostic["reason"].as_str()?)?;
     let phrase = match reason {
         UnusableCounterexample::AssignmentNotClaimParameter => {
             "assignment names a node that is not a claim parameter"
         }
         UnusableCounterexample::ClaimParameterUnassigned => "claim parameter has no assignment",
-        UnusableCounterexample::NodeIdUnresolved => "assignment node id does not resolve in the package",
+        UnusableCounterexample::NodeIdUnresolved => {
+            "assignment node id does not resolve in the package"
+        }
         UnusableCounterexample::PackageGraphUnreadable => "package graph is unreadable",
         UnusableCounterexample::ParameterValueKindMismatch => {
             "assignment value has the wrong kind for its claim parameter"
@@ -2442,8 +2451,7 @@ impl MonitorOptions {
         let mut providers = ProviderArguments::default();
         providers.take_all(scanned)?;
         let limit_operands = limit_operands(scanned)?;
-        let limits = LimitOverrides::parse(&limit_operands)
-            .map_err(|error| {
+        let limits = LimitOverrides::parse(&limit_operands).map_err(|error| {
             limit_usage_message(
                 &error,
                 "monitor",
@@ -2926,11 +2934,20 @@ fn with_format_as(
                     rendered = relabel_header(&rendered, &operation, command_name);
                 }
             }
+            if let Some(fences) = native_fences_text(document) {
+                rendered.push_str(&fences);
+            }
             if let Some(hint) = observation_input_limit_hint(document) {
                 if !rendered.is_empty() {
                     rendered.push('\n');
                 }
                 rendered.push_str(&hint);
+            }
+            if rendered.len() > fsl_replay::RenderLimits::default().output_bytes {
+                return CommandResult::failure(
+                    Category::InternalFailure,
+                    "could not render the outcome document as text",
+                );
             }
             result.text_output = Some(rendered);
             result
@@ -2940,6 +2957,65 @@ fn with_format_as(
             "could not render the outcome document as text",
         ),
     }
+}
+
+/// Render the Markdown check items omitted by the generic outcome renderer.
+/// The outcome header and ordinary diagnostics still come from that renderer.
+fn native_fences_text(document: &OutcomeDocument) -> Option<String> {
+    let report = document.native_fences()?;
+    let mut rendered = String::new();
+    for (index, fence) in report.fences.iter().enumerate() {
+        let clause = fence
+            .clause
+            .as_deref()
+            .map(|clause| format!(" clause {clause}"))
+            .unwrap_or_default();
+        rendered.push_str(&format!(
+            "item {index}: checked ({}){clause} first-line {}\n",
+            fence.category.as_str(),
+            fence.first_line
+        ));
+        if let Some(actual) = fence.actual {
+            rendered.push_str(&format!("  actual: {actual}\n"));
+        }
+        for diagnostic in &fence.diagnostics {
+            let position = diagnostic
+                .original_regions
+                .first()
+                .map(|region| match region {
+                    fsl_replay::OutcomeLocus::Located { file, span } => {
+                        format!("{}:{}:{}", file, span.start.line, span.start.column)
+                    }
+                    fsl_replay::OutcomeLocus::Region { source, start, end } => {
+                        format!("{}/{}:{start}-{end}", source.authority(), source.identity())
+                    }
+                    _ => String::from("<no-source>"),
+                });
+            let prefix = position.unwrap_or_else(|| String::from("<no-source>"));
+            rendered.push_str(&format!(
+                "{prefix}: {}: {}\n",
+                diagnostic.diagnostic.code(),
+                diagnostic.diagnostic.message()
+            ));
+            if let Some(cause) = diagnostic.diagnostic.cause() {
+                rendered.push_str(&format!("  cause: {cause}\n"));
+            }
+            let diagnostic_wire = serde_json::to_value(&diagnostic.diagnostic).ok();
+            if let Some(label) = diagnostic_wire
+                .as_ref()
+                .and_then(|value| value.get("label")?.as_str())
+            {
+                rendered.push_str(&format!("  label: {label}\n"));
+            }
+            if let Some(hint) = diagnostic_wire
+                .as_ref()
+                .and_then(|value| value.get("hint")?.as_str())
+            {
+                rendered.push_str(&format!("  hint: {hint}\n"));
+            }
+        }
+    }
+    Some(rendered)
 }
 
 /// Add the driver's accepted CLI spelling when a request-provided observation
@@ -3328,7 +3404,10 @@ mod outcome_tests {
     use fsl_foundation::Setting;
 
     fn parsed(operands: &[&str]) -> LimitOverrides {
-        let operands: Vec<String> = operands.iter().map(|operand| (*operand).to_owned()).collect();
+        let operands: Vec<String> = operands
+            .iter()
+            .map(|operand| (*operand).to_owned())
+            .collect();
         LimitOverrides::parse(&operands).expect("FSL parses the operands")
     }
 

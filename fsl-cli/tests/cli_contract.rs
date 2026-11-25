@@ -461,6 +461,175 @@ fn check_emits_fsl_check_outcome_document() {
     assert_fsl_document(&output.stdout, &check_outcome_bytes(SOURCE));
 }
 
+/// Trace: FR-002-AC-13; native `check --format text` accepts and renders text outcomes.
+#[test]
+#[trace("FR-002-AC-13")]
+fn check_text_format_renders_native_outcome_and_keeps_json_bytes() {
+    let success = Command::new(FSL)
+        .args(["check", SOURCE, "--format", "text"])
+        .output()
+        .expect("run successful native check in text format");
+    assert_eq!(
+        success.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&success.stdout)
+    );
+    assert!(success.stderr.is_empty(), "{:?}", success.stderr);
+    let success_rendered = String::from_utf8(success.stdout).expect("text output is UTF-8");
+    assert_eq!(
+        success_rendered,
+        "check: success (exit 0) at stage packaging\n"
+    );
+
+    let text = Command::new(FSL)
+        .args(["check", CHECK_INVALID_SOURCE, "--format", "text"])
+        .output()
+        .expect("run native check in text format");
+    assert_eq!(
+        text.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let rendered = String::from_utf8(text.stdout).expect("text output is UTF-8");
+    assert_eq!(
+        rendered,
+        format!(
+            concat!(
+                "check: refusal (exit 20) at stage checking\n",
+                "{}:3:40: ill_typed: ill_typed (type-mismatch)\n",
+                "  cause: type-mismatch\n",
+                "  hint: Give the expression a value of the required type.\n"
+            ),
+            CHECK_INVALID_SOURCE
+        )
+    );
+
+    // Explicit text formatting must leave the established JSON contract intact.
+    let json = Command::new(FSL)
+        .args(["check", SOURCE, "--format", "json"])
+        .output()
+        .expect("run native check in JSON format");
+    assert_eq!(json.status.code(), Some(0));
+    assert!(json.stderr.is_empty());
+    assert_fsl_document(&json.stdout, &check_outcome_bytes(SOURCE));
+}
+
+/// Trace: FR-002-AC-13; Markdown text keeps each fence result.
+#[test]
+#[trace("FR-002-AC-13")]
+fn check_text_format_renders_markdown_fence_items() {
+    let directory = TemporaryDirectory::new("check-markdown-text");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let broken = format!("{healthy}function Bad using v (x: Integer): Boolean pure {{ x }}\n");
+    let document = format!(
+        "### Healthy\n\n```ix:native\n{healthy}```\n\n### Broken\n\n```ix:native\n{broken}```\n"
+    );
+    std::fs::write(directory.0.join("spec.md"), document).expect("write Markdown fixture");
+    let text = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "text",
+        ])
+        .output()
+        .expect("run Markdown check in text format");
+    assert_eq!(
+        text.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let rendered = String::from_utf8(text.stdout).expect("text output is UTF-8");
+    assert_eq!(
+        rendered,
+        concat!(
+            "check: refusal (exit 20) at stage packaging\n",
+            "item 0: checked (success) clause Healthy first-line 4\n",
+            "item 1: checked (refusal) clause Broken first-line 12\n",
+            "spec.md:15:51: ill_typed: ill_typed (type-mismatch)\n",
+            "  cause: type-mismatch\n",
+            "  hint: Give the expression a value of the required type.\n"
+        )
+    );
+}
+
+/// Trace: FR-002-AC-13; explicit text renders native-fence details and source regions.
+#[test]
+#[trace("FR-002-AC-13")]
+fn check_text_format_renders_markdown_fence_details() {
+    let directory = TemporaryDirectory::new("check-markdown-fence-details");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let document =
+        format!("### Repeated\n\n```ix:native\n{healthy}```\n\n```ix:native\n{healthy}```\n");
+    std::fs::write(directory.0.join("spec.md"), document).expect("write Markdown fixture");
+    let text = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "text",
+        ])
+        .output()
+        .expect("run Markdown check with duplicate fences in text format");
+    assert_eq!(text.status.code(), Some(20));
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let rendered = String::from_utf8(text.stdout).expect("text output is UTF-8");
+    assert_eq!(
+        rendered,
+        concat!(
+            "check: refusal (exit 20) at stage packaging\n",
+            "item 0: checked (refusal) clause Repeated first-line 4\n",
+            "  actual: 2\n",
+            "spec.md:4:1: extraction-clause-count: clause heading owns multiple native fences\n",
+            "  cause: extraction-clause-count\n",
+            "item 1: checked (refusal) clause Repeated first-line 10\n",
+            "  actual: 2\n",
+            "spec.md:10:1: extraction-clause-count: clause heading owns multiple native fences\n",
+            "  cause: extraction-clause-count\n"
+        )
+    );
+}
+
+/// Trace: FR-002-AC-13; explicit-text option refusals use the shared refusal shape.
+#[test]
+#[trace("FR-002-AC-13")]
+fn check_text_format_renders_refusal_category_and_diagnostic() {
+    let output = Command::new(FSL)
+        .args(["check", "missing-check-source.native", "--format", "text"])
+        .output()
+        .expect("run check with a missing source");
+    assert_eq!(
+        output.status.code(),
+        Some(20),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+    let rendered = String::from_utf8(output.stdout).expect("text output is UTF-8");
+    assert_eq!(
+        rendered,
+        concat!(
+            "check: refusal (exit 20)\n",
+            "<no-source>: io-error: could not read source missing-check-source.native: ",
+            "No such file or directory (os error 2)\n",
+            "  hint: Check that the path exists and that the process can read or write it.\n"
+        )
+    );
+}
+
 /// Trace: TC-1743, FR-662-AC-1, FSpec-TC-1243, FSpec-FR-563-AC-1, FSpec-FR-563-AC-2.
 /// Provenance: QSL-2019.
 #[test]
@@ -1266,10 +1435,10 @@ fn check_refusal_emits_fsl_diagnostic_cause_and_locus() {
     assert_eq!(document["diagnostics"][0]["message"], "expected `)`");
 }
 
-/// Trace: FR-002-AC-13.
+/// Trace: FR-002-AC-13, FSpec-FR-563-AC-1.
 /// Provenance: QSL-2202.
 #[test]
-#[trace("FR-002-AC-13")]
+#[trace("FR-002-AC-13", "FSpec-FR-563-AC-1")]
 fn check_text_refusal_prints_its_message_once() {
     let output = Command::new(FSL)
         .args(["check", INVALID_SOURCE, "--format", "text"])
