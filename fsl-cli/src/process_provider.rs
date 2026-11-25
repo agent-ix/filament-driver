@@ -20,6 +20,16 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[cfg(test)]
+pub(crate) fn fixture_executable() -> std::path::PathBuf {
+    std::env::current_exe()
+        .expect("test executable")
+        .parent()
+        .and_then(Path::parent)
+        .expect("test executable is under target/debug/deps")
+        .join("fsl-cli-process-fixture")
+}
+
 /// Closed FR-331 result values retained before a FSL mapping is available.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -495,7 +505,6 @@ where
     reason = "an adapter fixture mismatch is the test failure report"
 )]
 mod tests {
-    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -509,7 +518,7 @@ mod tests {
     use fsl_route::{descriptor_from_manifest, BackendDescriptor, Candidate, ProviderOrigin};
     use serde::Deserialize;
 
-    use super::HostProcessProvider;
+    use super::{fixture_executable, HostProcessProvider};
     use crate::test_support::with_provider_request;
 
     #[derive(Debug, Deserialize)]
@@ -553,18 +562,20 @@ mod tests {
         Ok((descriptor, retained))
     }
 
-    #[cfg(test)]
-    pub(crate) fn fixture_executable() -> PathBuf {
-        std::env::current_exe()
-            .expect("test executable")
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("test executable is under target/debug/deps")
-            .join("fsl-cli-process-fixture")
-    }
-
     fn fixture_arguments(kind: &str) -> [std::ffi::OsString; 1] {
         [kind.into()]
+    }
+
+    fn limits() -> ProcessProviderLimits {
+        ProcessProviderLimits {
+            max_frame_bytes: 4096,
+            max_total_bytes: 16_384,
+            max_stderr_bytes: 1024,
+            max_memory_bytes: 4_294_967_296,
+            memory_limit_requested: false,
+            max_cpu_ms: 600_000,
+            cancellation_grace: Duration::from_millis(500),
+        }
     }
 
     /// Trace: FR-005-AC-6.
