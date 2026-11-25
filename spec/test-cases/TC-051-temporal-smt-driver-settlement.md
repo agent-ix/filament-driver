@@ -10,19 +10,21 @@ relationships:
 
 ## Description
 
-Verify that the driver's temporal SMT path forwards codegen's typed outcome to
-FSL's production settlement writer and emits the FR-621 checker evidence through
-the driver CLI.
+Verify that the driver's temporal SMT path forwards a certificate-bearing
+codegen outcome to FSL's production settlement writer and emits the accepted
+checker result through the driver CLI.
 
 ## Test Procedure
 
 Invoke the driver CLI on the temporal SMT example using its existing source and
-request files at their repository paths. Do not copy either file. Read the
-emitted outcome document and inspect the settled item for the checker member.
+request files at their repository paths. Do not copy either file. The `Counter`
+item carries FR-314-AC-1's accepted `BoundedComplete{depth: 3}` certificate.
+Read the emitted outcome document and inspect that item's record and certificate.
 
 ## Expected Results
 
-The CLI emits the outcome document produced by FSL's writer, and the settled item
-contains FR-621 `CertificateChecker::SmtProof` evidence. The source and request
-files used by the invocation are the existing repository files; the test creates
-no copied example files.
+The CLI emits the outcome document produced by FSL's writer. The `Counter` item
+is `proved`, its record certification is `certified`, and its certificate has
+`checker` `smt-proof` and `accepted` `true`, matching FR-314's `Verified` result.
+The source and request files used by the invocation are the existing repository
+files; the test creates no copied example files.
