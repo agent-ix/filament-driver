@@ -12,6 +12,7 @@ const INSTALL_PAGE: &str = "src/content/docs/fsl/guides/set-up-your-environment.
 const INSTALL_STEPS: &str = "install-test/steps.md";
 const TUTORIAL_DIR: &str = "src/content/docs/fsl/tutorials";
 const REFINEMENT_PAGE: &str = "src/content/docs/fsl/learn/refinement.md";
+const WRITE_A_MODEL_PAGE: &str = "src/content/docs/fsl/guides/write-a-model.md";
 
 #[derive(Debug, PartialEq, Eq)]
 enum OutputView {
@@ -942,6 +943,7 @@ fn tutorial_pages(docs: &Path, directory: &Path) -> Result<Vec<PathBuf>, String>
         }
     }
     pages.push(Path::new(REFINEMENT_PAGE).to_path_buf());
+    pages.push(Path::new(WRITE_A_MODEL_PAGE).to_path_buf());
     let protocols = docs.join("src/content/docs/fsl/learn/protocols.md");
     if protocols.is_file() {
         pages.push(Path::new("src/content/docs/fsl/learn/protocols.md").to_path_buf());
@@ -1876,7 +1878,7 @@ mod tests {
     }
 
     #[test]
-    fn tutorial_pages_includes_refinement_and_optional_probability_page() {
+    fn tutorial_pages_includes_refinement_write_a_model_and_optional_probability_page() {
         let root = std::env::temp_dir().join(format!(
             "alpha-journey-tutorial-pages-{}-{}",
             std::process::id(),
@@ -1901,8 +1903,9 @@ mod tests {
 
         let without_probability =
             tutorial_pages(&root, &tutorials).expect("pages without probability");
-        assert_eq!(without_probability.len(), 7);
+        assert_eq!(without_probability.len(), 8);
         assert!(without_probability.contains(&Path::new(REFINEMENT_PAGE).to_path_buf()));
+        assert!(without_probability.contains(&Path::new(WRITE_A_MODEL_PAGE).to_path_buf()));
         assert!(!without_probability.iter().any(|page| {
             page.file_name()
                 .is_some_and(|name| name == "tutorial-probability.md")
@@ -1914,7 +1917,7 @@ mod tests {
         )
         .expect("write probability fixture");
         let with_probability = tutorial_pages(&root, &tutorials).expect("pages with probability");
-        assert_eq!(with_probability.len(), 8);
+        assert_eq!(with_probability.len(), 9);
         assert!(with_probability.iter().any(|page| {
             page.file_name()
                 .is_some_and(|name| name == "tutorial-probability.md")
