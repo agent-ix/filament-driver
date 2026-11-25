@@ -527,6 +527,11 @@ mod tests {
             std::env::var("FILAMENT_PLUGIN_SIGNAL_PLUGIN_MARKER"),
             std::env::var("FILAMENT_PLUGIN_SIGNAL_OUTCOME"),
         ) {
+            // The fixture signals this test process, not the harness that spawned it.
+            std::env::set_var(
+                "FILAMENT_PLUGIN_SIGNAL_PARENT_PID",
+                std::process::id().to_string(),
+            );
             super::run(move |context| {
                 let fixture = crate::process_provider::fixture_executable();
                 let arguments = ["signal".into()];
