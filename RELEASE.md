@@ -19,7 +19,7 @@ Tag in dependency order. Stop if a repository already has a later tag than the o
 
 Only the driver tag creates downloadable `fsl` release archives. The examples tag carries tutorials and the image workflow; the template and docs tags identify consumer content. Supporting crates such as `filament-exact` and `filament-semantic-value` are consumed at Cargo-pinned commits and do not need separate alpha tags for this install path.
 
-Before the first tag, merge and freeze the release pin updates. The driver, codegen, FSL and runtime pins must form one cohort: the driver `Cargo.toml` and `Cargo.lock` pin the same FSL revision as codegen, the same `filament-contract-model` (contract IR) revision as FSL and codegen, the same `filament-semantic-value` and `filament-eval` revisions as FSL, and the codegen and runtime revisions that were merged for this release. `Cargo.lock` must hold one entry each for `filament-semantic-value`, `filament-contract-model` and `filament-contract-runtime`, and every `fsl-*` crate at the one FSL revision; a second copy breaks type identity. The known duplicates in the dependency graph are `quire-canonical` (`v0.3.1` and `v0.3.2`) and `quire-rs` (`0.53.0` and `0.62.3`), which do not cross these interfaces. Tag each dependency repository at the commit the verified candidate resolves (the revision in the driver `Cargo.lock`), not at a later `main`, and tag the driver at `DRIVER_SHA`. Do not tag a dependent repository until its pin update is merged and the release candidate has passed its required gate.
+Before the first tag, merge and freeze the release pin updates. The driver, codegen, FSL and runtime pins must form one cohort: the driver `Cargo.toml` and `Cargo.lock` pin the same FSL revision as codegen, the same `filament-contract-model` (contract IR) revision as FSL and codegen, the same `filament-semantic-value` and `filament-eval` revisions as FSL, and the codegen and runtime revisions that were merged for this release. `Cargo.lock` must hold one entry each for `filament-semantic-value`, `filament-contract-model` and `filament-contract-runtime`, and every `fsl-*` crate at the one FSL revision; a second copy breaks type identity. Tag each dependency repository at the commit the verified candidate resolves (the revision in the driver `Cargo.lock`; for `filament-specification`, the revision that FSL's `Cargo.toml` pins at that FSL commit), not at a later `main`. Tag examples, template and docs at the commits the candidate gates ran against, and tag the driver at `DRIVER_SHA`. Do not tag a dependent repository until its pin update is merged and the release candidate has passed its required gate.
 
 ## One-pass candidate verification
 
@@ -54,7 +54,7 @@ CARGO_BUILD_JOBS=2 cargo build --locked --profile dist -p fsl-cli --bin fsl
 CARGO_BUILD_JOBS=2 cargo build --locked --profile dist -p filament-plugin-host --bin fsl-plugin-launch
 ```
 
-Run the candidate-mode journey with the Ubuntu 26.04 baseline. `FSL_BINARY` points to the just-built candidate; leave `FSL_RELEASE_BINARY` unset. Candidate mode skips the released-artifact check and the tutorial setup commands that clone the examples repository or change directory; the gate reports them as skipped, not failed.
+Run the candidate-mode journey with the Ubuntu 26.04 baseline. `FSL_BINARY` points to the just-built candidate; leave `FSL_RELEASE_BINARY` unset. Candidate mode skips the released-artifact check. In both modes the gate skips tutorial setup blocks that start with `git clone` or `cd`, and reports them as skipped, not failed.
 
 ```sh
 CARGO_BUILD_JOBS=2 make alpha-journey-gate \
@@ -137,7 +137,7 @@ gh release download v0.2.0 --repo agent-ix/filament-driver --dir release
 (cd release && sha256sum -c SHA256SUMS.txt)
 ```
 
-The examples image workflow is different: its manual dispatch builds and pushes the multi-platform `ghcr.io/agent-ix/filament-toolchain` image. It has no non-publishing dry-run. It builds the Ubuntu 26.04 image for Linux/amd64 and Linux/arm64, generates notices from the exact tools and source metadata included in the image, runs `image/smoke.sh`, then publishes the requested image tags. After the driver release tag and examples tag `v0.2.0` are ready, hand off to Titan to dispatch from the tagged examples source:
+The examples image workflow is different: its manual dispatch builds and pushes the multi-platform `ghcr.io/agent-ix/filament-toolchain` image. It has no non-publishing dry-run. It builds the Ubuntu 26.04 image for Linux/amd64 and Linux/arm64, generates notices from the exact tools and source metadata included in the image, runs `image/smoke.sh`, then publishes the requested image tags. After the driver release tag and examples tag `v0.2.0` are ready, hand off to the release host to dispatch from the tagged examples source:
 
 ```sh
 gh workflow run image.yml --repo agent-ix/filament-examples --ref v0.2.0 \
@@ -171,4 +171,4 @@ make alpha-journey-gate \
   ALPHA_JOURNEY_BASE_IMAGE=ubuntu:26.04
 ```
 
-The gate runs the install and checked tutorial journey in a disposable Ubuntu 26.04 container. Released mode verifies the binary is Linux ELF, checks its GLIBC requirement ceiling and version output, then exercises the published install route and tutorial commands. Use the matching aarch64 archive and binary on an ARM64 Titan if that is the release platform being verified. Record the gate result and the exact docs, examples, driver, and FSL commits used. The acceptance result is a passing journey against published artifacts.
+The gate runs the install and checked tutorial journey in a disposable Ubuntu 26.04 container. Released mode verifies the binary is Linux ELF, checks its GLIBC requirement ceiling and version output, then exercises the published install route and tutorial commands. Use the matching aarch64 archive and binary on an ARM64 release host if that is the release platform being verified. Record the gate result. The acceptance result is a passing journey against published artifacts.
