@@ -530,6 +530,7 @@ mod tests {
             super::run(move |context| {
                 let fixture = std::env::current_exe().expect("Rust fixture test executable");
                 let arguments = [
+                    "--quiet".into(),
                     "--exact".into(),
                     "process_provider::tests::run_signal_plugin_fixture".into(),
                     "--nocapture".into(),

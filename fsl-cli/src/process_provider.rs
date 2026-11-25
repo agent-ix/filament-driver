@@ -564,8 +564,9 @@ mod tests {
             .any(|pair| pair[0] == "--exact" && pair[1] == test_name)
     }
 
-    fn fixture_arguments(test_name: &str) -> [std::ffi::OsString; 3] {
+    fn fixture_arguments(test_name: &str) -> [std::ffi::OsString; 4] {
         [
+            "--quiet".into(),
             "--exact".into(),
             format!("process_provider::tests::{test_name}").into(),
             "--nocapture".into(),
@@ -696,6 +697,9 @@ mod tests {
         } else if kind == "fr331" {
             eprintln!("FR-331 fixture diagnostic");
         }
+        // The fixture is running inside libtest. Exit before the harness writes its
+        // test-result line to stdout, which is the provider protocol stream.
+        std::process::exit(0);
     }
 
     fn signal_fixture_paths() -> (
@@ -757,6 +761,8 @@ mod tests {
                 "--nocapture",
             ])
             .env("FILAMENT_PLUGIN_SIGNAL_DESCENDANT_CHILD", descendant)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .expect("spawn process-group descendant");
     }
