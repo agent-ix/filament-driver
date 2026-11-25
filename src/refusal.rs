@@ -1472,7 +1472,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-004", "FR-001-AC-5", "FR-001-AC-22")]
+    #[trace("TC-004", "FR-001-AC-5", "FR-001-AC-22", "FR-320-AC-4")]
     #[test]
     fn new_reader_causes_preserve_the_entire_typed_projection() {
         // The driver projects the supplied code; it does not reclassify an
@@ -1505,6 +1505,10 @@ mod tests {
             (
                 CheckedPackageRefusalCause::ClockWithoutDenseTime,
                 "clock-without-dense-time",
+            ),
+            (
+                CheckedPackageRefusalCause::StaleNodeKey,
+                "stale-node-key",
             ),
         ];
         for (cause, spelling) in cases {
