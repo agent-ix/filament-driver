@@ -528,13 +528,8 @@ mod tests {
             std::env::var("FILAMENT_PLUGIN_SIGNAL_OUTCOME"),
         ) {
             super::run(move |context| {
-                let fixture = std::env::current_exe().expect("Rust fixture test executable");
-                let arguments = [
-                    "--quiet".into(),
-                    "--exact".into(),
-                    "process_provider::tests::run_signal_plugin_fixture".into(),
-                    "--nocapture".into(),
-                ];
+                let fixture = crate::process_provider::fixture_executable();
+                let arguments = ["signal".into()];
                 let provider = crate::process_provider::HostProcessProvider::<
                     Value,
                     Value,
