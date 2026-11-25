@@ -22,8 +22,8 @@ use serde::Serialize;
 
 #[cfg(test)]
 pub(crate) fn fixture_executable() -> std::path::PathBuf {
-    let target_dir = std::env::current_exe()
-        .expect("test executable")
+    let executable = std::env::current_exe().expect("test executable");
+    let target_dir = executable
         .parent()
         .and_then(Path::parent)
         .expect("test executable is under target/debug/deps");
