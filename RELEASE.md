@@ -32,7 +32,7 @@ git status --short
 git rev-parse HEAD
 ```
 
-On the release host, check out that frozen commit. Run the workspace compile first, then only the named alpha CLI proofs:
+On the release host, check out that frozen commit. Run the workspace compile first, then the named alpha CLI proofs (named tests only, never the whole suite):
 
 ```sh
 cd /home/peter/dev/filament-driver
@@ -45,6 +45,13 @@ CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test cli_contract run_paid_s
 CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test cli_contract run_charge_changes_total_json_contains_the_frame_witness -- --exact
 CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test frontend_cli timed_analyze::analyze_zone_deadline_holds -- --exact
 CARGO_BUILD_JOBS=2 cargo test --locked -p fsl-cli --test frontend_cli timed_analyze::analyze_zone_deadline_refuted -- --exact
+```
+
+Then run the named-test sweep on the final candidate, before any tag, in the driver and in the three dependency repositories that the driver `Cargo.lock` pins: `filament-spec-language`, `filament-contract-ir` and `filament-contract-codegen`. For every area that changed since the repository's previous release tag, run name-filtered tests: a test-name filter or an exact test name, never the whole suite. Find the previous tag with `git fetch origin --tags` and `git describe --tags --abbrev=0 --match 'v*' <commit>`, where `<commit>` is `$DRIVER_SHA` for the driver; list the changed areas with `git diff --stat <previous-tag>..<commit>`. In each dependency repository, check out the commit that the driver `Cargo.lock` pins (in the driver checkout at `$DRIVER_SHA`, `grep -o 'agent-ix/<repo>?rev=[0-9a-f]*' Cargo.lock | sort -u`) and run the sweep from that checkout. Give each command one test target (`--lib` or `--test <binary>`) so that it prints one `test result:` line, and fail the sweep if that line reads `ok. 0 passed`, which is what cargo prints, with exit status 0, when a filter matches no test. For example:
+
+```sh
+CARGO_BUILD_JOBS=2 cargo test --locked -p <package> --lib <module>::<filter>
+CARGO_BUILD_JOBS=2 cargo test --locked -p <package> --test <binary> <filter>
 ```
 
 Build the candidate pair with the same `dist` profile used by the release workflow:
