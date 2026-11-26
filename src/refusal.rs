@@ -900,7 +900,6 @@ fn package_read_refusal_cause(cause: CheckedPackageRefusalCause) -> &'static str
         CheckedPackageRefusalCause::InexactNumber => "inexact-number",
         CheckedPackageRefusalCause::InvalidSemanticGraph => "invalid-semantic-graph",
         CheckedPackageRefusalCause::InvalidTaskSet => "invalid-task-set",
-        // FSL FR-320-AC-4 pairs a stale node key with `invalid_package`.
         CheckedPackageRefusalCause::StaleNodeKey => "stale-node-key",
         CheckedPackageRefusalCause::ClockReadOutsideConstraint => "clock-read-outside-constraint",
     }
@@ -1474,7 +1473,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-004", "FR-001-AC-5", "FR-001-AC-22", "FR-320-AC-4")]
+    #[trace("TC-004", "FR-001-AC-22")]
     #[test]
     fn new_reader_causes_preserve_the_entire_typed_projection() {
         // The driver projects the supplied code; it does not reclassify an
