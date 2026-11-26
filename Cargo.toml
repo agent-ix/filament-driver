@@ -56,6 +56,7 @@ path = "src/bin/alpha_journey_gate.rs"
 [dependencies]
 # Shared diagnostic types are owned by FSV, not re-exported by FSL.
 filament-semantic-value = { version = "0.1.5", git = "https://github.com/agent-ix/filament-semantic-value", rev = "689f259eab592b62cb362f5e649dba16adf874f7" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
 fsl-analyze = { git = "https://github.com/agent-ix/filament-spec-language", rev = "7a3c210a1d4c208e995751ce789f1b9a16b71059" }
 fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "7a3c210a1d4c208e995751ce789f1b9a16b71059" }
 fsl-package = { git = "https://github.com/agent-ix/filament-spec-language", rev = "7a3c210a1d4c208e995751ce789f1b9a16b71059" }
@@ -80,7 +81,6 @@ thiserror = "=2.0.20"
 fsl-semantics = { git = "https://github.com/agent-ix/filament-spec-language", rev = "7a3c210a1d4c208e995751ce789f1b9a16b71059", features = ["test-support"] }
 # Existing DeclarationKey fixture follows its extracted plain-value owner.
 filament-checked = { git = "https://github.com/agent-ix/filament-eval", rev = "7fc24dcbb3bf74f77a61dfde897fbdc9883918d3" }
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", tag = "v0.1.2" }
 
 
 
