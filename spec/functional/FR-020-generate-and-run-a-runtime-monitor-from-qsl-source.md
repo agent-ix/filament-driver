@@ -39,9 +39,40 @@ corresponding RT operation in stream order.
 
 ## Inputs
 
-- One QSL request file containing source and exactly one selected runtime-monitor plan.
+- One request file using the existing `native-compile/1` envelope (`format`
+  and `request`), with its existing `models`, `program.source`, and optional
+  `libraries` as the source and dependency inputs. The generate request SHALL
+  add a closed `monitor` member inside that same `request`; it SHALL NOT define
+  a second source, model, library, or compile-request encoding.
+- `monitor` SHALL identify the QSL producer inputs and the independent
+  admission selection. Its `producer` object SHALL contain `source` (the
+  `SourceIdentity` authority and identity), `path`, `package_name`, `clause`,
+  `target` (`counter`, `unit`, `width_bits`, `uncertainty`, optional
+  `max_event_rate`, `max_reading_gap`, and `max_activations`) and
+  `settings` (`TimingObligationSettings`). The source bytes and model package
+  inputs SHALL be taken from the enclosing native-compile request; the driver
+  SHALL call QSL `emit_plan_root` with these inputs, the native-compile source
+  and dependencies, and `SpineLimits` from the existing request limits.
+- `monitor.selection` SHALL independently supply every input required by
+  `admit_monitor_final_subject`, `admit_monitor_clock_selection`, and
+  `prepare_monitor`: the selected package/root and package lock; root and
+  four entry content keys (`init`, `on_event`, `on_watermark`, `on_gap`);
+  clause, subject and full source-map occurrence; temporal profile; optional
+  expected clock binding; counter, tick-unit node, width, maximum reading
+  gap, exact maximum event rate, exact uncertainty, ordered buffers and
+  activation capacity; selected producer fact rows; base Time dimension;
+  authority selection, optional progress view and validation caps; and finite
+  work/storage limits. These values SHALL be decoded into the existing
+  `MonitorPreparationRequest`, `PlanAuthoritySelection`,
+  `PlanAuthorityValidationCaps`, and `MonitorPreparationLimits` API types.
+  The selected fact rows SHALL be retained from the QSL final emission and
+  SHALL NOT be reconstructed from caller-authored copies.
+- The request SHALL include the native checked-package evidence and read
+  limits required by subject admission. It SHALL preserve each canonical
+  identifier, rational, occurrence, selection and witness in its owner type's
+  existing wire encoding; a display name alone SHALL NOT stand in for an
+  admitted value.
 - `--events <path|->`, containing RT `Event` and `Watermark` records.
-- The request's selected monitor limits and source dependencies.
 
 ## Outputs
 
