@@ -145,7 +145,13 @@ fn run() -> Result<(), String> {
 }
 
 fn run_inner(stats: &mut GateStats) -> Result<(), String> {
-    let (docs, examples, candidate, released_binary, base_image) = arguments()?;
+    let GateArguments {
+        docs,
+        examples,
+        candidate,
+        released_binary,
+        base_image,
+    } = arguments()?;
     let docs_commit = git_commit(&docs)?;
     let examples_commit = git_commit(&examples)?;
     println!("docs commit: {docs_commit}");
@@ -745,7 +751,14 @@ fn record_parse_issue(stats: &mut GateStats, docs: &Path, issue: ParseIssue) {
     );
 }
 
-type GateArguments = (PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>, String);
+struct GateArguments {
+    docs: PathBuf,
+    examples: PathBuf,
+    candidate: Option<PathBuf>,
+    released_binary: Option<PathBuf>,
+    base_image: String,
+}
+
 
 fn arguments() -> Result<GateArguments, String> {
     let mut args = env::args().skip(1);
@@ -813,7 +826,14 @@ fn arguments() -> Result<GateArguments, String> {
         })
         .transpose()?;
     let base_image = base_image.unwrap_or_else(|| "ubuntu:26.04".to_owned());
-    Ok((docs, examples, candidate, released_binary, base_image))
+    Ok(GateArguments {
+        docs,
+        examples,
+        candidate,
+        released_binary,
+        base_image,
+    })
+
 }
 
 fn is_linux_elf(path: &Path) -> bool {
@@ -1078,7 +1098,8 @@ fn page_examples(page: &Path, source: &str) -> (Vec<Example>, Vec<ParseIssue>) {
             continue;
         };
         let fields = attribute(reference, "fields");
-        if fields == Some("") {
+        if fields.as_ref().is_some_and(String::is_empty) {
+
             issues.push(ParseIssue {
                 page: page.to_path_buf(),
                 line: number,
