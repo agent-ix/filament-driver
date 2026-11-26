@@ -1098,7 +1098,7 @@ fn page_examples(page: &Path, source: &str) -> (Vec<Example>, Vec<ParseIssue>) {
             continue;
         };
         let fields = attribute(reference, "fields");
-        if fields.as_ref().is_some_and(String::is_empty) {
+        if fields.as_ref().is_some_and(|fields| fields.is_empty()) {
 
             issues.push(ParseIssue {
                 page: page.to_path_buf(),
