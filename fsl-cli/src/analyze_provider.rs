@@ -609,6 +609,23 @@ mod tests {
         );
     }
 
+    /// Trace: FR-022-AC-13; package bytes that read as no package graph make
+    /// an assignment's node id unreadable: unusable with its own reason.
+    #[trace("TC-036", "FR-022-AC-13")]
+    #[test]
+    fn an_unreadable_package_graph_is_unusable_with_its_own_reason() {
+        let (bytes, parameters) = package();
+        let key = key_of(&bytes, &parameters[0]);
+        let garbage = PackageGraph::new(b"not a package");
+        let reason = unusable(assignment_values(
+            &entry(&[&parameters[0]]),
+            &garbage,
+            &claim(&[key]),
+        ));
+        assert_eq!(reason, UnusableCounterexample::PackageGraphUnreadable);
+        assert_eq!(reason.as_str(), "package-graph-unreadable");
+    }
+
     /// Trace: FR-022-AC-13; a provider id carrying an ESC byte and ten
     /// thousand characters reaches no reason: the reason is one of FSL's
     /// closed spellings.

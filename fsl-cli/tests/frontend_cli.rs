@@ -3099,7 +3099,7 @@ fn analyze_external_provider_refutes_with_evidence() {
 /// `replay-parity` in the result document, and in machine mode nothing is
 /// written to stderr (FR-002: a document result carries its diagnostics in
 /// the document).
-#[trace("TC-036", "FR-022-AC-9")]
+#[trace("TC-036", "FR-022-AC-13")]
 #[test]
 fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
     let mut program = even_program();
@@ -3150,6 +3150,8 @@ fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
         document["items"][0].get("counterexample").is_none(),
         "{document}"
     );
+    assert!(record.get("replay").is_none(), "{document}");
+    assert!(document["items"][0].get("replay").is_none(), "{document}");
     // FR-022-AC-13: the item carries exactly one `invalid_result` diagnostic
     // naming the closed reason, and text mode prints it right after the item.
     let diagnostics = document["items"][0]["diagnostics"]
@@ -3183,10 +3185,13 @@ fn analyze_unusable_provider_counterexample_is_reported_in_the_document() {
         "  diagnostic: invalid_result/invalid-value: provider counterexample unusable [claim-parameter-unassigned]: claim parameter has no assignment",
         "{shown}"
     );
-    assert!(
-        at > 0 && !lines[at - 1].starts_with("  diagnostic"),
-        "{shown}"
+    assert_eq!(
+        lines[at - 1],
+        "0 Pair inconclusive {\"kind\":\"replay-parity\"}",
+        "the diagnostic follows the item line: {shown}"
     );
+    assert_eq!(lines[at + 1], "inconclusive", "{shown}");
+    assert_eq!(lines.len(), at + 2, "{shown}");
 }
 
 const EXTENSION_HEADER: &str =

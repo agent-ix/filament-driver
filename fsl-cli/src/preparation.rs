@@ -45,7 +45,6 @@ mod tests {
     use filament_driver::monitor::MonitorPreparationError;
     use fsl_command::command::{CommandLimits, MonitorPreparationLimits};
     use fsl_foundation::{Setting, SettingName};
-    use ix_trace_rs::trace;
 
     fn caller(storage: u64) -> CommandLimits {
         CommandLimits::monitor(MonitorPreparationLimits {
@@ -55,7 +54,6 @@ mod tests {
     }
 
     /// FR-003-AC-13: the caller's bounds are the bounds preparation runs under.
-    #[trace("TC-010", "FR-003-AC-13")]
     #[test]
     fn preparation_runs_under_the_callers_bounds() {
         let limits = driver_limits(&caller(268_435_456));
@@ -70,7 +68,6 @@ mod tests {
 
     /// FR-003-AC-17: a reached storage bound is FSL's typed refusal naming
     /// `monitor.preparation_storage` and how to raise it.
-    #[trace("TC-010", "FR-003-AC-17")]
     #[test]
     fn a_reached_storage_bound_names_its_setting() {
         let error = MonitorPreparationError::Storage {
@@ -92,7 +89,6 @@ mod tests {
     }
 
     /// FR-003-AC-12: the work bound is its own setting; other failures are no bound.
-    #[trace("TC-010", "FR-003-AC-12")]
     #[test]
     fn work_is_its_own_setting_and_other_failures_are_no_bound() {
         let work = MonitorPreparationError::Work {

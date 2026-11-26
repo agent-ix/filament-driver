@@ -244,8 +244,8 @@ fn replay_input_bytes_is_accepted_by_analyze_and_replay_not_monitor() {
 }
 
 /// FR-003-AC-12: each of `analyze`, `monitor` and `replay` exposes exactly
-/// FSL's `CommandLimits` set for its operation and every accounting
-/// counter; each accepted operand reads the request file, and a setting
+/// FSL's `CommandLimits` set for its operation (less `monitor`'s two
+/// preparation settings until QSL-2986) and every accounting counter; each accepted operand reads the request file, and a setting
 /// outside the set refuses before it.
 #[test]
 #[trace("TC-010", "FR-003-AC-12")]
@@ -286,8 +286,18 @@ fn each_operation_accepts_its_exact_command_limit_set() {
                 ],
             );
             let shown = message(&document(&output));
+            // `fsl monitor` refuses the preparation settings until QSL-2986
+            // enforces them.
             let accepted = match name {
-                SettingName::Stage(setting) => limits.exposes(setting),
+                SettingName::Stage(setting) => {
+                    limits.exposes(setting)
+                        && !(*verb == "monitor"
+                            && matches!(
+                                setting,
+                                Setting::MonitorPreparationWorkUnits
+                                    | Setting::MonitorPreparationStorage
+                            ))
+                }
                 SettingName::Accounting(_) => true,
             };
             assert_eq!(output.status.code(), Some(20), "{verb} {operand}: {shown}");

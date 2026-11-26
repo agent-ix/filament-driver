@@ -125,7 +125,7 @@ fn an_unknown_limit_setting_lists_only_what_the_verb_accepts(
     assert_eq!(
         message(&json("monitor", &["r.json"])?),
         unknown_setting(&format!(
-            "{COMMAND_COMMON_SETTINGS}; observation (input_bytes, objects, values); monitor (max_window_values, retained_positions, retained_identities, preparation_work_units, preparation_storage); {ACCOUNTING_SETTINGS}"
+            "{COMMAND_COMMON_SETTINGS}; observation (input_bytes, objects, values); monitor (max_window_values, retained_positions, retained_identities); {ACCOUNTING_SETTINGS}"
         ))
     );
     assert_eq!(

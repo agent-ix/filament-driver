@@ -868,13 +868,20 @@ fn run_setting_names() -> Vec<&'static str> {
 /// (FSL FR-255 "Lifecycle caller-limit coverage") and the accounting
 /// settings every operation exposes.
 fn command_setting_names(base: &CommandLimits) -> Vec<&'static str> {
-    let mut names = setting_names(base);
+    let operation = base.operation().name();
+    let mut names: Vec<&'static str> = base
+        .bounds()
+        .into_iter()
+        .filter(|(setting, _)| !unenforced_monitor_stage(operation, *setting))
+        .map(|(setting, _)| setting.name())
+        .collect();
     names.extend(AccountingSetting::ALL.iter().map(|setting| setting.name()));
     names
 }
 
-/// The `CommandLimits` of `verb` before any caller setting: the monitor's
-/// plan preparation starts at the driver's published defaults (FR-003).
+/// The `CommandLimits` of `verb` before any caller setting. The monitor's
+/// plan preparation starts at `MONITOR_PREPARATION_DEFAULTS`, a constant of
+/// this CLI (FR-003-AC-13).
 fn base_command_limits(verb: Verb) -> CommandLimits {
     match verb {
         Verb::Monitor => CommandLimits::monitor(MONITOR_PREPARATION_DEFAULTS),
@@ -884,13 +891,33 @@ fn base_command_limits(verb: Verb) -> CommandLimits {
 }
 
 /// The monitor plan preparation allowances `fsl monitor` starts from
-/// (FR-003-AC-13). FSL carries these bounds and the driver enforces them;
-/// the work bound keeps the preparation's existing, uncapped value until a
-/// caller sets `monitor.preparation_work_units`.
+/// (FR-003-AC-13). FSL carries these bounds; nothing in `fsl monitor`
+/// enforces them yet (QSL-2986), so `UNENFORCED_MONITOR_SETTINGS` keeps a
+/// caller from setting them.
 const MONITOR_PREPARATION_DEFAULTS: MonitorPreparationLimits = MonitorPreparationLimits {
     work: u64::MAX,
     storage: 268_435_456,
 };
+
+/// The `monitor` settings FSL exposes but no `fsl monitor` code path enforces
+/// until QSL-2986 wires `preparation`. A caller that sets one is refused
+/// rather than given an unbounded run.
+const UNENFORCED_MONITOR_SETTINGS: [Setting; 2] = [
+    Setting::MonitorPreparationWorkUnits,
+    Setting::MonitorPreparationStorage,
+];
+
+/// Whether `fsl monitor` refuses `name` as unavailable: an unenforced setting.
+fn unenforced_monitor_setting(operation: &str, name: SettingName) -> bool {
+    match name {
+        SettingName::Stage(setting) => unenforced_monitor_stage(operation, setting),
+        SettingName::Accounting(_) => false,
+    }
+}
+
+fn unenforced_monitor_stage(operation: &str, setting: Setting) -> bool {
+    operation == "monitor" && UNENFORCED_MONITOR_SETTINGS.contains(&setting)
+}
 
 /// Apply each `--limit` setting to `base` through FSL's `CommandLimits::set`
 /// (FR-003-AC-12), refusing a recognized setting the operation does not
@@ -901,7 +928,7 @@ fn apply_command_limits(
 ) -> Result<CommandLimits, String> {
     let operation = base.operation().name();
     for (name, value) in overrides.values() {
-        if base.set(*name, *value).is_err() {
+        if unenforced_monitor_setting(operation, *name) || base.set(*name, *value).is_err() {
             let accepted = grouped_settings(&command_setting_names(&base));
             return Err(format!(
                 "{}; settings this command accepts, by stage: {accepted}",
@@ -3359,34 +3386,31 @@ mod outcome_tests {
         );
     }
 
-    /// FR-003-AC-12: each preparation operand changes only its own bound.
+    /// FR-003-AC-12: `fsl monitor` refuses the preparation settings nothing
+    /// enforces yet (QSL-2986) and does not list them as accepted.
     #[trace("TC-010", "FR-003-AC-12")]
     #[test]
-    fn each_preparation_operand_changes_only_its_bound() {
-        let storage = apply_command_limits(
-            &parsed(&["monitor.preparation_storage=125611543"]),
-            base_command_limits(LimitVerb::Monitor),
-        )
-        .expect("monitor exposes the storage bound");
-        assert_eq!(
-            storage.preparation(),
-            MonitorPreparationLimits {
-                work: u64::MAX,
-                storage: 125_611_543
-            }
-        );
-        let work = apply_command_limits(
-            &parsed(&["monitor.preparation_work_units=9"]),
-            base_command_limits(LimitVerb::Monitor),
-        )
-        .expect("monitor exposes the work bound");
-        assert_eq!(
-            work.preparation(),
-            MonitorPreparationLimits {
-                work: 9,
-                storage: 268_435_456
-            }
-        );
+    fn monitor_refuses_the_unenforced_preparation_settings() {
+        for operand in [
+            "monitor.preparation_storage=125611543",
+            "monitor.preparation_work_units=9",
+        ] {
+            let name = operand.split('=').next().expect("a name");
+            let refusal = apply_command_limits(
+                &parsed(&[operand]),
+                base_command_limits(LimitVerb::Monitor),
+            )
+            .expect_err("the setting has no enforcement point");
+            assert!(
+                refusal.starts_with(&format!(
+                    "limit setting `{name}` is unavailable for the `monitor` operation; settings this command accepts, by stage: "
+                )),
+                "{refusal}"
+            );
+            let accepted = refusal.split("by stage: ").nth(1).expect("the accepted list");
+            assert!(!accepted.contains("preparation_"), "{accepted}");
+            assert!(accepted.contains("max_window_values"), "{accepted}");
+        }
     }
 
     /// FR-003-AC-12: a stage setting reaches the operation's own bound, and an
