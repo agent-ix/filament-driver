@@ -745,7 +745,9 @@ fn record_parse_issue(stats: &mut GateStats, docs: &Path, issue: ParseIssue) {
     );
 }
 
-fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>, String), String> {
+type GateArguments = (PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>, String);
+
+fn arguments() -> Result<GateArguments, String> {
     let mut args = env::args().skip(1);
     let mut docs = None;
     let mut examples = None;
@@ -810,13 +812,7 @@ fn arguments() -> Result<(PathBuf, PathBuf, Option<PathBuf>, Option<PathBuf>, St
                 .map_err(|error| format!("{}: {error}", path.display()))
         })
         .transpose()?;
-    let base_image = base_image.unwrap_or_else(|| {
-        if candidate.is_some() {
-            "ubuntu:26.04".to_owned()
-        } else {
-            "ubuntu:26.04".to_owned()
-        }
-    });
+    let base_image = base_image.unwrap_or_else(|| "ubuntu:26.04".to_owned());
     Ok((docs, examples, candidate, released_binary, base_image))
 }
 
@@ -1082,7 +1078,7 @@ fn page_examples(page: &Path, source: &str) -> (Vec<Example>, Vec<ParseIssue>) {
             continue;
         };
         let fields = attribute(reference, "fields");
-        if fields.as_deref() == Some("") {
+        if fields == Some("") {
             issues.push(ParseIssue {
                 page: page.to_path_buf(),
                 line: number,
@@ -1414,7 +1410,7 @@ fn trim_rule(source: &str, rule: &str) -> String {
     let needle = rule;
     let Some(at) = lines
         .iter()
-        .position(|line| !line.trim().starts_with("//") && line.contains(&needle))
+        .position(|line| !line.trim().starts_with("//") && line.contains(needle))
     else {
         return source.trim_end().to_owned();
     };
