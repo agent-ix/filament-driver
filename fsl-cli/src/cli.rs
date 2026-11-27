@@ -41,7 +41,6 @@ use crate::options::{self, Scan, Scanned};
 use crate::provider_config::{OptionRefusal, ProviderArguments};
 
 /// Pass FSL's category result through the kit without converting it to an `Outcome`.
-#[must_use]
 fn process_exit_code(category: Category) -> ExitCode {
     let result = category_exit_result(category);
     match caller_exit_code(result) {
@@ -3733,7 +3732,7 @@ mod tests {
         let result = super::export(
             &ExportOptions {
                 output: Some(output.clone()),
-                request: request,
+                request,
                 selection: super::ExportSelection::Ordinary,
                 limits: LimitOverrides::default(),
             },

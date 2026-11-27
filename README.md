@@ -20,7 +20,7 @@ generators.
 
 Download the prebuilt `fsl` and `fsl-plugin-launch` binaries from the [latest release](https://github.com/agent-ix/filament-driver/releases/latest)
 (Linux x86_64 and aarch64, macOS arm64 and x86_64). Each release carries a
-`SHA256SUMS.txt`. Or build from source: `rust-toolchain.toml` pins Rust 1.98.1,
+`SHA256SUMS.txt`. Or build from source: `rust-toolchain.toml` pins Rust 1.100.0,
 which `rustup` installs on first use. Install the `fsl` command (from the `fsl-cli` crate) and the
 `fsl-plugin-launch` launcher (from the `filament-plugin-host` crate) using the
 repository's locked dependencies. Set `FSL_REVISION` to the commit or release

@@ -1,5 +1,4 @@
-# Cargo/rustup's own pin. Keep in step with `rust-version` in Cargo.toml and
-# with the language repo's channel.
+# Build compiler pin; `rust-version` in Cargo.toml remains the compatibility floor.
 [toolchain]
-channel = "1.98.1"
+channel = "1.100.0"
 profile = "minimal"
