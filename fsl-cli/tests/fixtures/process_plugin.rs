@@ -166,7 +166,7 @@ fn wait_for_release(release: &Path) {
 
 #[allow(
     clippy::zombie_processes,
-    reason = "The descendant is deliberately detached; the test owns process-group kill and reap."
+    reason = "The fixture deliberately detaches a descendant so CLI signal tests can verify process-group cancellation."
 )]
 fn spawn_descendant(marker: &Path) {
     let executable = std::env::current_exe().expect("fixture executable");
