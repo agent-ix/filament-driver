@@ -1210,8 +1210,8 @@ fn run(options: RunOptions) -> CommandResult {
     let (request_limits, request_accounting) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
-        limits: Some(&request_limits),
-        accounting: Some(&request_accounting),
+        limits: (!request_limits.is_empty()).then_some(&request_limits),
+        accounting: (!request_accounting.is_empty()).then_some(&request_accounting),
         ..Default::default()
     };
     let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
@@ -1272,7 +1272,7 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     let (request_limits, _) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         output: options.output.as_deref(),
-        limits: Some(&request_limits),
+        limits: (!request_limits.is_empty()).then_some(&request_limits),
         ..command::RequestOverrides::default()
     };
     let runner = match command::export_with_limits_and_overrides(
@@ -1354,7 +1354,7 @@ fn compile(options: CompileOptions) -> CommandResult {
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
-        limits: Some(&request_limits),
+        limits: (!request_limits.is_empty()).then_some(&request_limits),
         ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
@@ -2170,8 +2170,8 @@ fn run_with_providers(
         move |negotiation, engines, provider_options, cancel| {
             let overrides = command::RequestOverrides {
                 clocks: clocks.as_deref(),
-                limits: Some(&request_limits),
-                accounting: Some(&request_accounting),
+                limits: (!request_limits.is_empty()).then_some(&request_limits),
+                accounting: (!request_accounting.is_empty()).then_some(&request_accounting),
                 ..Default::default()
             };
             command::run_with_providers_and_limits_and_overrides(

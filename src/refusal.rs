@@ -1475,7 +1475,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-004", "FR-001-AC-22")]
+    #[trace("TC-004", "FR-001-AC-5", "FR-001-AC-22")]
     #[test]
     fn new_reader_causes_preserve_the_entire_typed_projection() {
         // The driver projects the supplied code; it does not reclassify an
