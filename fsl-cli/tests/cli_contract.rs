@@ -3215,12 +3215,12 @@ fn run_routes_requirement_items_with_caller_spine_limits() {
 
 fn assert_requirement_reference_oracle(path: &Path, actual: &std::process::Output) {
     let negotiation = filament_driver::AnalyzeNegotiation::fsl().expect("default negotiation");
-    let spine = SpineLimits::default();
+    let limits = std::collections::BTreeMap::new();
     let result = command::run_with_providers_and_limits_and_overrides(
         path,
         command::RunLimits::default(),
         &command::RequestOverrides {
-            limits: Some(&spine),
+            limits: Some(&limits),
             ..Default::default()
         },
         &negotiation,

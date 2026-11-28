@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parser and command handlers for the user-facing `fsl` binary.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -33,6 +33,7 @@ use fsl_replay::spine::{
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 use fsl_semantics::library::bundle::PackageLimits;
+use ix_trace_rs::implements;
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
 
@@ -941,6 +942,29 @@ fn apply_export_limits(overrides: &LimitOverrides, limits: &mut SpineLimits) -> 
     })
 }
 
+/// Carry only the caller-named settings into FSL's request override maps.
+#[implements("FR-003-AC-12")]
+fn request_override_maps(
+    overrides: &LimitOverrides,
+) -> (
+    BTreeMap<Setting, u64>,
+    BTreeMap<AccountingSetting, u64>,
+) {
+    let mut limits = BTreeMap::new();
+    let mut accounting = BTreeMap::new();
+    for (name, value) in overrides.values() {
+        match name {
+            SettingName::Stage(setting) => {
+                limits.insert(*setting, *value);
+            }
+            SettingName::Accounting(setting) => {
+                accounting.insert(*setting, *value);
+            }
+        }
+    }
+    (limits, accounting)
+}
+
 impl RunOptions {
     fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
         let mut intake_limits = RunLimits::default();
@@ -1152,16 +1176,9 @@ fn run(options: RunOptions) -> CommandResult {
     };
     let mut limits = fsl_replay::CallerLimits::default();
     let mut accounting = fsl_replay::AccountingLimits::default();
-    let mut supplied_accounting = false;
-    let mut supplied_observation = false;
     for (name, value) in options.limits.values() {
         let accepted = match name {
             SettingName::Stage(setting) => {
-                supplied_observation |= limits
-                    .observation
-                    .bounds()
-                    .iter()
-                    .any(|(bound, _)| bound == setting);
                 let exposed = limits
                     .spine
                     .bounds()
@@ -1175,7 +1192,6 @@ fn run(options: RunOptions) -> CommandResult {
                 exposed && limits.set_bound(*setting, *value)
             }
             SettingName::Accounting(setting) => {
-                supplied_accounting = true;
                 accounting.set_bound(*setting, *value);
                 true
             }
@@ -1189,20 +1205,13 @@ fn run(options: RunOptions) -> CommandResult {
         }
     }
     if options.providers.given() {
-        return run_with_providers(
-            options,
-            config,
-            clocks,
-            limits,
-            supplied_observation,
-            supplied_accounting.then_some(accounting.0),
-        );
+        return run_with_providers(options, config, clocks);
     }
+    let (request_limits, request_accounting) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
-        limits: Some(&limits.spine),
-        observation: supplied_observation.then_some(&limits.observation),
-        accounting: supplied_accounting.then_some(&accounting.0),
+        limits: Some(&request_limits),
+        accounting: Some(&request_accounting),
         ..Default::default()
     };
     let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
@@ -1260,9 +1269,10 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     if let Err(error) = apply_export_limits(&options.limits, &mut limits) {
         return CommandResult::input_refusal(Operation::Export, error);
     }
+    let (request_limits, _) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         output: options.output.as_deref(),
-        limits: Some(&limits),
+        limits: Some(&request_limits),
         ..command::RequestOverrides::default()
     };
     let runner = match command::export_with_limits_and_overrides(
@@ -1340,10 +1350,11 @@ fn compile(options: CompileOptions) -> CommandResult {
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "compile") {
         return CommandResult::input_refusal(Operation::Package, error);
     }
+    let (request_limits, _) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
-        limits: Some(&limits),
+        limits: Some(&request_limits),
         ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
@@ -2143,10 +2154,8 @@ fn run_with_providers(
     options: RunOptions,
     config: crate::provider_config::ProviderConfig,
     clocks: Option<Box<serde_json::value::RawValue>>,
-    limits: fsl_replay::CallerLimits,
-    supplied_observation: bool,
-    accounting: Option<filament_exact::ScalarLimits>,
 ) -> CommandResult {
+    let (request_limits, request_accounting) = request_override_maps(&options.limits);
     let ran = with_started_providers(
         config,
         &options.providers,
@@ -2154,9 +2163,8 @@ fn run_with_providers(
         move |negotiation, engines, provider_options, cancel| {
             let overrides = command::RequestOverrides {
                 clocks: clocks.as_deref(),
-                limits: Some(&limits.spine),
-                observation: supplied_observation.then_some(&limits.observation),
-                accounting: accounting.as_ref(),
+                limits: Some(&request_limits),
+                accounting: Some(&request_accounting),
                 ..Default::default()
             };
             command::run_with_providers_and_limits_and_overrides(
