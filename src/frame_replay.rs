@@ -67,6 +67,7 @@ impl Driven {
         .map_err(FrameReplayFailure::Dependencies)?;
         let clocks = request_clocks(self.checked().temporal_bindings())?;
         let located = fsl_replay::call_site(
+            &fsl_cst::ParserContext::new(),
             SourceIdentity::new(&inputs.run.source.authority, &inputs.run.source.identity),
             fsl_replay::CallSiteUnit::new(
                 inputs.run.package_name.clone(),
