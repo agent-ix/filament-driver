@@ -1682,9 +1682,16 @@ fn format_source(options: SourceOptions) -> CommandResult {
     let source = options.source;
     let display_path = options.path.to_string_lossy();
     let cancel = Cancel::new();
-    let result = fsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
-        .map_err(FormatRefusal::DiagnosedSource)
-        .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
+    let result = fsl_cst::parse_with_cancel(
+        &fsl_cst::ParserContext::new(),
+        source,
+        display_path.as_ref(),
+        &bytes,
+        limits,
+        &cancel,
+    )
+    .map_err(FormatRefusal::DiagnosedSource)
+    .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
     let document = OutcomeDocument::from_format(&result);
     let text_output = result.ok().map(Staged::into_value);
     CommandResult::formatted(document, text_output)

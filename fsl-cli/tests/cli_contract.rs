@@ -385,9 +385,16 @@ fn format_outcome_bytes(path: &'static str) -> Vec<u8> {
     let source = SourceIdentity::new("issuer", "document");
     let limits = fsl_cst::Limits::default();
     let cancel = Cancel::new();
-    let result = fsl_cst::parse_with_cancel(source, path, &bytes, limits, &cancel)
-        .map_err(FormatRefusal::DiagnosedSource)
-        .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
+    let result = fsl_cst::parse_with_cancel(
+        &fsl_cst::ParserContext::new(),
+        source,
+        path,
+        &bytes,
+        limits,
+        &cancel,
+    )
+    .map_err(FormatRefusal::DiagnosedSource)
+    .and_then(|parsed| format_with_limits(&parsed, FormatLimits::default()).map(Staged::new));
     OutcomeDocument::from_format(&result)
         .to_bytes()
         .expect("FSL serializes its format outcome")
@@ -2246,6 +2253,7 @@ fn frontend_limit_unknown_setting_names_accepted_settings() {
 fn format_writes_fsl_formatted_text_without_editing_the_source() {
     let source = std::fs::read(SOURCE).expect("read format fixture");
     let parsed = fsl_cst::parse_with_cancel(
+        &fsl_cst::ParserContext::new(),
         SourceIdentity::new("issuer", "document"),
         SOURCE,
         &source,

@@ -235,6 +235,7 @@ fn replay_request(package: &Value) -> Value {
     }])
     .expect("the library input");
     let site = call_site(
+        &fsl_cst::ParserContext::new(),
         SourceIdentity::new(AUTHORITY, PROGRAM_ID),
         fsl_replay::CallSiteUnit::new(
             package["name"].as_str().expect("a package name"),
