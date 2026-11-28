@@ -2948,9 +2948,6 @@ fn with_format_as(
                     rendered = relabel_header(&rendered, &operation, command_name);
                 }
             }
-            if let Some(fences) = native_fences_text(document) {
-                rendered.push_str(&fences);
-            }
             if let Some(hint) = observation_input_limit_hint(document) {
                 if !rendered.is_empty() {
                     rendered.push('\n');
@@ -2971,65 +2968,6 @@ fn with_format_as(
             "could not render the outcome document as text",
         ),
     }
-}
-
-/// Render the Markdown check items omitted by the generic outcome renderer.
-/// The outcome header and ordinary diagnostics still come from that renderer.
-fn native_fences_text(document: &OutcomeDocument) -> Option<String> {
-    let report = document.native_fences()?;
-    let mut rendered = String::new();
-    for (index, fence) in report.fences.iter().enumerate() {
-        let clause = fence
-            .clause
-            .as_deref()
-            .map(|clause| format!(" clause {clause}"))
-            .unwrap_or_default();
-        rendered.push_str(&format!(
-            "item {index}: checked ({}){clause} first-line {}\n",
-            fence.category.as_str(),
-            fence.first_line
-        ));
-        if let Some(actual) = fence.actual {
-            rendered.push_str(&format!("  actual: {actual}\n"));
-        }
-        for diagnostic in &fence.diagnostics {
-            let position = diagnostic
-                .original_regions
-                .first()
-                .map(|region| match region {
-                    fsl_replay::OutcomeLocus::Located { file, span } => {
-                        format!("{}:{}:{}", file, span.start.line, span.start.column)
-                    }
-                    fsl_replay::OutcomeLocus::Region { source, start, end } => {
-                        format!("{}/{}:{start}-{end}", source.authority(), source.identity())
-                    }
-                    _ => String::from("<no-source>"),
-                });
-            let prefix = position.unwrap_or_else(|| String::from("<no-source>"));
-            rendered.push_str(&format!(
-                "{prefix}: {}: {}\n",
-                diagnostic.diagnostic.code(),
-                diagnostic.diagnostic.message()
-            ));
-            if let Some(cause) = diagnostic.diagnostic.cause() {
-                rendered.push_str(&format!("  cause: {cause}\n"));
-            }
-            let diagnostic_wire = serde_json::to_value(&diagnostic.diagnostic).ok();
-            if let Some(label) = diagnostic_wire
-                .as_ref()
-                .and_then(|value| value.get("label")?.as_str())
-            {
-                rendered.push_str(&format!("  label: {label}\n"));
-            }
-            if let Some(hint) = diagnostic_wire
-                .as_ref()
-                .and_then(|value| value.get("hint")?.as_str())
-            {
-                rendered.push_str(&format!("  hint: {hint}\n"));
-            }
-        }
-    }
-    Some(rendered)
 }
 
 /// Add the driver's accepted CLI spelling when a request-provided observation

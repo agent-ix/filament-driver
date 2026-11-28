@@ -610,6 +610,42 @@ fn check_text_format_renders_markdown_fence_details() {
     );
 }
 
+/// Trace: FR-002-AC-13; successful Markdown checks render each fence once.
+#[test]
+#[trace("FR-002-AC-13")]
+fn check_text_format_renders_successful_markdown_fence_once() {
+    let directory = TemporaryDirectory::new("check-markdown-text-success");
+    let healthy = std::fs::read_to_string(SOURCE).expect("read native source fixture");
+    let document = format!("### Healthy\n\n```ix:native\n{healthy}```\n");
+    std::fs::write(directory.0.join("spec.md"), document).expect("write Markdown fixture");
+    let text = Command::new(FSL)
+        .current_dir(&directory.0)
+        .args([
+            "check",
+            "--markdown",
+            "agent-ix",
+            "doc",
+            "spec.md",
+            "--format",
+            "text",
+        ])
+        .output()
+        .expect("run successful Markdown check in text format");
+
+    assert_eq!(text.status.code(), Some(0));
+    assert!(text.stderr.is_empty(), "{:?}", text.stderr);
+    let rendered = String::from_utf8(text.stdout).expect("text output is UTF-8");
+    assert_eq!(
+        rendered
+            .lines()
+            .filter(|line| line.starts_with("item "))
+            .count(),
+        1,
+        "the successful native fence renders once: {rendered}"
+    );
+    assert!(rendered.contains("item 0: checked (success) clause Healthy"));
+}
+
 /// Trace: FR-002-AC-13; explicit-text option refusals use the shared refusal shape.
 #[test]
 #[trace("FR-002-AC-13")]
