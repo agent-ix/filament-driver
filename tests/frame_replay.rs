@@ -107,6 +107,7 @@ impl Fixture {
         )
         .unwrap();
         let located = call_site(
+            &fsl_cst::ParserContext::new(),
             source(),
             fsl_replay::CallSiteUnit::new("frame", "frame", unit.as_bytes()),
             [domain.as_slice()],
@@ -116,6 +117,7 @@ impl Fixture {
         )
         .unwrap();
         let clause = call_site(
+            &fsl_cst::ParserContext::new(),
             source(),
             fsl_replay::CallSiteUnit::new("frame", "frame", unit.as_bytes()),
             [domain.as_slice()],
@@ -359,6 +361,7 @@ fn frame_projection_rejects_missing_changed_and_caller_populated_associations() 
 fn frame_projection_preserves_fsl_refusal_before_any_join_or_codegen_check() {
     let fixture = Fixture::new(false);
     let expected = call_site(
+        &fsl_cst::ParserContext::new(),
         source(),
         fsl_replay::CallSiteUnit::new("frame", "frame", fixture.unit.as_bytes()),
         [fixture.domain.as_slice()],

@@ -23,6 +23,7 @@ use fsl_foundation::{BackendId, Code, EmptyBackendIdentity};
 use fsl_package::ExportRefusal;
 use fsl_replay::spine::{BindRefusal, CompileRefusal, RunRefusal, SpineStage};
 use fsl_route::RegistrationRefusal;
+use ix_trace_rs::implements;
 
 /// Why [`crate::drive`] or [`crate::build_registry`] produced no result.
 #[derive(Debug, thiserror::Error)]
@@ -850,6 +851,7 @@ fn package_read_refusal_code(code: CheckedPackageRefusalCode) -> &'static str {
     }
 }
 
+#[implements("FR-001-AC-22")]
 fn package_read_refusal_cause(cause: CheckedPackageRefusalCause) -> &'static str {
     match cause {
         CheckedPackageRefusalCause::NonBooleanRoot => "non-boolean-root",
@@ -900,6 +902,7 @@ fn package_read_refusal_cause(cause: CheckedPackageRefusalCause) -> &'static str
         CheckedPackageRefusalCause::InexactNumber => "inexact-number",
         CheckedPackageRefusalCause::InvalidSemanticGraph => "invalid-semantic-graph",
         CheckedPackageRefusalCause::InvalidTaskSet => "invalid-task-set",
+        CheckedPackageRefusalCause::StaleNodeKey => "stale-node-key",
         CheckedPackageRefusalCause::ClockReadOutsideConstraint => "clock-read-outside-constraint",
     }
 }
@@ -1506,6 +1509,7 @@ mod tests {
                 CheckedPackageRefusalCause::ClockWithoutDenseTime,
                 "clock-without-dense-time",
             ),
+            (CheckedPackageRefusalCause::StaleNodeKey, "stale-node-key"),
         ];
         for (cause, spelling) in cases {
             let projection = ContractPackageRefusalProjection {

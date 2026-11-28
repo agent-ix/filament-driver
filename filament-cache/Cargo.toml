@@ -10,14 +10,14 @@ publish = false
 
 [dependencies]
 filament-driver = { path = ".." }
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "1ef2101d8638f41c823644527061bdb78f33cddd" }
-quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "v0.3.2", features = ["serde_json"] }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cb1ea781364a4febf8c87fd715fc82a0d245cabc" }
+quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "quire-canonical-v0.3.3", features = ["serde_json"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.20"
 
 [dev-dependencies]
-fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "1ef2101d8638f41c823644527061bdb78f33cddd" }
+fsl-foundation = { git = "https://github.com/agent-ix/filament-spec-language", rev = "cb1ea781364a4febf8c87fd715fc82a0d245cabc" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.190"

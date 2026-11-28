@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Caller overrides through the public canonical run coordinator.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Command, Output};
 
 use fsl_command::command::{self, RequestOverrides, RunLimits};
+use fsl_foundation::{AccountingSetting, Setting};
 use ix_trace_rs::trace;
 use serde_json::{json, Value};
 
@@ -62,7 +64,7 @@ fn source(file: &str) -> Value {
 }
 
 /// The effective caller budget replaces request accounting for calls and ordered items.
-#[trace("FR-002-AC-27", "FR-003-AC-1")]
+#[trace("FR-002-AC-27", "FR-003-AC-1", "FR-003-AC-12")]
 #[test]
 fn canonical_run_overrides_reach_calls_and_ordered_items() {
     let directory = tempfile::tempdir().expect("fixture directory");
@@ -76,8 +78,7 @@ fn canonical_run_overrides_reach_calls_and_ordered_items() {
     let mut job = json!({"format":"native-run/1","request":{
         "models":[],"program":{"source":source("unit.fsl")},"call":call}});
     let path = directory.path().join("run.json");
-    let mut accounting = fsl_replay::AccountingLimits::default().0;
-    accounting.work_units = 0;
+    let accounting = BTreeMap::from([(AccountingSetting::WorkUnits, 0)]);
     let overrides = RequestOverrides {
         accounting: Some(&accounting),
         ..Default::default()
@@ -128,7 +129,7 @@ fn canonical_run_overrides_reach_calls_and_ordered_items() {
 }
 
 /// Plan compilation, initial-state admission, execution and duplicate clocks use owner overrides.
-#[trace("FR-002-AC-27", "FR-003-AC-1", "FR-023-AC-5")]
+#[trace("FR-002-AC-27", "FR-003-AC-1", "FR-003-AC-12", "FR-023-AC-5")]
 #[test]
 fn canonical_run_overrides_reach_plan_stages_observations_accounting_and_clocks() {
     let directory = tempfile::tempdir().expect("fixture directory");
@@ -155,9 +156,8 @@ fn canonical_run_overrides_reach_plan_stages_observations_accounting_and_clocks(
     let control = cli(&path, &[]);
     assert_eq!(control.status.code(), Some(0), "{control:?}");
     assert_owner_parity(&path, &RequestOverrides::default(), &control);
-    let mut stages = fsl_replay::spine::SpineLimits::default();
-    stages.source.source_bytes = 1;
-    let observation = fsl_replay::ObservationLimits::default().with_document_bytes(1);
+    let stages = BTreeMap::from([(Setting::S1InputBytes, 1)]);
+    let observation = BTreeMap::from([(Setting::ObservationInputBytes, 1)]);
     for (setting, overrides) in [
         (
             "s1.input_bytes=1",
@@ -169,7 +169,7 @@ fn canonical_run_overrides_reach_plan_stages_observations_accounting_and_clocks(
         (
             "observation.input_bytes=1",
             RequestOverrides {
-                observation: Some(&observation),
+                limits: Some(&observation),
                 ..Default::default()
             },
         ),
@@ -192,8 +192,7 @@ fn canonical_run_overrides_reach_plan_stages_observations_accounting_and_clocks(
     job["request"]["verification_plan"]["execute"] = json!(true);
     job["request"]["requirements"] = json!({"backend":"en-1"});
     write(&path, &job);
-    let mut accounting = fsl_replay::AccountingLimits::default().0;
-    accounting.work_units = 0;
+    let accounting = BTreeMap::from([(AccountingSetting::WorkUnits, 0)]);
     let limited = cli(&path, &["--limit", "accounting.work_units=0"]);
     assert_eq!(limited.status.code(), Some(22), "{limited:?}");
     assert!(

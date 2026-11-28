@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Parser and command handlers for the user-facing `fsl` binary.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -33,6 +33,7 @@ use fsl_replay::spine::{
 };
 use fsl_replay::{Operation, OutcomeDiagnostic, OutcomeDocument};
 use fsl_semantics::library::bundle::PackageLimits;
+use ix_trace_rs::implements;
 use ix_cli_kit::exit::{caller_exit_code, RESERVED_COMMAND_NOT_FOUND};
 use ix_cli_kit::streams::{self, Diagnostics};
 
@@ -941,6 +942,29 @@ fn apply_export_limits(overrides: &LimitOverrides, limits: &mut SpineLimits) -> 
     })
 }
 
+/// Carry only the caller-named settings into FSL's request override maps.
+#[implements("FR-003-AC-12")]
+fn request_override_maps(
+    overrides: &LimitOverrides,
+) -> (
+    BTreeMap<Setting, u64>,
+    BTreeMap<AccountingSetting, u64>,
+) {
+    let mut limits = BTreeMap::new();
+    let mut accounting = BTreeMap::new();
+    for (name, value) in overrides.values() {
+        match name {
+            SettingName::Stage(setting) => {
+                limits.insert(*setting, *value);
+            }
+            SettingName::Accounting(setting) => {
+                accounting.insert(*setting, *value);
+            }
+        }
+    }
+    (limits, accounting)
+}
+
 impl RunOptions {
     fn from_scanned(scanned: &Scanned) -> Result<Self, OptionRefusal> {
         let mut intake_limits = RunLimits::default();
@@ -1152,16 +1176,9 @@ fn run(options: RunOptions) -> CommandResult {
     };
     let mut limits = fsl_replay::CallerLimits::default();
     let mut accounting = fsl_replay::AccountingLimits::default();
-    let mut supplied_accounting = false;
-    let mut supplied_observation = false;
     for (name, value) in options.limits.values() {
         let accepted = match name {
             SettingName::Stage(setting) => {
-                supplied_observation |= limits
-                    .observation
-                    .bounds()
-                    .iter()
-                    .any(|(bound, _)| bound == setting);
                 let exposed = limits
                     .spine
                     .bounds()
@@ -1175,7 +1192,6 @@ fn run(options: RunOptions) -> CommandResult {
                 exposed && limits.set_bound(*setting, *value)
             }
             SettingName::Accounting(setting) => {
-                supplied_accounting = true;
                 accounting.set_bound(*setting, *value);
                 true
             }
@@ -1189,20 +1205,13 @@ fn run(options: RunOptions) -> CommandResult {
         }
     }
     if options.providers.given() {
-        return run_with_providers(
-            options,
-            config,
-            clocks,
-            limits,
-            supplied_observation,
-            supplied_accounting.then_some(accounting.0),
-        );
+        return run_with_providers(options, config, clocks);
     }
+    let (request_limits, request_accounting) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
-        limits: Some(&limits.spine),
-        observation: supplied_observation.then_some(&limits.observation),
-        accounting: supplied_accounting.then_some(&accounting.0),
+        limits: (!request_limits.is_empty()).then_some(&request_limits),
+        accounting: (!request_accounting.is_empty()).then_some(&request_accounting),
         ..Default::default()
     };
     let negotiation = match filament_driver::AnalyzeNegotiation::fsl() {
@@ -1260,9 +1269,10 @@ fn export(options: &ExportOptions, format: OutputFormat) -> CommandResult {
     if let Err(error) = apply_export_limits(&options.limits, &mut limits) {
         return CommandResult::input_refusal(Operation::Export, error);
     }
+    let (request_limits, _) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         output: options.output.as_deref(),
-        limits: Some(&limits),
+        limits: (!request_limits.is_empty()).then_some(&request_limits),
         ..command::RequestOverrides::default()
     };
     let runner = match command::export_with_limits_and_overrides(
@@ -1340,10 +1350,11 @@ fn compile(options: CompileOptions) -> CommandResult {
     if let Err(error) = apply_frontend_limits(&options.limits, &mut limits, "compile") {
         return CommandResult::input_refusal(Operation::Package, error);
     }
+    let (request_limits, _) = request_override_maps(&options.limits);
     let overrides = command::RequestOverrides {
         clocks: clocks.as_deref(),
         output: options.output.as_deref(),
-        limits: Some(&limits),
+        limits: (!request_limits.is_empty()).then_some(&request_limits),
         ..command::RequestOverrides::default()
     };
     match command::compile_outcome_with_overrides(&options.path, &overrides) {
@@ -1671,9 +1682,16 @@ fn format_source(options: SourceOptions) -> CommandResult {
     let source = options.source;
     let display_path = options.path.to_string_lossy();
     let cancel = Cancel::new();
-    let result = fsl_cst::parse_with_cancel(source, display_path.as_ref(), &bytes, limits, &cancel)
-        .map_err(FormatRefusal::DiagnosedSource)
-        .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
+    let result = fsl_cst::parse_with_cancel(
+        &fsl_cst::ParserContext::new(),
+        source,
+        display_path.as_ref(),
+        &bytes,
+        limits,
+        &cancel,
+    )
+    .map_err(FormatRefusal::DiagnosedSource)
+    .and_then(|parsed| format_with_limits(&parsed, format_limits).map(Staged::new));
     let document = OutcomeDocument::from_format(&result);
     let text_output = result.ok().map(Staged::into_value);
     CommandResult::formatted(document, text_output)
@@ -2143,10 +2161,8 @@ fn run_with_providers(
     options: RunOptions,
     config: crate::provider_config::ProviderConfig,
     clocks: Option<Box<serde_json::value::RawValue>>,
-    limits: fsl_replay::CallerLimits,
-    supplied_observation: bool,
-    accounting: Option<filament_exact::ScalarLimits>,
 ) -> CommandResult {
+    let (request_limits, request_accounting) = request_override_maps(&options.limits);
     let ran = with_started_providers(
         config,
         &options.providers,
@@ -2154,9 +2170,8 @@ fn run_with_providers(
         move |negotiation, engines, provider_options, cancel| {
             let overrides = command::RequestOverrides {
                 clocks: clocks.as_deref(),
-                limits: Some(&limits.spine),
-                observation: supplied_observation.then_some(&limits.observation),
-                accounting: accounting.as_ref(),
+                limits: (!request_limits.is_empty()).then_some(&request_limits),
+                accounting: (!request_accounting.is_empty()).then_some(&request_accounting),
                 ..Default::default()
             };
             command::run_with_providers_and_limits_and_overrides(
@@ -2933,9 +2948,6 @@ fn with_format_as(
                     rendered = relabel_header(&rendered, &operation, command_name);
                 }
             }
-            if let Some(fences) = native_fences_text(document) {
-                rendered.push_str(&fences);
-            }
             if let Some(hint) = observation_input_limit_hint(document) {
                 if !rendered.is_empty() {
                     rendered.push('\n');
@@ -2956,65 +2968,6 @@ fn with_format_as(
             "could not render the outcome document as text",
         ),
     }
-}
-
-/// Render the Markdown check items omitted by the generic outcome renderer.
-/// The outcome header and ordinary diagnostics still come from that renderer.
-fn native_fences_text(document: &OutcomeDocument) -> Option<String> {
-    let report = document.native_fences()?;
-    let mut rendered = String::new();
-    for (index, fence) in report.fences.iter().enumerate() {
-        let clause = fence
-            .clause
-            .as_deref()
-            .map(|clause| format!(" clause {clause}"))
-            .unwrap_or_default();
-        rendered.push_str(&format!(
-            "item {index}: checked ({}){clause} first-line {}\n",
-            fence.category.as_str(),
-            fence.first_line
-        ));
-        if let Some(actual) = fence.actual {
-            rendered.push_str(&format!("  actual: {actual}\n"));
-        }
-        for diagnostic in &fence.diagnostics {
-            let position = diagnostic
-                .original_regions
-                .first()
-                .map(|region| match region {
-                    fsl_replay::OutcomeLocus::Located { file, span } => {
-                        format!("{}:{}:{}", file, span.start.line, span.start.column)
-                    }
-                    fsl_replay::OutcomeLocus::Region { source, start, end } => {
-                        format!("{}/{}:{start}-{end}", source.authority(), source.identity())
-                    }
-                    _ => String::from("<no-source>"),
-                });
-            let prefix = position.unwrap_or_else(|| String::from("<no-source>"));
-            rendered.push_str(&format!(
-                "{prefix}: {}: {}\n",
-                diagnostic.diagnostic.code(),
-                diagnostic.diagnostic.message()
-            ));
-            if let Some(cause) = diagnostic.diagnostic.cause() {
-                rendered.push_str(&format!("  cause: {cause}\n"));
-            }
-            let diagnostic_wire = serde_json::to_value(&diagnostic.diagnostic).ok();
-            if let Some(label) = diagnostic_wire
-                .as_ref()
-                .and_then(|value| value.get("label")?.as_str())
-            {
-                rendered.push_str(&format!("  label: {label}\n"));
-            }
-            if let Some(hint) = diagnostic_wire
-                .as_ref()
-                .and_then(|value| value.get("hint")?.as_str())
-            {
-                rendered.push_str(&format!("  hint: {hint}\n"));
-            }
-        }
-    }
-    Some(rendered)
 }
 
 /// Add the driver's accepted CLI spelling when a request-provided observation
